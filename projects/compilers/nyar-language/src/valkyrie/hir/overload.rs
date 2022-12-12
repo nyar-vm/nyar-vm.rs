@@ -2423,6 +2423,15 @@ fn is_builtin_result_pattern(canonical_callee: &NamePath, actual_type: &Valkyrie
     }
 }
 
+/// `Text` / `Object` / … on `VonValue` are language VON unite arms (legion.tools manifest.v).
+fn is_builtin_von_value_pattern(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> bool {
+    let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
+    if !matches!(head, "Text" | "Flag" | "Number" | "Name" | "Array" | "Object" | "Empty") {
+        return false;
+    }
+    matches!(actual_type, ValkyrieType::Named(name) if name.as_str() == "VonValue")
+}
+
 /// Soft SMIR003 accepts Fine/Fail without a registered extractor method. Still attach a
 /// synthetic resolved call so MIR can bind `Fine(plan)` with `extractor_payload_type = T`.
 fn synthesize_builtin_result_extractor(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> Option<HirResolvedCall> {
@@ -2503,6 +2512,9 @@ fn diagnose_pattern_extractor_failure(
         // Built-in Result arms: `case Fine(x):` / `case Fail(e):` on `Result<T, E>`.
         // Same class of language unite pattern as Option — not a per-API Wasm cast hack.
         if is_builtin_result_pattern(canonical_callee, actual_type) {
+            return None;
+        }
+        if is_builtin_von_value_pattern(canonical_callee, actual_type) {
             return None;
         }
         return Some(ParseError::invalid(format!("unknown pattern extractor `{extractor_name}` for scrutinee type `{type_name}`")));
