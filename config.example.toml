@@ -1,0 +1,8 @@
+# 复制到 `.cargo/config.toml`（该目录已在 .gitignore 中）。
+# CI 与未配置 patch 的环境直接使用根 `Cargo.toml` 里的 git 依赖。
+
+[registries.crates-io]
+protocol = "sparse"
+
+[patch.'https://github.com/valkyrie-language/valkyrie.rs']
+std-data = { path = "../valkyrie.rs/projects/vcc-data", package = "vcc-data" }

@@ -1,0 +1,21 @@
+[package]
+name = "nyar"
+version.workspace = true
+edition.workspace = true
+ description = "Generic optimization backend orchestration for multi-frontend compilers"
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+miette = { workspace = true }
+nyar-analyzer = { workspace = true }
+nyar-optimizer = { workspace = true }
+nyar-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+[dev-dependencies]
+emitter = { workspace = true }
+nyar-language = { workspace = true }
+tempfile = { workspace = true }

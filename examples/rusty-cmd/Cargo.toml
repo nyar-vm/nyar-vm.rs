@@ -1,0 +1,16 @@
+[package]
+name = "rusty-cmd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-cmd = { workspace = true }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+serde = { workspace = true }

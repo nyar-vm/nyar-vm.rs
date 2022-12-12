@@ -1,0 +1,15 @@
+[package]
+name = "nyar-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Nyar VM — Wasm GC bindings for Nyar host CLIs"
+
+[lib]
+name = "nyar_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nyar-runner = { workspace = true }

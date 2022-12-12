@@ -1,0 +1,24 @@
+[package]
+name = "rusty-java"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+nyar-vm = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-java = { workspace = true }
+chomsky = { workspace = true, features = ["jvm"] }
+chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+# empty or existing dev-dependencies if any
+

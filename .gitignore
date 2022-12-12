@@ -1,15 +1,14 @@
+# OS
+
+
 # IDE
-.vscode
-.idea
-*.iml
-time-travel.*
+.idea/
 
 # Rust
+.cargo/
 target/
-Cargo.lock
+
+
+# Node
 node_modules/
-
-
-# Wasm
-*.wasm
-package-lock.json
+dist/

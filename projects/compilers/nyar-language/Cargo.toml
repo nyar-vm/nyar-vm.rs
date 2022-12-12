@@ -1,0 +1,42 @@
+﻿[package]
+name = "nyar-language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Valkyrie language compiler with Chomsky optimization framework"
+license.workspace = true
+repository = "https://github.com/valkyrie-language/valkyrie.rs"
+
+[features]
+default = []
+serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
+
+[dependencies]
+# Layering: language → driver → std-data (language is the upper layer).
+nyar = { workspace = true }
+nyar-analyzer = { workspace = true }
+emitter = { workspace = true }
+nyar-types = { workspace = true }
+std-data = { workspace = true }
+ordered-float = { workspace = true }
+miette = { workspace = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true }
+syntect = { workspace = true }
+katex-rs = { workspace = true }
+
+[[test]]
+name = "format_parity"
+path = "tests/format_parity.rs"
+harness = true
+
+[[test]]
+name = "valkyrie"
+path = "tests/valkyrie/mod.rs"
+harness = true
+
+[[test]]
+name = "call_parameter_types_probe"
+path = "tests/call_parameter_types_probe.rs"
+harness = true
+

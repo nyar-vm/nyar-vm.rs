@@ -1,0 +1,11 @@
+[package]
+name = "nyar-optimizer"
+version.workspace = true
+edition.workspace = true
+description = "Object Algebraic and E-Graph optimizer for the Nyar backend platform"
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+nyar-types = { workspace = true }
+serde = { workspace = true }

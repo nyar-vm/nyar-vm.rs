@@ -1,0 +1,329 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "valkyrie",
+    "scopeName": "source.valkyrie",
+    "fileTypes": ["valkyrie"],
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#types"
+        },
+        {
+            "include": "#decorators"
+        },
+        {
+            "include": "#identifiers"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#punctuation"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.documentation.valkyrie",
+                    "match": "#\\?.*$"
+                },
+                {
+                    "name": "comment.line.number-sign.valkyrie",
+                    "match": "#.*$"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.valkyrie",
+                    "match": "\\b(namespace|using|as|from|if|else|for|in|while|until|loop|break|continue|case|match|return|catch|end|type|mut|method|true|false)\\b"
+                },
+                {
+                    "name": "keyword.declaration.valkyrie",
+                    "match": "\\b(class|union|micro|mezzo|macro|let|flags|self|Self)\\b"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.interpolated.valkyrie",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "meta.embedded.line.valkyrie",
+                            "begin": "<\\$",
+                            "end": "\\$>",
+                            "patterns": [
+                                {
+                                    "include": "#expressions"
+                                }
+                            ]
+                        },
+                        {
+                            "name": "meta.embedded.line.valkyrie",
+                            "begin": "\\$\\{",
+                            "end": "\\}",
+                            "patterns": [
+                                {
+                                    "include": "#expressions"
+                                }
+                            ]
+                        },
+                        {
+                            "name": "constant.character.escape.valkyrie",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.valkyrie",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.valkyrie",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.regexp.valkyrie",
+                    "begin": "\\bre\\(",
+                    "end": "\\)",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.valkyrie",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "constant.other.symbol.valkyrie",
+                    "match": "\\bSymbol\\b"
+                },
+                {
+                    "name": "string.quoted.backtick.valkyrie",
+                    "begin": "`",
+                    "end": "`",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.valkyrie",
+                            "match": "\\\\."
+                        }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.decimal.valkyrie",
+                    "match": "\\b\\d+(\\.\\d+)?\\b"
+                },
+                {
+                    "name": "constant.numeric.hex.valkyrie",
+                    "match": "\\b0x[0-9a-fA-F]+\\b"
+                },
+                {
+                    "name": "constant.numeric.binary.valkyrie",
+                    "match": "\\b0b[01]+\\b"
+                },
+                {
+                    "name": "constant.numeric.octal.valkyrie",
+                    "match": "\\b0o[0-7]+\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.primitive.valkyrie",
+                    "match": "\\b(bool|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|char)\\b"
+                },
+                {
+                    "name": "support.function.builtin.valkyrie",
+                    "match": "\\b(compile_time_monad)\\b"
+                },
+                {
+                    "name": "keyword.declaration.valkyrie",
+                    "match": "\\b(trait)\\b"
+                },
+                {
+                    "name": "entity.name.type.valkyrie",
+                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                },
+                {
+                    "name": "storage.modifier.valkyrie",
+                    "match": "\\?"
+                }
+            ]
+        },
+        "decorators": {
+            "patterns": [
+                {
+                    "name": "meta.annotation.valkyrie",
+                    "begin": "(@)([\\p{L}_][\\p{L}\\p{N}_]*)",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "entity.name.tag.decorator.valkyrie"
+                        },
+                        "2": {
+                            "name": "entity.name.tag.decorator.valkyrie"
+                        }
+                    },
+                    "end": "(?=\\s|$|[;{}])",
+                    "patterns": [
+                        {
+                            "include": "#decorator-arguments"
+                        }
+                    ]
+                }
+            ]
+        },
+        "macros": {
+            "patterns": [
+                {
+                    "match": "@\\.(inline|specialize|const_fn|const_eval|derive|cfg|test|benchmark|deprecated|must_use|allow|warn|deny|forbid)",
+                    "name": "support.function.builtin.valkyrie"
+                },
+                {
+                    "match": "@\\.\\w+",
+                    "name": "entity.name.function.annotation.valkyrie"
+                },
+                {
+                    "match": "@\\w+",
+                    "name": "entity.name.function.macro.valkyrie"
+                }
+            ]
+        },
+        "decorator-arguments": {
+            "patterns": [
+                {
+                    "name": "meta.decorator.arguments.valkyrie",
+                    "begin": "\\(",
+                    "end": "\\)",
+                    "patterns": [
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#numbers"
+                        },
+                        {
+                            "name": "variable.parameter.valkyrie",
+                            "match": "[\\p{L}_][\\p{L}\\p{N}_]*(?=\\s*:)"
+                        },
+                        {
+                            "name": "punctuation.separator.valkyrie",
+                            "match": "[,:]"
+                        },
+                        {
+                            "name": "constant.language.boolean.valkyrie",
+                            "match": "\\b(true|false)\\b"
+                        },
+                        {
+                            "name": "meta.brackets.valkyrie",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#strings"
+                                },
+                                {
+                                    "name": "punctuation.separator.valkyrie",
+                                    "match": ","
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.valkyrie",
+                    "match": "(?<=\\bfunction\\s+)[\\p{L}_][\\p{L}\\p{N}_]*"
+                },
+                {
+                    "name": "variable.other.valkyrie",
+                    "match": "\\b[\\p{Ll}_][\\p{L}\\p{N}_]*\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.range.valkyrie",
+                    "match": "(\\.\\.<|\\.\\.\\.=)"
+                },
+                {
+                    "name": "keyword.operator.destructuring.valkyrie",
+                    "match": "(\\.\\.\\.|\\.\\.)(?=\\w)"
+                },
+                {
+                    "name": "keyword.operator.valkyrie",
+                    "match": "(->|=>|::|:|==|!=|<=|>=|<|>|\\+|\\-|\\*|/|%|&&|\\|\\||!|=)"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.terminator.valkyrie",
+                    "match": ";"
+                },
+                {
+                    "name": "punctuation.section.braces.valkyrie",
+                    "match": "[{}]"
+                },
+                {
+                    "name": "punctuation.section.brackets.valkyrie",
+                    "match": "[\\[\\]]"
+                },
+                {
+                    "name": "punctuation.section.parens.valkyrie",
+                    "match": "[()]"
+                },
+                {
+                    "name": "punctuation.separator.valkyrie",
+                    "match": ","
+                }
+            ]
+        },
+        "expressions": {
+            "patterns": [
+                {
+                    "include": "#keywords"
+                },
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#numbers"
+                },
+                {
+                    "include": "#identifiers"
+                },
+                {
+                    "include": "#operators"
+                }
+            ]
+        }
+    }
+}

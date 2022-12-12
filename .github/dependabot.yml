@@ -6,17 +6,12 @@ updates:
     schedule:
       interval: "daily"
   - package-ecosystem: "cargo"
-    directory: "/projects/nyar-error"
+    directory: "/"
     target-branch: "dev"
     schedule:
       interval: "daily"
-  - package-ecosystem: "cargo"
-    directory: "/projects/nyar-hir"
-    target-branch: "dev"
-    schedule:
-      interval: "daily"
-  - package-ecosystem: "cargo"
-    directory: "/projects/nyar-wasm"
+  - package-ecosystem: "npm"
+    directory: "/"
     target-branch: "dev"
     schedule:
       interval: "daily"

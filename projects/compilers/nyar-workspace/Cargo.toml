@@ -1,0 +1,15 @@
+[package]
+name = "nyar-workspace"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Workspace-level disk cache mechanism (bucket store + hashing)"
+
+[dependencies]
+sha2 = { workspace = true }
+std-data = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

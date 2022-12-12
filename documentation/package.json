@@ -1,0 +1,21 @@
+{
+    "name": "valkyrie-document",
+    "version": "1.0.0",
+    "description": "Valkyrie Language Documentation",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+        "dev": "vitepress dev .",
+        "build": "vitepress build .",
+        "preview": "vitepress preview .",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": ["valkyrie", "documentation", "functional-programming", "algebraic-effects"],
+    "author": "Valkyrie Team",
+    "license": "MIT",
+    "devDependencies": {
+        "mermaid": "^11.11.0",
+        "vitepress": "^1.0.0",
+        "vitepress-plugin-mermaid": "^2.0.17"
+    }
+}

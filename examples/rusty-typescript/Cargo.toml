@@ -1,0 +1,41 @@
+[package]
+name = "rusty-typescript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "rusty_typescript"
+path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-types = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-emit = { workspace = true }
+oak-core = { workspace = true }
+oak-typescript = { workspace = true, default-features = false }
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+nyar-vm = { workspace = true }
+oak-vfs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tempfile = { workspace = true }
+wit-bindgen = { workspace = true }
+
+[features]
+default = ["native"]
+native = ["nyar-vm/native"]
+
+[package.metadata.component]
+package = "nyar:rusty0-typescript"
+target = { path = "wit", world = "compiler" }
+
+[dev-dependencies]
+chomsky-emit = { workspace = true }

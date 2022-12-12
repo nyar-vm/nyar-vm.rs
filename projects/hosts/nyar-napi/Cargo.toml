@@ -1,0 +1,16 @@
+[package]
+name = "nyar-napi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Nyar VM — Node-API native bindings for Nyar host CLIs"
+
+[lib]
+name = "nyar_napi"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nyar-runner = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }

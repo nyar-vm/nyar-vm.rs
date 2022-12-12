@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nyar RewriteTheory Manifest v1",
+  "type": "object",
+  "required": ["fragment", "rules"],
+  "properties": {
+    "fragment": {
+      "type": "string",
+      "enum": ["graphic", "neural"]
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "left", "right", "phase"],
+        "properties": {
+          "name": { "type": "string" },
+          "left": { "type": "string" },
+          "right": { "type": "string" },
+          "phase": { "type": "string" },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "equations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["left", "right", "phase"],
+        "properties": {
+          "left": { "type": "string" },
+          "right": { "type": "string" },
+          "phase": { "type": "string" },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "term_rewrites": {
+      "type": "array",
+      "description": "Explicit structured term rewrites. left/right use pattern syntax (e.g. core.add(?x, 0)).",
+      "items": {
+        "type": "object",
+        "required": ["name", "left", "right", "phase"],
+        "properties": {
+          "name": { "type": "string" },
+          "left": { "type": "string" },
+          "right": { "type": "string" },
+          "phase": { "type": "string" },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "fragment": "graphic",
+  "rules": [
+    { "name": "dot-constant-fold", "left": "graphic.dot", "right": "core.lit", "phase": "local", "capabilities": ["gpu-shader"] },
+    { "name": "dot-commutative", "left": "graphic.dot", "right": "graphic.dot", "phase": "algebraic", "capabilities": ["gpu-shader"] },
+    { "name": "vec-constant-fold", "left": "graphic.vec", "right": "graphic.vec", "phase": "local", "capabilities": ["gpu-shader"] },
+    { "name": "nop-elimination", "left": "graphic.nop", "right": "graphic.nop", "phase": "cleanup", "capabilities": ["gpu-shader"] },
+    { "name": "normalize-zero-vec", "left": "graphic.normalize", "right": "graphic.vec", "phase": "local", "capabilities": ["gpu-shader"] },
+    { "name": "dead-shader-path", "left": "graphic.branch", "right": "graphic.nop", "phase": "cleanup", "capabilities": ["gpu-shader"] },
+    { "name": "barrier-elimination", "left": "graphic.barrier", "right": "graphic.nop", "phase": "cleanup", "capabilities": ["gpu-shader"] },
+    { "name": "sample-to-fetch", "left": "graphic.sample", "right": "graphic.texture_load", "phase": "local", "capabilities": ["gpu-shader"] }
+  ],
+  "equations": [
+    { "left": "graphic.dot", "right": "graphic.dot_commutative", "phase": "algebraic", "capabilities": ["gpu-shader"] }
+  ]
+}
