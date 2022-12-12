@@ -17,7 +17,7 @@ use crate::valkyrie::{
         NamePath,
         hir::{
             HirBlock, HirExpr, HirExprKind, HirFunction, HirImpl, HirLiteral, HirMatchArm, HirModule, HirStatementKind, HirStringSegment,
-            ValkyrieType,
+            ValkyrieType, parse_export_spec_from_annotations,
         },
     },
 };
@@ -94,11 +94,13 @@ pub fn hir_module_to_program_facts(module: &HirModule) -> ProgramFacts {
     let exports = module
         .functions
         .iter()
-        .filter(|function| function.visibility.access.is_public())
-        .map(|function| ExportContract {
-            exported_name: function.name.clone(),
-            local_name: function_symbol(&module_name, function),
-            partition: None,
+        .filter_map(|function| {
+            let spec = parse_export_spec_from_annotations(&function.annotations)?;
+            Some(ExportContract {
+                exported_name: Identifier::new(&spec.resolve_exported_name(&function.name)),
+                local_name: function_symbol(&module_name, function),
+                partition: Some(spec.primary_partition()),
+            })
         })
         .collect();
     let mut functions = module
@@ -213,23 +215,34 @@ pub fn hir_module_to_analysis_artifact(module: &HirModule) -> ProgramFacts {
 
 pub fn hir_module_to_object_algebraic_program(module: &HirModule) -> ObjectAlgebraicProgram {
     let module_name = qualified_name(&module.name);
-    let exports = module.functions.iter().map(|function| function_symbol(&module_name, function)).collect::<Vec<_>>();
+    let exports = module
+        .functions
+        .iter()
+        .filter(|function| parse_export_spec_from_annotations(&function.annotations).is_some())
+        .map(|function| function_symbol(&module_name, function))
+        .collect::<Vec<_>>();
     let entry_functions = module.functions.iter().filter(|function| has_main_annotation(function)).collect::<Vec<_>>();
     let suspend_capability = vec![CapabilityTag::new("suspend")];
     let sync_operations = module
         .functions
         .iter()
+        .filter(|function| parse_export_spec_from_annotations(&function.annotations).is_some())
         .filter(|function| !crate::valkyrie::hir::control_flow_validation::function_needs_suspend_fragment(&function.body))
         .map(|function| function_symbol(&module_name, function))
         .collect::<Vec<_>>();
     let suspend_operations = module
         .functions
         .iter()
+        .filter(|function| parse_export_spec_from_annotations(&function.annotations).is_some())
         .filter(|function| crate::valkyrie::hir::control_flow_validation::function_needs_suspend_fragment(&function.body))
         .map(|function| function_symbol(&module_name, function))
         .collect::<Vec<_>>();
 
-    let mut dimensions = if entry_functions.len() > 1 {
+    let export_partition_dimensions = export_partition_dimensions_for_module(module, &module_name);
+    let mut dimensions = if !export_partition_dimensions.is_empty() {
+        export_partition_dimensions
+    }
+    else if entry_functions.len() > 1 {
         // 多 entry：每个 `@main` 函数独占一个 execution dimension，并沿
         // internal call graph 做可达性闭包，保证片段内始终包含该入口所需的完整
         // 本地执行闭包，而不是把闭包完整性留给下游装配层或目标侧补洞。
@@ -360,6 +373,7 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
                 exported_operations: dimension.exported_operations.clone(),
                 required_capabilities,
                 reference_management_hint: dimension.reference_management_hint,
+                wasm_export_names: wasm_export_names_for_operations(&program_facts, &dimension.exported_operations),
                 entry_operation: program_facts
                     .entries
                     .iter()
@@ -412,6 +426,39 @@ fn function_symbol(_module_name: &QualifiedName, function: &HirFunction) -> Qual
 
 fn has_main_annotation(function: &HirFunction) -> bool {
     function.annotations.iter().any(|attribute| attribute.name.parts().last().is_some_and(|name| name.as_str() == "main"))
+}
+
+fn wasm_export_names_for_operations(
+    program_facts: &ProgramFacts,
+    operations: &[QualifiedName],
+) -> BTreeMap<QualifiedName, String> {
+    program_facts
+        .exports
+        .iter()
+        .filter(|export| operations.contains(&export.local_name))
+        .map(|export| (export.local_name.clone(), export.exported_name.as_str().to_string()))
+        .collect()
+}
+
+fn export_partition_dimensions_for_module(module: &HirModule, module_name: &QualifiedName) -> Vec<ObjectAlgebraicDimension> {
+    let mut by_partition: BTreeMap<String, Vec<QualifiedName>> = BTreeMap::new();
+    for function in &module.functions {
+        let Some(spec) = parse_export_spec_from_annotations(&function.annotations) else {
+            continue;
+        };
+        let partition = spec.primary_partition();
+        by_partition.entry(partition).or_default().push(function_symbol(module_name, function));
+    }
+
+    by_partition
+        .into_iter()
+        .map(|(partition, exported_operations)| ObjectAlgebraicDimension {
+            name: Identifier::new(&format!("export__{}", partition.replace('.', "_"))),
+            exported_operations,
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+        })
+        .collect()
 }
 
 fn entry_fragment_name(function: &HirFunction) -> Identifier {
