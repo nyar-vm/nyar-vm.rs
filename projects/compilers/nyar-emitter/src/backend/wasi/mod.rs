@@ -66,6 +66,8 @@ pub struct WasmBinaryBackendInput {
     pub package_as_wasi_command: bool,
     /// WASI package-train selection (`wasip2` / `wasip3`). Ignored for JS glue.
     pub wasi_preview: WasiPreview,
+    /// 显式 `[export]` 公开名列表；library 模式允许无 `main` / `_start`。
+    pub library_wasm_exports: Vec<String>,
 }
 
 /// `WebAssembly` 二进制后端（覆盖 `WasmJsGlue` 与 `WasiComponent` 宿主边界）。
@@ -129,6 +131,11 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
             _ => unreachable!(),
         };
         if !exports.contains(required_entry) {
+            if !input.library_wasm_exports.is_empty()
+                && input.library_wasm_exports.iter().all(|name| exports.contains(name))
+            {
+                return Ok(());
+            }
             return Err(miette::miette!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));
         }
         Ok(())

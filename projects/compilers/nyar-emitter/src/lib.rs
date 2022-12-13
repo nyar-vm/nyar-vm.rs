@@ -706,6 +706,8 @@ pub struct FragmentSubmission {
     pub theory_bundle: TheoryBundle,
     /// 当前片段的可解释入口。
     pub entry_operation: Option<QualifiedName>,
+    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。
+    pub wasm_export_names: std::collections::BTreeMap<QualifiedName, String>,
     /// 当前片段内稳定操作到外部导入链接的映射。
     pub external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
     /// 当前片段内已经解析好的外部调用边。
@@ -765,6 +767,7 @@ impl Default for FragmentSubmission {
             required_capabilities: Vec::new(),
             theory_bundle: TheoryBundle::default(),
             entry_operation: None,
+            wasm_export_names: BTreeMap::new(),
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),

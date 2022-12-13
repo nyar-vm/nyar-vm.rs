@@ -272,6 +272,7 @@ pub(crate) fn lower_fragment_to_driver_input(
                 control_flow: submission.control_flow.clone(),
                 package_as_wasi_command,
                 wasi_preview,
+                library_wasm_exports: submission.wasm_export_names.values().cloned().collect(),
             }))
         }
         #[cfg(feature = "legacy-lanes")]

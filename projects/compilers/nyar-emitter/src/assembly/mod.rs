@@ -22,6 +22,7 @@ pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> Fragmen
         required_capabilities: payload.required_capabilities,
         theory_bundle: payload.theory_bundle,
         entry_operation: payload.entry_operation,
+        wasm_export_names: payload.wasm_export_names,
         external_import_links: payload.external_import_links,
         external_call_edges: payload.external_call_edges,
         internal_call_edges: payload.internal_call_edges,

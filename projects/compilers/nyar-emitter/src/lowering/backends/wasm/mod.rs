@@ -85,10 +85,20 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     };
     let use_mir_path = has_executable && submission.witness_calls.is_empty() && !needs_js_host_string_interop;
     let (mut module, imports) = if use_mir_path {
-        let export_name = match host_boundary {
-            HostProjectionBoundary::WasmJsGlue => "main",
-            HostProjectionBoundary::WasiComponent => "_start",
-            other => unreachable!("unexpected wasm host boundary: {:?}", other),
+        let export_name = if !submission.wasm_export_names.is_empty() {
+            submission
+                .wasm_export_names
+                .values()
+                .next()
+                .map(String::as_str)
+                .unwrap_or("main")
+        }
+        else {
+            match host_boundary {
+                HostProjectionBoundary::WasmJsGlue => "main",
+                HostProjectionBoundary::WasiComponent => "_start",
+                other => unreachable!("unexpected wasm host boundary: {:?}", other),
+            }
         };
         mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview)
     }

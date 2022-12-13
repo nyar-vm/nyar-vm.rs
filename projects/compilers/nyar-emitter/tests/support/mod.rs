@@ -223,6 +223,7 @@ pub fn demo_wasm_input_with_preview(
         control_flow: None,
         package_as_wasi_command: matches!(host_boundary, HostProjectionBoundary::WasiComponent),
         wasi_preview,
+        library_wasm_exports: Vec::new(),
     })
 }
 
@@ -259,5 +260,6 @@ pub fn demo_wasm_input_with_imports(
         control_flow: None,
         package_as_wasi_command: matches!(host_boundary, HostProjectionBoundary::WasiComponent),
         wasi_preview: nyar_emitter::nyar_backend_wasi::WasiPreview::Preview2,
+        library_wasm_exports: Vec::new(),
     })
 }

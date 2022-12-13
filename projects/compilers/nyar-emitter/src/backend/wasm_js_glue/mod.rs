@@ -11,7 +11,7 @@ use nyar::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
 };
-use std_data::binary::wasm::WasmBinaryModule;
+use std_data::binary::wasm::{parse_export_section, WasmBinaryModule, WasmExternalKind};
 
 use crate::backend::binding_builders::{BindingGenerationContext, HostBindingBuilder};
 
@@ -24,7 +24,8 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         let launcher_path = context.output_dir.join(format!("{launcher_stem}.mjs"));
         let wasm_path = context.output_dir.join(format!("{launcher_stem}.wasm"));
         let utf8_literals = read_wasm_utf8_literals(&wasm_path).unwrap_or_default();
-        let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals);
+        let library_mode = is_library_wasm_module(&wasm_path);
+        let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode);
         fs::write(&launcher_path, launcher).into_diagnostic().wrap_err_with(|| format!("写入 Node 启动壳失败：{}", launcher_path.display()))?;
 
         Ok(vec![ArtifactDescriptor {
@@ -134,7 +135,23 @@ fn render_import_object_literal(imports: &[(String, String)]) -> String {
 /// 启动壳只做三件事：读取 `WASM` 字节码、按声明的导入构造 `importObject`、
 /// 调用 `exports.main ?? exports._start`。不输出 banner、不解析 CLI 子命令、
 /// 不注入伪导入，确保非 CLI 产物的 `stdout` 不被污染。
-fn build_node_launcher(artifact_name: &str, imports: &[(String, String)], utf8_literals: &[String]) -> String {
+/// Library wasm modules export explicit `[export]` symbols (e.g. `twoSum`) without `main`.
+fn is_library_wasm_module(wasm_path: &Path) -> bool {
+    let Ok(bytes) = fs::read(wasm_path) else {
+        return false;
+    };
+    let Ok(module) = WasmBinaryModule::from_bytes(&bytes) else {
+        return false;
+    };
+    let exports = parse_export_section(&module);
+    let has_entry = exports.iter().any(|item| item.name == "main" || item.name == "_start");
+    let has_named_function = exports.iter().any(|item| {
+        item.kind == WasmExternalKind::Func && item.name != "main" && item.name != "_start"
+    });
+    has_named_function && !has_entry
+}
+
+fn build_node_launcher(artifact_name: &str, imports: &[(String, String)], utf8_literals: &[String], library_mode: bool) -> String {
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
@@ -143,7 +160,22 @@ fn build_node_launcher(artifact_name: &str, imports: &[(String, String)], utf8_l
         && imports.iter().any(|(_, field)| field == "cli_get_target")
         && imports.iter().any(|(_, field)| field == "cli_get_output");
 
-    let smoke_import_object = if has_imports {
+    let smoke_import_object = if library_mode {
+        if has_imports {
+            format!(
+                r#"const importObject = {import_object};
+let wasmInstance;
+let exports;"#,
+                import_object = smoke_import_object_literal
+            )
+        }
+        else {
+            r#"const importObject = {};
+let wasmInstance;
+let exports;"#.to_string()
+        }
+    }
+    else if has_imports {
         format!(
             r#"const importObject = {import_object};
 const instance = await wasmResolveInstance(wasmBytes, importObject);"#,
@@ -436,22 +468,48 @@ function hostGetFiles(pathRef, patternRef, recursive) {{
     return hostIntern(JSON.stringify(files));
 }}
 
-{arg_parsing}const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
+{arg_parsing}const LIBRARY_MODE = {library_mode};
+const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
 {import_object}
-const exports = instance.exports;
+{library_exports}
 {cli_dispatch}
+{executable_tail}"#,
+        name = artifact_name,
+        arg_parsing = smoke_arg_parsing,
+        import_object = smoke_import_object,
+        library_exports = if library_mode {
+            r#"export async function callExport(name, ...args) {
+    if (!exports) {
+        wasmInstance = await wasmResolveInstance(wasmBytes, importObject);
+        exports = wasmInstance.exports;
+    }
+    const fn = exports[name];
+    if (typeof fn !== "function") {
+        throw new Error(`wasm export not found: ${name}`);
+    }
+    return fn(...args);
+}
+"#
+        } else {
+            ""
+        },
+        cli_dispatch = if library_mode { "" } else { cli_dispatch },
+        executable_tail = if library_mode {
+            String::new()
+        } else {
+            format!(
+                r#"const exports = instance.exports;
 const entry = exports.main ?? exports._start;
 let result;
 if (typeof entry === "function") {{
     result = entry();
 }}
 {output_logic}"#,
-        name = artifact_name,
-        arg_parsing = smoke_arg_parsing,
-        import_object = smoke_import_object,
-        output_logic = smoke_output_logic,
-        cli_dispatch = cli_dispatch,
+                output_logic = smoke_output_logic
+            )
+        },
         utf8_literals_json = utf8_literals_json,
+        library_mode = if library_mode { "true" } else { "false" },
     )
 }
 
@@ -515,7 +573,7 @@ mod tests {
     #[test]
     fn build_node_launcher_honors_logical_entry_contract() {
         let imports: Vec<(String, String)> = vec![];
-        let launcher = build_node_launcher("demo", &imports, &[]);
+        let launcher = build_node_launcher("demo", &imports, &[], false);
         assert!(launcher.contains("exports.main ?? exports._start"), "启动壳必须按 logical_entry 契约选择入口");
     }
 
@@ -527,7 +585,7 @@ mod tests {
             ("env".to_string(), "cli_get_output".to_string()),
             ("env".to_string(), "cli_get_verbose".to_string()),
         ];
-        let launcher = build_node_launcher("legion", &imports, &[]);
+        let launcher = build_node_launcher("legion", &imports, &[], false);
 
         assert!(launcher.contains("command === \"build\""));
         assert!(launcher.contains("cli_project = positional[0]"));
@@ -543,7 +601,7 @@ mod tests {
     #[test]
     fn build_node_launcher_without_cli_imports_skips_cli_dispatch() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[]);
+        let launcher = build_node_launcher("demo", &imports, &[], false);
         assert!(!launcher.contains("command === \"build\""), "非 CLI 导入不应启用 build 分派");
         assert!(!launcher.contains("exports.help"), "非 CLI 导入不应要求 help 导出");
         assert!(launcher.contains("exports.main ?? exports._start"));
@@ -554,7 +612,7 @@ mod tests {
     #[test]
     fn build_node_launcher_single_entry_stdout_contract() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[]);
+        let launcher = build_node_launcher("demo", &imports, &[], false);
         assert!(launcher.contains("process.stdout.write"), "单入口 stdout 契约：应提供 stdout 输出路径");
         assert!(launcher.contains("output_bytes"), "单入口 stdout 契约：应使用 output_bytes 缓冲区");
     }
@@ -564,7 +622,7 @@ mod tests {
     #[test]
     fn build_node_launcher_does_not_pollute_non_cli_stdout_with_banner() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[]);
+        let launcher = build_node_launcher("demo", &imports, &[], false);
         assert!(!launcher.contains(BANNED_BANNER), "不应输出 banner");
         assert!(!launcher.contains(BANNED_BOOTSTRAP_ENV), "不应读取 bootstrap host 环境变量");
         assert!(!launcher.contains(BANNED_HOST_ENV), "不应读取 host 环境变量");
@@ -577,7 +635,7 @@ mod tests {
     #[test]
     fn build_node_launcher_no_imports_uses_empty_import_object() {
         let imports: Vec<(String, String)> = vec![];
-        let launcher = build_node_launcher("demo", &imports, &[]);
+        let launcher = build_node_launcher("demo", &imports, &[], false);
         assert!(launcher.contains("WebAssembly.instantiate"), "应实例化 WASM 模块");
         assert!(launcher.contains("wasmResolveInstance(wasmBytes, {})"), "无 imports 时应使用空 importObject");
     }
