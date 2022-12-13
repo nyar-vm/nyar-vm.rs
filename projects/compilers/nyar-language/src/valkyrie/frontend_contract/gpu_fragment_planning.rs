@@ -107,6 +107,7 @@ pub fn ensure_gpu_semantic_fragments(module: &HirModule, module_name: &Qualified
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             rewrite_theory: rewrite_theory_for_fragment("graphic"),
+            wasm_export_names: Default::default(),
         });
     }
     if module_has_neural_fragment(module) && !fragments.iter().any(|fragment| fragment.id.as_str() == "neural") {
@@ -129,6 +130,7 @@ pub fn ensure_gpu_semantic_fragments(module: &HirModule, module_name: &Qualified
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             rewrite_theory: rewrite_theory_for_fragment("neural"),
+            wasm_export_names: Default::default(),
         });
     }
 }

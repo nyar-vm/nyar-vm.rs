@@ -147,6 +147,7 @@ pub fn assemble_fragment(
         flags_types,
         executable_functions,
         singleton_instances: collect_singleton_instance_plans(hir_module),
+        wasm_export_names: fragment.wasm_export_names.clone(),
     })
 }
 

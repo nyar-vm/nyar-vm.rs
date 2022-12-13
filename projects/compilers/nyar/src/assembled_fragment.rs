@@ -57,4 +57,6 @@ pub struct AssembledFragment {
     pub executable_functions: BTreeMap<QualifiedName, ExecutableFunction>,
     /// Singleton global instance initialization plans.
     pub singleton_instances: Vec<SingletonInstancePlan>,
+    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。
+    pub wasm_export_names: BTreeMap<QualifiedName, String>,
 }
