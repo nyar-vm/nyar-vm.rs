@@ -689,6 +689,11 @@ pub trait FrontendBuildBundle {
         output_dir: &Path,
         lane: TargetLane,
     ) -> Result<LoweredBackendInput>;
+
+    /// Wasm glue package mode from manifest (`binary` runs `main`, `library` exposes `callExport`).
+    fn wasm_package_kind(&self) -> nyar_backend_wasi::WasmPackageKind {
+        nyar_backend_wasi::WasmPackageKind::Binary
+    }
 }
 
 /// 前端提交给驱动层的语义片段。
@@ -861,6 +866,7 @@ impl LoweredBackendInput {
         clr_suspend_strategy: ClrSuspendStrategy,
         vm_suspend_strategy: VmSuspendStrategy,
         host_flavor: &str,
+        wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
         validate_backend_input(BackendInputShape::default()).map_err(|error| miette!("backend boundary 输入形状不合法: {error:?}"))?;
         let backend_route = bundled_backend_capability_descriptor(backend_family)
@@ -872,7 +878,14 @@ impl LoweredBackendInput {
             validate_suspend_submission(submission, lane, clr_suspend_strategy, vm_suspend_strategy)?;
         }
         Ok(Self {
-            input: lower_fragment_to_driver_input(submission, backend_family, host_boundary, output_dir.to_path_buf(), host_flavor)?,
+            input: lower_fragment_to_driver_input(
+                submission,
+                backend_family,
+                host_boundary,
+                output_dir.to_path_buf(),
+                host_flavor,
+                wasm_package_kind,
+            )?,
             entry_artifact_name: submission.entry_operation.as_ref().and_then(entry_artifact_name),
         })
     }

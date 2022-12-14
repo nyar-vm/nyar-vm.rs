@@ -42,7 +42,7 @@ use crate::{
     FragmentSubmission,
     artifacts::suspend_sidecar::serialize_control_flow_payload,
     executable_provider::ExecutableConstant,
-    nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmSection},
+    nyar_backend_wasi::{WasmPackageKind, WasiPreview, WasmBinaryModule, WasmSection},
 };
 use miette::{Result, miette};
 use nyar::{HostProjectionBoundary, NyarType};
@@ -52,7 +52,7 @@ pub(crate) fn lower_fragment_to_wasm_module(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
-    lower_fragment_to_wasm_module_for(submission, host_boundary, WasiPreview::Preview2)
+    lower_fragment_to_wasm_module_for(submission, host_boundary, WasiPreview::Preview2, WasmPackageKind::Binary)
 }
 
 /// Lower a fragment for a wasm host boundary with an explicit WASI package train.
@@ -63,6 +63,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
     wasi_preview: WasiPreview,
+    wasm_package_kind: WasmPackageKind,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
     crate::lowering::features::semantic_mir_contract::validate_submission(submission).map_err(|error| {
         miette::miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
@@ -77,6 +78,14 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     })?;
     validate_text_encoding_projection(submission, host_boundary)?;
     let has_executable = submission.executable.as_ref().is_some_and(|exec| !exec.operations().is_empty());
+    if wasm_package_kind == WasmPackageKind::Library {
+        if submission.wasm_export_names.is_empty() {
+            return Err(miette::miette!("library wasm package requires at least one `[export]` symbol"));
+        }
+        if !has_executable {
+            return Err(miette::miette!("library wasm package has no executable MIR for exported operations"));
+        }
+    }
     // Node string-output host imports (`emit_byte`) still require the js_glue shell until MIR
     // collects those imports. This is a host-interop gap, not a GC escape hatch.
     let needs_js_host_string_interop = match host_boundary {
@@ -100,7 +109,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
                 other => unreachable!("unexpected wasm host boundary: {:?}", other),
             }
         };
-        mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview)
+        mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind)
     }
     else {
         match host_boundary {

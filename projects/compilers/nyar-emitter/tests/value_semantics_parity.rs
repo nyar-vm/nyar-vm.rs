@@ -60,7 +60,8 @@ fn assert_all_backends_consume(submission: &FragmentSubmission) {
         TargetLane::Clr,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR backend should consume value-semantic submission without panic");
 
@@ -72,7 +73,8 @@ fn assert_all_backends_consume(submission: &FragmentSubmission) {
         TargetLane::Jvm,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("JVM backend should consume value-semantic submission without panic");
 
@@ -84,7 +86,8 @@ fn assert_all_backends_consume(submission: &FragmentSubmission) {
         TargetLane::Wasm,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("WASM backend should consume value-semantic submission without panic");
 
@@ -96,7 +99,8 @@ fn assert_all_backends_consume(submission: &FragmentSubmission) {
         TargetLane::Vm,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("NyarVM backend should consume value-semantic submission without panic");
 
@@ -108,7 +112,8 @@ fn assert_all_backends_consume(submission: &FragmentSubmission) {
         TargetLane::Native,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("Native backend should consume value-semantic submission without panic");
 }
@@ -315,7 +320,8 @@ micro main() -> f64 {
         TargetLane::Clr,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR backend should consume ByAddress receiver call without panic");
 
@@ -327,7 +333,8 @@ micro main() -> f64 {
         TargetLane::Jvm,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("JVM backend should consume ByAddress receiver call without panic");
 
@@ -339,7 +346,8 @@ micro main() -> f64 {
         TargetLane::Wasm,
         clr_strategy,
         vm_strategy,
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("WASM backend should consume ByAddress receiver call without panic");
 }

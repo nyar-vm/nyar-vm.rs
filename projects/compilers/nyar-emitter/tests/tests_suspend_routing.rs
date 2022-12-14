@@ -78,7 +78,8 @@ fn clr_lane_accepts_resolved_trait_witness_with_suspend_payload() {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR lane should accept statically resolved trait witness with suspend payload");
 }
@@ -113,7 +114,8 @@ fn clr_lane_rejects_open_witness_capabilities() {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("CLR lane should reject open witness capabilities");
     let msg = error.to_string();
@@ -150,7 +152,8 @@ fn state_machine_lane_accepts_control_flow_payload() {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR state-machine lane should accept control_flow payload");
 }
@@ -185,7 +188,8 @@ fn state_machine_lane_rejects_first_class_runtime_payload() {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("CLR state-machine lane should reject suspend_runtime");
     assert!(error.to_string().contains("state-machine lane"));
@@ -221,7 +225,8 @@ fn clr_runtime_async_accepts_suspend_runtime_payload() {
         TargetLane::Clr,
         ClrSuspendStrategy::RuntimeAsync,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR RuntimeAsync should accept suspend_runtime payload");
 }
@@ -256,7 +261,8 @@ fn clr_runtime_async_rejects_control_flow_payload() {
         TargetLane::Clr,
         ClrSuspendStrategy::RuntimeAsync,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("CLR RuntimeAsync should reject control_flow payload");
     assert!(error.to_string().contains("first-class suspend lane"));
@@ -292,7 +298,8 @@ fn first_class_lane_accepts_suspend_runtime_payload() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("nyar-vm lane should accept suspend_runtime payload");
 }
@@ -350,7 +357,8 @@ fn vm_state_machine_lane_accepts_control_flow_payload() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::StateMachine,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("nyar-vm state-machine lane should accept control_flow payload");
 }
@@ -385,7 +393,8 @@ fn first_class_lane_rejects_state_machine_control_flow_payload() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("nyar-vm lane should reject control_flow payload");
     assert!(error.to_string().contains("first-class suspend lane"));
@@ -421,7 +430,8 @@ fn jvm_lane_accepts_control_flow_payload() {
         TargetLane::Jvm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("JVM lane should accept control_flow payload");
 }
@@ -456,7 +466,8 @@ fn jvm_lane_rejects_suspend_runtime_payload() {
         TargetLane::Jvm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("JVM lane should reject suspend_runtime");
     assert!(error.to_string().contains("state-machine lane"));
@@ -492,7 +503,8 @@ fn wasm_lane_accepts_control_flow_payload() {
         TargetLane::Wasm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("Wasm lane should accept control_flow payload");
 }
@@ -568,7 +580,8 @@ fn native_lane_accepts_resolved_trait_witness_with_suspend_payload() {
         TargetLane::Native,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "linux-gnu",
+        "linux-gnu",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("Native lane should accept resolved trait witness with suspend payload");
 }
@@ -603,7 +616,8 @@ fn wasm_lane_rejects_suspend_runtime_payload() {
         TargetLane::Wasm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::default(),
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("Wasm lane should reject suspend_runtime");
     assert!(error.to_string().contains("state-machine lane"));

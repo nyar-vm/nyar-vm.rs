@@ -122,7 +122,8 @@ fn clr_state_machine_lane_accept(submission: &FragmentSubmission) {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR state-machine lane should accept control_flow submission");
 }
@@ -137,7 +138,8 @@ fn nyar_vm_first_class_lane_accept(submission: &FragmentSubmission) {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::FirstClass,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("NyarVM first-class lane should accept suspend_runtime submission");
 }
@@ -281,7 +283,8 @@ fn nyar_vm_lane_consumes_single_suspend_model() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::FirstClass,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("NyarVM FirstClass must accept suspend_runtime payload");
 
@@ -293,7 +296,8 @@ fn nyar_vm_lane_consumes_single_suspend_model() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::FirstClass,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("NyarVM FirstClass must reject control_flow payload");
     assert!(err.to_string().contains("first-class suspend lane"), "unexpected rejection message: {err}");
@@ -306,7 +310,8 @@ fn nyar_vm_lane_consumes_single_suspend_model() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::StateMachine,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("NyarVM StateMachine must accept control_flow payload");
 
@@ -318,7 +323,8 @@ fn nyar_vm_lane_consumes_single_suspend_model() {
         TargetLane::Vm,
         ClrSuspendStrategy::default(),
         VmSuspendStrategy::StateMachine,
-        "default",
+        "default",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect_err("NyarVM StateMachine must reject suspend_runtime payload");
     assert!(err.to_string().contains("state-machine lane"), "unexpected rejection message: {err}");

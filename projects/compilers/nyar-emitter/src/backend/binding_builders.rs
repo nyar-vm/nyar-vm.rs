@@ -8,7 +8,7 @@ use std::path::Path;
 use miette::Result;
 use nyar::{BinaryTarget, HostProjectionBoundary, packaging::ArtifactDescriptor};
 
-use crate::nyar_backend_wasi::WasiPreview;
+use crate::nyar_backend_wasi::{WasmPackageKind, WasiPreview};
 
 /// 宿主绑定生成阶段共享的输入上下文。
 pub(crate) struct BindingGenerationContext<'a> {
@@ -22,6 +22,8 @@ pub(crate) struct BindingGenerationContext<'a> {
     pub imports: &'a [(String, String)],
     /// WASI package-train selection (`wasip2` / `wasip3`); ignored for JS glue.
     pub wasi_preview: WasiPreview,
+    /// Manifest-selected wasm glue mode (`binary` auto-runs entry, `library` exposes `callExport`).
+    pub wasm_package_kind: WasmPackageKind,
 }
 
 /// 宿主绑定生成器的最小接口。

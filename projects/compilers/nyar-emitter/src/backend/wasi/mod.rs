@@ -46,6 +46,16 @@ fn canonical_wasm_artifact_stem(artifact_name: &str) -> String {
     artifact_name.to_string()
 }
 
+/// Whether Node wasm glue should expose `callExport` (library) or auto-run `main` (binary).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WasmPackageKind {
+    /// CLI / command package: auto-invoke `main` or `_start` on import.
+    #[default]
+    Binary,
+    /// Importable library: `callExport` only, no implicit entry execution.
+    Library,
+}
+
 /// `WebAssembly` 二进制后端输入（覆盖 `WasmJsGlue` 与 `WasiComponent` 宿主边界）。
 #[derive(Debug, Clone)]
 pub struct WasmBinaryBackendInput {
@@ -68,6 +78,8 @@ pub struct WasmBinaryBackendInput {
     pub wasi_preview: WasiPreview,
     /// 显式 `[export]` 公开名列表；library 模式允许无 `main` / `_start`。
     pub library_wasm_exports: Vec<String>,
+    /// Manifest-selected wasm package mode (`binary` vs `library`).
+    pub wasm_package_kind: WasmPackageKind,
 }
 
 /// `WebAssembly` 二进制后端（覆盖 `WasmJsGlue` 与 `WasiComponent` 宿主边界）。
@@ -190,6 +202,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
                 target: &options.target,
                 imports: &input.imports,
                 wasi_preview: input.wasi_preview,
+                wasm_package_kind: input.wasm_package_kind,
             },
         )?;
         for artifact in binding_artifacts {
