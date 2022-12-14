@@ -127,3 +127,48 @@ micro main(): ExitCode {
         });
     assert!(has_exit_code_call, "ExitCode(x) should lower as a normal constructor call, not an operator builtin hole.");
 }
+
+#[test]
+fn array_len_intrinsic_lowers_to_array_length_operation() {
+    let source = r#"namespace test;
+
+class Array<T> {
+    _address: usize,
+    _length: usize,
+}
+
+[intrinsic("array.len")]
+private micro __array_len<T>(self: Array<T>): usize { }
+
+imply Array<T> {
+    micro length(self): usize {
+        return __array_len(self)
+    }
+}
+
+micro probe(items: Array<i32>): usize {
+    return items.length()
+}
+"#;
+    let compiler = ValkyrieCompiler::default();
+    let mir = compiler.compile_source_to_mir(source).expect("array length intrinsic should lower to MIR");
+    let probe = mir.functions.iter().find(|function| function.symbol.ends_with("probe")).expect("probe function");
+    let has_array_length = probe
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|instruction| matches!(instruction.kind, MirOperation::ArrayLength { .. }));
+    let calls_array_len = probe
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|instruction| {
+            matches!(
+                &instruction.kind,
+                MirOperation::Call { callee: MirOperand::Symbol(path), .. }
+                    if path.parts().last().is_some_and(|name| name.as_str() == "__array_len")
+            )
+        });
+    assert!(has_array_length, "expected ArrayLength MIR for __array_len intrinsic");
+    assert!(!calls_array_len, "expected no static Call to __array_len");
+}

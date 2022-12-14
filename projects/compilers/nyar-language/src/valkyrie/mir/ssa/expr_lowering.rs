@@ -9,9 +9,12 @@ use nyar_types::NyarType;
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
-    builtin_helpers::{array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type},
+    builtin_helpers::{
+        array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, is_array_len_intrinsic_symbol,
+        is_ref_deref_intrinsic_symbol,
+    },
     callee_name_matches,
-    expr_helpers::{peel_generic_apply, reject_text_operator_for_numeric_args},
+    expr_helpers::{peel_generic_apply, reject_text_operator_for_numeric_args, named_type_name},
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
         ensure_layout_for_type, ensure_named_aggregate_layout, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
@@ -19,6 +22,68 @@ use super::{
 };
 
 impl MirBuilder {
+    fn try_lower_ref_deref_intrinsic(
+        &mut self,
+        resolved: Option<&HirResolvedCall>,
+        callee: &MirOperand,
+        arguments: &[MirOperand],
+    ) -> Option<MirOperand> {
+        let is_intrinsic = resolved
+            .map(|call| is_ref_deref_intrinsic_symbol(&call.symbol))
+            .unwrap_or_else(|| matches!(callee, MirOperand::Symbol(symbol) if is_ref_deref_intrinsic_symbol(symbol)));
+        if !is_intrinsic {
+            return None;
+        }
+        arguments.first().cloned()
+    }
+
+    fn try_lower_option_is_some(&mut self, receiver: MirOperand) -> Option<MirOperand> {
+        let actual_type = infer_builder_operand_type(&receiver, &self.value_types)?;
+        let sum_name = match &actual_type {
+            ValkyrieType::Nullable(_) => self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone()),
+            ValkyrieType::Named(name) if name.as_str() == "Option" => {
+                self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone())
+            }
+            ValkyrieType::Apply(base, _) if named_type_name(base.as_ref()) == Some("Option") => {
+                self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone())
+            }
+            _ => None,
+        }?;
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.instructions.push(MirInstruction::from_operation(MirOperation::SumVariantIs {
+            sum_type: sum_name,
+            type_args: type_args_from_sum_shaped(&actual_type),
+            variant: "Some".to_string(),
+            object: receiver,
+        }));
+        self.value_types.insert(value, ValkyrieType::Boolean);
+        Some(MirOperand::Value(value))
+    }
+
+    fn try_lower_array_len_intrinsic(
+        &mut self,
+        resolved: Option<&HirResolvedCall>,
+        callee: &MirOperand,
+        arguments: &[MirOperand],
+        expected_type: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        let is_intrinsic = resolved
+            .map(|call| is_array_len_intrinsic_symbol(&call.symbol))
+            .unwrap_or_else(|| matches!(callee, MirOperand::Symbol(symbol) if is_array_len_intrinsic_symbol(symbol)));
+        if !is_intrinsic {
+            return None;
+        }
+        let array = arguments.first().cloned()?;
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.instructions.push(MirInstruction::from_operation(MirOperation::ArrayLength { array }));
+        let return_type = resolved
+            .map(|call| call.return_type.clone())
+            .or_else(|| expected_type.cloned())
+            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("usize")));
+        self.value_types.insert(value, return_type);
+        Some(MirOperand::Value(value))
+    }
+
     fn field_type_for_semantic_type(&self, ty: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
         match ty {
             ValkyrieType::Named(name) => self
@@ -378,6 +443,11 @@ impl MirBuilder {
                         })
                         .collect::<Vec<_>>();
                     arguments.insert(0, receiver_operand.clone());
+                    if method_name.as_str() == "is_some" && args.is_empty() {
+                        if let Some(operand) = self.try_lower_option_is_some(receiver_operand.clone()) {
+                            return operand;
+                        }
+                    }
                     // ADR 0010: no dispatch/witness/evidence/intrinsic/parameter_types on Call.
                     let (callee_symbol, return_type) = match resolved.as_ref() {
                         Some(call) => (call.symbol.clone(), Some(call.return_type.clone())),
@@ -390,6 +460,12 @@ impl MirBuilder {
                         }
                     };
                     let callee = MirOperand::Symbol(callee_symbol);
+                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
                     let value = self.next_value(MirValueOrigin::CallResult);
                     self.instructions.push(MirInstruction::from_operation(MirOperation::Call { callee, arguments }));
                     if let Some(return_type) = return_type {
@@ -465,6 +541,12 @@ impl MirBuilder {
                     let callee = MirOperand::Symbol(
                         resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract").symbol.clone(),
                     );
+                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
                     let value = self.next_value(MirValueOrigin::CallResult);
                     self.instructions.push(MirInstruction::from_operation(MirOperation::Call { callee, arguments }));
                     if let Some(return_type) = resolved
@@ -540,6 +622,21 @@ impl MirBuilder {
                     }
                 }
                 let function_ty = self.function_type_of_callee(&callee);
+                if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
+                    return operand;
+                }
+                if arguments.len() == 1 {
+                    if let MirOperand::Symbol(path) = &callee {
+                        if path.parts().last().is_some_and(|part| part.as_str() == "is_some") {
+                            if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone()) {
+                                return operand;
+                            }
+                        }
+                    }
+                }
+                if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                    return operand;
+                }
                 // ADR 0010: Call is only { callee, arguments }. No intrinsic/dispatch/generic side-channels.
                 let value = self.next_value(MirValueOrigin::CallResult);
                 self.instructions
