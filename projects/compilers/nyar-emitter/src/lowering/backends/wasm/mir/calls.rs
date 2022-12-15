@@ -74,6 +74,9 @@ impl<'a> WasmMirLowerer<'a> {
                 else if self.try_emit_is_null(callee, arguments, output) {
                     return;
                 }
+                else if self.try_emit_builtin_array_push(callee, arguments, output) {
+                    return;
+                }
                 else {
                     eprintln!("[wasm::mir] unresolved static call in `{}`: callee={:?}", self.mir_fn.symbol, callee);
                     self.emit_unresolved_call_placeholder(arguments, output);
@@ -1537,6 +1540,24 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             WasmOpcode::Drop.encode(&mut self.code);
         }
+        true
+    }
+
+    fn try_emit_builtin_array_push(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
+        let MirOperand::Symbol(path) = callee
+        else {
+            return false;
+        };
+        let parts = path.parts();
+        if parts.len() != 3
+            || parts[0].as_str() != "builtin"
+            || parts[1].as_str() != "array"
+            || parts[2].as_str() != "push"
+            || arguments.len() < 2
+        {
+            return false;
+        }
+        self.emit_intrinsic_array_push(arguments, output);
         true
     }
 }

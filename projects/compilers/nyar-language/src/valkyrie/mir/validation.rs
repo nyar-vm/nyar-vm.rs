@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{concretize_type, types::hir::ValkyrieType};
+use crate::{concretize_type, types::{NamePath, hir::ValkyrieType}};
 use nyar_types::NyarType;
 use std_data::text::valkyrie::ParseError;
 
@@ -443,6 +443,32 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
     Ok(())
 }
 
+/// Language operators lower as `Call` to `infix +` / `prefix !` (sometimes `primitive.infix +`).
+/// Backends expand them to target primitives — they are not registry-linked functions.
+pub fn is_language_operator_symbol(symbol: &NamePath) -> bool {
+    is_language_operator_name(symbol.parts().last().map(|part| part.as_str()).unwrap_or(""))
+}
+
+pub fn is_language_operator_name(name: &str) -> bool {
+    matches!(
+        name,
+        "infix ==" | "infix !="
+            | "infix <" | "infix <=" | "infix >" | "infix >="
+            | "infix +" | "infix -" | "infix *" | "infix /" | "infix %"
+            | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
+            | "prefix !" | "prefix -" | "prefix +"
+    )
+}
+
+/// Language builtins (`builtin.array.push`, …) lower as `Call` but expand in backends — not registry-linked.
+pub fn is_language_builtin_symbol(symbol: &NamePath) -> bool {
+    let parts = symbol.parts();
+    parts.len() == 3
+        && parts[0].as_str() == "builtin"
+        && parts[1].as_str() == "array"
+        && parts[2].as_str() == "push"
+}
+
 fn validate_static_call_resolution(
     module: &MirModule,
     function: &MirFunction,
@@ -462,6 +488,9 @@ fn validate_static_call_resolution(
             detail: "static call requires an explicit callee symbol".to_string(),
         });
     };
+    if is_language_operator_symbol(symbol) || is_language_builtin_symbol(symbol) {
+        return Ok(());
+    }
     let exact_local = module.functions.iter().any(|candidate| candidate.symbol == symbol.to_string());
     let exact_external = module.external_calls.iter().any(|candidate| candidate.symbol == *symbol);
     if exact_local || exact_external {
@@ -975,6 +1004,12 @@ mod semantic_contract_tests {
         let error = validate_semantic_module(&module).unwrap_err();
         assert_eq!(error.code, "SMIR003");
         assert_eq!(error.location, "block 0 instruction 1");
+    }
+
+    #[test]
+    fn semantic_contract_accepts_language_operator_call_without_registry_entry() {
+        let module = module_with_static_call(NamePath::new(vec![Identifier::new("primitive"), Identifier::new("infix +")]));
+        validate_semantic_module(&module).unwrap();
     }
 
     #[test]

@@ -9,7 +9,7 @@ use crate::{
     executable_provider::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand},
 };
 use nyar::QualifiedName;
-use nyar_types::{Constant, NyarType};
+use nyar_types::{Constant, NamePath, NyarType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SemanticMirContractError {
@@ -223,7 +223,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 ExecutableOperand::Value(v) => function.value_types.get(v),
                 _ => None,
             };
-            let Some(NyarType::Named(name)) = object_ty
+            let Some(name) = object_ty.and_then(aggregate_owner_name)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
@@ -232,7 +232,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     detail: "aggregate field access requires a nominal object type".to_string(),
                 });
             };
-            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == name.as_str())
+            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == name)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
@@ -275,6 +275,105 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
     Ok(())
 }
 
+fn mir_return_types_compatible(actual: &NyarType, expected: &NyarType) -> bool {
+    if actual == expected {
+        return true;
+    }
+    if result_or_option_alias_compatible(actual, expected) {
+        return true;
+    }
+    match (normalize_platform_alias(actual), normalize_platform_alias(expected)) {
+        (left, right) if left == right => true,
+        _ => false,
+    }
+}
+
+fn normalize_platform_alias(ty: &NyarType) -> NyarType {
+    match ty {
+        NyarType::Named(name) => match name.as_str() {
+            "usize" | "isize" => NyarType::Integer32 { signed: name.as_str() == "isize" },
+            "bool" => NyarType::Boolean,
+            "utf8" | "Utf8Text" => NyarType::Utf8,
+            "utf16" | "Utf16Text" => NyarType::Utf16,
+            _ => ty.clone(),
+        },
+        NyarType::Apply(base, args) => {
+            NyarType::Apply(Box::new(normalize_platform_alias(base)), args.iter().map(normalize_platform_alias).collect())
+        }
+        NyarType::Array(element) => NyarType::Array(Box::new(normalize_platform_alias(element))),
+        NyarType::Nullable(inner) => NyarType::Nullable(Box::new(normalize_platform_alias(inner))),
+        NyarType::Union(arms) => NyarType::Union(arms.iter().map(normalize_platform_alias).collect()),
+        NyarType::Tuple(elems) => NyarType::Tuple(elems.iter().map(normalize_platform_alias).collect()),
+        _ => ty.clone(),
+    }
+}
+
+fn sum_owner_name(ty: &NyarType) -> Option<&str> {
+    match ty {
+        NyarType::Named(name) => Some(name.as_str()),
+        NyarType::Apply(base, _) => sum_owner_name(base),
+        _ => None,
+    }
+}
+
+fn aggregate_owner_name(ty: &NyarType) -> Option<&str> {
+    sum_owner_name(ty)
+}
+
+fn is_option_shaped(ty: &NyarType) -> bool {
+    matches!(ty, NyarType::Nullable(_)) || sum_owner_name(ty).is_some_and(|name| matches!(name, "Option" | "Nullable"))
+}
+
+fn is_type_parameter(ty: &NyarType) -> bool {
+    match ty {
+        NyarType::Named(name) => {
+            let text = name.as_str();
+            !text.is_empty() && text.chars().all(|ch| ch.is_ascii_uppercase())
+        }
+        _ => false,
+    }
+}
+
+fn result_or_option_alias_compatible(actual: &NyarType, expected: &NyarType) -> bool {
+    let payload = |ty: &NyarType| -> Option<NyarType> {
+        match ty {
+            NyarType::Apply(_, args) => args.first().cloned(),
+            NyarType::Nullable(inner) => Some(*inner.clone()),
+            _ => None,
+        }
+    };
+    if !is_option_shaped(actual) || !is_option_shaped(expected) {
+        return false;
+    }
+    match (payload(actual), payload(expected)) {
+        (Some(left), Some(right)) => {
+            normalize_platform_alias(&left) == normalize_platform_alias(&right) || (is_type_parameter(&left) && is_type_parameter(&right))
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Keep aligned with `nyar-language` `mir::validation::is_language_operator_symbol`.
+fn is_language_operator_symbol(path: &NamePath) -> bool {
+    matches!(
+        path.parts().last().map(|part| part.as_str()).unwrap_or(""),
+        "infix ==" | "infix !="
+            | "infix <" | "infix <=" | "infix >" | "infix >="
+            | "infix +" | "infix -" | "infix *" | "infix /" | "infix %"
+            | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
+            | "prefix !" | "prefix -" | "prefix +"
+    )
+}
+
+fn is_language_builtin_symbol(path: &NamePath) -> bool {
+    let parts = path.parts();
+    parts.len() == 3
+        && parts[0].as_str() == "builtin"
+        && parts[1].as_str() == "array"
+        && parts[2].as_str() == "push"
+}
+
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
@@ -293,6 +392,9 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
                 });
             };
             let symbol = path.to_string();
+            if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
+                continue;
+            }
             let local = submission.executable.as_ref().is_some_and(|executable| executable.find_by_symbol(&symbol).is_some());
             let external = submission.external_import_links.contains_key(&QualifiedName::new(path.parts().to_vec()));
             if !local && !external {
@@ -503,13 +605,26 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
         }
     }
     match &block.terminator {
-        crate::contracts::Terminator::Return { value: Some(value) } if value_type(value) != Some(&function.return_type) => {
-            return Err(SemanticMirContractError {
-                code: "SMIR007",
-                function: function.symbol.clone(),
-                location,
-                detail: "return operand type differs from function return type".to_string(),
-            });
+        crate::contracts::Terminator::Return { value: Some(value) } => {
+            let Some(actual) = value_type(value) else {
+                return Err(SemanticMirContractError {
+                    code: "SMIR001",
+                    function: function.symbol.clone(),
+                    location,
+                    detail: "return operand has no SSA type".to_string(),
+                });
+            };
+            if !mir_return_types_compatible(actual, &function.return_type) {
+                return Err(SemanticMirContractError {
+                    code: "SMIR007",
+                    function: function.symbol.clone(),
+                    location,
+                    detail: format!(
+                        "return operand type differs from function return type (actual={actual:?}, expected={:?})",
+                        function.return_type
+                    ),
+                });
+            }
         }
         crate::contracts::Terminator::Jump { target, arguments } => {
             let Some(destination) = function.blocks.iter().find(|candidate| candidate.id == *target)

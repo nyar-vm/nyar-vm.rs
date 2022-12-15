@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::types::{
     Identifier, NamePath,
-    hir::{HirExpr, HirExprKind},
+    hir::{HirCallableDomain, HirExpr, HirExprKind},
 };
 
 use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
@@ -266,6 +266,10 @@ pub(super) fn lower_callee_operand(
     // `extract_method_call` so MIR keeps the receiver argument for virtual dispatch.
     if let Some(resolved) = resolved {
         let symbol = &resolved.symbol;
+        if resolved.domain == HirCallableDomain::Operator {
+            let bare = symbol.parts().last().cloned().unwrap_or_else(|| Identifier::new("unknown"));
+            return MirOperand::Symbol(NamePath::new(vec![bare]));
+        }
         // Never reconstitute a binding-rooted field chain as a zero-arg dotted Symbol.
         if let HirExprKind::Path(path) = &expr.kind {
             if path.parts().len() >= 2 && builder.bindings.contains_key(path.parts()[0].as_str()) {
