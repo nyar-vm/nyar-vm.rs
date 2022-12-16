@@ -155,6 +155,14 @@ fn annotations_have_tag(annotations: &Annotations) -> bool {
 }
 
 fn validate_unite_declaration(unite_decl: &UniteDeclaration) -> Result<(), ParseError> {
+    // A named, untagged union has no numeric discriminant. Until its own HIR
+    // and layout contract exists, it must not enter the HirEnum lowering path.
+    if unite_decl.kind == SumTypeKind::Union {
+        return Err(ParseError::invalid_at(
+            format!("named union `{}` requires an untagged union semantic model; it cannot be lowered as numeric enums", unite_decl.name.name.as_str()),
+            unite_decl.name.span.clone(),
+        ));
+    }
     for variant in &unite_decl.variants {
         for field in &variant.fields {
             validate_object_field(field)?;

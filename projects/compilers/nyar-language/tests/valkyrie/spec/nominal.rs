@@ -13,6 +13,13 @@ use nyar_language::{
 };
 
 #[test]
+fn named_union_does_not_lower_as_numeric_enums() {
+    let compiler = ValkyrieCompiler::new(SourceID::default());
+    let error = compiler.compile_source("union Limb { Small { value: i64 }, Words { value: i64 } }").unwrap_err();
+    assert!(error.to_string().contains("cannot be lowered as numeric enums"), "{error}");
+}
+
+#[test]
 fn class_parameters_use_nominal_matching() {
     let animal = class("Animal");
     let dog = subclass("Dog", "Animal");

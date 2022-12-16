@@ -987,7 +987,8 @@ impl AstToHir {
     fn lower_unite(&self, unite_decl: &UniteDeclaration) -> HirEnum {
         let mut enum_def = match unite_decl.kind {
             SumTypeKind::Unite => HirEnum::new_unity(unite_decl.name.name.clone()),
-            _ => HirEnum::new(unite_decl.name.name.clone()),
+            SumTypeKind::Enum => HirEnum::new(unite_decl.name.name.clone()),
+            SumTypeKind::Union => unreachable!("named union must be rejected before HirEnum lowering"),
         };
         enum_def.doc = lower_documentation(&unite_decl.annotations);
         enum_def.visibility = lower_visibility(&unite_decl.annotations);
