@@ -1067,6 +1067,33 @@ fn try_resolve_call(
             }
         }
     }
+    if let HirExprKind::Path(path) = &callee.kind {
+        if path.parts().len() >= 2 {
+            let type_owner = &path.parts()[path.parts().len() - 2];
+            let method_name = path.parts().last().expect("qualified static path must name a method");
+            if !locals.contains_key(type_owner.as_str())
+                && !singleton_names.contains(type_owner)
+                && type_owner.as_str().chars().next().is_some_and(|ch| ch.is_uppercase())
+            {
+                if let Some(resolved) = try_resolve_type_static_method(
+                    type_owner,
+                    method_name,
+                    args,
+                    candidates,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                ) {
+                    return Some(resolved);
+                }
+                // `HashMap::new` and similar qualified static calls must not degrade into the
+                // global simple-name arity fallback, which can bind unrelated helpers such as
+                // `TuiRuntime.new` when only the method name matches.
+                return None;
+            }
+        }
+    }
 
     let callee_name = extract_callable_name(callee)?;
     if let Some(resolved) = primitive_operator_contract(&callee_name, args, candidates, locals, struct_fields, singleton_names) {
@@ -1415,6 +1442,43 @@ fn extract_singleton_type_name(
         HirExprKind::Path(path) if path.parts().len() == 1 && singleton_names.contains(&path.parts()[0]) => Some(path.parts()[0].clone()),
         _ => None,
     }
+}
+
+fn try_resolve_type_static_method(
+    type_owner: &Identifier,
+    method_name: &Identifier,
+    args: &[HirCallArgument],
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
+    singleton_names: &BTreeSet<Identifier>,
+) -> Option<HirResolvedCall> {
+    let filtered = candidates
+        .iter()
+        .filter(|candidate| candidate.owner.as_ref() == Some(type_owner))
+        .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
+        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+        .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return None;
+    }
+    let resolved = resolve_overload(&filtered).ok()?;
+    let matched = filtered
+        .iter()
+        .find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain)
+        .unwrap_or(&filtered[0]);
+    Some(HirResolvedCall {
+        symbol: overload_symbol_path(matched),
+        domain: match matched.domain {
+            OverloadDomain::Constructor => HirCallableDomain::Constructor,
+            _ => HirCallableDomain::Function,
+        },
+        return_type: substitute_self_type(&resolved.signature.return_type, Some(type_owner)),
+        parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
+        extractor_payload_type: None,
+    })
 }
 
 fn try_resolve_singleton_method(
