@@ -52,7 +52,7 @@ fn mir_symbol_string_for_operation(operation: &QualifiedName, mir_by_symbol: &BT
 pub(crate) fn build_reachable_mir_functions(
     seed_operations: &[QualifiedName],
     mir: &MirModule,
-    hir_singleton_names: &[&str],
+    _hir_singleton_names: &[&str],
 ) -> BTreeMap<QualifiedName, ExecutableFunction> {
     let mir_by_symbol: BTreeMap<&str, &MirFunction> = mir.functions.iter().map(|function| (function.symbol.as_str(), function)).collect();
     let mir_by_operation: BTreeMap<QualifiedName, &MirFunction> =
@@ -77,22 +77,6 @@ pub(crate) fn build_reachable_mir_functions(
             if !queue.iter().any(|existing| existing == &callee) {
                 queue.push(callee);
             }
-        }
-    }
-
-    for mir_function in &mir.functions {
-        let operation = qualified_name_from_mir_symbol(mir_function.symbol.as_str());
-        let parts = operation.parts();
-        let [singleton_name, method_name] = parts
-        else {
-            continue;
-        };
-        let _ = method_name;
-        if !hir_singleton_names.iter().any(|name| *name == singleton_name.as_str()) {
-            continue;
-        }
-        if !result.contains_key(&operation) {
-            result.insert(operation, mir_function_to_executable(mir_function));
         }
     }
 
@@ -157,11 +141,6 @@ fn resolve_mir_callee_operation(
     mir_by_operation: &BTreeMap<QualifiedName, &MirFunction>,
 ) -> Option<QualifiedName> {
     if path.parts().len() > 1 {
-        let qualified = QualifiedName::new(path.parts().to_vec());
-        if mir_by_operation.contains_key(&qualified) {
-            return Some(qualified);
-        }
-        // NamePath Display uses `.`; accept dotted MIR symbols directly.
         let dotted = path.to_string();
         if mir_by_symbol.contains_key(dotted.as_str()) {
             return Some(qualified_name_from_mir_symbol(dotted.as_str()));
@@ -170,6 +149,7 @@ fn resolve_mir_callee_operation(
         if mir_by_symbol.contains_key(via_colon.as_str()) {
             return Some(qualified_name_from_mir_symbol(via_colon.as_str()));
         }
+        return None;
     }
 
     let method_name = path.parts().last()?.as_str();
@@ -188,7 +168,7 @@ fn resolve_mir_callee_operation(
             if let Some(receiver_name) = receiver_type_name(&receiver_ty) {
                 if let Some(symbol) = mir_by_symbol.keys().find(|symbol| {
                     mir_symbol_ends_with_simple(symbol, method_name)
-                        && symbol.split(['.', ':']).any(|segment| segment == receiver_name || receiver_name.ends_with(segment))
+                        && symbol.split(['.', ':']).any(|segment| segment == receiver_name)
                 }) {
                     return Some(qualified_name_from_mir_symbol(symbol));
                 }
@@ -196,7 +176,7 @@ fn resolve_mir_callee_operation(
         }
     }
 
-    mir_by_symbol.keys().find(|symbol| mir_symbol_ends_with_simple(symbol, method_name)).map(|symbol| qualified_name_from_mir_symbol(symbol))
+    None
 }
 
 /// True when `symbol` is exactly `simple` or ends with `::simple` / `.simple`.
@@ -294,6 +274,64 @@ mod tests {
             reachable.keys().any(|op| op.parts().last().is_some_and(|part| part.as_str() == "wasm_i32_types")),
             "bare Call to wasm_i32_types must enter the reachable closure; keys={:?}",
             reachable.keys().map(|op| op.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn bare_new_does_not_widen_closure_to_unrelated_type_new() {
+        use crate::{
+            MirBlock, MirBlockRef, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation, MirTerminator, MirValue, MirValueOrigin,
+            MirValueRef, types::hir::ValkyrieType,
+        };
+
+        let tui_new = MirFunction {
+            symbol: "TuiRuntime.new".to_string(),
+            return_type: ValkyrieType::Named(crate::types::Identifier::new("TuiRuntime")),
+            param_types: Vec::new(),
+            value_types: Default::default(),
+            entry: MirBlockRef(0),
+            values: Vec::new(),
+            blocks: vec![MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: MirTerminator::Return { value: None },
+            }],
+        };
+        let out = MirValueRef(0);
+        let caller = MirFunction {
+            symbol: "leetcode.two_sum".to_string(),
+            return_type: ValkyrieType::Unit,
+            param_types: Vec::new(),
+            value_types: Default::default(),
+            entry: MirBlockRef(0),
+            values: vec![MirValue { id: out, origin: MirValueOrigin::CallResult }],
+            blocks: vec![MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: Vec::new(),
+                instructions: vec![MirInstruction::from_operation(MirOperation::Call {
+                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("new")])),
+                    arguments: Vec::new(),
+                })],
+                terminator: MirTerminator::Return { value: None },
+            }],
+        };
+        let mir = MirModule {
+            name: String::new(),
+            functions: vec![caller, tui_new],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+        };
+        let seed = qualified_name_from_mir_symbol("leetcode.two_sum");
+        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
+        assert!(
+            !reachable.contains_key(&QualifiedName::new(vec![Identifier::new("TuiRuntime"), Identifier::new("new")])),
+            "unresolved bare `new` must not pull unrelated `.new` helpers into the library closure"
         );
     }
 }
