@@ -281,7 +281,11 @@ pub fn hir_module_to_object_algebraic_program(module: &HirModule) -> ObjectAlgeb
         if !exported_operations.iter().any(|operation| operation == &entry_symbol) {
             exported_operations.insert(0, entry_symbol.clone());
         }
-        exported_operations.extend(reachable.into_iter().filter(|symbol| !exported_operations.contains(symbol)));
+        for symbol in reachable {
+            if !exported_operations.contains(&symbol) {
+                exported_operations.push(symbol);
+            }
+        }
         let has_suspend = !suspend_operations.is_empty();
         vec![ObjectAlgebraicDimension {
             name: if has_suspend { Identifier::new("suspend") } else { Identifier::new("functions") },
