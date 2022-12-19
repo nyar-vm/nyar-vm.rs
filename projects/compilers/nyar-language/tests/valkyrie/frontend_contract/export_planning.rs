@@ -98,6 +98,25 @@ micro helper(): i64 {
 }
 
 #[test]
+fn main_only_entry_exports_entry_symbol_without_export_attribute() {
+    let module = compile_module(
+        r#"
+namespace bootstrap.node.entry;
+
+[main]
+micro legion(args: [utf8]) -> i32 {
+    return 0
+}
+"#,
+    );
+
+    let program = hir_module_to_object_algebraic_program(&module);
+    assert_eq!(program.dimensions.len(), 1);
+    assert_eq!(program.dimensions[0].exported_operations.len(), 1);
+    assert_eq!(program.dimensions[0].exported_operations[0].to_string(), "bootstrap::node::entry::legion");
+}
+
+#[test]
 fn export_partitions_split_object_algebraic_dimensions() {
     let module = compile_module(
         r#"
