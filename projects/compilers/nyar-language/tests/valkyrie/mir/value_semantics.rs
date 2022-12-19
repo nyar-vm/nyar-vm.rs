@@ -1,6 +1,6 @@
 use nyar_language::{
-    MirLowerer, MirOperation, MirStorageKind, ReceiverPassingKind, ValkyrieCompiler, compute_aggregate_layout_plan, layout_key_for_type,
-    storage_kind_for_type,
+    MirLowerer, MirOperand, MirOperation, MirStorageKind, ReceiverPassingKind, ValkyrieCompiler, compute_aggregate_layout_plan,
+    concretize_type_lossy, layout_key_for_type, storage_kind_for_type,
     types::{Identifier, SourceID, hir::ValkyrieType},
 };
 
@@ -371,4 +371,62 @@ micro main() -> f64 {
                 .any(|ins| matches!(ins.kind, MirOperation::Call {})),
         })
     }));
+}
+
+#[test]
+fn generic_class_construct_empty_array_matches_declared_field_types() {
+    let hir = ValkyrieCompiler::new(SourceID { version_id: 9512 })
+        .compile_source(
+            r#"
+class Box<T> {
+    _items: [T]
+    _cap: usize
+}
+
+imply Box<T> {
+    micro new(cap: usize): Self {
+        return Box { _items: [], _cap: cap }
+    }
+}
+"#,
+        )
+        .expect("compile");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let new_fn = mir
+        .functions
+        .iter()
+        .find(|function| function.symbol.ends_with("new"))
+        .expect("Box.new should lower");
+    let struct_new = new_fn
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|ins| match &ins.kind {
+            MirOperation::StructNew { type_name, fields } if type_name == "Box" => Some(fields.clone()),
+            _ => None,
+        })
+        .expect("Box.new should emit StructNew");
+    let layout = mir
+        .aggregate_layouts
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "Box")
+        .expect("Box layout");
+    for (field_name, operand) in struct_new {
+        let layout_ty = layout
+            .fields
+            .iter()
+            .find(|field| field.name == field_name)
+            .map(|field| field.ty.clone())
+            .expect("layout field");
+        let MirOperand::Value(value_ref) = operand else {
+            panic!("StructNew field operand should be a value");
+        };
+        let mir_ty = new_fn.value_types.get(&value_ref).expect("field value type");
+        assert_eq!(
+            concretize_type_lossy(mir_ty),
+            layout_ty,
+            "field `{field_name}` should carry declared struct field type through StructNew"
+        );
+    }
 }

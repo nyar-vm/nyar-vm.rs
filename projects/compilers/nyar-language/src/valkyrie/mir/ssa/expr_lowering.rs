@@ -711,6 +711,14 @@ impl MirBuilder {
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
+                        // StructNew SMIR010 compares operand `value_types` (after
+                        // concretize) to aggregate layout field types.  Hints steer
+                        // `[]` element typing but do not update `value_types`; without
+                        // this, `ArrayList { _items: [] }` stays `i32[]` while layout
+                        // keeps `Array(Generic(T))`.
+                        if let (Some(declared_ty), MirOperand::Value(value_ref)) = (&field_ty, &value_operand) {
+                            self.value_types.insert(*value_ref, declared_ty.clone());
+                        }
                         field_values.push(value_operand.clone());
                         fields.push((field_name.to_string(), value_operand));
                     }
@@ -804,7 +812,11 @@ impl MirBuilder {
                         let field_types = fields
                             .iter()
                             .map(|(field_name, operand)| {
-                                let ty = infer_builder_operand_type(operand, &self.value_types).unwrap_or(ValkyrieType::Unit);
+                                let ty = self
+                                    .lookup_struct_field_type(name.as_str(), field_name)
+                                    .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()))
+                                    .or_else(|| infer_builder_operand_type(operand, &self.value_types))
+                                    .unwrap_or(ValkyrieType::Unit);
                                 (field_name.clone(), ty)
                             })
                             .collect::<Vec<_>>();
