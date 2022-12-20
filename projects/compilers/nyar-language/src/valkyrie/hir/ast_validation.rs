@@ -37,7 +37,14 @@ fn validate_unique_type_definition_names(root: &ValkyrieRoot) -> Result<(), Pars
         }
         let (kind, name, span) = match statement {
             RootStatement::TypeAlias(alias) => ("type alias", alias.name.name.as_str(), alias.name.span.clone()),
-            RootStatement::Unite(unite) => ("unite", unite.name.name.as_str(), unite.name.span.clone()),
+            RootStatement::Unite(unite) => {
+                let kind = match unite.kind {
+                    SumTypeKind::Unite => "unite",
+                    SumTypeKind::Enum => "enums",
+                    SumTypeKind::Union => "union",
+                };
+                (kind, unite.name.name.as_str(), unite.name.span.clone())
+            }
             RootStatement::Class(class_decl) => ("type", class_decl.name.name.as_str(), class_decl.name.span.clone()),
             RootStatement::Flags(flags) => ("flags", flags.name.name.as_str(), flags.name.span.clone()),
             RootStatement::Trait(trait_decl) => ("trait", trait_decl.name.name.as_str(), trait_decl.name.span.clone()),
