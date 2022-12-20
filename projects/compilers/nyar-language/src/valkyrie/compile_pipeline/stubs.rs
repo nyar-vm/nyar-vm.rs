@@ -100,7 +100,10 @@ impl RepresentationPlanStage for FailClosedPlanner {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompilePipeline, *};
+    use crate::valkyrie::compile_pipeline::{
+        CompilePipeline, EmptyCanonicalValidator, EmptyLinker, EmptyRepresentationPlanner, FailClosedLinker, FailClosedPlanner, FailClosedValidator,
+    };
+    use nyar_types::CompileStage;
 
     #[test]
     fn empty_scaffold_runs_analysis_and_processing() {
