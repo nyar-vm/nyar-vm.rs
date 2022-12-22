@@ -348,11 +348,10 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
             let variants = enum_def
                 .variants
                 .iter()
-                .enumerate()
-                .map(|(index, variant)| {
+                .map(|variant| {
                     // `unite`: `[tag(N)]` or declaration-order fallback.
                     // `enums`: `= N` or auto-increment after the last explicit / implicit tag.
-                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit)
+                    let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
                     SumVariantLayout {
                         name: variant.name.to_string(),
@@ -376,9 +375,8 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
             let variants = enum_def
                 .variants
                 .iter()
-                .enumerate()
-                .map(|(index, variant)| {
-                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit)
+                .map(|variant| {
+                    let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
                     SumVariantLayout {
                         name: variant.name.to_string(),
@@ -421,22 +419,37 @@ fn ensure_language_result_option_sum_types(layouts: &mut Vec<SumTypeLayout>) {
     }
 }
 
-fn resolve_enum_variant_tag(variant: &HirVariant, next_implicit: &mut u32) -> Option<u32> {
-    if let Some(discriminator) = &variant.discriminator {
-        let tag = integer_literal_u32(discriminator)?;
-        *next_implicit = tag.saturating_add(1);
-        return Some(tag);
-    }
-    let tag = *next_implicit;
-    *next_implicit = tag.saturating_add(1);
-    Some(tag)
-}
-
 fn integer_literal_u32(expr: &HirExpr) -> Option<u32> {
     match &expr.kind {
         HirExprKind::Literal(HirLiteral::Integer64(value)) if *value >= 0 => u32::try_from(*value).ok(),
         _ => None,
     }
+}
+
+/// Resolve the next variant tag for `unite` (`[tag(N)]` or declaration order) and
+/// `enums` (`Variant = N` or auto-increment after the last assigned tag).
+fn resolve_sum_variant_tag(
+    owner: &crate::types::Identifier,
+    variant: &HirVariant,
+    next_implicit: &mut u32,
+) -> Result<u32, ParseError> {
+    let tag = if let Some(discriminator) = &variant.discriminator {
+        integer_literal_u32(discriminator).ok_or_else(|| {
+            ParseError::invalid(format!(
+                "`{}` variant `{}` discriminator must be a non-negative integer literal",
+                owner, variant.name
+            ))
+        })?
+    }
+    else {
+        let tag = *next_implicit;
+        *next_implicit = tag.saturating_add(1);
+        tag
+    };
+    if variant.discriminator.is_some() {
+        *next_implicit = tag.saturating_add(1);
+    }
+    Ok(tag)
 }
 
 fn validate_enum_discriminators(module: &HirModule) -> Result<(), ParseError> {
@@ -446,22 +459,7 @@ fn validate_enum_discriminators(module: &HirModule) -> Result<(), ParseError> {
         let mut next_implicit = 0u32;
         let mut seen = BTreeSet::new();
         for variant in &enum_def.variants {
-            let tag = if let Some(discriminator) = &variant.discriminator {
-                integer_literal_u32(discriminator).ok_or_else(|| {
-                    ParseError::invalid(format!(
-                        "`{}` variant `{}` discriminator must be a non-negative integer literal",
-                        enum_def.name, variant.name
-                    ))
-                })?
-            }
-            else {
-                let tag = next_implicit;
-                next_implicit = tag.saturating_add(1);
-                tag
-            };
-            if variant.discriminator.is_some() {
-                next_implicit = tag.saturating_add(1);
-            }
+            let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)?;
             if !seen.insert(tag) {
                 return Err(ParseError::invalid(format!("`{}` has duplicate discriminator {tag}", enum_def.name)));
             }
@@ -1537,6 +1535,75 @@ unite Choice {
 "#,
             )
             .expect_err("invalid unite tag literal");
+        assert!(error.to_string().contains("non-negative integer literal"), "{error}");
+    }
+
+    #[test]
+    fn unite_default_tags_follow_declaration_order() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let module = compiler
+            .compile_source(
+                r#"
+unite Choice {
+    A { x: i64 }
+    B { y: i64 }
+}
+"#,
+            )
+            .expect("compile unite with default tags");
+        let (sum_types, _) = compute_nominal_layouts(&module);
+        let choice = sum_types.iter().find(|layout| layout.name == "Choice").expect("Choice layout");
+        assert_eq!(choice.variants[0].tag, 0);
+        assert_eq!(choice.variants[1].tag, 1);
+    }
+
+    #[test]
+    fn enums_rejects_duplicate_explicit_discriminators() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+enums Status {
+    Active = 0
+    Paused = 0
+}
+"#,
+            )
+            .expect_err("duplicate enums discriminator");
+        assert!(error.to_string().contains("duplicate discriminator"), "{error}");
+    }
+
+    #[test]
+    fn enums_auto_increment_follows_last_explicit_discriminator() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let module = compiler
+            .compile_source(
+                r#"
+enums Status {
+    Active = 2
+    Inactive
+}
+"#,
+            )
+            .expect("compile enums with gap auto-increment");
+        let (sum_types, _) = compute_nominal_layouts(&module);
+        let status = sum_types.iter().find(|layout| layout.name == "Status").expect("Status layout");
+        assert_eq!(status.variants[0].tag, 2);
+        assert_eq!(status.variants[1].tag, 3);
+    }
+
+    #[test]
+    fn enums_rejects_negative_discriminator_literal() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+enums Status {
+    Active = -1
+}
+"#,
+            )
+            .expect_err("negative enums discriminator");
         assert!(error.to_string().contains("non-negative integer literal"), "{error}");
     }
 
