@@ -1705,6 +1705,41 @@ enums Status {
     }
 
     #[test]
+    fn imported_semantic_export_unite_contributes_sum_layout_tags() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let dependency = compiler
+            .compile_source(
+                r#"
+unite Choice {
+    [tag(2)]
+    A { x: i64 }
+    B { y: i64 }
+}
+"#,
+            )
+            .expect("dependency unite");
+        let consumer = compiler
+            .compile_source_with_semantic_exports(
+                "micro main() { return }",
+                &[HirDependencySemanticExport {
+                    module: NamePath::new(vec![Identifier::new("dep")]),
+                    functions: Vec::new(),
+                    structs: Vec::new(),
+                    enums: dependency.enums,
+                    traits: Vec::new(),
+                    type_aliases: Vec::new(),
+                    impls: Vec::new(),
+                }],
+            )
+            .expect("consumer with imported unite");
+        let (sum_types, _) = compute_nominal_layouts(&consumer);
+        let choice = sum_types.iter().find(|layout| layout.name == "Choice").expect("Choice layout");
+        assert!(choice.is_unite);
+        assert_eq!(choice.variants[0].tag, 2);
+        assert_eq!(choice.variants[1].tag, 3);
+    }
+
+    #[test]
     fn rejects_duplicate_unite_and_enums_names() {
         let compiler = ValkyrieCompiler::new(SourceID::default());
         let error = compiler
