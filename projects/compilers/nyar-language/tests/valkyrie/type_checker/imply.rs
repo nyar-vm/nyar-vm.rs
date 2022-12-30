@@ -372,6 +372,7 @@ fn module(traits: Vec<HirTrait>, impls: Vec<HirImpl>) -> HirModule {
         structs: vec![],
         enums: vec![],
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: vec![],
         traits,
         impls,

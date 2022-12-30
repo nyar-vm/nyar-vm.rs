@@ -49,6 +49,7 @@ fn empty_module_with_struct(strukt: HirStruct) -> HirModule {
         structs: vec![strukt],
         enums: vec![],
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: vec![],
         traits: vec![],
         impls: vec![],
