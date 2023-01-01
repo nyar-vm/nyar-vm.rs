@@ -520,7 +520,7 @@ fn lowers_catch_guard_into_mir_arm_branch() {
         mir.functions[0].blocks.iter().find(|block| block.label == "catch_arm_0_body").expect("expected guarded catch arm body block");
 
     assert!(
-        guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, nyar_language::MirInstructionKind::PatternMatch { .. }))
+        guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, nyar_language::MirOperation::PatternMatch { .. }))
     );
 
     assert!(matches!(

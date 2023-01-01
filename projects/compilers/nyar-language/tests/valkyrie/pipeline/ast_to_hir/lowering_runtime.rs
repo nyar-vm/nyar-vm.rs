@@ -153,7 +153,7 @@ fn lowers_non_literal_nested_tuple_pattern_bindings_into_mir_values() {
         .blocks[0]
         .instructions
         .iter()
-        .any(|instruction| matches!(&instruction.kind, MirInstructionKind::Call { callee: nyar_language::MirOperand::Symbol(path), .. } if path.to_string().starts_with("tuple_get_"))));
+        .any(|instruction| matches!(&instruction.kind, MirOperation::Call { callee: nyar_language::MirOperand::Symbol(path), .. } if path.to_string().starts_with("tuple_get_"))));
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn statically_unrolls_loop_in_tuple_pattern_for_literal_iterables() {
     assert!(mir.functions[0].blocks[0].instructions.iter().any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call {                callee: nyar_language::MirOperand::Symbol(path),
+            MirOperation::Call {                callee: nyar_language::MirOperand::Symbol(path),
                 ..,
 } if path.to_string() == "infix +"
         )

@@ -251,12 +251,12 @@ micro main(value: Wrapper) -> bool {
 "#;
 
     let mir = compiler.compile_source_to_mir(source).unwrap();
-    let chain = mir.functions[0].case_chains.first().expect("expected a match case chain to be lowered");
-    assert!(chain.produce_value);
-    assert_eq!(chain.arms.len(), 3);
     assert!(mir.functions[0].blocks.iter().any(|block| matches!(block.terminator, MirTerminator::Branch { .. })));
 
     let lir = compile_source_to_legacy_lir(&compiler, source).unwrap();
+    let chain = lir.functions[0].case_chains.first().expect("expected a match case chain to be lowered");
+    assert!(chain.produce_value);
+    assert_eq!(chain.arms.len(), 3);
     assert!(!lir.functions[0].blocks.is_empty());
 }
 
@@ -574,11 +574,10 @@ micro main(opt: Option) -> i64 {
         .flat_map(|block| block.instructions.iter())
         .filter(|instruction| {
             matches!(
-                            &instruction.kind,
-                            MirInstructionKind::Call {                    callee: MirOperand::Symbol(path),
-                                ..,
-            } if path.parts().last().is_some_and(|part| part.as_str() == "extractor")
-                        )
+                &instruction.kind,
+                MirOperation::Call { callee: MirOperand::Symbol(path), .. }
+                    if path.parts().last().is_some_and(|part| part.as_str() == "extractor")
+            )
         })
         .count();
 

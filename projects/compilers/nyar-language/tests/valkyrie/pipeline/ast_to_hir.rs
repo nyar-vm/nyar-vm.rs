@@ -335,7 +335,7 @@ fn lowers_array_literal_to_builtin_array_literal_in_mir_and_build_output() {
 
     let mir = compiler.compile_source_to_mir(source).unwrap();
     let mir_operations = &mir.functions[0].blocks[0].instructions;
-    assert!(mir_operations.iter().any(|instruction| matches!(instruction.kind, MirOperation::ArrayLiteral { .. })));
+    assert!(mir_operations.iter().any(|instruction| matches!(instruction.kind, MirOperation::ArrayFromElements { .. })));
     assert!(!mir_operations.iter().any(|instruction| {
         matches!(
             &instruction.kind,

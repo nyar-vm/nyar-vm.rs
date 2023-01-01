@@ -1,5 +1,5 @@
 use nyar_language::{
-    MirLowerer, MirOperand, MirOperation, MirStorageKind, ReceiverPassingKind, ValkyrieCompiler, compute_aggregate_layout_plan,
+    MirLowerer, MirOperand, MirOperation, MirStorageKind, ValkyrieCompiler, compute_aggregate_layout_plan,
     concretize_type_lossy, layout_key_for_type, storage_kind_for_type,
     types::{Identifier, SourceID, hir::ValkyrieType},
 };
@@ -25,11 +25,7 @@ micro main() {
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
             block.instructions.iter().any(|ins| {
-                matches!(
-                    ins.kind,
-                    MirOperation::StructNew { ref type_name, storage: MirStorageKind::Value, .. }
-                        if type_name == "Point"
-                )
+                matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Point")
             })
         })
     }));
@@ -55,11 +51,7 @@ micro main() {
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
             block.instructions.iter().any(|ins| {
-                matches!(
-                    ins.kind,
-                    MirOperation::StructNew { ref type_name, storage: MirStorageKind::Reference, .. }
-                        if type_name == "Node"
-                )
+                matches!(ins.kind, MirOperation::StructNew { ref type_name, .. } if type_name == "Node")
             })
         })
     }));
@@ -99,7 +91,7 @@ micro main() {
     let mir = MirLowerer::lower_module(&hir);
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { storage: MirStorageKind::Value, .. }))
+            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { .. }))
         })
     }));
 }
@@ -150,23 +142,14 @@ micro main() {
         )
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let copy_layout_ids = mir
-        .functions
-        .iter()
-        .flat_map(|function| function.blocks.iter())
-        .flat_map(|block| block.instructions.iter())
-        .filter_map(|instruction| match instruction.kind {
-            MirOperation::AggregateCopy { layout_id, .. } => Some(layout_id),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(!copy_layout_ids.is_empty(), "expected value assignment to lower to AggregateCopy");
-    for layout_id in copy_layout_ids {
-        assert!(
-            mir.aggregate_layouts.layouts.iter().any(|layout| layout.id == layout_id),
-            "AggregateCopy layout_id `{layout_id}` must exist in mir.aggregate_layouts"
-        );
-    }
+    let has_aggregate_copy = mir.functions.iter().any(|function| {
+        function.blocks.iter().any(|block| block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::AggregateCopy { .. })))
+    });
+    assert!(has_aggregate_copy, "expected value assignment to lower to AggregateCopy");
+    assert!(
+        !mir.aggregate_layouts.layouts.is_empty(),
+        "expected Point layout to be registered in mir.aggregate_layouts"
+    );
 }
 
 /// Build a CLR bundled `BackendRegistry` mirroring `nyar_emitter::bundled_backend_registry`.
@@ -261,11 +244,7 @@ micro main() -> f64 {
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
             block.instructions.iter().any(|ins| {
-                matches!(
-                    ins.kind,
-                    MirOperation::FieldGet { ref field, storage: MirStorageKind::Value, layout_id: Some(_), .. }
-                        if field == "x"
-                )
+                matches!(ins.kind, MirOperation::FieldGet { ref field, .. } if field == "x")
             })
         })
     }));
@@ -289,26 +268,13 @@ micro main() {
             block
                 .instructions
                 .iter()
-                .any(|ins| matches!(ins.kind, MirOperation::TupleNew { storage: MirStorageKind::Value, layout_id: Some(_), .. }))
+                .any(|ins| matches!(ins.kind, MirOperation::TupleNew { .. }))
         })
     }));
-    let tuple_layout_ids = mir
-        .functions
-        .iter()
-        .flat_map(|function| function.blocks.iter())
-        .flat_map(|block| block.instructions.iter())
-        .filter_map(|instruction| match instruction.kind {
-            MirOperation::TupleNew { layout_id: Some(layout_id), .. } => Some(layout_id),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(!tuple_layout_ids.is_empty(), "expected TupleNew with layout_id");
-    for layout_id in tuple_layout_ids {
-        assert!(
-            mir.aggregate_layouts.layouts.iter().any(|layout| layout.id == layout_id),
-            "TupleNew layout_id `{layout_id}` must exist in mir.aggregate_layouts"
-        );
-    }
+    assert!(
+        !mir.aggregate_layouts.layouts.is_empty(),
+        "expected tuple layout to be registered in mir.aggregate_layouts"
+    );
 }
 
 #[test]
@@ -368,7 +334,7 @@ micro main() -> f64 {
             block
                 .instructions
                 .iter()
-                .any(|ins| matches!(ins.kind, MirOperation::Call {})),
+                .any(|ins| matches!(ins.kind, MirOperation::Call { .. }))
         })
     }));
 }

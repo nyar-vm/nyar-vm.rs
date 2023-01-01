@@ -31,9 +31,12 @@ fn array_literal_lowers_to_builtin_array_literal_without_array_call() {
 
     let mir = compiler.compile_source_to_mir(source).expect("mir ok");
     let mir_operations = &mir.functions[0].blocks[0].instructions;
-    assert!(mir_operations.iter().any(|instruction| matches!(instruction.kind, MirOperation::ArrayLiteral { .. })));
+    assert!(mir_operations.iter().any(|instruction| matches!(instruction.kind, MirOperation::ArrayFromElements { .. })));
     assert!(mir_operations.iter().any(|instruction| {
-        matches!(&instruction.kind, MirOperation::ArrayLiteral { element_type: ValkyrieType::Integer32 { signed: true }, .. })
+        matches!(
+            &instruction.kind,
+            MirOperation::ArrayFromElements { array_type: ValkyrieType::Array(_), .. }
+        )
     }));
     assert!(!mir_operations.iter().any(|instruction| {
         matches!(
