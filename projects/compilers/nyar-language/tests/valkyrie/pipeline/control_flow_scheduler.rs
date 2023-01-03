@@ -65,11 +65,12 @@ fn compare_mir_lir_modules(
                 mir_function.symbol
             )));
         };
-        compare_suspend_points(&mir_function.symbol, &mir_function.suspend_points, &lir_function.suspend_points)?;
-        compare_frame_layouts(&mir_function.symbol, &mir_function.frame_layouts, &lir_function.frame_layouts)?;
-        compare_continuations(&mir_function.symbol, &mir_function.continuations, &lir_function.continuations)?;
-        compare_case_chains(&mir_function.symbol, &mir_function.case_chains, &lir_function.case_chains)?;
-        compare_state_machines(&mir_function.symbol, mir_function.suspend_plan.as_ref(), lir_function.state_machine.as_ref())?;
+        // Semantic MIR no longer embeds suspend / case-chain metadata (ADR 0011).
+        compare_suspend_points(&mir_function.symbol, &[], &lir_function.suspend_points)?;
+        compare_frame_layouts(&mir_function.symbol, &[], &lir_function.frame_layouts)?;
+        compare_continuations(&mir_function.symbol, &[], &lir_function.continuations)?;
+        compare_case_chains(&mir_function.symbol, &[], &lir_function.case_chains)?;
+        compare_state_machines(&mir_function.symbol, lir_function.state_machine.as_ref())?;
     }
     Ok(())
 }
@@ -214,50 +215,11 @@ fn compare_case_chains(
 }
 
 fn compare_state_machines(
-    function_name: &str,
-    mir_state_machine: Option<&nyar_language::mir::continuation_runtime::SuspendLoweringPlan>,
-    lir_state_machine: Option<&nyar_language::lir::LirStateMachineDescriptor>,
+    _function_name: &str,
+    _lir_state_machine: Option<&nyar_language::lir::LirStateMachineDescriptor>,
 ) -> Result<(), std_data::text::valkyrie::ParseError> {
-    match (mir_state_machine, lir_state_machine) {
-        (None, None) => Ok(()),
-        (Some(_), None) | (None, Some(_)) => Err(std_data::text::valkyrie::ParseError::invalid(format!(
-            "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的状态机描述存在性不一致"
-        ))),
-        (Some(mir_descriptor), Some(lir_descriptor)) => {
-            if mir_descriptor.function_symbol != lir_descriptor.function_symbol
-                || mir_descriptor.entry_block != lir_descriptor.entry_block
-                || mir_descriptor.handler_dispatch_blocks != lir_descriptor.handler_dispatch_blocks
-            {
-                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
-                    "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的状态机描述不一致"
-                )));
-            }
-            if mir_descriptor.states.len() != lir_descriptor.states.len() {
-                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
-                    "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的状态机状态数量不一致"
-                )));
-            }
-            for (index, (mir_state, lir_state)) in mir_descriptor.states.iter().zip(lir_descriptor.states.iter()).enumerate() {
-                if mir_state.state_id != lir_state.state_id
-                    || mir_state.effect != lower_effect_kind_to_mir(lir_state.effect)
-                    || mir_state.suspend_block != lir_state.suspend_block
-                    || mir_state.resume_target != lir_state.resume_target
-                    || mir_state.resume_parameter_count != lir_state.resume_parameter_count
-                    || mir_state.resume_parameter_type != lir_state.resume_parameter_type
-                    || mir_state.payload_type != lir_state.payload_type
-                    || mir_state.spill_slots != lir_state.spill_slots
-                    || mir_state.frame_carrier != lir_state.frame_carrier
-                    || mir_state.continuation_index != lir_state.continuation_index
-                {
-                    return Err(std_data::text::valkyrie::ParseError::invalid(format!(
-                        "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个状态机状态不一致",
-                        index + 1
-                    )));
-                }
-            }
-            Ok(())
-        }
-    }
+    // SuspendLoweringPlan lived on legacy MIR; LIR state machines are validated separately.
+    Ok(())
 }
 
 fn lower_effect_kind_to_mir(effect: LirEffectKind) -> MirEffectKind {
@@ -314,6 +276,7 @@ fn demo_module(body_expr: HirExpr) -> HirModule {
         structs: Vec::new(),
         enums: Vec::new(),
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: Vec::new(),
         traits: Vec::new(),
         impls: Vec::new(),
