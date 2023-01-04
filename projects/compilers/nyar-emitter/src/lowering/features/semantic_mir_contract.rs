@@ -103,17 +103,19 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
         for (index, instruction) in block.instructions.iter().enumerate() {
             if let ExecutableInstructionKind::StructNew { type_name, fields } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == *type_name)
+                let layout_name = struct_new_layout_name(type_name.as_str(), function.symbol.as_str());
+                let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == layout_name)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
                         location,
-                        detail: "aggregate construction references an unknown layout".to_string(),
+                        detail: format!("aggregate construction references an unknown layout `{layout_name}`"),
                     });
                 };
-                let output_type =
-                    crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output));
+                let output_type = crate::contracts::instruction_primary_result(instruction)
+                    .and_then(|output| function.value_types.get(&output))
+                    .or(Some(&function.return_type));
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(name, value)| {
                         layout.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
@@ -127,8 +129,9 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                             )
                         })
                     });
-                let output_owner_matches = output_type
-                    .is_some_and(|ty| struct_new_output_owner_compatible(ty, type_name.as_str(), function.symbol.as_str()));
+                let output_owner_matches = output_type.is_some_and(|ty| {
+                    struct_new_output_owner_compatible(ty, type_name.as_str(), layout_name.as_str(), function.symbol.as_str())
+                });
                 if !output_owner_matches || !fields_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
@@ -294,12 +297,21 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
     Ok(())
 }
 
-fn struct_new_output_owner_compatible(output_type: &NyarType, type_name: &str, function_symbol: &str) -> bool {
-    if aggregate_owner_name(output_type) == Some(type_name) {
+fn struct_new_layout_name(type_name: &str, function_symbol: &str) -> String {
+    if type_name == "Self" {
+        function_owner_from_symbol(function_symbol).map(str::to_string).unwrap_or_else(|| type_name.to_string())
+    } else {
+        type_name.to_string()
+    }
+}
+
+fn struct_new_output_owner_compatible(output_type: &NyarType, type_name: &str, layout_name: &str, function_symbol: &str) -> bool {
+    let _ = type_name;
+    if aggregate_owner_name(output_type) == Some(layout_name) {
         return true;
     }
     if matches!(output_type, NyarType::Named(name) if name.as_str() == "Self") {
-        return function_owner_from_symbol(function_symbol).is_some_and(|owner| owner == type_name);
+        return function_owner_from_symbol(function_symbol).is_some_and(|owner| owner == layout_name);
     }
     false
 }
