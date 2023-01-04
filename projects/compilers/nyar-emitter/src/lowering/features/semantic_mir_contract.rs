@@ -116,12 +116,19 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output));
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(name, value)| {
-                        layout.fields.iter().find(|field| field.name == *name).is_some_and(
-                            |field| matches!(value, ExecutableOperand::Value(value) if function.value_types.get(value) == Some(&field.ty)),
-                        )
+                        layout.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
+                            matches!(
+                                value,
+                                ExecutableOperand::Value(value)
+                                    if function
+                                        .value_types
+                                        .get(value)
+                                        .is_some_and(|actual| aggregate_field_types_compatible(actual, &field.ty))
+                            )
+                        })
                     });
-                let output_owner_matches =
-                    output_type.is_some_and(|ty| aggregate_owner_name(ty) == Some(type_name.as_str()));
+                let output_owner_matches = output_type
+                    .is_some_and(|ty| struct_new_output_owner_compatible(ty, type_name.as_str(), function.symbol.as_str()));
                 if !output_owner_matches || !fields_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
@@ -162,7 +169,9 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     || payload_type.as_ref() != declared.payload_type.as_ref()
                     || match (&declared.payload_type, payload, payload_value_type) {
                         (None, None, _) => false,
-                        (Some(expected), Some(ExecutableOperand::Value(_)), Some(actual)) => actual != expected,
+                        (Some(expected), Some(ExecutableOperand::Value(_)), Some(actual)) => {
+                            !aggregate_field_types_compatible(actual, expected)
+                        }
                         _ => true,
                     }
                 {
@@ -253,7 +262,11 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 });
             };
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
-                if function.value_types.get(&output) != Some(&declared.ty) {
+                if function
+                    .value_types
+                    .get(&output)
+                    .is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty))
+                {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -263,7 +276,11 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 }
             }
             if let Some(ExecutableOperand::Value(value)) = value {
-                if function.value_types.get(value) != Some(&declared.ty) {
+                if function
+                    .value_types
+                    .get(value)
+                    .is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty))
+                {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -275,6 +292,66 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
         }
     }
     Ok(())
+}
+
+fn struct_new_output_owner_compatible(output_type: &NyarType, type_name: &str, function_symbol: &str) -> bool {
+    if aggregate_owner_name(output_type) == Some(type_name) {
+        return true;
+    }
+    if matches!(output_type, NyarType::Named(name) if name.as_str() == "Self") {
+        return function_owner_from_symbol(function_symbol).is_some_and(|owner| owner == type_name);
+    }
+    false
+}
+
+fn function_owner_from_symbol(symbol: &str) -> Option<&str> {
+    symbol.rsplit_once('.').map(|(owner, _)| owner.rsplit([':', '.']).next().unwrap_or(owner))
+}
+
+/// Align emitter StructNew / FieldGet / FieldSet checks with language MIR validation:
+/// generic field slots and platform aliases must not require bitwise `NyarType` equality.
+fn aggregate_field_types_compatible(actual: &NyarType, declared: &NyarType) -> bool {
+    if actual == declared {
+        return true;
+    }
+    if mir_return_types_compatible(actual, declared) {
+        return true;
+    }
+    if is_type_parameter(declared) || is_erased_generic_placeholder(declared) {
+        return true;
+    }
+    if is_erased_generic_placeholder(actual) && is_erased_generic_placeholder(declared) {
+        return true;
+    }
+    match (normalize_platform_alias(actual), normalize_platform_alias(declared)) {
+        (NyarType::Array(actual_element), NyarType::Array(declared_element)) => {
+            aggregate_field_types_compatible(&actual_element, &declared_element)
+        }
+        (NyarType::FixedArray { element: actual_element, .. }, NyarType::Array(declared_element))
+        | (NyarType::Array(actual_element), NyarType::FixedArray { element: declared_element, .. }) => {
+            aggregate_field_types_compatible(&actual_element, &declared_element)
+        }
+        (NyarType::FixedArray { element: actual_element, .. }, NyarType::FixedArray { element: declared_element, .. }) => {
+            aggregate_field_types_compatible(&actual_element, &declared_element)
+        }
+        (NyarType::Apply(actual_base, actual_args), NyarType::Apply(declared_base, declared_args)) => {
+            aggregate_field_types_compatible(&actual_base, &declared_base)
+                && actual_args.len() == declared_args.len()
+                && actual_args
+                    .iter()
+                    .zip(declared_args.iter())
+                    .all(|(actual, declared)| aggregate_field_types_compatible(actual, declared))
+        }
+        _ => false,
+    }
+}
+
+fn is_erased_generic_placeholder(ty: &NyarType) -> bool {
+    match ty {
+        NyarType::TraitObject(object) if object.trait_path.as_str() == "__generic" && object.type_arguments.is_empty() => true,
+        NyarType::Named(_) if is_type_parameter(ty) => true,
+        _ => false,
+    }
 }
 
 fn mir_return_types_compatible(actual: &NyarType, expected: &NyarType) -> bool {
@@ -303,6 +380,9 @@ fn normalize_platform_alias(ty: &NyarType) -> NyarType {
             NyarType::Apply(Box::new(normalize_platform_alias(base)), args.iter().map(normalize_platform_alias).collect())
         }
         NyarType::Array(element) => NyarType::Array(Box::new(normalize_platform_alias(element))),
+        NyarType::FixedArray { element, length } => {
+            NyarType::FixedArray { element: Box::new(normalize_platform_alias(element)), length: *length }
+        }
         NyarType::Nullable(inner) => NyarType::Nullable(Box::new(normalize_platform_alias(inner))),
         NyarType::Union(arms) => NyarType::Union(arms.iter().map(normalize_platform_alias).collect()),
         NyarType::Tuple(elems) => NyarType::Tuple(elems.iter().map(normalize_platform_alias).collect()),
@@ -957,4 +1037,5 @@ mod tests {
             "text.invalid_scalar_length_receiver|reject|SMIR005|block 0 instruction 0"
         );
     }
+
 }
