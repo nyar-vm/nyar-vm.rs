@@ -694,6 +694,7 @@ impl MirBuilder {
                 MirOperand::Value(array_value)
             }
             HirExprKind::Construct { path, name, args, resolved } => {
+                let struct_type_name = self.struct_new_owner_name(name);
                 let mut fields = Vec::with_capacity(args.len());
                 let mut field_values = Vec::with_capacity(args.len());
                 for (arg_index, arg) in args.iter().enumerate() {
@@ -707,7 +708,7 @@ impl MirBuilder {
                         // by field position as explicit HIR metadata; do not
                         // infer a sum from the variant name.
                         let field_ty = self
-                            .lookup_struct_field_type(name.as_str(), field_name.as_str())
+                            .lookup_struct_field_type(struct_type_name.as_str(), field_name.as_str())
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
@@ -796,14 +797,14 @@ impl MirBuilder {
                     self.value_types.insert(value, return_type);
                     return MirOperand::Value(value);
                 }
-                let storage = storage_kind_for_named_type(&name.to_string(), &self.struct_is_value_type);
+                let storage = storage_kind_for_named_type(&struct_type_name, &self.struct_is_value_type);
                 let field_names: Vec<&str> = fields.iter().map(|(field_name, _)| field_name.as_str()).collect();
                 let layout_id = self
                     .aggregate_layouts
                     .layouts
                     .iter()
                     .find(|layout| {
-                        layout.name == name.as_str()
+                        layout.name == struct_type_name.as_str()
                             && field_names.len() == layout.fields.len()
                             && field_names.iter().all(|field_name| layout.fields.iter().any(|field| field.name == *field_name))
                     })
@@ -813,17 +814,22 @@ impl MirBuilder {
                             .iter()
                             .map(|(field_name, operand)| {
                                 let ty = self
-                                    .lookup_struct_field_type(name.as_str(), field_name)
+                                    .lookup_struct_field_type(struct_type_name.as_str(), field_name)
                                     .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()))
                                     .or_else(|| infer_builder_operand_type(operand, &self.value_types))
                                     .unwrap_or(ValkyrieType::Unit);
                                 (field_name.clone(), ty)
                             })
                             .collect::<Vec<_>>();
-                        Some(ensure_named_aggregate_layout(&mut self.aggregate_layouts, name.as_str(), storage, &field_types))
+                        Some(ensure_named_aggregate_layout(
+                            &mut self.aggregate_layouts,
+                            struct_type_name.as_str(),
+                            storage,
+                            &field_types,
+                        ))
                     });
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.instructions.push(MirInstruction::from_operation(MirOperation::StructNew { type_name: name.to_string(), fields }));
+                self.push_instruction(MirOperation::StructNew { type_name: struct_type_name, fields }, vec![value]);
                 self.value_types.insert(value, self.struct_construct_result_type(name, resolved.as_ref()));
                 MirOperand::Value(value)
             }

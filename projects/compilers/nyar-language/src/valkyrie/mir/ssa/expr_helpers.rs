@@ -137,6 +137,18 @@ impl MirBuilder {
         super::resolve_self_type_with_owner(&raw, self.impl_owner_type.as_ref())
     }
 
+    /// Map `Self { ... }` surface syntax to the declaring nominal owner for StructNew metadata.
+    pub(super) fn struct_new_owner_name(&self, name: &Identifier) -> String {
+        if name.as_str() == "Self" {
+            if let Some(owner) = self.impl_owner_type.as_ref() {
+                if let Some(simple) = super::nominal_type_name(owner) {
+                    return simple.to_string();
+                }
+            }
+        }
+        name.to_string()
+    }
+
     pub(super) fn try_lower_singleton_receiver_call(
         &mut self,
         callee: &HirExpr,
