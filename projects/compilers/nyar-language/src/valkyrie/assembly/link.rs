@@ -9,7 +9,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::valkyrie::mir::{LayoutId, MirFunction, MirModule, MirOperand, MirOperation, merge_aggregate_layout_plan};
+use crate::{
+    types::{Identifier, NamePath, hir::ValkyrieType},
+    valkyrie::mir::{LayoutId, MirFunction, MirModule, MirOperand, MirOperation, merge_aggregate_layout_plan},
+};
 
 /// Merge reachable dependency MIR functions (and supporting layouts/sums) into `consumer`.
 ///
@@ -46,6 +49,7 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
             .or_insert_with(|| symbol.clone());
     }
 
+    let type_param_substitutions = infer_hashmap_type_param_substitutions(consumer);
     let mut local: BTreeSet<String> = consumer.functions.iter().map(|function| function.symbol.clone()).collect();
     let mut queue = VecDeque::new();
     for function in &consumer.functions {
@@ -59,7 +63,7 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
     let mut linked_symbols = BTreeSet::new();
     let mut linked_by_dep: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     while let Some(need) = queue.pop_front() {
-        let Some((dep_index, mir_fn)) = resolve_from_pool(&need, &pool, &by_simple)
+        let Some((dep_index, mir_fn)) = resolve_from_pool(&need, &pool, &by_simple, &type_param_substitutions)
         else {
             continue;
         };
@@ -69,12 +73,15 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
         linked_symbols.insert(mir_fn.symbol.clone());
         linked_by_dep.entry(dep_index).or_default().insert(mir_fn.symbol.clone());
         local.insert(mir_fn.symbol.clone());
-        for callee in collect_static_call_symbols(mir_fn) {
+        let mut mir_fn = mir_fn.clone();
+        rewrite_type_param_method_calls(&mut mir_fn, &type_param_substitutions);
+        rewrite_bare_unwrap_calls_to_sum_payload(&mut mir_fn);
+        for callee in collect_static_call_symbols(&mir_fn) {
             if !symbol_satisfied(&callee, &local) {
                 queue.push_back(callee);
             }
         }
-        consumer.functions.push(mir_fn.clone());
+        consumer.functions.push(mir_fn);
     }
 
     if linked_symbols.is_empty() {
@@ -127,13 +134,175 @@ fn mir_symbol_ends_with_simple(symbol: &str, simple: &str) -> bool {
     symbol == simple || symbol.ends_with(&format!("::{simple}")) || symbol.ends_with(&format!(".{simple}"))
 }
 
+fn is_type_parameter_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|ch| ch.is_ascii_uppercase())
+}
+
+fn concrete_type_name(ty: &ValkyrieType) -> Option<String> {
+    match ty {
+        ValkyrieType::Named(name) => Some(name.to_string()),
+        ValkyrieType::Integer8 { signed: true } => Some("i8".to_string()),
+        ValkyrieType::Integer8 { signed: false } => Some("u8".to_string()),
+        ValkyrieType::Integer16 { signed: true } => Some("i16".to_string()),
+        ValkyrieType::Integer16 { signed: false } => Some("u16".to_string()),
+        ValkyrieType::Integer32 { signed: true } => Some("i32".to_string()),
+        ValkyrieType::Integer32 { signed: false } => Some("u32".to_string()),
+        ValkyrieType::Integer64 { signed: true } => Some("i64".to_string()),
+        ValkyrieType::Integer64 { signed: false } => Some("u64".to_string()),
+        ValkyrieType::Integer128 { signed: true } => Some("i128".to_string()),
+        ValkyrieType::Integer128 { signed: false } => Some("u128".to_string()),
+        ValkyrieType::Apply(base, args) => {
+            let base_name = concrete_type_name(base)?;
+            let arg_names = args.iter().filter_map(concrete_type_name).collect::<Vec<_>>();
+            if arg_names.len() != args.len() {
+                return None;
+            }
+            if arg_names.is_empty() {
+                return Some(base_name);
+            }
+            Some(format!("{}<{}>", base_name, arg_names.join(", ")))
+        }
+        _ => None,
+    }
+}
+
+fn record_hashmap_substitutions(substitutions: &mut BTreeMap<String, String>, ty: &ValkyrieType) {
+    let ValkyrieType::Apply(base, args) = ty else { return };
+    let ValkyrieType::Named(owner) = base.as_ref() else { return };
+    if owner.as_str() != "HashMap" || args.len() < 2 {
+        return;
+    }
+    if let Some(key) = concrete_type_name(&args[0]) {
+        substitutions.insert("K".to_string(), key);
+    }
+    if let Some(value) = concrete_type_name(&args[1]) {
+        substitutions.insert("V".to_string(), value);
+    }
+}
+
+fn infer_hashmap_type_param_substitutions(consumer: &MirModule) -> BTreeMap<String, String> {
+    let mut substitutions = BTreeMap::new();
+    for function in &consumer.functions {
+        for ty in function.param_types.iter().chain(function.value_types.values()) {
+            record_hashmap_substitutions(&mut substitutions, ty);
+        }
+    }
+    substitutions
+}
+
+fn resolve_concrete_method_need(need: &str, substitutions: &BTreeMap<String, String>) -> Option<String> {
+    let (owner, method) = need.rsplit_once('.')?;
+    if !is_type_parameter_name(owner) {
+        return None;
+    }
+    substitutions.get(owner).map(|concrete| format!("{concrete}.{method}"))
+}
+
+fn option_apply_args(receiver_ty: &ValkyrieType) -> Option<Vec<ValkyrieType>> {
+    match receiver_ty {
+        ValkyrieType::Apply(base, args) if matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Option") => {
+            Some(args.clone())
+        }
+        ValkyrieType::Nullable(inner) => Some(vec![*inner.clone()]),
+        _ => None,
+    }
+}
+
+fn option_payload_type(receiver_ty: &ValkyrieType) -> Option<ValkyrieType> {
+    option_apply_args(receiver_ty).and_then(|args| args.first().cloned())
+}
+
+fn rewrite_bare_unwrap_calls_to_sum_payload(function: &mut MirFunction) {
+    for _ in 0..4 {
+        let mut changed = false;
+        rewrite_bare_unwrap_calls_to_sum_payload_once(function, &mut changed);
+        if !changed {
+            break;
+        }
+    }
+}
+
+fn rewrite_bare_unwrap_calls_to_sum_payload_once(function: &mut MirFunction, changed: &mut bool) {
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            let MirOperation::Call { callee, arguments, .. } = &instruction.kind else { continue };
+            let MirOperand::Symbol(path) = callee else { continue };
+            let is_unwrap = match path.parts().len() {
+                1 => path.parts()[0].as_str() == "unwrap",
+                2 => path.parts()[1].as_str() == "unwrap",
+                _ => false,
+            };
+            if !is_unwrap || arguments.len() != 1 {
+                continue;
+            }
+            let receiver_ty = match &arguments[0] {
+                MirOperand::Value(value) => function.value_types.get(value).cloned(),
+                _ => None,
+            }
+            .or_else(|| {
+                instruction.results.first().and_then(|result| function.value_types.get(result)).map(|payload| {
+                    ValkyrieType::Apply(
+                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                        vec![payload.clone()],
+                    )
+                })
+            });
+            let Some(receiver_ty) = receiver_ty else { continue };
+            let Some(payload_type) = option_payload_type(&receiver_ty) else { continue };
+            let type_args = option_apply_args(&receiver_ty).unwrap_or_default();
+            if let Some(result) = instruction.results.first() {
+                function.value_types.insert(*result, payload_type.clone());
+            }
+            instruction.kind = MirOperation::SumPayloadGet {
+                sum_type: "Option".to_string(),
+                type_args,
+                variant: "Some".to_string(),
+                payload_type,
+                object: arguments[0].clone(),
+            };
+            *changed = true;
+        }
+    }
+}
+
+fn rewrite_type_param_method_calls(function: &mut MirFunction, substitutions: &BTreeMap<String, String>) {
+    if substitutions.is_empty() {
+        return;
+    }
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            let MirOperation::Call { callee, .. } = &mut instruction.kind else { continue };
+            let MirOperand::Symbol(path) = callee else { continue };
+            if path.parts().len() != 2 {
+                continue;
+            }
+            let owner = path.parts()[0].as_str();
+            let Some(concrete) = substitutions.get(owner) else { continue };
+            *callee = MirOperand::Symbol(NamePath::new(vec![Identifier::new(concrete.as_str()), path.parts()[1].clone()]));
+        }
+    }
+}
+
 fn resolve_from_pool<'a>(
     need: &str,
     pool: &'a BTreeMap<String, (usize, MirFunction)>,
     by_simple: &BTreeMap<String, String>,
+    substitutions: &BTreeMap<String, String>,
 ) -> Option<(usize, &'a MirFunction)> {
     if let Some((dep_index, function)) = pool.get(need) {
         return Some((*dep_index, function));
+    }
+    if let Some(concrete_need) = resolve_concrete_method_need(need, substitutions) {
+        if let Some((dep_index, function)) = pool.get(&concrete_need) {
+            return Some((*dep_index, function));
+        }
+    }
+    let qualified_suffix_matches: Vec<_> = pool
+        .keys()
+        .filter(|symbol| symbol_matches_need(symbol, need))
+        .collect();
+    if qualified_suffix_matches.len() == 1 {
+        return pool.get(qualified_suffix_matches[0]).map(|(dep_index, function)| (*dep_index, function));
     }
     let simple = simple_symbol_name(need);
     if let Some(exact) = by_simple.get(simple) {
@@ -142,6 +311,10 @@ fn resolve_from_pool<'a>(
         }
     }
     None
+}
+
+fn symbol_matches_need(symbol: &str, need: &str) -> bool {
+    symbol == need || symbol.ends_with(&format!(".{need}")) || symbol.ends_with(&format!("::{need}"))
 }
 
 fn collect_static_call_symbols(mir_fn: &MirFunction) -> Vec<String> {
