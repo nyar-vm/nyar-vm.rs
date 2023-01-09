@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::types::{
     Identifier, NamePath,
-    hir::{HirCallableDomain, HirExpr, HirExprKind},
+    hir::{HirCallableDomain, HirExpr, HirExprKind, HirResolvedCall},
 };
 
 use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
@@ -256,6 +256,91 @@ pub(super) fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
         ValkyrieType::Named(name) => Some(name.as_str()),
         ValkyrieType::Apply(base, _) => named_type_name(base),
         _ => None,
+    }
+}
+
+pub(super) fn option_owner_name(ty: &ValkyrieType) -> Option<&str> {
+    match ty {
+        ValkyrieType::Nullable(_) => Some("Option"),
+        ValkyrieType::Named(name) if name.as_str() == "Option" => Some("Option"),
+        ValkyrieType::Apply(base, _) if named_type_name(base) == Some("Option") => Some("Option"),
+        _ => None,
+    }
+}
+
+pub(super) fn receiver_method_owner_name(
+    receiver: &MirOperand,
+    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
+) -> Option<String> {
+    infer_builder_operand_type(receiver, value_types).and_then(|ty| {
+        named_type_name(&ty)
+            .or_else(|| option_owner_name(&ty))
+            .map(str::to_string)
+    })
+}
+
+pub(super) fn is_array_shaped_valkyrie_type(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. } => true,
+        ValkyrieType::Apply(base, _) => named_type_name(base).is_some_and(|name| name == "Array"),
+        _ => false,
+    }
+}
+
+/// Lower instance calls to `Owner.method` when HIR only supplies a bare method name.
+pub(super) fn qualify_instance_method_symbol(
+    receiver: &MirOperand,
+    method_name: &Identifier,
+    resolved: Option<&HirResolvedCall>,
+    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
+    return_types: &BTreeMap<String, ValkyrieType>,
+) -> (NamePath, Option<ValkyrieType>) {
+    let owner = receiver_method_owner_name(receiver, value_types).or_else(|| {
+        resolved.and_then(|call| {
+            call.parameter_types.first().and_then(|ty| {
+                named_type_name(ty).or_else(|| option_owner_name(ty)).map(str::to_string)
+            })
+        })
+    });
+    let qualified = |owner: &str| {
+        let symbol = NamePath::new(vec![Identifier::new(owner), method_name.clone()]);
+        let return_type = return_types.get(&format!("{owner}.{}", method_name.as_str())).cloned();
+        (symbol, return_type)
+    };
+    let needs_qualification = |symbol: &NamePath| -> bool {
+        if symbol.parts().len() == 1 {
+            return true;
+        }
+        if let Some(owner) = &owner {
+            return symbol.parts().first().map(|part| part.as_str()) != Some(owner.as_str());
+        }
+        false
+    };
+    match resolved {
+        Some(call) => {
+            let mut symbol = call.symbol.clone();
+            let mut return_type = Some(call.return_type.clone());
+            if needs_qualification(&symbol) {
+                if let Some(owner) = &owner {
+                    let (qualified_symbol, qualified_return) = qualified(owner);
+                    symbol = qualified_symbol;
+                    return_type = qualified_return.or(return_type);
+                }
+            }
+            (symbol, return_type)
+        }
+        None => {
+            if let Some(owner) = &owner {
+                qualified(&owner)
+            }
+            else {
+                eprintln!(
+                    "[mir] unresolved receiver call; lowering `{}` as diagnostic static symbol (ADR 0008)",
+                    method_name.as_str()
+                );
+                (NamePath::new(vec![method_name.clone()]), None)
+            }
+        }
     }
 }
 
