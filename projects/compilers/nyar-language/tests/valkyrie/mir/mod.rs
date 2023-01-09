@@ -1,6 +1,7 @@
 mod call_parameter_types;
 // DELETED-GOD: mod continuation_runtime;
 mod control_flow_unification_mir;
+mod option_unwrap_lowering;
 mod early_return;
 // DELETED-GOD: mod state_machine_cfg_rewrite;
 mod value_semantics;
