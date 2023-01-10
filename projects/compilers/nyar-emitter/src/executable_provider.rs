@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use nyar::QualifiedName;
+use nyar_types::NamePath;
 pub type NyarType = nyar::NyarType;
 pub type ExecutableValueRef = crate::contracts::ValueRef;
 pub type ExecutableBlockRef = crate::contracts::BlockRef;
@@ -103,6 +104,58 @@ impl MirFunctionMapProvider {
     }
 }
 
+/// True when `registry_symbol` is exactly `simple` or ends with `::simple` / `.simple`.
+pub(crate) fn callee_symbol_ends_with_simple(registry_symbol: &str, simple: &str) -> bool {
+    registry_symbol == simple || registry_symbol.ends_with(&format!(".{simple}")) || registry_symbol.ends_with(&format!("::{simple}"))
+}
+
+/// Resolve a static `Call` callee symbol to the exact local [`QualifiedName`] operation.
+///
+/// Aligns Semantic MIR (`SMIR003`) and physical planning (`BPHYS004`): bare names like
+/// `answer` must map to a unique registry entry such as `main::answer`.
+pub(crate) fn resolve_static_callee_operation(executable: &dyn ExecutableProvider, path: &NamePath) -> Option<QualifiedName> {
+    let dotted = path.to_string();
+    if let Some(operation) = operation_for_exact_symbol(executable, &dotted) {
+        return Some(operation);
+    }
+    if path.parts().len() > 1 {
+        let via_colon = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+        if let Some(operation) = operation_for_exact_symbol(executable, &via_colon) {
+            return Some(operation);
+        }
+        let qualified = QualifiedName::new(path.parts().to_vec());
+        if executable.get_function(&qualified).is_some() {
+            return Some(qualified);
+        }
+    }
+    if path.parts().len() == 1 {
+        let simple = path.parts()[0].as_str();
+        let matches: Vec<QualifiedName> = executable
+            .operations()
+            .into_iter()
+            .filter(|operation| {
+                executable
+                    .get_function(operation)
+                    .is_some_and(|view| callee_symbol_ends_with_simple(&view.function.symbol, simple))
+            })
+            .collect();
+        if matches.len() == 1 {
+            return Some(matches[0].clone());
+        }
+    }
+    None
+}
+
+fn operation_for_exact_symbol(executable: &dyn ExecutableProvider, symbol: &str) -> Option<QualifiedName> {
+    if executable.find_by_symbol(symbol).is_none() {
+        return None;
+    }
+    executable
+        .operations()
+        .into_iter()
+        .find(|operation| executable.get_function(operation).is_some_and(|view| view.function.symbol == symbol))
+}
+
 impl ExecutableProvider for MirFunctionMapProvider {
     fn operations(&self) -> Vec<QualifiedName> {
         self.functions.keys().cloned().collect()
@@ -156,5 +209,18 @@ mod tests {
         assert!(provider.find_by_symbol("entry").is_none());
         assert!(provider.find_by_symbol("other.module.entry").is_none());
         assert!(provider.find_by_symbol("module::entry").is_none());
+    }
+
+    #[test]
+    fn bare_callee_resolves_to_unique_module_helper() {
+        let main_op = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("main")]);
+        let answer_op = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("answer")]);
+        let provider = MirFunctionMapProvider::new(BTreeMap::from([
+            (main_op, function("main::main")),
+            (answer_op, function("main::answer")),
+        ]));
+        let path = NamePath::new(vec![nyar::Identifier::new("answer")]);
+        let expected = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("answer")]);
+        assert_eq!(resolve_static_callee_operation(&provider, &path), Some(expected));
     }
 }

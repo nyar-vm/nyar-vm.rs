@@ -12,7 +12,10 @@ use nyar_types::NyarType;
 
 use crate::{
     FragmentSubmission,
-    executable_provider::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef},
+    executable_provider::{
+        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider, ExecutableValueRef,
+        resolve_static_callee_operation,
+    },
 };
 
 /// Managed physical target selected before backend preparation.
@@ -199,15 +202,14 @@ fn build_function_plan(
                 // Indirect / value callees are planned later via BackendPrivatePlan.
                 continue;
             };
-            let callee = QualifiedName::new(path.parts().to_vec());
-            if executable.get_function(&callee).is_none() {
-                return Err(PhysicalPlanError::new(
+            let callee = resolve_static_callee_operation(executable, path).ok_or_else(|| {
+                PhysicalPlanError::new(
                     "BPHYS004",
                     function,
-                    location,
+                    location.clone(),
                     "static call target is not an exact local semantic function",
-                ));
-            }
+                )
+            })?;
             let parameters = arguments
                 .iter()
                 .map(|arg| match arg {
@@ -353,6 +355,34 @@ mod tests {
             let plans = build_physical_plan(&submission, backend).expect("typed scalar calls must plan for every managed backend");
             assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.caller").expect("caller plan").calls.len(), 1);
         }
+    }
+
+    #[test]
+    fn bare_module_helper_call_plans_through_unique_suffix_match() {
+        let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
+        let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
+        let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
+        caller.blocks[0].instructions.push(Instruction {
+            output: Some(ValueRef(0)),
+            kind: InstructionKind::Call {
+                dispatch: DispatchKind::Static,
+                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
+                arguments: vec![],
+                witness: None,
+                effect: None,
+                receiver_kind: None,
+                parameter_types: Some(vec![]),
+                intrinsic_opcode: None,
+            },
+        });
+        let submission = submission(vec![
+            (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
+            (main_op, caller),
+        ]);
+        let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("bare helper must resolve like SMIR003");
+        let caller_plan = plans.iter().find(|plan| plan.symbol == "main::main").expect("caller plan");
+        assert_eq!(caller_plan.calls.len(), 1);
+        assert_eq!(caller_plan.calls.values().next().expect("call contract").callee, answer_op);
     }
 
     #[test]
