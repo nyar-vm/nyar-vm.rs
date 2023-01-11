@@ -348,6 +348,67 @@ mod tests {
     }
 
     #[test]
+    fn main_seed_reaches_same_module_answer_helper() {
+        use crate::{
+            MirBlock, MirBlockRef, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation, MirTerminator, MirValue, MirValueOrigin,
+            MirValueRef, types::hir::ValkyrieType,
+        };
+
+        let answer = MirFunction {
+            symbol: "main::answer".to_string(),
+            return_type: ValkyrieType::Integer64 { signed: true },
+            param_types: Vec::new(),
+            value_types: Default::default(),
+            entry: MirBlockRef(0),
+            values: Vec::new(),
+            blocks: vec![MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: MirTerminator::Return { value: None },
+            }],
+        };
+        let out = MirValueRef(0);
+        let caller = MirFunction {
+            symbol: "main::main".to_string(),
+            return_type: ValkyrieType::Integer64 { signed: true },
+            param_types: Vec::new(),
+            value_types: Default::default(),
+            entry: MirBlockRef(0),
+            values: vec![MirValue { id: out, origin: MirValueOrigin::CallResult }],
+            blocks: vec![MirBlock {
+                id: MirBlockRef(0),
+                label: "entry".into(),
+                parameters: Vec::new(),
+                instructions: vec![MirInstruction::from_operation(MirOperation::Call {
+                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("answer")])),
+                    arguments: Vec::new(),
+                })],
+                terminator: MirTerminator::Return { value: None },
+            }],
+        };
+        let mir = MirModule {
+            name: String::new(),
+            functions: vec![caller, answer],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let seed = qualified_name_from_mir_symbol("main::main");
+        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
+        let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
+        assert!(
+            reachable.contains_key(&answer_op),
+            "main seed must pull same-module answer into executable closure, keys={:?}",
+            reachable.keys().map(|op| op.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn bare_new_does_not_widen_closure_to_unrelated_type_new() {
         use crate::{
             MirBlock, MirBlockRef, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation, MirTerminator, MirValue, MirValueOrigin,
