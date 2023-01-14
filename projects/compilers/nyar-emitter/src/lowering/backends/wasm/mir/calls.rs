@@ -36,6 +36,9 @@ impl<'a> WasmMirLowerer<'a> {
                 if self.try_emit_format_runtime_stub(callee, arguments, output) {
                     return;
                 }
+                if self.try_emit_i32_primitive_call(callee, arguments, output) {
+                    return;
+                }
                 if let Some(import_index) = self.resolve_callee_import_index(callee, arguments) {
                     if self.try_emit_wasi_cli_write_via_stream(callee, arguments, import_index, output) {
                         return;
