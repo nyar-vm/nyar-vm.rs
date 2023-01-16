@@ -9,7 +9,9 @@
 
 use crate::{types::SourceID, valkyrie::hir::ValkyrieCompiler};
 
-use super::{MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirValueOrigin};
+use super::{
+    MirConstant, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
+};
 
 /// Compiles source text into semantic MIR for singleton lowering inspection.
 fn compile_mir(source: &str) -> MirModule {
@@ -334,4 +336,108 @@ singleton TodoStore {
     let method_names: Vec<_> = store.methods.iter().map(|method| method.name.as_str().to_string()).collect();
     assert!(!method_names.iter().any(|name| name == "init"), "init should not remain in ordinary methods, got {method_names:?}");
     assert!(method_names.iter().any(|name| name == "count_all"), "expected count_all method, got {method_names:?}");
+}
+
+#[test]
+fn swiss_table_find_slot_passes_semantic_mir_contract() {
+    let mir = compile_mir(
+        r#"
+namespace std.collection;
+
+structure SwissTableEntry<K, V> {
+    key: K
+    value: V
+    hash: usize
+}
+
+class ArrayList<T> {
+    _items: [T]
+    _capacity: usize
+}
+
+imply ArrayList<T> {
+    micro length(self): usize {
+        return self._items.length
+    }
+
+    micro get(self, ordinal: usize): Option<T> {
+        return None
+    }
+}
+
+class SwissTable<K, V> {
+    _states: ArrayList<i32>
+    _entries: ArrayList<Option<SwissTableEntry<K, V>>>
+    _length: usize
+    _used: usize
+}
+
+imply SwissTable<K, V> {
+    micro find_slot(self, key: K): Option<usize> {
+        let slot_count: usize = self._states.length()
+        if slot_count == 0 {
+            return None
+        }
+
+        let key_hash: usize = key.hash()
+        let mut index: usize = key_hash % slot_count
+        let mut probe: usize = 0
+        while probe < slot_count {
+            let state: i32 = self._states.get(index + 1).unwrap()
+            if state == 0 {
+                return None
+            }
+
+            if state == 1 {
+                let entry: SwissTableEntry<K, V> = self._entries.get(index + 1).unwrap().unwrap()
+                if entry.hash == key_hash && entry.key == key {
+                    return Some(index)
+                }
+            }
+
+            index = (index + 1) % slot_count
+            probe = probe + 1
+        }
+
+        return None
+    }
+}
+"#,
+    );
+    let find_slot = find_function(&mir, "find_slot");
+    for block in &find_slot.blocks {
+        if let MirTerminator::Jump { target, arguments } = &block.terminator {
+            for (index, argument) in arguments.iter().enumerate() {
+                let ty = match argument {
+                    MirOperand::Value(value) => find_slot.value_types.get(value).cloned(),
+                    MirOperand::Constant(MirConstant::Bool(_)) => Some(crate::types::hir::ValkyrieType::Boolean),
+                    MirOperand::Constant(MirConstant::Int(_)) => {
+                        Some(crate::types::hir::ValkyrieType::Integer64 { signed: true })
+                    }
+                    MirOperand::Constant(MirConstant::Float64(_)) => Some(crate::types::hir::ValkyrieType::Float64),
+                    MirOperand::Constant(MirConstant::Unit) => Some(crate::types::hir::ValkyrieType::Unit),
+                    MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => {
+                        Some(crate::types::hir::ValkyrieType::Utf8)
+                    }
+                    MirOperand::Symbol(symbol) => {
+                        panic!(
+                            "block {} jump to {} arg {} is bare symbol {:?}",
+                            block.id.0,
+                            target.0,
+                            index,
+                            symbol
+                        );
+                    }
+                };
+                assert!(
+                    ty.is_some(),
+                    "block {} jump to {} arg {} has no SSA type: {:?}",
+                    block.id.0,
+                    target.0,
+                    index,
+                    argument
+                );
+            }
+        }
+    }
 }
