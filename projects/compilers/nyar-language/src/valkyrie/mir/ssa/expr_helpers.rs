@@ -268,14 +268,48 @@ pub(super) fn option_owner_name(ty: &ValkyrieType) -> Option<&str> {
     }
 }
 
+/// Fallback return types for std text methods when HIR/`return_types` omit cross-package contracts.
+pub(super) fn known_instance_method_return_type(owner: &str, method: &str) -> Option<ValkyrieType> {
+    use crate::types::Identifier;
+    match (owner, method) {
+        ("Utf8Text", "length") | ("Utf16Text", "length") | ("Utf8Text", "byte_length") => {
+            Some(ValkyrieType::Integer32 { signed: true })
+        }
+        ("Utf8Text", "count_char") => Some(ValkyrieType::Named(Identifier::new("usize"))),
+        ("Utf8Text", "char_at") | ("Utf16Text", "char_at") => Some(ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+            vec![ValkyrieType::Character],
+        )),
+        _ => None,
+    }
+}
+
+/// Map surface text primitives to the std class that owns instance methods (`length`, `char_at`, …).
+pub(super) fn text_method_owner(ty: &ValkyrieType) -> Option<&'static str> {
+    match ty {
+        ValkyrieType::Utf8 => Some("Utf8Text"),
+        ValkyrieType::Utf16 => Some("Utf16Text"),
+        ValkyrieType::Named(name) => match name.as_str() {
+            "utf8" | "Utf8Text" | "core.primitive.utf8" | "core::primitive::utf8" => Some("Utf8Text"),
+            "utf16" | "Utf16Text" | "core.primitive.utf16" | "core::primitive::utf16" => Some("Utf16Text"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub(super) fn receiver_method_owner_name(
     receiver: &MirOperand,
     value_types: &BTreeMap<MirValueRef, ValkyrieType>,
 ) -> Option<String> {
     infer_builder_operand_type(receiver, value_types).and_then(|ty| {
-        named_type_name(&ty)
-            .or_else(|| option_owner_name(&ty))
+        text_method_owner(&ty)
             .map(str::to_string)
+            .or_else(|| {
+                named_type_name(&ty)
+                    .or_else(|| option_owner_name(&ty))
+                    .map(str::to_string)
+            })
     })
 }
 
