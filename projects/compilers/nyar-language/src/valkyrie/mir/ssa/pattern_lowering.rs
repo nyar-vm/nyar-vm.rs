@@ -313,12 +313,15 @@ impl MirBuilder {
         let sum_name = sum.name.clone();
         let type_args = super::expr_lowering::type_args_from_sum_shaped(actual_type);
         let condition = self.next_value(MirValueOrigin::Temporary);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumVariantIs {
-            sum_type: sum_name,
-            type_args,
-            variant: variant_name.to_string(),
-            object: value,
-        }));
+        self.push_instruction(
+            MirOperation::SumVariantIs {
+                sum_type: sum_name,
+                type_args,
+                variant: variant_name.to_string(),
+                object: value,
+            },
+            vec![condition],
+        );
         self.value_types.insert(condition, ValkyrieType::Boolean);
         Some(MirOperand::Value(condition))
     }
@@ -444,14 +447,17 @@ impl MirBuilder {
             _ => payload_ty,
         };
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumPayloadGet {
+        self.push_instruction(
+            MirOperation::SumPayloadGet {
             // Alias scrutinees (`VonParseResult`) must still name the declared unite (`Result`).
             sum_type: canonical_sum_name,
             type_args: super::expr_lowering::type_args_from_sum_shaped(actual_type),
             variant: variant_simple.to_string(),
             payload_type: payload_ty.clone(),
             object: value,
-        }));
+            },
+            vec![output],
+        );
         self.value_types.insert(output, payload_ty);
         Some(MirOperand::Value(output))
     }
@@ -495,13 +501,16 @@ impl MirBuilder {
             _ => resolved.extractor_payload_type.clone(),
         }?;
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumPayloadGet {
-            sum_type,
-            type_args: super::expr_lowering::type_args_from_sum_shaped(&object_ty),
-            variant: variant.to_string(),
-            payload_type: payload_ty.clone(),
-            object: value,
-        }));
+        self.push_instruction(
+            MirOperation::SumPayloadGet {
+                sum_type,
+                type_args: super::expr_lowering::type_args_from_sum_shaped(&object_ty),
+                variant: variant.to_string(),
+                payload_type: payload_ty.clone(),
+                object: value,
+            },
+            vec![output],
+        );
         self.value_types.insert(output, payload_ty);
         Some(MirOperand::Value(output))
     }

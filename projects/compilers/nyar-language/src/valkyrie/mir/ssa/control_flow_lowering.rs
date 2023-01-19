@@ -171,6 +171,25 @@ impl MirBuilder {
         MirOperand::Constant(MirConstant::Unit)
     }
 
+    fn branch_merge_type(
+        result: &MirOperand,
+        expected_type: Option<&ValkyrieType>,
+        value_types: &std::collections::BTreeMap<super::MirValueRef, ValkyrieType>,
+    ) -> Option<ValkyrieType> {
+        expected_type
+            .cloned()
+            .or_else(|| infer_builder_operand_type(result, value_types))
+            .filter(|ty| !matches!(ty, ValkyrieType::Unit))
+    }
+
+    fn branch_merge_jump_arguments(result: &MirOperand, merge_ty: Option<&ValkyrieType>) -> Vec<MirOperand> {
+        if merge_ty.is_some() {
+            vec![result.clone()]
+        } else {
+            Vec::new()
+        }
+    }
+
     pub(super) fn lower_if_expr(
         &mut self,
         condition: &HirExpr,
@@ -197,9 +216,14 @@ impl MirBuilder {
         let then_result = self.lower_branch_block_value_with_hint(then_branch, expected_type);
         let then_returns = self.terminator.is_some();
         if self.terminator.is_none() {
-            let ty = expected_type.cloned().or_else(|| infer_builder_operand_type(&then_result, &self.value_types));
-            self.ensure_branch_exit_parameter(merge_block, &mut exit_value, ty);
-            self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![then_result] });
+            let merge_ty = Self::branch_merge_type(&then_result, expected_type, &self.value_types);
+            if merge_ty.is_some() {
+                self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
+            }
+            self.terminate(MirTerminator::Jump {
+                target: merge_block,
+                arguments: Self::branch_merge_jump_arguments(&then_result, merge_ty.as_ref()),
+            });
         }
         self.flush_block("then");
 
@@ -209,15 +233,25 @@ impl MirBuilder {
             let result = self.lower_branch_block_value_with_hint(else_body, expected_type);
             let returns = self.terminator.is_some();
             if self.terminator.is_none() {
-                let ty = expected_type.cloned().or_else(|| infer_builder_operand_type(&result, &self.value_types));
-                self.ensure_branch_exit_parameter(merge_block, &mut exit_value, ty);
-                self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![result] });
+                let merge_ty = Self::branch_merge_type(&result, expected_type, &self.value_types);
+                if merge_ty.is_some() {
+                    self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
+                }
+                self.terminate(MirTerminator::Jump {
+                    target: merge_block,
+                    arguments: Self::branch_merge_jump_arguments(&result, merge_ty.as_ref()),
+                });
             }
             returns
         }
         else {
             if self.terminator.is_none() {
-                let arguments = if exit_value.is_some() { vec![MirOperand::Constant(MirConstant::Unit)] } else { Vec::new() };
+                let arguments = exit_value
+                    .and_then(|_| {
+                        Self::branch_merge_type(&MirOperand::Constant(MirConstant::Unit), expected_type, &self.value_types)
+                            .map(|_| vec![MirOperand::Constant(MirConstant::Unit)])
+                    })
+                    .unwrap_or_default();
                 self.terminate(MirTerminator::Jump { target: merge_block, arguments });
             }
             false
@@ -259,9 +293,14 @@ impl MirBuilder {
         self.bind_pattern_from_operand_with_payload(pattern, scrutinee_operand, None, payload);
         let then_result = self.lower_branch_block_value(then_branch);
         if self.terminator.is_none() {
-            let ty = infer_builder_operand_type(&then_result, &self.value_types);
-            self.ensure_branch_exit_parameter(merge_block, &mut exit_value, ty);
-            self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![then_result] });
+            let merge_ty = Self::branch_merge_type(&then_result, None, &self.value_types);
+            if merge_ty.is_some() {
+                self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
+            }
+            self.terminate(MirTerminator::Jump {
+                target: merge_block,
+                arguments: Self::branch_merge_jump_arguments(&then_result, merge_ty.as_ref()),
+            });
         }
         self.flush_block("if_let_then");
 
@@ -270,13 +309,23 @@ impl MirBuilder {
         if let Some(else_body) = else_branch {
             let else_result = self.lower_branch_block_value(else_body);
             if self.terminator.is_none() {
-                let ty = infer_builder_operand_type(&else_result, &self.value_types);
-                self.ensure_branch_exit_parameter(merge_block, &mut exit_value, ty);
-                self.terminate(MirTerminator::Jump { target: merge_block, arguments: vec![else_result] });
+                let merge_ty = Self::branch_merge_type(&else_result, None, &self.value_types);
+                if merge_ty.is_some() {
+                    self.ensure_branch_exit_parameter(merge_block, &mut exit_value, merge_ty.clone());
+                }
+                self.terminate(MirTerminator::Jump {
+                    target: merge_block,
+                    arguments: Self::branch_merge_jump_arguments(&else_result, merge_ty.as_ref()),
+                });
             }
         }
         else if self.terminator.is_none() {
-            let arguments = if exit_value.is_some() { vec![MirOperand::Constant(MirConstant::Unit)] } else { Vec::new() };
+            let arguments = exit_value
+                .and_then(|_| {
+                    Self::branch_merge_type(&MirOperand::Constant(MirConstant::Unit), None, &self.value_types)
+                        .map(|_| vec![MirOperand::Constant(MirConstant::Unit)])
+                })
+                .unwrap_or_default();
             self.terminate(MirTerminator::Jump { target: merge_block, arguments });
         }
         self.flush_block("if_let_else");
