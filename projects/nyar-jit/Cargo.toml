@@ -1,0 +1,13 @@
+[package]
+name = "nyar-jit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Optional JIT acceleration for the Nyar bytecode runtime"
+
+[lib]
+name = "nyar_jit"
+path = "src/lib.rs"
+
+[dev-dependencies]
