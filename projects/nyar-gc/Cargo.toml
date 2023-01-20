@@ -1,0 +1,13 @@
+[package]
+name = "nyar-gc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Managed heap and mark-sweep GC for the Nyar bytecode runtime"
+
+[lib]
+name = "nyar_gc"
+path = "src/lib.rs"
+
+[dev-dependencies]

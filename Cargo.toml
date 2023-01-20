@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "projects/nvm",
+    "projects/nyar-gc",
     "projects/hosts/nyar-napi",
     "projects/hosts/nyar-wasm",
     "projects/compilers/nyar",
@@ -43,6 +44,8 @@ nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
+
+nyar-gc = { path = "projects/nyar-gc" }
 
 miette = "7.6.0"
 ordered-float = "5.3.0"
