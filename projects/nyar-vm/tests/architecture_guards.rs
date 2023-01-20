@@ -41,10 +41,10 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn nvm_src_must_not_import_concrete_languages() {
+fn nyar_vm_src_must_not_import_concrete_languages() {
     let mut files = Vec::new();
     collect_rs_files(&crate_src(), &mut files);
-    assert!(!files.is_empty(), "nvm src must exist");
+    assert!(!files.is_empty(), "nyar-vm src must exist");
     for file in files {
         let source = fs::read_to_string(&file).unwrap_or_else(|error| panic!("failed to read {}: {error}", file.display()));
         for token in FORBIDDEN_TOKENS {
@@ -58,11 +58,11 @@ fn nvm_src_must_not_import_concrete_languages() {
 }
 
 #[test]
-fn nvm_must_not_depend_on_nyar_language() {
-    let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read nvm Cargo.toml");
+fn nyar_vm_must_not_depend_on_nyar_language() {
+    let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read nyar-vm Cargo.toml");
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
         !trimmed.starts_with('#') && (trimmed.starts_with("nyar-language") || trimmed.contains("nyar_language"))
     });
-    assert!(!has_dep, "nvm Cargo.toml must not depend on nyar-language");
+    assert!(!has_dep, "nyar-vm Cargo.toml must not depend on nyar-language");
 }

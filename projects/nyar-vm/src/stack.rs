@@ -43,4 +43,9 @@ impl ValueStack {
     pub fn peek(&self) -> Result<&Value, NyarRuntimeError> {
         self.slots.last().ok_or(NyarRuntimeError::StackUnderflow)
     }
+
+    /// Borrows all stack values (GC roots).
+    pub fn values(&self) -> &[Value] {
+        &self.slots
+    }
 }

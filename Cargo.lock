@@ -1100,6 +1100,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nyar-gc"
+version = "0.1.0"
+
+[[package]]
+name = "nyar-jit"
+version = "0.1.0"
+
+[[package]]
 name = "nyar-language"
 version = "0.1.0"
 dependencies = [

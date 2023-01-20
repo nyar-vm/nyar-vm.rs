@@ -1,6 +1,6 @@
 //! End-to-end golden path: encode `.nyar` → load → execute.
 
-use nvm::{NyarVm, Value};
+use nyar_vm::{NyarVm, Value};
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
 
 #[test]

@@ -4,7 +4,7 @@
 //! for `Yield`, `Resume`, and `PerformEffect` form a coherent suspend/resume pipeline,
 //! independent of any emitter-side lowering path.
 
-use nvm::{NyarVm, Value};
+use nyar_vm::{NyarVm, Value};
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
 
 /// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
@@ -190,7 +190,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
     let result = vm.run(&loaded, "main", Vec::new());
 
     match result {
-        Err(nvm::NyarRuntimeError::TypeMismatch { expected, actual }) if expected == "active coroutine" && actual == "completed coroutine" => {
+        Err(nyar_vm::NyarRuntimeError::TypeMismatch { expected, actual }) if expected == "active coroutine" && actual == "completed coroutine" => {
             // expected: Resume handler rejected the second resume because `done == true`
         }
         other => panic!("expected TypeMismatch(active coroutine vs completed coroutine), got {other:?}"),

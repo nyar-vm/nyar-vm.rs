@@ -1,12 +1,13 @@
 [package]
-name = "nvm"
+name = "nyar-vm"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "Nyar bytecode VM — language-agnostic `.nyar` runtime"
 
 [lib]
-name = "nvm"
+name = "nyar_vm"
 path = "src/lib.rs"
 
 [[bin]]
@@ -17,5 +18,8 @@ path = "src/main.rs"
 # Language-agnostic bytecode substrate: consumes `std_data::binary::nyar_ir` only.
 # Must not depend on language frontends.
 std-data = { workspace = true }
+nyar-gc = { workspace = true }
+nyar-jit = { workspace = true }
 miette = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

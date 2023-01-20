@@ -30,6 +30,8 @@ pub enum NyarRuntimeError {
     },
     /// Module load failure.
     ModuleLoad(String),
+    /// Requested feature is not implemented (e.g. JIT while disabled).
+    UnsupportedFeature(&'static str),
 }
 
 impl Display for NyarRuntimeError {
@@ -47,6 +49,7 @@ impl Display for NyarRuntimeError {
                 write!(f, "type mismatch: expected {expected}, got {actual}")
             }
             Self::ModuleLoad(message) => write!(f, "failed to load module: {message}"),
+            Self::UnsupportedFeature(feature) => write!(f, "unsupported feature: {feature}"),
         }
     }
 }

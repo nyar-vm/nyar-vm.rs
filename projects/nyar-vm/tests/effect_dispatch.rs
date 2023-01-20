@@ -6,7 +6,7 @@
 //! continuation, and invokes the handler function with `[continuation, effect_value]`
 //! on its operand stack.
 
-use nvm::{NyarVm, Value};
+use nyar_vm::{NyarVm, Value};
 use std_data::binary::nyar_ir::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, encode_module,
 };

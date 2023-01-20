@@ -1,10 +1,11 @@
 use crate::{
     error::NyarRuntimeError,
     executor::Executor,
-    heap::ObjectHeap,
+    jit::{JitCompiledArtifact, JitCompiler, JitError},
     module::{LoadedModule, ModuleGlobals},
     value::Value,
 };
+use nyar_gc::ObjectHeap;
 
 /// Nyar virtual machine entry point.
 #[derive(Debug, Default)]
@@ -53,6 +54,21 @@ impl NyarVm {
     /// Registers a native handler on the underlying executor.
     pub fn register_native(&mut self, name: impl Into<String>, handler: crate::ops::NativeHandler) {
         self.executor.register_native(name, handler);
+    }
+
+    /// Whether the installed JIT backend is enabled.
+    pub fn jit_enabled(&self) -> bool {
+        self.executor.jit_enabled()
+    }
+
+    /// Attempts JIT compilation for one module function.
+    pub fn try_jit_compile(&mut self, module: &LoadedModule, function_index: usize) -> Result<JitCompiledArtifact, JitError> {
+        self.executor.try_jit_compile(module, function_index)
+    }
+
+    /// Replaces the JIT backend on the underlying executor.
+    pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
+        self.executor.set_jit(jit);
     }
 
     /// Borrows the executor's object heap for inspection after a run.

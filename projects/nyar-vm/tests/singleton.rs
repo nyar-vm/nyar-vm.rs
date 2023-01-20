@@ -1,6 +1,6 @@
 //! Singleton global slot and accessor execution tests.
 
-use nvm::{ModuleGlobals, NyarVm, Value};
+use nyar_vm::{ModuleGlobals, NyarVm, Value};
 use std_data::binary::nyar_ir::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarModuleData, encode_module,
 };

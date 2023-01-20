@@ -1,26 +1,27 @@
 use std::collections::HashMap;
+use std::fmt::{self, Debug, Formatter};
 
 use std_data::binary::nyar_ir::decode_at;
 
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    gc::GarbageCollector,
-    heap::{ObjectHeap, ObjectPayload},
+    jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, compile_request},
     module::LoadedModule,
     ops::{ExecutionContext, NativeHandler, StepResult, dispatch},
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
+use nyar_gc::{GarbageCollector, GcRoots, ObjectHeap};
 
 /// Bytecode interpreter loop.
-#[derive(Debug)]
 pub struct Executor {
     stack: ValueStack,
     heap: ObjectHeap,
     gc: GarbageCollector,
     frames: Vec<Frame>,
     natives: HashMap<String, NativeHandler>,
+    jit: Box<dyn JitCompiler>,
 }
 
 impl Executor {
@@ -45,7 +46,39 @@ impl Executor {
         natives.insert("bool_and".to_string(), native_bool_and as NativeHandler);
         natives.insert("bool_or".to_string(), native_bool_or as NativeHandler);
         natives.insert("i32_div".to_string(), native_i32_div as NativeHandler);
-        Self { stack: ValueStack::new(), heap: ObjectHeap::new(), gc: GarbageCollector::new(), frames: Vec::new(), natives }
+        Self {
+            stack: ValueStack::new(),
+            heap: ObjectHeap::new(),
+            gc: GarbageCollector::new(),
+            frames: Vec::new(),
+            natives,
+            jit: Box::new(DisabledJit),
+        }
+    }
+
+    /// Creates an executor with a custom JIT backend.
+    pub fn with_jit(jit: Box<dyn JitCompiler>) -> Self {
+        let mut executor = Self::new();
+        executor.jit = jit;
+        executor
+    }
+
+    /// Whether the installed JIT backend is enabled.
+    pub fn jit_enabled(&self) -> bool {
+        self.jit.enabled()
+    }
+
+    /// Attempts JIT compilation for one module function.
+    ///
+    /// Returns `JitError::Unsupported` when the installed backend is disabled.
+    pub fn try_jit_compile(&mut self, module: &LoadedModule, function_index: usize) -> Result<JitCompiledArtifact, JitError> {
+        let request = compile_request(module, function_index)?;
+        self.jit.compile_function(&request)
+    }
+
+    /// Replaces the JIT backend.
+    pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
+        self.jit = jit;
     }
 
     /// Registers or replaces a native handler.
@@ -138,7 +171,12 @@ impl Executor {
                             state.yielded_value = self.stack.peek().cloned().unwrap_or(Value::Null);
                         }
                     }
-                    self.gc.collect(&self.stack, &finished.locals, &mut self.heap);
+                    let mut frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
+                    frame_locals.push(finished.locals.as_slice());
+                    self.gc.collect(
+                        GcRoots { stack: self.stack.values(), frame_locals: &frame_locals, globals },
+                        &mut self.heap,
+                    );
                     if self.frames.is_empty() {
                         return self.stack.pop().or(Ok(Value::Null));
                     }
@@ -232,6 +270,19 @@ impl Executor {
 impl Default for Executor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Debug for Executor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Executor")
+            .field("stack", &self.stack)
+            .field("heap", &self.heap)
+            .field("gc", &self.gc)
+            .field("frames", &self.frames)
+            .field("natives", &self.natives.keys().collect::<Vec<_>>())
+            .field("jit_enabled", &self.jit.enabled())
+            .finish()
     }
 }
 

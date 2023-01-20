@@ -3,11 +3,11 @@ use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    heap::ObjectPayload,
     module::LoadedModule,
     ops::{ExecutionContext, StepResult, native_name_from_constant},
     value::Value,
 };
+use nyar_gc::ObjectPayload;
 
 /// Dispatches control-flow and variable instructions.
 pub fn execute_control(

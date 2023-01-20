@@ -5,11 +5,11 @@ use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    heap::ObjectHeap,
     module::LoadedModule,
     stack::ValueStack,
-    value::{CoroutineState, ObjectId, Value},
+    value::{CoroutineState, ObjectId, Value, value_from_constant},
 };
+use nyar_gc::ObjectHeap;
 
 mod arithmetic;
 mod control;
@@ -92,7 +92,7 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         NyarHeadCode::Const => {
             let index = instruction.operand1;
             let constant = ctx.module.constant_at(index).ok_or(NyarRuntimeError::ConstantIndexOutOfRange(index))?;
-            ctx.stack.push(Value::from_constant(constant));
+            ctx.stack.push(value_from_constant(constant));
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
