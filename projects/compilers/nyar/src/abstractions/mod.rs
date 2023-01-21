@@ -513,7 +513,7 @@ impl CanonicalTarget {
             "bun" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
             }
-            "nyar" => {
+            "nyar" | "legion" => {
                 Some(Self::new(CanonicalArch::NyarVm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
             }
             "native" => Some(Self::host_native()),

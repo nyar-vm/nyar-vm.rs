@@ -89,11 +89,14 @@ impl RuntimeFamily {
                 }
                 RuntimeTemplate { family: Self::Wasi, command: "wasmtime".to_string(), args }
             }
-            Self::NyarVm => RuntimeTemplate {
-                family: Self::NyarVm,
-                command: "nyar-vm".to_string(),
-                args: vec!["run".to_string(), "{artifact}".to_string(), "--entry".to_string(), "{entry}".to_string()],
-            },
+            Self::NyarVm => {
+                let command = std::env::var("NYAR_VM").unwrap_or_else(|_| "nyar-vm".to_string());
+                RuntimeTemplate {
+                    family: Self::NyarVm,
+                    command,
+                    args: vec!["run".to_string(), "{artifact}".to_string(), "--entry".to_string(), "{entry}".to_string()],
+                }
+            }
         }
     }
 }

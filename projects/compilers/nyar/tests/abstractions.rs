@@ -7,6 +7,8 @@ fn parses_short_aliases() {
     assert_eq!(CanonicalTarget::parse("clr").unwrap().to_string(), "clr-microsoft-unknown-managed");
     assert_eq!(CanonicalTarget::parse("jvm").unwrap().to_string(), "jvm-openjdk-unknown-managed");
     assert_eq!(CanonicalTarget::parse("wasm").unwrap().to_string(), "wasm32-unknown-browser-wasm");
+    assert_eq!(CanonicalTarget::parse("nyar").unwrap().to_string(), "nyar-unknown-unknown-managed");
+    assert_eq!(CanonicalTarget::parse("legion").unwrap().to_string(), "nyar-unknown-unknown-managed");
 }
 
 #[test]
