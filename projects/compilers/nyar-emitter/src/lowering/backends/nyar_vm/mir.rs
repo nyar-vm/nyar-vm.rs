@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    contracts::{EffectKind, instruction_primary_result},
+    contracts::{EffectKind, ValueOrigin, instruction_primary_result},
     executable_provider::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
@@ -154,12 +154,9 @@ fn lower_mir_function_to_bytecode(
     let slots = ExecutableSlotPlan::plan_jvm(&ctx, mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
 
-    for block_id in &block_order {
-        emitter.block_starts.insert(*block_id, emitter.code_bytes.len());
-    }
-
     let mut lowerer = NyarMirLowerer { submission, ctx, mir_fn, slots, emitter, function_index_by_name };
     for block_id in block_order {
+        lowerer.emitter.block_starts.insert(block_id, lowerer.emitter.code_bytes.len());
         if let Some(block) = mir_fn.blocks.get(block_id.0 as usize) {
             lowerer.emit_block(block);
         }
@@ -198,6 +195,12 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emit_operand(value);
                 if let Some(local) = self.slots.var_locals.get(name).copied() {
                     self.emit_store_local(local);
+                    if let MirOperand::Value(source) = value {
+                        self.slots.value_locals.insert(*source, local);
+                    }
+                    if let Some(output) = output {
+                        self.slots.value_locals.insert(output, local);
+                    }
                 }
             }
             MirInstructionKind::Copy { source } => {
@@ -285,6 +288,11 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::Call { callee, arguments } => {
+                if let MirOperand::Symbol(path) = callee {
+                    if self.try_emit_language_operator_call(path, arguments, output) {
+                        return;
+                    }
+                }
                 for argument in arguments {
                     self.emit_operand(argument);
                 }
@@ -294,10 +302,14 @@ impl<'a> NyarMirLowerer<'a> {
                     }
                     if let Some(index) = self.resolve_function_index(path) {
                         self.emitter.emit_imm1(NyarHeadCode::Call, index);
+                        if let Some(output) = output {
+                            self.store_to_local(output);
+                        }
+                        return;
                     }
                 }
-                if let Some(output) = output {
-                    self.store_to_local(output);
+                for _ in 0..arguments.len() {
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             MirInstructionKind::ArrayGet { array, index } => {
@@ -442,6 +454,131 @@ impl<'a> NyarMirLowerer<'a> {
         }
     }
 
+    /// Expand language `Call` operators (`infix +`, `prefix !`, …) into Nyar VM opcodes / natives.
+    fn try_emit_language_operator_call(
+        &mut self,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) -> bool {
+        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
+        match simple {
+            "prefix !" => {
+                if arguments.len() != 1 {
+                    return false;
+                }
+                self.emit_operand(&arguments[0]);
+                self.emitter.emit_call_native("bool_not", 1);
+            }
+            "prefix -" => {
+                if arguments.len() != 1 {
+                    return false;
+                }
+                match self.infer_numeric_width(&arguments[0]) {
+                    NumericWidth::I64 => {
+                        self.emit_operand(&arguments[0]);
+                        self.emitter.emit_call_native("i64_neg", 1);
+                    }
+                    NumericWidth::I32 => {
+                        self.emitter.emit_const_i32(0);
+                        self.emit_operand(&arguments[0]);
+                        self.emitter.emit_plain(NyarHeadCode::I32Sub);
+                    }
+                }
+            }
+            "prefix +" => {
+                if arguments.len() != 1 {
+                    return false;
+                }
+                self.emit_operand(&arguments[0]);
+            }
+            "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" => {
+                if arguments.len() < 2 {
+                    return false;
+                }
+                self.emit_operand(&arguments[0]);
+                self.emit_operand(&arguments[1]);
+                match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
+                    NumericWidth::I64 => {
+                        let native = match simple {
+                            "infix ==" => "i64_eq",
+                            "infix !=" => "i64_ne",
+                            "infix <" => "i64_lt",
+                            "infix <=" => "i64_le",
+                            "infix >" => "i64_gt",
+                            "infix >=" => "i64_ge",
+                            _ => return false,
+                        };
+                        self.emitter.emit_call_native(native, 2);
+                    }
+                    NumericWidth::I32 => {
+                        let opcode = match simple {
+                            "infix ==" => NyarHeadCode::I32Eq,
+                            "infix !=" => NyarHeadCode::I32Ne,
+                            "infix <" => NyarHeadCode::I32LtS,
+                            "infix <=" => NyarHeadCode::I32LeS,
+                            "infix >" => NyarHeadCode::I32GtS,
+                            "infix >=" => NyarHeadCode::I32GeS,
+                            _ => return false,
+                        };
+                        self.emitter.emit_plain(opcode);
+                    }
+                }
+            }
+            "infix +" | "infix -" | "infix *" | "infix /" | "infix %" => {
+                if arguments.len() < 2 {
+                    return false;
+                }
+                self.emit_operand(&arguments[0]);
+                self.emit_operand(&arguments[1]);
+                match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
+                    NumericWidth::I64 => {
+                        let native = match simple {
+                            "infix +" => "i64_add",
+                            "infix -" => "i64_sub",
+                            "infix *" => "i64_mul",
+                            "infix /" => "i64_div",
+                            "infix %" => "i64_rem",
+                            _ => return false,
+                        };
+                        self.emitter.emit_call_native(native, 2);
+                    }
+                    NumericWidth::I32 => match simple {
+                        "infix /" | "infix %" => {
+                            self.emitter.emit_call_native("i32_div", 2);
+                        }
+                        _ => {
+                            let opcode = match simple {
+                                "infix +" => NyarHeadCode::I32Add,
+                                "infix -" => NyarHeadCode::I32Sub,
+                                "infix *" => NyarHeadCode::I32Mul,
+                                _ => return false,
+                            };
+                            self.emitter.emit_plain(opcode);
+                        }
+                    },
+                }
+            }
+            "infix &" | "infix |" | "infix &&" | "infix ||" => {
+                if arguments.len() < 2 {
+                    return false;
+                }
+                self.emit_operand(&arguments[0]);
+                self.emit_operand(&arguments[1]);
+                let native = match simple {
+                    "infix &" | "infix &&" => "bool_and",
+                    _ => "bool_or",
+                };
+                self.emitter.emit_call_native(native, 2);
+            }
+            _ => return false,
+        }
+        if let Some(output) = output {
+            self.store_to_local(output);
+        }
+        true
+    }
+
     fn try_emit_singleton_call(&mut self, path: &nyar::NamePath, arg_count: usize, output: Option<MirValueRef>) -> bool {
         if path.parts().len() != 2 {
             return false;
@@ -568,28 +705,90 @@ impl<'a> NyarMirLowerer<'a> {
     }
 
     fn emit_operand(&mut self, operand: &MirOperand) {
+        self.try_emit_operand(operand);
+    }
+
+    fn try_emit_operand(&mut self, operand: &MirOperand) -> bool {
         match operand {
             MirOperand::Value(value) => {
-                if let Some(index) = self.parameter_index(*value) {
-                    self.emitter.emit_imm1(NyarHeadCode::LoadArg, index as i32);
-                    return;
-                }
                 if let Some(local) = self.slots.value_locals.get(value).copied() {
                     self.emit_load_local(local);
+                    return true;
                 }
+                if let Some(name) = self.value_binding_name(*value) {
+                    if let Some(local) = self.slots.var_locals.get(name).copied() {
+                        self.emit_load_local(local);
+                        return true;
+                    }
+                }
+                if let Some(index) = self.parameter_index(*value) {
+                    self.emitter.emit_imm1(NyarHeadCode::LoadArg, index as i32);
+                    return true;
+                }
+                if let Some(local) = self.block_parameter_local(*value) {
+                    self.emit_load_local(local);
+                    return true;
+                }
+                if let Some(name) = self.value_binding_name(*value) {
+                    if let Some(named_value) = self.find_named_value(name) {
+                        if let Some(local) = self.slots.value_locals.get(&named_value).copied() {
+                            self.emit_load_local(local);
+                            return true;
+                        }
+                    }
+                }
+                false
             }
-            MirOperand::Constant(constant) => self.emit_load_constant(constant),
+            MirOperand::Constant(constant) => {
+                self.emit_load_constant(constant);
+                true
+            }
             MirOperand::Symbol(path) => {
                 if let Some(local) = self.slots.var_locals.get(&path.to_string()).copied() {
                     self.emit_load_local(local);
+                    return true;
                 }
+                if let Some(name) = path.parts().last().map(|part| part.as_str()) {
+                    if let Some(value) = self.find_named_value(name) {
+                        if let Some(local) = self.slots.value_locals.get(&value).copied() {
+                            self.emit_load_local(local);
+                            return true;
+                        }
+                    }
+                }
+                false
             }
         }
+    }
+
+    fn value_binding_name(&self, value: MirValueRef) -> Option<&str> {
+        self.mir_fn.values.iter().find(|candidate| candidate.id == value).and_then(|candidate| match &candidate.origin {
+            ValueOrigin::Parameter { name, .. }
+            | ValueOrigin::LetBinding { name }
+            | ValueOrigin::BlockParameter { name, .. }
+            | ValueOrigin::MutRefBinding { name }
+            | ValueOrigin::PinMutRefBinding { name } => Some(name.as_str()),
+            _ => None,
+        })
+    }
+
+    fn find_named_value(&self, name: &str) -> Option<MirValueRef> {
+        self.mir_fn.values.iter().find_map(|value| match &value.origin {
+            ValueOrigin::Parameter { name: binding, .. }
+            | ValueOrigin::LetBinding { name: binding }
+            | ValueOrigin::BlockParameter { name: binding, .. }
+            | ValueOrigin::MutRefBinding { name: binding }
+            | ValueOrigin::PinMutRefBinding { name: binding } if binding == name => Some(value.id),
+            _ => None,
+        })
     }
 
     fn store_to_local(&mut self, value: MirValueRef) {
         if let Some(local) = self.slots.value_locals.get(&value).copied() {
             self.emit_store_local(local);
+        }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
         }
     }
 
@@ -605,6 +804,50 @@ impl<'a> NyarMirLowerer<'a> {
         let entry = self.mir_fn.blocks.get(self.mir_fn.entry.0 as usize)?;
         entry.parameters.iter().position(|parameter| *parameter == value)
     }
+
+    fn block_parameter_local(&self, value: MirValueRef) -> Option<u16> {
+        for block in &self.mir_fn.blocks {
+            for (index, parameter) in block.parameters.iter().enumerate() {
+                if *parameter == value {
+                    return self.slots.block_param_locals.get(&(block.id, index)).copied();
+                }
+            }
+        }
+        None
+    }
+
+    fn infer_numeric_width_from_pair(&self, lhs: &MirOperand, rhs: &MirOperand) -> NumericWidth {
+        self.infer_numeric_width(lhs).max(self.infer_numeric_width(rhs))
+    }
+
+    fn infer_numeric_width(&self, operand: &MirOperand) -> NumericWidth {
+        match self.operand_type(operand) {
+            Some(NyarType::Integer64 { .. }) => NumericWidth::I64,
+            _ => NumericWidth::I32,
+        }
+    }
+
+    fn operand_type(&self, operand: &MirOperand) -> Option<NyarType> {
+        match operand {
+            MirOperand::Value(value) => self.mir_fn.value_types.get(value).cloned(),
+            MirOperand::Constant(constant) => match constant {
+                MirConstant::Int(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => {
+                    Some(NyarType::Integer32 { signed: true })
+                }
+                MirConstant::Int(_) => Some(NyarType::Integer64 { signed: true }),
+                MirConstant::Bool(_) => Some(NyarType::Boolean),
+                MirConstant::Utf8(_) => Some(NyarType::Utf8),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum NumericWidth {
+    I32,
+    I64,
 }
 
 impl BytecodeEmitter {
