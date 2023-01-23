@@ -1050,15 +1050,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nvm"
-version = "0.1.0"
-dependencies = [
- "clap",
- "miette",
- "vcc-data",
-]
-
-[[package]]
 name = "nyar"
 version = "0.1.0"
 dependencies = [
@@ -1192,6 +1183,18 @@ dependencies = [
  "serde",
  "sha2",
  "url",
+]
+
+[[package]]
+name = "nyar-vm"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "miette",
+ "nyar-gc",
+ "nyar-jit",
+ "serde_json",
+ "vcc-data",
 ]
 
 [[package]]
