@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    contracts::EffectKind,
+    contracts::{EffectKind, instruction_primary_result},
     executable_provider::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
@@ -11,12 +11,11 @@ use crate::{
     },
 };
 use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, LayoutId};
+use nyar_types::AggregateLayout;
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
 
 use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-    intrinsic_opcode::{IntrinsicBinaryOp, IntrinsicBitwiseOp, IntrinsicCompareOp, IntrinsicOpcode},
     nyar_vm::operation_short_name,
     singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
@@ -106,7 +105,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             let export_name = nyar_mir_export_name(submission, &operation);
             let code_offset = module.code_bytes.len() as i32;
             let constants_base = module.constants.len() as i32;
-            let mut emitter = Bytecodenyar_emitter::new(constants_base);
+            let mut emitter = BytecodeEmitter::new(constants_base);
 
             lower_mir_function_to_bytecode(submission, mir_fn, &function_index_by_name, &mut emitter);
 
@@ -160,19 +159,6 @@ fn lower_mir_function_to_bytecode(
     }
 
     let mut lowerer = NyarMirLowerer { submission, ctx, mir_fn, slots, emitter, function_index_by_name };
-    if let Some(opcode) = mir_fn.intrinsic {
-        if mir_fn.blocks.iter().all(|block| block.instructions.is_empty()) {
-            let arguments = mir_fn
-                .blocks
-                .get(mir_fn.entry.0 as usize)
-                .map(|block| block.parameters.iter().copied().map(MirOperand::Value).collect::<Vec<_>>())
-                .unwrap_or_default();
-            lowerer.emit_intrinsic_opcode(opcode, &arguments, None);
-            lowerer.emitter.emit_plain(NyarHeadCode::Return);
-            lowerer.emitter.patch_pending_jumps();
-            return;
-        }
-    }
     for block_id in block_order {
         if let Some(block) = mir_fn.blocks.get(block_id.0 as usize) {
             lowerer.emit_block(block);
@@ -200,10 +186,11 @@ impl<'a> NyarMirLowerer<'a> {
     }
 
     fn emit_instruction(&mut self, instruction: &MirInstruction) {
+        let output = instruction_primary_result(instruction);
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
                 self.emit_load_constant(constant);
-                if let Some(output) = instruction.output {
+                if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
@@ -215,30 +202,25 @@ impl<'a> NyarMirLowerer<'a> {
             }
             MirInstructionKind::Copy { source } => {
                 self.emit_operand(source);
-                if let Some(output) = instruction.output {
+                if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::StructNew { type_name, fields, layout_id, .. } => {
-                // NyarVM 把所有聚合体统一表示为堆上 Record；Value 与 Reference storage
-                // 在字节码层面共享同一条 `alloc_record` + 逐字段 `record_set` 路径，
-                // 仅在前端语义上区分是否需要深拷贝。
+            MirInstructionKind::StructNew { type_name, fields } => {
                 self.emit_alloc_record(type_name);
-                let output = instruction.output.expect("StructNew must produce an output");
+                let output = output.expect("StructNew must produce an output");
                 self.store_to_local(output);
-                let _ = self.resolve_layout(*layout_id, type_name);
+                let _ = self.resolve_layout(None, type_name);
                 let output_operand = MirOperand::Value(output);
                 for (field_name, value) in fields {
                     self.emit_record_set(&output_operand, field_name, value);
                 }
             }
-            MirInstructionKind::TupleNew { fields, layout_id, .. } => {
-                // 元组字段在 layout 中以索引字符串 ("0","1",...) 命名，与
-                // `layout_for_tuple` 保持一致；type_name 取自 layout 或回退到 "__tuple"。
-                let layout = self.resolve_layout(*layout_id, "__tuple");
+            MirInstructionKind::TupleNew { fields } => {
+                let layout = self.resolve_layout(None, "__tuple");
                 let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("__tuple");
                 self.emit_alloc_record(type_name);
-                let output = instruction.output.expect("TupleNew must produce an output");
+                let output = output.expect("TupleNew must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in fields.iter().enumerate() {
@@ -250,15 +232,14 @@ impl<'a> NyarMirLowerer<'a> {
                     self.emit_record_set(&output_operand, &owned, value);
                 }
             }
-            MirInstructionKind::FixedArrayNew { items: fields, layout_id, .. } => {
-                // 定长数组与元组同构：layout 字段名为索引字符串。
-                let layout = self.resolve_layout(*layout_id, "__fixedarray");
+            MirInstructionKind::ArrayFromElements { elements, .. } => {
+                let layout = self.resolve_layout(None, "__fixedarray");
                 let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("__fixedarray");
                 self.emit_alloc_record(type_name);
-                let output = instruction.output.expect("FixedArrayNew must produce an output");
+                let output = output.expect("ArrayFromElements must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
-                for (index, value) in fields.iter().enumerate() {
+                for (index, value) in elements.iter().enumerate() {
                     let owned = layout
                         .as_ref()
                         .and_then(|item| item.fields.get(index))
@@ -267,14 +248,11 @@ impl<'a> NyarMirLowerer<'a> {
                     self.emit_record_set(&output_operand, &owned, value);
                 }
             }
-            MirInstructionKind::AggregateCopy { source, dest, layout_id } => {
-                // 值语义拷贝：在 NyarVM 上必须分配一条新 Record 再逐字段复制，
-                // 否则 dest 与 source 会共享同一对象 id，破坏值语义不变式。
-                let (type_name, fields) = match self.ctx.layout_by_id(*layout_id) {
-                    Some(layout) => (layout.name.clone(), layout.fields.clone()),
-                    None => ("aggregate".to_string(), Vec::new()),
-                };
-                self.emit_alloc_record(&type_name);
+            MirInstructionKind::AggregateCopy { source, dest } => {
+                let layout = self.infer_layout_for_operand(source);
+                let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("aggregate");
+                let fields = layout.as_ref().map(|item| item.fields.clone()).unwrap_or_default();
+                self.emit_alloc_record(type_name);
                 if let MirOperand::Value(dest_value) = dest {
                     self.store_to_local(*dest_value);
                 }
@@ -289,48 +267,58 @@ impl<'a> NyarMirLowerer<'a> {
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
-            MirInstructionKind::FieldGet { object, field, layout_id, .. } => {
-                // NyarVM 中 Value 与 Reference 路径同构：均为堆 Record，复用 record_get。
-                let _ = layout_id;
+            MirInstructionKind::FieldGet { object, field, .. } => {
                 self.emit_operand(object);
                 let field_index = self.emitter.intern_string(field);
                 self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
                 self.emitter.emit_call_native("record_get", 2);
-                if let Some(output) = instruction.output {
+                if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::FieldSet { object, field, value, layout_id, .. } => {
-                // NyarVM 中 Value 与 Reference 路径同构：均为堆 Record，复用 record_set。
-                let _ = layout_id;
+            MirInstructionKind::FieldSet { object, field, value, .. } => {
                 self.emit_operand(object);
                 let field_index = self.emitter.intern_string(field);
                 self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
                 self.emit_operand(value);
                 self.emitter.emit_call_native("record_set", 3);
-                // record_set 返回 Null，必须弹出以保持栈平衡。
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
-            MirInstructionKind::Call { callee, arguments, .. } => {
-                if let Some(opcode) = self.ctx.resolve_intrinsic_opcode(callee) {
-                    self.emit_intrinsic_opcode(opcode, arguments, instruction.output);
-                    return;
-                }
+            MirInstructionKind::Call { callee, arguments } => {
                 for argument in arguments {
                     self.emit_operand(argument);
                 }
                 if let MirOperand::Symbol(path) = callee {
-                    if self.try_emit_singleton_call(path, arguments.len(), instruction.output) {
+                    if self.try_emit_singleton_call(path, arguments.len(), output) {
                         return;
                     }
                     if let Some(index) = self.resolve_function_index(path) {
                         self.emitter.emit_imm1(NyarHeadCode::Call, index);
-                        if instruction.output.is_some() {
-                            // keep result on stack
-                        }
                     }
                 }
-                if let Some(output) = instruction.output {
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+            }
+            MirInstructionKind::ArrayGet { array, index } => {
+                self.emit_operand(array);
+                self.emit_operand(index);
+                self.emitter.emit_call_native("array_get", 2);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+            }
+            MirInstructionKind::ArraySet { array, index, value } => {
+                self.emit_operand(array);
+                self.emit_operand(index);
+                self.emit_operand(value);
+                self.emitter.emit_call_native("array_set", 3);
+                self.emitter.emit_plain(NyarHeadCode::Pop);
+            }
+            MirInstructionKind::ArrayLength { array } => {
+                self.emit_operand(array);
+                self.emitter.emit_call_native("array_len", 1);
+                if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
@@ -496,8 +484,22 @@ impl<'a> NyarMirLowerer<'a> {
     }
 
     /// 解析聚合体 layout，优先按 layout_id 查找，缺失时回退到 type_name。
-    fn resolve_layout(&self, layout_id: Option<LayoutId>, type_name: &str) -> Option<AggregateLayout> {
+    fn resolve_layout(&self, layout_id: Option<nyar_types::LayoutId>, type_name: &str) -> Option<AggregateLayout> {
         layout_id.and_then(|id| self.ctx.layout_by_id(id).cloned()).or_else(|| self.ctx.layout_by_type_name(type_name).cloned())
+    }
+
+    fn infer_layout_for_operand(&self, operand: &MirOperand) -> Option<AggregateLayout> {
+        match operand {
+            MirOperand::Value(value) => self
+                .mir_fn
+                .value_types
+                .get(value)
+                .and_then(|ty| match ty {
+                    NyarType::Named(name) => self.ctx.layout_by_type_name(name.as_str()).cloned(),
+                    _ => None,
+                }),
+            _ => None,
+        }
     }
 
     /// 发射 `alloc_record(type_name)` 字节码序列，结果（新 Record 的对象 id）压栈。
@@ -535,140 +537,6 @@ impl<'a> NyarMirLowerer<'a> {
             self.emit_operand(argument);
             self.emit_store_local(param_local);
             self.slots.value_locals.insert(*parameter, param_local);
-        }
-    }
-
-    fn emit_intrinsic_opcode(&mut self, opcode: IntrinsicOpcode, arguments: &[MirOperand], output: Option<MirValueRef>) {
-        match opcode {
-            IntrinsicOpcode::Binary(op) => self.emit_intrinsic_binary(op, arguments, output),
-            IntrinsicOpcode::Neg => {
-                self.emit_operand(&arguments[0]);
-                self.emitter.emit_call_native("i64_neg", 1);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-            }
-            IntrinsicOpcode::Compare(op) => {
-                self.emit_operand(&arguments[0]);
-                self.emit_operand(&arguments[1]);
-                match self.infer_numeric_native(&arguments[0], &arguments[1]) {
-                    NumericWidth::I64 => {
-                        let native = match op {
-                            IntrinsicCompareOp::Eq => "i64_eq",
-                            IntrinsicCompareOp::Ne => "i64_ne",
-                            IntrinsicCompareOp::Lt => "i64_lt",
-                            IntrinsicCompareOp::Le => "i64_le",
-                            IntrinsicCompareOp::Gt => "i64_gt",
-                            IntrinsicCompareOp::Ge => "i64_ge",
-                        };
-                        self.emitter.emit_call_native(native, 2);
-                    }
-                    NumericWidth::I32 => {
-                        let opcode = match op {
-                            IntrinsicCompareOp::Eq => NyarHeadCode::I32Eq,
-                            IntrinsicCompareOp::Ne => NyarHeadCode::I32Ne,
-                            _ => NyarHeadCode::I32Eq,
-                        };
-                        self.emitter.emit_plain(opcode);
-                    }
-                }
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-            }
-            IntrinsicOpcode::Not => {
-                self.emit_operand(&arguments[0]);
-                self.emitter.emit_call_native("bool_not", 1);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-            }
-            IntrinsicOpcode::Bitwise(op) => match op {
-                IntrinsicBitwiseOp::And | IntrinsicBitwiseOp::Or => {
-                    self.emit_operand(&arguments[0]);
-                    self.emit_operand(&arguments[1]);
-                    let native = if matches!(op, IntrinsicBitwiseOp::And) { "bool_and" } else { "bool_or" };
-                    self.emitter.emit_call_native(native, 2);
-                    if let Some(output) = output {
-                        self.store_to_local(output);
-                    }
-                }
-                _ => {}
-            },
-            IntrinsicOpcode::ArrayGet
-            | IntrinsicOpcode::ArraySet
-            | IntrinsicOpcode::ArrayLen
-            | IntrinsicOpcode::ArrayPush
-            | IntrinsicOpcode::Deref
-            | IntrinsicOpcode::Utf8ScalarSlice
-            | IntrinsicOpcode::Utf8ScalarLength => {}
-            IntrinsicOpcode::Utf8ContentEqual
-            | IntrinsicOpcode::Utf8ContentNotEqual
-            | IntrinsicOpcode::Utf8Trim
-            | IntrinsicOpcode::Utf8IndexOf
-            | IntrinsicOpcode::Utf8Contains
-            | IntrinsicOpcode::Utf8StartsWith
-            | IntrinsicOpcode::Utf8EndsWith => {}
-            IntrinsicOpcode::SumVariantIs | IntrinsicOpcode::SumStructuralEqual => {}
-        }
-    }
-
-    fn emit_intrinsic_binary(&mut self, op: IntrinsicBinaryOp, arguments: &[MirOperand], output: Option<MirValueRef>) {
-        self.emit_operand(&arguments[0]);
-        self.emit_operand(&arguments[1]);
-        let native = match self.infer_numeric_native(&arguments[0], &arguments[1]) {
-            NumericWidth::I64 => match op {
-                IntrinsicBinaryOp::Add => "i64_add",
-                IntrinsicBinaryOp::Sub => "i64_sub",
-                IntrinsicBinaryOp::Mul => "i64_mul",
-                IntrinsicBinaryOp::Div => "i64_div",
-                IntrinsicBinaryOp::Rem => "i64_rem",
-            },
-            NumericWidth::I32 => {
-                let opcode = match op {
-                    IntrinsicBinaryOp::Add => NyarHeadCode::I32Add,
-                    IntrinsicBinaryOp::Sub => NyarHeadCode::I32Sub,
-                    IntrinsicBinaryOp::Mul => NyarHeadCode::I32Mul,
-                    IntrinsicBinaryOp::Div | IntrinsicBinaryOp::Rem => {
-                        self.emitter.emit_call_native("i32_div", 2);
-                        if let Some(output) = output {
-                            self.store_to_local(output);
-                        }
-                        return;
-                    }
-                };
-                self.emitter.emit_plain(opcode);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-                return;
-            }
-        };
-        self.emitter.emit_call_native(native, 2);
-        if let Some(output) = output {
-            self.store_to_local(output);
-        }
-    }
-
-    fn infer_numeric_native(&self, lhs: &MirOperand, rhs: &MirOperand) -> NumericWidth {
-        let ty = self.operand_type(lhs).or_else(|| self.operand_type(rhs)).unwrap_or(NyarType::Integer32 { signed: true });
-        match ty {
-            NyarType::Integer64 { .. } => NumericWidth::I64,
-            _ => NumericWidth::I32,
-        }
-    }
-
-    fn operand_type(&self, operand: &MirOperand) -> Option<NyarType> {
-        match operand {
-            MirOperand::Value(value) => self.mir_fn.value_types.get(value).cloned(),
-            MirOperand::Constant(constant) => match constant {
-                MirConstant::Int(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => Some(NyarType::Integer32 { signed: true }),
-                MirConstant::Int(_) => Some(NyarType::Integer64 { signed: true }),
-                MirConstant::Bool(_) => Some(NyarType::Boolean),
-                MirConstant::Utf8(_) => Some(NyarType::Utf8),
-                _ => None,
-            },
-            _ => None,
         }
     }
 
@@ -737,11 +605,6 @@ impl<'a> NyarMirLowerer<'a> {
         let entry = self.mir_fn.blocks.get(self.mir_fn.entry.0 as usize)?;
         entry.parameters.iter().position(|parameter| *parameter == value)
     }
-}
-
-enum NumericWidth {
-    I32,
-    I64,
 }
 
 impl BytecodeEmitter {

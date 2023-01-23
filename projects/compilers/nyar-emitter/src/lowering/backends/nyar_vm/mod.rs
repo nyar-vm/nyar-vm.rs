@@ -138,7 +138,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
         }
     }
 
-    let mut emitter = Bytecodenyar_emitter::new();
+    let mut emitter = BytecodeEmitter::new();
     let mut functions = Vec::new();
     let mut symbol_to_index = BTreeMap::new();
     let mut export_short_names = Vec::new();
@@ -152,16 +152,8 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
 
     for operation in &local_operations {
         let code_offset = emitter.code_bytes.len() as i32;
-        let bool_profile =
-            submission.nullable_bool_profiles.iter().find(|profile| &profile.function == operation).map(|profile| profile.true_value);
-        let try_call =
-            submission.nullable_try_calls.iter().find(|call| &call.caller == operation && call.callee_arg_is_true).and_then(|call| {
-                submission
-                    .nullable_bool_profiles
-                    .iter()
-                    .find(|profile| profile.function == call.callee)
-                    .map(|profile| (call.callee.clone(), profile.true_value))
-            });
+        let bool_profile: Option<i64> = None;
+        let try_call: Option<(QualifiedName, i64)> = None;
 
         let emitted_specialized = if let Some(true_value) = bool_profile {
             emit_bool_nullable_helper(&mut emitter, true_value);

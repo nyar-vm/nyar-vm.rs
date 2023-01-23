@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::nyar_backend_wasi::WasmBinaryModule;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use crate::{
     nyar_backend_clr::{
         MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode, MsilType,
@@ -12,33 +12,33 @@ use crate::{
         JvmClassFile, JvmCodeBody, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodSignature, JvmTypeDescriptor,
     },
 };
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar::NyarType;
 use nyar_types::{AggregateLayout, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME, SingletonInstancePlan};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{FieldLayout, SINGLETON_UNLOAD_ACCESSOR};
 use std_data::binary::{
     nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarModuleData},
     pe::NativeImageBuilder,
 };
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use std_data::{
     binary::class::{JvmFieldRef, JvmMethodRef},
     text::msil::{MsilField, MsilTypeDef},
 };
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use super::{clr_mir::lower_mir_function_to_msil, clr_types::nyar_type_to_msil, jvm_mir::lower_mir_function_to_jvm};
 use crate::{FragmentSubmission, lowering::backends::wasm};
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 const INIT_LOCK_FIELD: &str = "__singleton_init_lock";
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 const JVM_ACC_PUBLIC: u16 = 0x0001;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 const JVM_ACC_STATIC: u16 = 0x0008;
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn build_jvm_singleton_classes(submission: &FragmentSubmission) -> Vec<JvmClassFile> {
     submission
         .singleton_instances
@@ -53,7 +53,7 @@ pub(crate) fn build_jvm_singleton_classes(submission: &FragmentSubmission) -> Ve
 /// 否则运行时会抛出 `NoClassDefFoundError`。值类型在直接使用时会被 `effective_jvm_type`
 /// 展平为基础类型，但在数组元素位置时仍以 `Object("TypeName")` 形式出现在描述符中，
 /// 因此需要生成占位类。singleton 类型由 `build_jvm_singleton_classes` 单独处理，此处跳过。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn build_jvm_struct_classes(submission: &FragmentSubmission) -> Vec<JvmClassFile> {
     let singleton_names: std::collections::BTreeSet<String> = submission.singleton_instances.iter().map(|plan| plan.name.clone()).collect();
     let sum_type_names: std::collections::BTreeSet<String> = submission.sum_types.iter().map(|sum_type| sum_type.name.clone()).collect();
@@ -102,7 +102,7 @@ pub(crate) fn build_jvm_struct_classes(submission: &FragmentSubmission) -> Vec<J
 /// 句柄表示，字段描述符必须是 `I` 而非 `L<Type>;`。否则 `getfield` 会返回对象引用，
 /// 而 `store_to_value` 使用 `istore` 期望 int，触发
 /// VerifyError: "Expecting to find integer on stack"。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn build_jvm_placeholder_class(
     internal_name: &str,
     fields: &[FieldLayout],
@@ -123,7 +123,7 @@ fn build_jvm_placeholder_class(
 /// Unite sum type（如 `VonValue`/`Option<T>`/`Result<T,E>`）在 JVM 后端用 int
 /// 句柄表示，字段描述符必须是 `I`。此方法检查 `NyarType::Named` 和
 /// `NyarType::Apply(Named, _)` 两种形式，与 `effective_jvm_type` 的判断对齐。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn is_unite_sum_type_field(ty: &NyarType, sum_type_names: &std::collections::BTreeSet<String>) -> bool {
     let name = match ty {
         NyarType::Named(name) => name.as_str(),
@@ -142,7 +142,7 @@ fn is_unite_sum_type_field(ty: &NyarType, sum_type_names: &std::collections::BTr
 
 /// 占位类字段描述符：标量 unite → `I`，`[Unite]` → `[I`，与方法参数 ABI /
 /// `effective_array_element_type` / `jvm_field_descriptor_for_class` 对齐。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn field_descriptor_for_placeholder(ty: &NyarType, sum_type_names: &std::collections::BTreeSet<String>) -> JvmTypeDescriptor {
     if is_unite_sum_type_field(ty, sum_type_names) {
         return JvmTypeDescriptor::Int;
@@ -436,12 +436,12 @@ fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInst
 }
 
 /// 计算 singleton plan 对应的 JVM 内部类名（斜杠分隔），与 `build_jvm_singleton_class` 生成的 `internal_name` 一致。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn jvm_internal_name(plan: &SingletonInstancePlan) -> String {
     if plan.namespace.is_empty() { plan.name.clone() } else { format!("{}/{}", plan.namespace.replace('.', "/"), plan.name) }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn nyar_type_to_jvm_descriptor(ty: &NyarType) -> JvmTypeDescriptor {
     match ty {
         NyarType::Bottom | NyarType::Unit => JvmTypeDescriptor::Int,
@@ -463,7 +463,7 @@ fn nyar_type_to_jvm_descriptor(ty: &NyarType) -> JvmTypeDescriptor {
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn build_jvm_singleton_class(submission: &FragmentSubmission, plan: &SingletonInstancePlan, layout: &AggregateLayout) -> JvmClassFile {
     let internal_name = jvm_internal_name(plan);
     let instance_descriptor = JvmTypeDescriptor::Object(internal_name.clone());
@@ -502,7 +502,7 @@ fn build_jvm_singleton_class(submission: &FragmentSubmission, plan: &SingletonIn
     class_file
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn default_jvm_ctor(_internal_name: &str) -> JvmMethodSignature {
     JvmMethodSignature {
         name: "<init>".to_string(),
@@ -524,7 +524,7 @@ fn default_jvm_ctor(_internal_name: &str) -> JvmMethodSignature {
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn jvm_eager_clinit(internal_name: &str, instance_field: &JvmFieldRef, plan: &SingletonInstancePlan) -> JvmMethodSignature {
     let mut instructions = vec![
         JvmInstruction::New(internal_name.to_string()),
@@ -553,7 +553,7 @@ fn jvm_eager_clinit(internal_name: &str, instance_field: &JvmFieldRef, plan: &Si
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn jvm_eager_instance_accessor(instance_field: &JvmFieldRef, return_type: &JvmTypeDescriptor) -> JvmMethodSignature {
     JvmMethodSignature {
         name: "instance".to_string(),
@@ -567,7 +567,7 @@ fn jvm_eager_instance_accessor(instance_field: &JvmFieldRef, return_type: &JvmTy
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn jvm_lazy_get_instance(
     internal_name: &str,
     instance_field: &JvmFieldRef,
@@ -618,7 +618,7 @@ fn jvm_lazy_get_instance(
 /// 4. 非空但无终结器时不做额外操作。
 /// 5. `AConstNull` + `PutStatic` 清空全局槽。
 /// 6. `Label unload_done` + `Return`。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn jvm_unload(internal_name: &str, instance_field: &JvmFieldRef, plan: &SingletonInstancePlan) -> JvmMethodSignature {
     let mut instructions = vec![JvmInstruction::GetStatic(instance_field.clone()), JvmInstruction::IfNull("unload_done".to_string())];
     if plan.finalizer_symbol.is_some() {
@@ -648,7 +648,7 @@ fn jvm_unload(internal_name: &str, instance_field: &JvmFieldRef, plan: &Singleto
 /// 每个限定名为 `SingletonName.method` 的 MIR 函数通过 `lower_mir_function_to_jvm` 降低，
 /// 然后调整为实例方法：剥离首个 `self` 参数描述符、移除 `STATIC` 标志、重命名为方法名。
 /// 访问器（`get_instance`/`instance`）和 `unload` 由调用方直接生成，在此跳过。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn emit_jvm_singleton_instance_methods(submission: &FragmentSubmission, plan: &SingletonInstancePlan, class_file: &mut JvmClassFile) {
     let accessor = plan.accessor_method();
     let Some(exec) = &submission.executable
@@ -679,7 +679,7 @@ fn emit_jvm_singleton_instance_methods(submission: &FragmentSubmission, plan: &S
 }
 
 /// Augment an MSIL module with singleton static fields and initialization methods.
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn augment_msil_with_singletons(submission: &FragmentSubmission, module: &mut MsilModule) -> miette::Result<()> {
     for plan in &submission.singleton_instances {
         let Some(type_def) = find_msil_type(module, &plan.namespace, &plan.name)
@@ -714,7 +714,7 @@ pub(crate) fn augment_msil_with_singletons(submission: &FragmentSubmission, modu
 /// via `lower_mir_function_to_msil`, then attached to the type def as an instance method.
 /// The first MIR parameter (`self`) is stripped from the public signature because CLR
 /// instance methods receive `this` implicitly via `ldarg.0`.
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn emit_singleton_instance_methods(
     submission: &FragmentSubmission,
     plan: &SingletonInstancePlan,
@@ -907,12 +907,12 @@ pub(crate) fn reserve_elf_singleton_slots(builder: &mut std_data::binary::elf::N
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn find_msil_type<'a>(module: &'a mut MsilModule, namespace: &str, name: &str) -> Option<&'a mut MsilTypeDef> {
     module.types.iter_mut().find(|type_def| type_def.namespace == namespace && type_def.full_name == name)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn ctor_ref(qualified: &str) -> MsilMethodRef {
     MsilMethodRef {
         owner: Some(qualified.to_string()),
@@ -925,7 +925,7 @@ fn ctor_ref(qualified: &str) -> MsilMethodRef {
 ///
 /// `init` 由 `emit_singleton_instance_methods` 作为无参实例方法发出，
 /// 此引用供 `.cctor` / `get_instance` 在 `Newobj` 之后调用以执行额外初始化逻辑。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn init_method_ref(qualified: &str) -> MsilMethodRef {
     MsilMethodRef {
         owner: Some(qualified.to_string()),
@@ -938,7 +938,7 @@ fn init_method_ref(qualified: &str) -> MsilMethodRef {
 ///
 /// `finalize` 同样由 `emit_singleton_instance_methods` 作为无参实例方法发出，
 /// 此引用供 lazy `unload` 访问器在清空全局槽之前调用以释放资源。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn finalize_method_ref(qualified: &str) -> MsilMethodRef {
     MsilMethodRef {
         owner: Some(qualified.to_string()),
@@ -947,7 +947,7 @@ fn finalize_method_ref(qualified: &str) -> MsilMethodRef {
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn eager_static_constructor(qualified: &str, plan: &SingletonInstancePlan) -> MsilMethodBody {
     let mut instructions =
         vec![MsilInstruction { label: None, opcode: MsilOpcode::Newobj, operand: Some(MsilInstructionOperand::Method(ctor_ref(qualified))) }];
@@ -979,12 +979,12 @@ fn eager_static_constructor(qualified: &str, plan: &SingletonInstancePlan) -> Ms
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn eager_instance_accessor(qualified: &str, plan: &SingletonInstancePlan) -> MsilMethodBody {
     static_accessor(qualified, plan, "instance")
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn object_ctor_ref() -> MsilMethodRef {
     MsilMethodRef {
         owner: Some("[mscorlib]System.Object".to_string()),
@@ -993,7 +993,7 @@ fn object_ctor_ref() -> MsilMethodRef {
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn monitor_method(name: &str) -> MsilMethodRef {
     MsilMethodRef {
         owner: Some("[mscorlib]System.Threading.Monitor".to_string()),
@@ -1002,7 +1002,7 @@ fn monitor_method(name: &str) -> MsilMethodRef {
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn lazy_get_instance_method(qualified: &str, plan: &SingletonInstancePlan) -> MsilMethodBody {
     let instance_field = MsilInstructionOperand::Field(qualified.to_string(), plan.instance_field.clone());
     let lock_field = MsilInstructionOperand::Field(qualified.to_string(), INIT_LOCK_FIELD.to_string());
@@ -1071,7 +1071,7 @@ fn lazy_get_instance_method(qualified: &str, plan: &SingletonInstancePlan) -> Ms
 /// 4. 非空但无终结器时，不做额外操作（实例引用已被 `Brfalse` 弹出）。
 /// 5. `Ldnull` + `Stsfld` 清空全局槽。
 /// 6. `Ret`。
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn unload_method(qualified: &str, plan: &SingletonInstancePlan) -> MsilMethodBody {
     let instance_field = MsilInstructionOperand::Field(qualified.to_string(), plan.instance_field.clone());
     let mut instructions = vec![
@@ -1109,7 +1109,7 @@ fn unload_method(qualified: &str, plan: &SingletonInstancePlan) -> MsilMethodBod
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn static_accessor(qualified: &str, plan: &SingletonInstancePlan, method_name: &str) -> MsilMethodBody {
     MsilMethodBody {
         method: MsilMethodRef {

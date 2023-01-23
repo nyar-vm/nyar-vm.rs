@@ -1,48 +1,54 @@
 use std::path::{Path, PathBuf};
 
 use crate::nyar_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use crate::{
     nyar_backend_clr::{ClrBinaryBackendInput, MsilTextWriter},
     nyar_backend_jvm::{JvmBinaryBackendInput, JvmClassFile, JvmInstruction},
     nyar_backend_native::NativeBinaryBackendInput,
 };
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar::QualifiedName;
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
 #[cfg(feature = "legacy-lanes")]
-use std_data::binary::{elf::NativeElfImageBuilder, nyar_ir::NyarModuleData, pe::NativeImageBuilder};
+use std_data::binary::nyar_ir::NyarModuleData;
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
+use std_data::binary::{elf::NativeElfImageBuilder, pe::NativeImageBuilder};
 
 use crate::{DriverBackendInput, FragmentSubmission};
 #[cfg(feature = "legacy-lanes")]
-use crate::{NyarVmBackendInput, executable_provider::ExecutableFunction};
+use crate::NyarVmBackendInput;
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
+use crate::executable_provider::ExecutableFunction;
 
 pub(crate) mod backends;
 pub(crate) mod features;
 mod shared;
 mod tooling;
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
 pub(crate) use self::backends::clr_types;
 pub(crate) use self::features::pattern_matching_contract;
 
 #[cfg(not(feature = "legacy-lanes"))]
 use self::backends::wasm;
 #[cfg(feature = "legacy-lanes")]
+use self::backends::{nyar_vm, wasm};
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use self::{
-    backends::{clr, clr_suspend, clr_witness, jvm, native, nyar_vm, wasm},
+    backends::{clr, clr_suspend, clr_witness, jvm, native},
     features::singleton::{augment_msil_with_singletons, build_jvm_singleton_classes, build_jvm_struct_classes},
 };
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_fragment_to_clr_msil(submission: &FragmentSubmission) -> Result<crate::nyar_backend_clr::MsilModule> {
     clr::lower_fragment_to_msil(submission)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_mir_to_clr_method(
     submission: &FragmentSubmission,
     operation: &QualifiedName,
@@ -51,7 +57,7 @@ pub(crate) fn testing_lower_mir_to_clr_method(
     backends::clr_mir::lower_mir_function_to_msil(submission, operation, mir_function)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_mir_to_jvm_method(
     submission: &FragmentSubmission,
     operation: &QualifiedName,
@@ -64,12 +70,12 @@ pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSub
     backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).0
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_build_clr_type_defs(plan: &AggregateLayoutPlan) -> Vec<crate::nyar_backend_clr::MsilTypeDef> {
     backends::clr_types::build_clr_type_defs(plan)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_build_clr_nominal_type_defs(
     sum_types: &[SumTypeLayout],
     flags_types: &[FlagsLayout],
@@ -82,17 +88,17 @@ pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmiss
     nyar_vm::lower_fragment_to_nyar_module(submission)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_build_jvm_singleton_classes(submission: &FragmentSubmission) -> Vec<JvmClassFile> {
     build_jvm_singleton_classes(submission)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmClassFile> {
     jvm::lower_fragment_to_jvm_class(submission)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_append_jvm_witness_methods(
     class_file: &mut JvmClassFile,
     submission: &FragmentSubmission,
@@ -104,7 +110,7 @@ pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 
     wasm::decode_uleb128(bytes, pos)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_augment_msil_with_singletons(
     submission: &FragmentSubmission,
     module: &mut crate::nyar_backend_clr::MsilModule,
@@ -112,7 +118,7 @@ pub(crate) fn testing_augment_msil_with_singletons(
     augment_msil_with_singletons(submission, module)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_augment_msil_with_witness(
     submission: &FragmentSubmission,
     module: &mut crate::nyar_backend_clr::MsilModule,
@@ -120,7 +126,7 @@ pub(crate) fn testing_augment_msil_with_witness(
     clr_witness::augment_msil_with_witness(submission, module)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_augment_msil_with_suspend(submission: &FragmentSubmission, module: &mut crate::nyar_backend_clr::MsilModule) {
     clr_suspend::augment_msil_with_suspend(submission, module);
 }
@@ -147,12 +153,12 @@ pub(crate) fn testing_suspend_run_loop_with_witness_wasm_bytes(
     wasm::suspend_run_loop_with_witness_wasm_bytes(artifact, witness_offset, witness_type_index, method_index, function_index, returns_i32)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_fragment_to_native_executable(submission: &FragmentSubmission, host_flavor: &str) -> Result<(Vec<u8>, String)> {
     native::lower_fragment_to_native_executable(submission, host_flavor)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_mir_functions_to_native_msvc(
     submission: &FragmentSubmission,
     function: &mut std_data::binary::x86_64::MsvcFunctionBuilder,
@@ -160,7 +166,7 @@ pub(crate) fn testing_lower_mir_functions_to_native_msvc(
     native::lower_mir_functions_to_native_msvc(submission, function)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_mir_functions_to_native_sysv(
     submission: &FragmentSubmission,
     function: &mut std_data::binary::x86_64::SysvFunctionBuilder,
@@ -168,7 +174,7 @@ pub(crate) fn testing_lower_mir_functions_to_native_sysv(
     native::lower_mir_functions_to_native_sysv(submission, function)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_suspend_witness_calls_windows(
     submission: &FragmentSubmission,
     function: &mut std_data::binary::x86_64::MsvcFunctionBuilder,
@@ -177,7 +183,7 @@ pub(crate) fn testing_lower_suspend_witness_calls_windows(
     native::lower_suspend_witness_calls_windows(submission, function, builder)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_lower_suspend_witness_calls_linux(
     submission: &FragmentSubmission,
     function: &mut std_data::binary::x86_64::SysvFunctionBuilder,
@@ -186,7 +192,7 @@ pub(crate) fn testing_lower_suspend_witness_calls_linux(
     native::lower_suspend_witness_calls_linux(submission, function, builder)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_emit_native_witness_tables(
     pe: Option<&mut NativeImageBuilder>,
     elf: Option<&mut NativeElfImageBuilder>,
@@ -204,11 +210,11 @@ pub(crate) fn testing_field_slot_index(layouts: &FragmentSubmission, layout_id: 
 }
 
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) const TESTING_NATIVE_VALUE_AREA_BASE: i32 = native::NATIVE_VALUE_AREA_BASE;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) const TESTING_SUSPEND_SPILL_RSP_OFFSET: i32 = native::SUSPEND_SPILL_RSP_OFFSET;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn testing_native_value_area_size(submission: &FragmentSubmission) -> u32 {
     native::native_value_area_size(submission)
 }
@@ -236,7 +242,7 @@ pub(crate) fn lower_fragment_to_driver_input(
     features::semantic_mir_contract::validate_submission(submission)
         .map_err(|error| miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     match backend_family {
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
         TargetBackendFamily::Clr => {
             let mut module = clr::lower_fragment_to_msil(submission)?;
             augment_msil_with_singletons(submission, &mut module)?;
@@ -245,7 +251,7 @@ pub(crate) fn lower_fragment_to_driver_input(
             clr::reject_unresolved_local_calls(&module)?;
             Ok(DriverBackendInput::Clr(ClrBinaryBackendInput { module, output_dir, image_kind: None }))
         }
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
         TargetBackendFamily::Jvm => {
             let mut companion_classes = build_jvm_singleton_classes(submission);
             companion_classes.extend(build_jvm_struct_classes(submission));
@@ -277,7 +283,7 @@ pub(crate) fn lower_fragment_to_driver_input(
                 wasm_package_kind,
             }))
         }
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
         TargetBackendFamily::Native => {
             let (executable, entry_symbol) = native::lower_fragment_to_native_executable(submission, host_flavor)?;
             Ok(DriverBackendInput::Native(NativeBinaryBackendInput { executable, output_dir, entry_symbol }))
@@ -303,7 +309,7 @@ pub(crate) fn lower_fragment_to_driver_input(
     }
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) fn write_clr_msil_sidecar(output_dir: &Path, artifact_name: &str, input: &DriverBackendInput) -> Result<Option<PathBuf>> {
     let DriverBackendInput::Clr(input) = input
     else {
@@ -322,7 +328,7 @@ pub(crate) fn write_clr_msil_sidecar(output_dir: &Path, artifact_name: &str, inp
     Ok(Some(sidecar_path))
 }
 
-#[cfg(not(feature = "legacy-lanes"))]
+#[cfg(not(feature = "legacy-lanes-clr-jvm-native"))]
 pub(crate) fn write_clr_msil_sidecar(_output_dir: &Path, _artifact_name: &str, _input: &DriverBackendInput) -> Result<Option<PathBuf>> {
     Ok(None)
 }

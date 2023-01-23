@@ -94,27 +94,29 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
         // Keep the pre-emission verifier mandatory at the public backend boundary.
         // The lowering driver also checks this, but callers of this backend may
         // provide an already-lowered module directly.
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
         {
             crate::lowering::backends::clr::reject_unresolved_local_calls(&input.module)?;
             Ok(())
         }
-        #[cfg(not(feature = "legacy-lanes"))]
+        #[cfg(not(feature = "legacy-lanes-clr-jvm-native"))]
         {
             let _ = input;
-            Err(miette!("CLR lane is frozen for 0.0.x Node/Wasm delivery; enable Cargo feature `legacy-lanes` to compile CLR lowering"))
+            Err(miette!(
+                "CLR lane is frozen for 0.0.x Node/Wasm delivery. Enable Cargo feature `legacy-lanes-clr-jvm-native` to compile CLR lowering"
+            ))
         }
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
-        #[cfg(not(feature = "legacy-lanes"))]
+        #[cfg(not(feature = "legacy-lanes-clr-jvm-native"))]
         {
             let _ = (self, input, options);
             return Err(miette!(
-                "CLR lane is frozen for 0.0.x Node/Wasm delivery; enable Cargo feature `legacy-lanes` to compile CLR lowering"
+                "CLR lane is frozen for 0.0.x Node/Wasm delivery. Enable Cargo feature `legacy-lanes-clr-jvm-native` to compile CLR lowering"
             ));
         }
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
         {
             crate::lowering::backends::clr::reject_unresolved_local_calls(&input.module)?;
             let has_entry = input.module.global_methods.iter().any(|m| m.is_entry_point)

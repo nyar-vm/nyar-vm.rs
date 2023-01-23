@@ -51,16 +51,16 @@ pub use nyar::ArtifactPartition;
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
 #[doc(hidden)]
 pub mod testing {
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use crate::executable_provider::ExecutableFunction;
     use miette::Result;
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use nyar::QualifiedName;
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use std_data::binary::{elf::NativeElfImageBuilder, pe::NativeImageBuilder};
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub use super::lowering::backends::jvm_mir::{JvmLocalKind, jvm_local_slot_conflicts};
 
     use super::{
@@ -69,13 +69,13 @@ pub mod testing {
         compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use super::{
         nyar_backend_clr::{MsilMethodBody, MsilModule, MsilTypeDef},
         nyar_backend_jvm::{JvmClassFile, JvmInstruction, JvmMethodSignature},
     };
     use nyar_types::SingletonInstancePlan;
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
     #[cfg(feature = "legacy-lanes")]
     use std_data::binary::nyar_ir::NyarModuleData;
@@ -119,13 +119,13 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to a CLR MSIL module.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_fragment_to_clr_msil(submission: &FragmentSubmission) -> Result<super::nyar_backend_clr::MsilModule> {
         super::lowering::testing_lower_fragment_to_clr_msil(submission)
     }
 
     /// Lower one MIR function to a CLR method body.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_mir_to_clr_method(
         submission: &FragmentSubmission,
         operation: &QualifiedName,
@@ -135,7 +135,7 @@ pub mod testing {
     }
 
     /// Lower one MIR function to a JVM method body.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_mir_to_jvm_method(
         submission: &FragmentSubmission,
         operation: &QualifiedName,
@@ -161,13 +161,13 @@ pub mod testing {
     }
 
     /// Build CLR aggregate type definitions from planned layouts.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn build_clr_type_defs(plan: &AggregateLayoutPlan) -> Vec<MsilTypeDef> {
         super::lowering::testing_build_clr_type_defs(plan)
     }
 
     /// Build CLR nominal type definitions for sum and flags layouts.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn build_clr_nominal_type_defs(sum_types: &[SumTypeLayout], flags_types: &[FlagsLayout]) -> Vec<MsilTypeDef> {
         super::lowering::testing_build_clr_nominal_type_defs(sum_types, flags_types)
     }
@@ -179,19 +179,19 @@ pub mod testing {
     }
 
     /// Build JVM companion singleton classes for a fragment.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn build_jvm_singleton_classes(submission: &FragmentSubmission) -> Vec<JvmClassFile> {
         super::lowering::testing_build_jvm_singleton_classes(submission)
     }
 
     /// Lower a fragment submission to a JVM class file.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmClassFile, miette::Report> {
         super::lowering::testing_lower_fragment_to_jvm_class(submission).map_err(|error| miette::miette!("{error}"))
     }
 
     /// Append witness methods to an existing JVM class file.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn append_jvm_witness_methods(class_file: &mut JvmClassFile, submission: &FragmentSubmission) -> Option<Vec<JvmInstruction>> {
         super::lowering::testing_append_jvm_witness_methods(class_file, submission)
     }
@@ -202,19 +202,19 @@ pub mod testing {
     }
 
     /// Apply singleton augmentation to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn augment_msil_with_singletons(submission: &FragmentSubmission, module: &mut MsilModule) -> Result<()> {
         super::lowering::testing_augment_msil_with_singletons(submission, module)
     }
 
     /// Apply witness augmentation to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn augment_msil_with_witness(submission: &FragmentSubmission, module: &mut MsilModule) {
         super::lowering::testing_augment_msil_with_witness(submission, module).expect("CLR witness metadata must resolve before emission")
     }
 
     /// Apply suspend augmentation (state-machine emission) to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn augment_msil_with_suspend(submission: &FragmentSubmission, module: &mut MsilModule) {
         super::lowering::testing_augment_msil_with_suspend(submission, module)
     }
@@ -252,7 +252,7 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to a native executable image.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_fragment_to_native_executable(
         submission: &FragmentSubmission,
         host_flavor: &str,
@@ -261,7 +261,7 @@ pub mod testing {
     }
 
     /// Emit native witness tables into PE/ELF image builders.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn emit_native_witness_tables(
         pe: Option<&mut NativeImageBuilder>,
         elf: Option<&mut NativeElfImageBuilder>,
@@ -270,17 +270,17 @@ pub mod testing {
         super::lowering::testing_emit_native_witness_tables(pe, elf, submission).map_err(|error| miette::miette!("{error}"))
     }
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_mir_functions_to_native_msvc(submission: &FragmentSubmission, function: &mut std_data::binary::x86_64::MsvcFunctionBuilder) {
         super::lowering::testing_lower_mir_functions_to_native_msvc(submission, function)
     }
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_mir_functions_to_native_sysv(submission: &FragmentSubmission, function: &mut std_data::binary::x86_64::SysvFunctionBuilder) {
         super::lowering::testing_lower_mir_functions_to_native_sysv(submission, function)
     }
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_suspend_witness_calls_windows(
         submission: &FragmentSubmission,
         function: &mut std_data::binary::x86_64::MsvcFunctionBuilder,
@@ -289,7 +289,7 @@ pub mod testing {
         super::lowering::testing_lower_suspend_witness_calls_windows(submission, function, builder)
     }
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn lower_suspend_witness_calls_linux(
         submission: &FragmentSubmission,
         function: &mut std_data::binary::x86_64::SysvFunctionBuilder,
@@ -303,11 +303,11 @@ pub mod testing {
         super::lowering::testing_field_slot_index(submission, layout_id, type_name, field)
     }
 
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub const NATIVE_VALUE_AREA_BASE: i32 = super::lowering::TESTING_NATIVE_VALUE_AREA_BASE;
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub const SUSPEND_SPILL_RSP_OFFSET: i32 = super::lowering::TESTING_SUSPEND_SPILL_RSP_OFFSET;
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn native_value_area_size(submission: &FragmentSubmission) -> u32 {
         super::lowering::testing_native_value_area_size(submission)
     }

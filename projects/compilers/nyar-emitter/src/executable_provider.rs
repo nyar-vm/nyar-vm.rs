@@ -186,7 +186,6 @@ mod tests {
             value_types: BTreeMap::new(),
             entry: crate::contracts::BlockRef(0),
             values: Vec::new(),
-            intrinsic: None,
             suspend_points: Vec::new(),
             frame_layouts: Vec::new(),
             continuations: Vec::new(),
@@ -194,7 +193,6 @@ mod tests {
             #[allow(deprecated)]
             state_machine: None,
             suspend_plan: None,
-            state_machine_lowered: true,
             blocks: Vec::new(),
             diagnostics: Vec::new(),
         }
