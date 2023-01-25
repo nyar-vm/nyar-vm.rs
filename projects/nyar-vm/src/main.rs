@@ -46,7 +46,9 @@ fn main() -> Result<()> {
                 Some(source) => json_bridge::parse_call_args_json(&source).wrap_err("failed to parse --args-json")?,
                 None => Vec::new(),
             };
-            let result = vm.run(&loaded, &entry, args).wrap_err_with(|| format!("failed to run entry `{entry}`"))?;
+            let result = vm
+                .run(&loaded, &entry, args)
+                .map_err(|error| miette::miette!("failed to run entry `{entry}`: {error}"))?;
             if json {
                 println!("{}", serde_json::to_string(&json_bridge::value_to_json(&result)).into_diagnostic()?);
             } else {
