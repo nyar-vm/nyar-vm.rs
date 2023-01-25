@@ -109,11 +109,30 @@ fn lower_term_expression_with_context(
     let kind = match expression {
         TermExpression::Name { path, .. } => lower_name_expression(path, span.clone()),
         TermExpression::Literal { literal, .. } => lower_literal_expression(literal, source_id, span_range.clone()),
-        TermExpression::Unary(term_unary) => lower_method_call_kind(
-            unary_operator_method_name(&term_unary.operator),
-            vec![HirCallArgument::positional(lower_term_expression_with_context(&term_unary.base, source_id, span_range.clone(), false))],
-            span.clone(),
-        ),
+        TermExpression::Unary(term_unary) => {
+            let folded_neg_literal = matches!(term_unary.operator, UnaryOperator::Neg)
+                .then(|| {
+                    if let TermExpression::Literal { literal: LiteralExpression::Integer(text), .. } = &term_unary.base {
+                        parse_integer_literal(text.as_str()).ok().and_then(|value| {
+                            let folded = -(value as i128);
+                            (folded >= i64::MIN as i128 && folded <= i64::MAX as i128).then(|| folded as i64)
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
+            if let Some(value) = folded_neg_literal {
+                HirExprKind::Literal(HirLiteral::Integer64(value))
+            }
+            else {
+                lower_method_call_kind(
+                    unary_operator_method_name(&term_unary.operator),
+                    vec![HirCallArgument::positional(lower_term_expression_with_context(&term_unary.base, source_id, span_range.clone(), false))],
+                    span.clone(),
+                )
+            }
+        }
         TermExpression::Binary(term_binary) => {
             lower_binary_expression(&term_binary.operator, &term_binary.lhs, &term_binary.rhs, source_id, span_range.clone(), span.clone())
         }
