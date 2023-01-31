@@ -799,10 +799,10 @@ impl MirBuilder {
             return MirOperand::Value(output);
         }
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::Call {
-            callee: MirOperand::Symbol(resolved.symbol.clone()),
-            arguments: vec![value.clone()],
-        }));
+        self.push_instruction(
+            MirOperation::Call { callee: MirOperand::Symbol(resolved.symbol.clone()), arguments: vec![value.clone()] },
+            vec![output],
+        );
         self.value_types.insert(output, resolved.return_type.clone());
         MirOperand::Value(output)
     }

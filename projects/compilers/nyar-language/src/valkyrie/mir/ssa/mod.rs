@@ -1288,6 +1288,13 @@ impl MirBuilder {
         self.instructions.push(MirInstruction { id, results, kind: operation, provenance });
     }
 
+    /// Emit `Call` and bind its SSA result (`instruction.results[0]`).
+    pub(super) fn push_call(&mut self, callee: MirOperand, arguments: Vec<MirOperand>) -> MirValueRef {
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(MirOperation::Call { callee, arguments }, vec![value]);
+        value
+    }
+
     fn next_state_id(&mut self) -> u32 {
         let id = self.state_seed;
         self.state_seed += 1;
@@ -1419,13 +1426,9 @@ impl MirBuilder {
                 return *value;
             }
         }
-        let value = self.next_value(origin);
         let parameter_types =
             arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        self.instructions.push(MirInstruction::from_operation(MirOperation::Call {
-            callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new(name)])),
-            arguments,
-        }));
+        let value = self.push_call(MirOperand::Symbol(NamePath::new(vec![Identifier::new(name)])), arguments);
         if let Some(return_type) = self.return_types.get(name).cloned() {
             self.value_types.insert(value, return_type);
         }

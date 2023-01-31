@@ -671,8 +671,7 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    let value = self.next_value(MirValueOrigin::CallResult);
-                    self.instructions.push(MirInstruction::from_operation(MirOperation::Call { callee, arguments }));
+                    let value = self.push_call(callee, arguments);
                     let return_type = return_type
                         .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                         .or_else(|| expected_type.cloned())
@@ -714,9 +713,7 @@ impl MirBuilder {
                             .collect::<Vec<_>>();
                         let return_type =
                             resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| self.return_types.get(field.as_str()).cloned());
-                        let value = self.next_value(MirValueOrigin::CallResult);
-                        self.instructions
-                            .push(MirInstruction::from_operation(MirOperation::Call { callee: MirOperand::Value(callee_value), arguments }));
+                        let value = self.push_call(MirOperand::Value(callee_value), arguments);
                         if let Some(return_type) = return_type {
                             self.value_types.insert(value, return_type);
                         }
@@ -756,8 +753,7 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    let value = self.next_value(MirValueOrigin::CallResult);
-                    self.instructions.push(MirInstruction::from_operation(MirOperation::Call { callee, arguments }));
+                    let value = self.push_call(callee, arguments);
                     if let Some(return_type) = resolved
                         .as_ref()
                         .map(|call| call.return_type.clone())
@@ -844,9 +840,7 @@ impl MirBuilder {
                     return operand;
                 }
                 // ADR 0010: Call is only { callee, arguments }. No intrinsic/dispatch/generic side-channels.
-                let value = self.next_value(MirValueOrigin::CallResult);
-                self.instructions
-                    .push(MirInstruction::from_operation(MirOperation::Call { callee: callee.clone(), arguments: arguments.clone() }));
+                let value = self.push_call(callee.clone(), arguments.clone());
                 if let Some(ty) = array_index_call_output_type(&arguments, &self.value_types)
                     .or_else(|| function_ty.map(|func| func.return_type))
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))

@@ -70,11 +70,10 @@ impl MirBuilder {
 
     pub(super) fn emit_singleton_instance_operand(&mut self, singleton_name: &str) -> MirOperand {
         let accessor = self.singleton_accessors.get(singleton_name).cloned().unwrap_or_else(|| "instance".to_string());
-        let value = self.next_value(super::MirValueOrigin::CallResult);
-        self.instructions.push(super::MirInstruction::from_operation(super::MirOperation::Call {
-            callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), Identifier::new(accessor.as_str())])),
-            arguments: Vec::new(),
-        }));
+        let value = self.push_call(
+            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), Identifier::new(accessor.as_str())])),
+            Vec::new(),
+        );
         self.value_types.insert(value, ValkyrieType::Named(Identifier::new(singleton_name)));
         MirOperand::Value(value)
     }
@@ -109,11 +108,10 @@ impl MirBuilder {
         arguments.insert(0, instance);
         let parameter_types =
             arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        let value = self.next_value(super::MirValueOrigin::CallResult);
-        self.instructions.push(super::MirInstruction::from_operation(super::MirOperation::Call {
-            callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
+        let value = self.push_call(
+            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
             arguments,
-        }));
+        );
         if let Some(return_type) = self.return_types.get(method_name.as_str()).cloned() {
             self.value_types.insert(value, return_type);
         }
@@ -175,11 +173,10 @@ impl MirBuilder {
         arguments.insert(0, instance);
         let parameter_types =
             arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        let value = self.next_value(super::MirValueOrigin::CallResult);
-        self.instructions.push(super::MirInstruction::from_operation(super::MirOperation::Call {
-            callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
+        let value = self.push_call(
+            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
             arguments,
-        }));
+        );
         if let Some(return_type) = self.return_types.get(method_name.as_str()).cloned() {
             self.value_types.insert(value, return_type);
         }
