@@ -113,7 +113,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             module.code_bytes.extend_from_slice(&emitter.code_bytes);
 
             let arity = mir_fn.param_types.len() as i32;
-            let local_count = ExecutableSlotPlan::plan_jvm(&ExecutableLoweringContext::new(submission), mir_fn).local_types.len() as i32;
+            let local_count = ExecutableSlotPlan::plan_nyar(&ExecutableLoweringContext::new(submission), mir_fn).local_types.len() as i32;
             let function_index = module.functions.len() as i32;
             module.functions.push(NyarFunction {
                 name: export_name.clone(),
@@ -151,7 +151,7 @@ fn lower_mir_function_to_bytecode(
     emitter: &mut BytecodeEmitter,
 ) {
     let ctx = ExecutableLoweringContext::new(submission);
-    let slots = ExecutableSlotPlan::plan_jvm(&ctx, mir_fn);
+    let slots = ExecutableSlotPlan::plan_nyar(&ctx, mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
 
     let mut lowerer = NyarMirLowerer { submission, ctx, mir_fn, slots, emitter, function_index_by_name };
@@ -183,7 +183,7 @@ impl<'a> NyarMirLowerer<'a> {
     }
 
     fn emit_instruction(&mut self, instruction: &MirInstruction) {
-        let output = instruction_primary_result(instruction);
+        let output = self.slots.instruction_output(instruction);
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
                 self.emit_load_constant(constant);
@@ -711,15 +711,15 @@ impl<'a> NyarMirLowerer<'a> {
     fn try_emit_operand(&mut self, operand: &MirOperand) -> bool {
         match operand {
             MirOperand::Value(value) => {
-                if let Some(local) = self.slots.value_locals.get(value).copied() {
-                    self.emit_load_local(local);
-                    return true;
-                }
                 if let Some(name) = self.value_binding_name(*value) {
                     if let Some(local) = self.slots.var_locals.get(name).copied() {
                         self.emit_load_local(local);
                         return true;
                     }
+                }
+                if let Some(local) = self.slots.value_locals.get(value).copied() {
+                    self.emit_load_local(local);
+                    return true;
                 }
                 if let Some(index) = self.parameter_index(*value) {
                     self.emitter.emit_imm1(NyarHeadCode::LoadArg, index as i32);

@@ -29,8 +29,7 @@ pub struct ExecutableSlotPlan {
 impl ExecutableSlotPlan {
     #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     pub fn plan_clr(ctx: &ExecutableLoweringContext<'_>, function: &ExecutableFunction) -> Self {
-        let mut plan =
-            Self { local_types: Vec::new(), value_locals: BTreeMap::new(), var_locals: BTreeMap::new(), block_param_locals: BTreeMap::new() };
+        let mut plan = Self::empty();
         // Pass 1: every block-param local first so StoreVar can alias loop-carried homes.
         for block in &function.blocks {
             for (index, parameter) in block.parameters.iter().enumerate() {
@@ -114,9 +113,36 @@ impl ExecutableSlotPlan {
         index
     }
 
+    fn empty() -> Self {
+        Self { local_types: Vec::new(), value_locals: BTreeMap::new(), var_locals: BTreeMap::new(), block_param_locals: BTreeMap::new() }
+    }
+
+    /// Primary SSA result for lowering (`instruction.results[0]`).
+    pub fn instruction_output(&self, instruction: &ExecutableInstruction) -> Option<ExecutableValueRef> {
+        instruction.results.first().copied()
+    }
+
+    /// Nyar VM locals are single-slot (`LoadLocal`/`StoreLocal`); do not use JVM `i64` double-width.
+    pub fn plan_nyar(ctx: &ExecutableLoweringContext<'_>, function: &ExecutableFunction) -> Self {
+        let mut plan = Self::empty();
+        for block in &function.blocks {
+            for (index, parameter) in block.parameters.iter().enumerate() {
+                let ty = function.value_types.get(parameter).cloned().unwrap_or(NyarType::Unit);
+                let local = plan.alloc_local(ctx, &ty, ExecutableStorageKind::Value);
+                plan.block_param_locals.insert((block.id, index), local);
+                plan.value_locals.insert(*parameter, local);
+            }
+        }
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                plan.collect_instruction(ctx, function, instruction);
+            }
+        }
+        plan
+    }
+
     pub fn plan_jvm(ctx: &ExecutableLoweringContext<'_>, function: &ExecutableFunction) -> Self {
-        let mut plan =
-            Self { local_types: Vec::new(), value_locals: BTreeMap::new(), var_locals: BTreeMap::new(), block_param_locals: BTreeMap::new() };
+        let mut plan = Self::empty();
         let reachable = collect_reachable_blocks(function);
         for block_id in &reachable {
             let Some(block) = function.blocks.get(block_id.0 as usize)
