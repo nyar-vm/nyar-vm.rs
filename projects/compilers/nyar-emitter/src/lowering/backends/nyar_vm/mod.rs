@@ -146,7 +146,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
     for operation in &local_operations {
         let index = functions.len() as i32;
         symbol_to_index.insert(operation.clone(), index);
-        let short_name = operation_short_name(operation);
+        let short_name = nyar_public_export_name(submission, operation);
         export_short_names.push((short_name, index));
     }
 
@@ -234,6 +234,18 @@ fn empty_module(submission: &FragmentSubmission) -> NyarModuleData {
 
 pub(crate) fn operation_short_name(operation: &QualifiedName) -> String {
     operation.parts().last().map(|part| part.as_str().to_string()).unwrap_or_else(|| sanitize_symbol(&operation.to_string()))
+}
+
+/// Resolve the public `.nyar` export symbol for a stable operation.
+pub(crate) fn nyar_public_export_name(submission: &FragmentSubmission, operation: &QualifiedName) -> String {
+    if let Some(public_name) = submission.wasm_export_names.get(operation) {
+        return public_name.clone();
+    }
+    let short = operation_short_name(operation);
+    if let Some((_, public_name)) = submission.wasm_export_names.iter().find(|(key, _)| operation_short_name(key) == short) {
+        return public_name.clone();
+    }
+    operation_short_name(operation)
 }
 
 fn operation_returns_void(submission: &FragmentSubmission, operation: &QualifiedName) -> bool {

@@ -16,7 +16,7 @@ use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFu
 
 use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-    nyar_vm::operation_short_name,
+    nyar_vm::{nyar_public_export_name, operation_short_name},
     singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
 use crate::FragmentSubmission;
@@ -134,6 +134,9 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 }
 
 fn nyar_mir_export_name(submission: &FragmentSubmission, operation: &QualifiedName) -> String {
+    if let Some(public_name) = submission.wasm_export_names.get(operation) {
+        return public_name.clone();
+    }
     if operation.parts().len() == 2 {
         let type_name = operation.parts()[0].as_str();
         let method_name = operation.parts()[1].as_str();
@@ -141,7 +144,7 @@ fn nyar_mir_export_name(submission: &FragmentSubmission, operation: &QualifiedNa
             return nyar_singleton_method_export_name(type_name, method_name);
         }
     }
-    operation_short_name(operation)
+    nyar_public_export_name(submission, operation)
 }
 
 fn lower_mir_function_to_bytecode(
