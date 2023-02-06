@@ -34,15 +34,15 @@ fn emits_nyar_module_with_exports() {
 
 #[test]
 fn emits_nyar_export_alias_from_wasm_export_names() {
-    let operation = QualifiedName::new(vec![Identifier::new("leetcode"), Identifier::new("max_area")]);
+    let operation = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("pair_sum")]);
     let submission = FragmentSubmission {
-        module_name: "leetcode".to_string(),
+        module_name: "demo".to_string(),
         fragment_id: Identifier::new("functions"),
         exported_operations: vec![operation.clone()],
         required_capabilities: Vec::new(),
         theory_bundle: TheoryBundle { shared: RewriteTheory::default(), fragment: RewriteTheory::default() },
         entry_operation: Some(operation.clone()),
-        wasm_export_names: BTreeMap::from([(operation.clone(), "maxArea".to_string())]),
+        wasm_export_names: BTreeMap::from([(operation.clone(), "pairSum".to_string())]),
         external_import_links: BTreeMap::new(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
@@ -57,19 +57,15 @@ fn emits_nyar_export_alias_from_wasm_export_names() {
 
     let module = lower_fragment_to_nyar_module(&submission);
     assert_eq!(module.exports.len(), 1);
-    assert_eq!(module.exports[0].symbol_name, "maxArea");
+    assert_eq!(module.exports[0].symbol_name, "pairSum");
 }
 
 #[test]
 fn emits_nyar_export_alias_when_operation_key_shape_differs() {
-    let canonical = QualifiedName::new(vec![
-        Identifier::new("leetcode"),
-        Identifier::new("container_with_most_water"),
-        Identifier::new("max_area"),
-    ]);
-    let operation = QualifiedName::new(vec![Identifier::new("leetcode.container_with_most_water"), Identifier::new("max_area")]);
+    let canonical = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("container"), Identifier::new("max_area")]);
+    let operation = QualifiedName::new(vec![Identifier::new("demo.container"), Identifier::new("max_area")]);
     let submission = FragmentSubmission {
-        module_name: "leetcode".to_string(),
+        module_name: "demo".to_string(),
         fragment_id: Identifier::new("functions"),
         exported_operations: vec![operation.clone()],
         required_capabilities: Vec::new(),

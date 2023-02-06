@@ -8,7 +8,7 @@ license.workspace = true
 
 [features]
 default = []
-# Nyar VM bytecode lane (leetcode native runtime). Off by default so Node/Wasm seed builds.
+# Nyar VM bytecode lane. Off by default so Node/Wasm seed builds stay slim.
 legacy-lanes = []
 # Frozen CLR / JVM / native lowering (still on pre-ADR-0010 MIR shape; not required for nyar-vm).
 legacy-lanes-clr-jvm-native = []

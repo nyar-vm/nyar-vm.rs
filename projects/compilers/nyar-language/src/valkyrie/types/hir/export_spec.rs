@@ -109,7 +109,7 @@ fn path_to_partition(path: &NamePath) -> String {
     path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".")
 }
 
-/// `two_sum` → `twoSum`（LeetCode `metadata.invoke` 常用 camelCase）。
+/// `two_sum` → `twoSum`（`export(case: "camelCase")` 命名变换）。
 pub fn snake_case_to_camel_case(name: &str) -> String {
     let mut out = String::new();
     let mut upper_next = false;

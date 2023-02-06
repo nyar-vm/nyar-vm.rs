@@ -432,7 +432,7 @@ mod tests {
         };
         let out = MirValueRef(0);
         let caller = MirFunction {
-            symbol: "leetcode.two_sum".to_string(),
+            symbol: "demo.two_sum".to_string(),
             return_type: ValkyrieType::Unit,
             param_types: Vec::new(),
             value_types: Default::default(),
@@ -459,7 +459,7 @@ mod tests {
             sum_types: Vec::new(),
             diagnostics: Vec::new(),
         };
-        let seed = qualified_name_from_mir_symbol("leetcode.two_sum");
+        let seed = qualified_name_from_mir_symbol("demo.two_sum");
         let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
         assert!(
             !reachable.contains_key(&QualifiedName::new(vec![Identifier::new("TuiRuntime"), Identifier::new("new")])),

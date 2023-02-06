@@ -306,7 +306,7 @@ fn option_unwrap_on_parameter_passes_semantic_mir() {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9914 })
         .compile_source(
             r#"
-namespace leetcode.sample;
+namespace demo.sample;
 
 micro ch(o: Option<char>) -> char {
     return o.unwrap()
@@ -324,7 +324,7 @@ fn utf8_char_at_unwrap_lowers_sum_payload_get() {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9915 })
         .compile_source(
             r#"
-namespace leetcode.sample;
+namespace demo.sample;
 
 micro ch(s: utf8) -> char {
     return s.char_at(0).unwrap()
@@ -358,7 +358,7 @@ fn utf8_length_call_qualifies_to_utf8text_method() {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9913 })
         .compile_source(
             r#"
-namespace leetcode.sample;
+namespace demo.sample;
 
 micro len_of(s: utf8) -> i32 {
     return s.length()
