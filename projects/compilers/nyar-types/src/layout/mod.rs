@@ -8,6 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::NyarType;
 
 /// Stable layout identifier referenced by executable instructions and backends.
+///
+/// S-W1: remains a dense `u32` table index in this module. Semantic consumers should
+/// prefer pairing with [`crate::FieldId`] / type ids; opaque `LayoutId` newtype lands
+/// when RepresentationPlan stops using bare indices (S-W3).
 pub type LayoutId = u32;
 
 /// Physical storage class for aggregate values at lowering time.
