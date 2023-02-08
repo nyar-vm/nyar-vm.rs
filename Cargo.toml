@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "projects/nyar-gc",
-    "projects/nyar-jit",
-    "projects/nyar-vm",
+    "projects/runtimes/nyar-gc",
+    "projects/runtimes/nyar-jit",
+    "projects/runtimes/nyar-vm",
     "projects/hosts/nyar-napi",
     "projects/hosts/nyar-wasm",
     "projects/compilers/nyar",
@@ -18,7 +18,7 @@ members = [
     "projects/compilers/nyar-workspace",
 ]
 default-members = [
-    "projects/nyar-vm",
+    "projects/runtimes/nyar-vm",
     "projects/compilers/nyar-language",
 ]
 
@@ -46,9 +46,9 @@ nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
 
-nyar-gc = { path = "projects/nyar-gc" }
-nyar-jit = { path = "projects/nyar-jit" }
-nyar-vm = { path = "projects/nyar-vm" }
+nyar-gc = { path = "projects/runtimes/nyar-gc" }
+nyar-jit = { path = "projects/runtimes/nyar-jit" }
+nyar-vm = { path = "projects/runtimes/nyar-vm" }
 
 miette = "7.6.0"
 ordered-float = "5.3.0"

@@ -152,10 +152,10 @@ graph LR
 
 | 模块 | 路径 | 功能描述 |
 | :--- | :--- | :--- |
-| **虚拟机核心** | [`nyar-vm`](./projects/nyar-vm) | 字节码解释器、异步运行时及驱动 |
+| **虚拟机核心** | [`nyar-vm`](./projects/runtimes/nyar-vm) | 字节码解释器、异步运行时及驱动 |
 | **类型系统** | [`nyar-types`](./projects/nyar-types) | NaN-Boxing 实现与核心类型定义 |
-| **垃圾回收** | [`nyar-gc`](./projects/nyar-gc) | 高性能分块式垃圾回收器 |
-| **加速引擎** | [`nyar-jit`](./projects/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链 |
+| **垃圾回收** | [`nyar-gc`](./projects/runtimes/nyar-gc) | 高性能分块式垃圾回收器 |
+| **加速引擎** | [`nyar-jit`](./projects/runtimes/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链 |
 | **示例前端** | [`examples/`](./examples) | C, Java, Go, TS 等多种语言的 Nyar 实现 |
 
 ---

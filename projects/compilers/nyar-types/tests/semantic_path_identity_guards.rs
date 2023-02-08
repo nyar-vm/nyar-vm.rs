@@ -13,7 +13,7 @@ use std::{
 const SEMANTIC_SRC_ROOTS: &[&str] = &[
     "../nyar-language/src",
     "../nyar-emitter/src",
-    "../../nyar-vm/src",
+    "../../runtimes/nyar-vm/src",
 ];
 
 /// Frozen ceilings for `as_str() == "` occurrences (production `src/` only).
