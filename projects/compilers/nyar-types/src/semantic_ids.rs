@@ -1,23 +1,23 @@
-//! Stable semantic identities for Canonical Semantic MIR
-//! (ADR 0009 / 0013; opaque MIR ids also cover ADR 0010–0012).
+//! Canonical Semantic MIR 的稳定语义身份
+//! （ADR 0009 / 0013；不透明 MIR id 亦覆盖 ADR 0010–0012）。
 //!
-//! These ids belong to Semantic MIR and sparse RepresentationPlan keys.
-//! They are **not** Wasm type indices, CLR tokens, JVM CP indices, or Rust `dyn`/`impl Trait`.
+//! 这些 id 属于 Semantic MIR 与稀疏 RepresentationPlan 的键。
+//! 它们**不是** Wasm 类型下标、CLR token、JVM CP 下标，也不是 Rust `dyn`/`impl Trait`。
 //!
-//! **Forbidden:** `function@block:index`, hanging EvidenceId on LegacyCall, CallLayout God tables,
-//! string/`as_str()` dispatch after parse (see ADR 0013 / S-W1 gate).
+//! **禁止：** `function@block:index`、把 EvidenceId 挂在 LegacyCall 上、CallLayout 上帝表、
+//! 解析后的字符串/`as_str()` 分派（见 ADR 0013 / S-W1 门禁）。
 
 use std::{fmt, marker::PhantomData, num::NonZeroU32};
 
-/// Brands a [`SemanticId`] so distinct semantic domains cannot be mixed at compile time.
+/// 为 [`SemanticId`] 打品牌，使不同语义域在编译期不可混用。
 pub trait IdKind {
-    /// Diagnostic label used by [`Display`]; not a runtime dispatch key.
+    /// [`Display`] 所用的诊断标签；不是运行时分派键。
     const NAME: &'static str;
 }
 
-/// Dense 1-based semantic identity shared by all branded id types.
+/// 所有带品牌 id 类型共享的稠密、从 1 起编号的语义身份。
 ///
-/// Raw storage is `NonZeroU32` (0 reserved). Table lookup uses [`SemanticId::index`] (0-based).
+/// 底层存储为 `NonZeroU32`（保留 0）。表查找使用 [`SemanticId::index`]（从 0 起）。
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SemanticId<K: IdKind> {
     raw: NonZeroU32,
@@ -25,24 +25,39 @@ pub struct SemanticId<K: IdKind> {
 }
 
 impl<K: IdKind> SemanticId<K> {
-    /// Construct from a 0-based dense table index (`0` → first slot).
+    /// 由从 0 起的稠密表下标构造（`0` → 第一个槽位）。
     pub fn from_index(index: u32) -> Option<Self> {
         NonZeroU32::new(index.saturating_add(1)).map(|raw| Self { raw, _kind: PhantomData })
     }
 
-    /// Construct from a non-zero raw identity.
+    /// 由非零原始身份构造。
     pub fn from_raw(raw: NonZeroU32) -> Self {
         Self { raw, _kind: PhantomData }
     }
 
-    /// 0-based dense index for table lookup.
+    /// 用于表查找的从 0 起稠密下标。
     pub fn index(&self) -> u32 {
         self.raw.get() - 1
     }
 
-    /// Non-zero raw identity.
+    /// 非零原始身份。
     pub fn raw(self) -> NonZeroU32 {
         self.raw
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<K: IdKind> serde::Serialize for SemanticId<K> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(self.index())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, K: IdKind> serde::Deserialize<'de> for SemanticId<K> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let index = u32::deserialize(deserializer)?;
+        Self::from_index(index).ok_or_else(|| serde::de::Error::custom(format!("invalid {} index {index}", K::NAME)))
     }
 }
 
@@ -58,7 +73,7 @@ impl<K: IdKind> fmt::Display for SemanticId<K> {
     }
 }
 
-/// Stable SSA instruction identity (optimizer must preserve or rewrite explicitly).
+/// 稳定的 SSA 指令身份（优化器必须保留或显式改写）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstructionIdKind;
 impl IdKind for InstructionIdKind {
@@ -66,7 +81,7 @@ impl IdKind for InstructionIdKind {
 }
 pub type InstructionId = SemanticId<InstructionIdKind>;
 
-/// Stable SSA value identity.
+/// 稳定的 SSA 值身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MirValueIdKind;
 impl IdKind for MirValueIdKind {
@@ -74,8 +89,8 @@ impl IdKind for MirValueIdKind {
 }
 pub type MirValueId = SemanticId<MirValueIdKind>;
 
-/// Declared language item (function / method / constructor / trait method /
-/// std adaptor entry / intrinsic declaration). Assigned by the package linker.
+/// 已声明的语言项（函数 / 方法 / 构造器 / trait 方法 /
+/// std adaptor 入口 / intrinsic 声明）。由包链接器分配。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemIdKind;
 impl IdKind for ItemIdKind {
@@ -83,7 +98,7 @@ impl IdKind for ItemIdKind {
 }
 pub type ItemId = SemanticId<ItemIdKind>;
 
-/// Semantic type identity in the program type table (nominal base / type parameter slot).
+/// 程序类型表中的语义类型身份（名义基类型 / 类型参数槽）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeIdKind;
 impl IdKind for TypeIdKind {
@@ -91,8 +106,8 @@ impl IdKind for TypeIdKind {
 }
 pub type TypeId = SemanticId<TypeIdKind>;
 
-/// Applied type identity (`TypeId` × type arguments) after substitution.
-/// Distinct from [`NominalInstanceId`], which is ADT-specialized.
+/// 替换后的应用类型身份（`TypeId` × 类型实参）。
+/// 不同于 ADT 特化的 [`NominalInstanceId`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeInstanceIdKind;
 impl IdKind for TypeInstanceIdKind {
@@ -100,8 +115,8 @@ impl IdKind for TypeInstanceIdKind {
 }
 pub type TypeInstanceId = SemanticId<TypeInstanceIdKind>;
 
-/// Linked item instance (function / method / adaptor binding after substitution).
-/// Linker side tables relate this to [`ItemId`] + [`SubstitutionId`] + evidence env.
+/// 已链接的项实例（替换后的函数 / 方法 / adaptor 绑定）。
+/// 链接器旁表将其关联到 [`ItemId`] + [`SubstitutionId`] + evidence 环境。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemInstanceIdKind;
 impl IdKind for ItemInstanceIdKind {
@@ -109,7 +124,7 @@ impl IdKind for ItemInstanceIdKind {
 }
 pub type ItemInstanceId = SemanticId<ItemInstanceIdKind>;
 
-/// Concrete nominal ADT instance (`NominalType × Substitution`).
+/// 具体的名义 ADT 实例（`NominalType × Substitution`）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NominalInstanceIdKind;
 impl IdKind for NominalInstanceIdKind {
@@ -117,12 +132,12 @@ impl IdKind for NominalInstanceIdKind {
 }
 pub type NominalInstanceId = SemanticId<NominalInstanceIdKind>;
 
-/// Operator identity assigned by the extensible operator registry (ADR 0013).
+/// 由可扩展运算符注册表分配的运算符身份（ADR 0013）。
 ///
-/// **Not a closed enum.** Built-in and user-defined operators (`infix 4 +*`, custom
-/// lexemes) receive stable ids from the registry at parse/link time. Fixity,
-/// precedence, and lexeme live in side tables ([`OperatorRegistration`]); MIR stores
-/// only `OperatorId` — never `"infix =="` display strings.
+/// **不是封闭 enum。** 内置与用户定义运算符（`infix 4 +*`、自定义
+/// 词素）在解析/链接时从注册表获得稳定 id。结合性、
+/// 优先级与词素存放在旁表（[`OperatorRegistration`]）；MIR 只存
+/// `OperatorId` —— 从不存 `"infix =="` 这类显示字符串。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperatorIdKind;
 impl IdKind for OperatorIdKind {
@@ -130,8 +145,8 @@ impl IdKind for OperatorIdKind {
 }
 pub type OperatorId = SemanticId<OperatorIdKind>;
 
-/// Verified import slot in a bytecode / host capability table (ADR 0013).
-/// Bytecode stores this index only; never a host function name string.
+/// 字节码 / 宿主能力表中的已校验导入槽（ADR 0013）。
+/// 字节码只存此下标；从不存宿主函数名字符串。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportIndexKind;
 impl IdKind for ImportIndexKind {
@@ -139,7 +154,7 @@ impl IdKind for ImportIndexKind {
 }
 pub type ImportIndex = SemanticId<ImportIndexKind>;
 
-/// Declared variant identity within a nominal sum.
+/// 名义 sum 内已声明的变体身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariantIdKind;
 impl IdKind for VariantIdKind {
@@ -147,7 +162,7 @@ impl IdKind for VariantIdKind {
 }
 pub type VariantId = SemanticId<VariantIdKind>;
 
-/// Declared field identity within a struct / aggregate / variant payload.
+/// 结构体 / 聚合 / 变体载荷内已声明的字段身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldIdKind;
 impl IdKind for FieldIdKind {
@@ -155,7 +170,7 @@ impl IdKind for FieldIdKind {
 }
 pub type FieldId = SemanticId<FieldIdKind>;
 
-/// Generic substitution identity.
+/// 泛型替换身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubstitutionIdKind;
 impl IdKind for SubstitutionIdKind {
@@ -163,7 +178,7 @@ impl IdKind for SubstitutionIdKind {
 }
 pub type SubstitutionId = SemanticId<SubstitutionIdKind>;
 
-/// Effect operation site identity.
+/// 效应操作位点身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EffectSiteIdKind;
 impl IdKind for EffectSiteIdKind {
@@ -171,7 +186,7 @@ impl IdKind for EffectSiteIdKind {
 }
 pub type EffectSiteId = SemanticId<EffectSiteIdKind>;
 
-/// Effect edge identity (`Handled` or `Propagate`).
+/// 效应边身份（`Handled` 或 `Propagate`）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EffectEdgeIdKind;
 impl IdKind for EffectEdgeIdKind {
@@ -179,7 +194,7 @@ impl IdKind for EffectEdgeIdKind {
 }
 pub type EffectEdgeId = SemanticId<EffectEdgeIdKind>;
 
-/// Source / synthetic provenance identity.
+/// 源码 / 合成 provenance 身份。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProvenanceIdKind;
 impl IdKind for ProvenanceIdKind {
@@ -187,57 +202,57 @@ impl IdKind for ProvenanceIdKind {
 }
 pub type ProvenanceId = SemanticId<ProvenanceIdKind>;
 
-/// Operator fixity (syntactic classification only — not operator identity).
+/// 运算符结合性（仅句法分类 —— 不是运算符身份）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OperatorFixity {
-    /// Prefix operator (`!x`, `-x`).
+    /// 前缀运算符（`!x`、`-x`）。
     Prefix,
-    /// Infix operator (`a + b`).
+    /// 中缀运算符（`a + b`）。
     Infix,
-    /// Postfix operator (`x!`).
+    /// 后缀运算符（`x!`）。
     Postfix,
 }
 
-/// One row in the operator registry side table (parse / link phase).
+/// 运算符注册表旁表中的一行（解析 / 链接阶段）。
 ///
-/// Maps an extensible [`OperatorId`] to lexeme + fixity + precedence + resolved callee.
-/// Duplicate `(fixity, lexeme)` or duplicate `OperatorId` assignment must fail closed.
+/// 将可扩展 [`OperatorId`] 映射到词素 + 结合性 + 优先级 + 已解析 callee。
+/// 重复的 `(fixity, lexeme)` 或重复的 `OperatorId` 分配必须失败关闭。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OperatorRegistration {
-    /// Stable operator identity referenced by MIR / overload.
+    /// MIR / 重载所引用的稳定运算符身份。
     pub id: OperatorId,
-    /// Source lexeme for diagnostics only (`+`, `==`, `>>=`). Not a dispatch key after parse.
+    /// 仅用于诊断的源词素（`+`、`==`、`>>=`）。解析后不是分派键。
     pub lexeme: String,
-    /// Prefix / infix / postfix.
+    /// 前缀 / 中缀 / 后缀。
     pub fixity: OperatorFixity,
-    /// Binding strength (higher binds tighter; exact scale owned by language front-end).
+    /// 结合强度（数值越大绑得越紧；具体刻度由语言前端拥有）。
     pub precedence: u16,
-    /// Resolved implementation after overload / type-class selection, if known at link time.
+    /// 重载 / type-class 选择后的已解析实现（若链接时已知）。
     pub callee: Option<ItemInstanceId>,
 }
 
-/// Finite builtin / intrinsic operations shared by language and emitter (ADR 0013).
+/// 语言与 emitter 共享的有限内置 / intrinsic 操作（ADR 0013）。
 ///
-/// Registered once; backends consume the id, not `builtin.array.push` path strings.
+/// 注册一次；后端消费 id，而不是 `builtin.array.push` 路径字符串。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IntrinsicId {
-    /// `builtin.array.push` / push onto growable array storage.
+    /// `builtin.array.push` / 向可增长数组存储 push。
     ArrayPush,
-    /// Array / list length.
+    /// 数组 / 列表长度。
     ArrayLen,
-    /// Indexed get on array storage.
+    /// 数组存储的下标读取。
     ArrayGet,
-    /// Indexed set on array storage.
+    /// 数组存储的下标写入。
     ArraySet,
-    /// Reference dereference.
+    /// 引用解引用。
     RefDeref,
 }
 
 impl IntrinsicId {
-    /// Diagnostic / registry path segment (not a runtime dispatch key).
+    /// 诊断 / 注册表路径段（不是运行时分派键）。
     pub fn diagnostic_path(self) -> &'static str {
         match self {
             Self::ArrayPush => "builtin.array.push",
@@ -255,24 +270,24 @@ impl fmt::Display for IntrinsicId {
     }
 }
 
-/// Source attribute kinds recognized after parse (ADR 0013).
+/// 解析后识别的源属性种类（ADR 0013）。
 ///
-/// After parse, code must match on this enum — not `attribute.name.as_str() == "export"`.
+/// 解析后，代码必须 match 本 enum —— 不得 `attribute.name.as_str() == "export"`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AttributeKind {
-    /// `[export]` / export surface.
+    /// `[export]` / 导出面。
     Export,
-    /// `@main` / `[main]` entry.
+    /// `@main` / `[main]` 入口。
     Main,
-    /// `[test]`.
+    /// `[test]`。
     Test,
-    /// `[benchmark]`.
+    /// `[benchmark]`。
     Benchmark,
 }
 
 impl AttributeKind {
-    /// Diagnostic attribute name.
+    /// 诊断用属性名。
     pub fn diagnostic_name(self) -> &'static str {
         match self {
             Self::Export => "export",
@@ -289,20 +304,20 @@ impl fmt::Display for AttributeKind {
     }
 }
 
-/// External import capability declaration before verify maps it to [`ImportIndex`].
+/// 校验映射到 [`ImportIndex`] 之前的外部导入能力声明。
 ///
-/// Module / export **link names** are interop only; VM execution uses [`ImportIndex`].
+/// 模块 / 导出的**链接名**仅用于互通；VM 执行使用 [`ImportIndex`]。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ImportCapability {
-    /// Host / module link name.
+    /// 宿主 / 模块链接名。
     pub module_name: String,
-    /// Export link name within that module.
+    /// 该模块内的导出链接名。
     pub export_name: String,
 }
 
 impl ImportCapability {
-    /// Construct a capability pair.
+    /// 构造一对能力名。
     pub fn new(module_name: impl Into<String>, export_name: impl Into<String>) -> Self {
         Self { module_name: module_name.into(), export_name: export_name.into() }
     }
@@ -314,20 +329,20 @@ impl fmt::Display for ImportCapability {
     }
 }
 
-/// Stable identity of a trait/imply evidence binding (semantic proof, not runtime witness).
+/// trait/imply evidence 绑定的稳定身份（语义证明，不是运行时 witness）。
 ///
-/// S-W1 freeze: string key remains a **diagnostic / provenance** carrier.
-/// Call sites must not branch on `as_str()` for lowering; prefer side-table lookup by this id.
+/// S-W1 冻结：字符串键仍是**诊断 / provenance** 载体。
+/// 调用点不得为降低而对 `as_str()` 分支；优先按本 id 查旁表。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EvidenceId(String);
 
 impl EvidenceId {
-    /// Construct from a pre-normalized stable key.
+    /// 由预归一化的稳定键构造。
     pub fn new(key: impl Into<String>) -> Self {
         Self(key.into())
     }
 
-    /// Deterministic key from trait, implementing type, and operation identities.
+    /// 由 trait、实现类型与操作身份生成确定性键。
     pub fn from_parts(trait_id: &str, implementing_type: &str, operation: &str) -> Self {
         if operation.is_empty() {
             Self(format!("evidence:{trait_id}@{implementing_type}"))
@@ -337,7 +352,7 @@ impl EvidenceId {
         }
     }
 
-    /// Borrow the stable key.
+    /// 借用稳定键。
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -355,17 +370,17 @@ impl AsRef<str> for EvidenceId {
     }
 }
 
-/// Stable identity of a parametric function declaration (not a specialized physical body).
+/// 参数化函数声明的稳定身份（不是特化后的物理体）。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GenericFunctionId(String);
 
 impl GenericFunctionId {
-    /// Construct from a pre-normalized stable key.
+    /// 由预归一化的稳定键构造。
     pub fn new(key: impl Into<String>) -> Self {
         Self(key.into())
     }
 
-    /// Borrow the stable key.
+    /// 借用稳定键。
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -377,112 +392,112 @@ impl fmt::Display for GenericFunctionId {
     }
 }
 
-/// How an SSA value was defined (ADR 0012).
+/// SSA 值如何被定义（ADR 0012）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MirValueDefinition {
-    /// Result slot of an instruction.
+    /// 某条指令的结果槽。
     InstructionResult {
-        /// Defining instruction.
+        /// 定义该值的指令。
         instruction: InstructionId,
-        /// Result index within that instruction.
+        /// 该指令内的结果下标。
         result_index: u32,
     },
-    /// Block parameter.
+    /// 基本块参数。
     BlockParameter {
-        /// Owning block index (function-local dense id until BlockId lands).
+        /// 所属块下标（BlockId 落地前为函数内稠密 id）。
         block_index: u32,
-        /// Parameter index.
+        /// 参数下标。
         parameter_index: u32,
     },
-    /// Function parameter.
+    /// 函数参数。
     FunctionParameter {
-        /// Parameter index.
+        /// 参数下标。
         parameter_index: u32,
     },
 }
 
-/// Sparse target-neutral representation plan (ADR 0009 / 0011 / 0012).
+/// 稀疏的、与目标无关的表示计划（ADR 0009 / 0011 / 0012）。
 ///
-/// Keys are stable semantic ids only. Never `function@block:index`.
+/// 键只能是稳定语义 id。禁止 `function@block:index`。
 pub mod layout_choice {
     use super::{EffectSiteId, EvidenceId, InstructionId, MirValueId, NominalInstanceId};
     use std::collections::BTreeMap;
 
-    /// Layout choice for a callable / apply site (not a language category).
+    /// 可调用 / apply 位点的布局选择（不是语言范畴）。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum InvokeLowering {
-        /// Direct call to a known item.
+        /// 对已知项的直接调用。
         Direct,
-        /// Typed witness call.
+        /// 类型化 witness 调用。
         TypedWitness,
-        /// Shared operation table dispatch.
+        /// 共享操作表分派。
         SharedOperationTable,
-        /// Specialized body.
+        /// 特化体。
         Specialized,
-        /// Typed indirect / function reference.
+        /// 类型化间接 / 函数引用。
         TypedReference,
     }
 
-    /// Value carrier representation.
+    /// 值载体表示。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum ValueRepresentation {
-        /// Compile-time identity / erased.
+        /// 编译期身份 / 已擦除。
         CompileTimeIdentity,
-        /// Specialized scalar / aggregate carrier.
+        /// 特化标量 / 聚合载体。
         Specialized,
-        /// Reified GC / managed object.
+        /// 物化的 GC / 托管对象。
         Reified,
-        /// Boxed erased carrier.
+        /// 装箱的擦除载体。
         ErasedBoxed,
     }
 
-    /// Evidence layout choice.
+    /// Evidence 布局选择。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum EvidenceLayout {
-        /// Statically eliminated.
+        /// 静态消除。
         Erased,
-        /// Explicit runtime witness.
+        /// 显式运行时 witness。
         ExplicitWitness,
-        /// Shared typed operation table.
+        /// 共享类型化操作表。
         SharedOperationTable,
-        /// Boxed evidence bundle.
+        /// 装箱的 evidence 束。
         Boxed,
     }
 
-    /// ADT layout choice.
+    /// ADT 布局选择。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum AdtRepresentation {
-        /// Inline scalar / tagged payload (details in private plan).
+        /// 内联标量 / 带标签载荷（细节在私有计划中）。
         TaggedPayload,
-        /// Typed aggregate.
+        /// 类型化聚合。
         TypedAggregate,
-        /// Boxed value.
+        /// 装箱值。
         Boxed,
     }
 
-    /// Effect continuation layout choice.
+    /// 效应延续布局选择。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum EffectRepresentation {
-        /// Direct state-machine encoding in private plan.
+        /// 私有计划中的直接状态机编码。
         DirectStateMachine,
-        /// Typed continuation object.
+        /// 类型化延续对象。
         TypedContinuation,
-        /// Boxed frame.
+        /// 装箱帧。
         BoxedFrame,
     }
 
-    /// Target-neutral sparse plan.
+    /// 与目标无关的稀疏计划。
     #[derive(Debug, Clone, Default, PartialEq, Eq)]
     pub struct RepresentationPlan {
-        /// Per-instruction invoke / apply lowering.
+        /// 按指令的 invoke / apply 降低。
         pub invoke_lowerings: BTreeMap<InstructionId, InvokeLowering>,
-        /// Per-value carrier representation.
-        pub value_representations: BTreeMap<MirValueId, ValueRepresentation>,
-        /// Per-evidence layout.
+        /// 按值的载体表示。
+        pub value_reps: BTreeMap<MirValueId, ValueRepresentation>,
+        /// 按 evidence 的布局。
         pub evidence_layouts: BTreeMap<EvidenceId, EvidenceLayout>,
-        /// Per-nominal-instance ADT layout.
+        /// 按名义实例的 ADT 布局。
         pub adt_reps: BTreeMap<NominalInstanceId, AdtRepresentation>,
-        /// Per-effect-site continuation layout.
+        /// 按效应位点的延续布局。
         pub effect_reps: BTreeMap<EffectSiteId, EffectRepresentation>,
     }
 }

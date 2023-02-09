@@ -1,17 +1,17 @@
-//! Aggregate layout contracts for backend-private executable lowering.
+//! 后端私有可执行降低所用的聚合布局合同。
 //!
-//! These types describe value/reference storage and field offsets. They are not a
-//! language-level IR and are not a cross-frontend semantic bus.
+//! 这些类型描述值/引用存储与字段偏移。它们不是
+//! 语言级 IR，也不是跨前端的语义总线。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::NyarType;
 
-/// Stable layout identifier referenced by executable instructions and backends.
+/// 可执行指令与后端引用的稳定布局标识。
 ///
-/// S-W1: remains a dense `u32` table index in this module. Semantic consumers should
-/// prefer pairing with [`crate::FieldId`] / type ids; opaque `LayoutId` newtype lands
-/// when RepresentationPlan stops using bare indices (S-W3).
+/// S-W1：本模块中仍为稠密 `u32` 表下标。语义消费者应
+/// 优先与 [`crate::FieldId`] / 类型 id 配对；不透明 `LayoutId` newtype 等到
+/// RepresentationPlan 不再使用裸下标时再落地（S-W3）。
 pub type LayoutId = u32;
 
 /// Physical storage class for aggregate values at lowering time.

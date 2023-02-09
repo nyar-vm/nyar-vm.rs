@@ -1,26 +1,26 @@
-//! S-W1 / ADR 0013: semantic-path string dispatch must not grow.
+//! S-W1 / ADR 0013：语义路径上的字符串分派不得继续增长。
 //!
-//! Full elimination is S-W2–S-W6. This gate freezes a **baseline count** so new
-//! `as_str() == "` / `.ends_with("` semantic lookups cannot land unnoticed.
-//! Lower the baselines only when offenders are deleted (never raise them).
+//! 彻底清除属于 S-W2–S-W6。本门禁冻结一份**基线计数**，使新增的
+//! `as_str() == "` / `.ends_with("` 语义查找无法悄然合入。
+//! 仅在删除违规用法后下调基线（严禁上调）。
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-/// Crates whose `src/` must shrink string identity dispatch (ADR 0013).
+/// 其 `src/` 必须收缩字符串身份分派的 crate（ADR 0013）。
 const SEMANTIC_SRC_ROOTS: &[&str] = &[
     "../nyar-language/src",
     "../nyar-emitter/src",
     "../../runtimes/nyar-vm/src",
 ];
 
-/// Frozen ceilings for `as_str() == "` occurrences (production `src/` only).
-/// Re-count after deleting offenders and lower these constants.
+/// `as_str() == "` 出现次数的冻结上限（仅生产 `src/`）。
+/// 删除违规用法后重新计数并下调这些常量。
 const AS_STR_EQ_BASELINE: usize = 220;
 
-/// Frozen ceilings for `.ends_with("` used as symbol/path heuristics.
+/// 用作符号/路径启发式的 `.ends_with("` 出现次数的冻结上限。
 const ENDS_WITH_BASELINE: usize = 80;
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
