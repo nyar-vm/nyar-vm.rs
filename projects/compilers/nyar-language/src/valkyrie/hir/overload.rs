@@ -1164,27 +1164,22 @@ fn try_resolve_call(
     let resolved = match resolve_overload(&filtered) {
         Ok(resolved) => resolved,
         Err(_) => {
-            // `Fine(x)` / `Fail(e)` / `Some(v)` are Calls, not Construct nodes.
-            // Generic payload locals often fail exact match; accept same-arity
-            // constructor (then function) by simple name for SMIR003.
-            // Never arity-fallback onto an intrinsic (e.g. ArrayPush on List<T>):
-            // typed primitives must come from primitive_operation_contract /
-            // match_call_candidate only when the receiver is Array/FixedArray.
-            let fallback = candidates
+            // `Fine(x)` / `Fail(e)` / `Some(v)` 是 Call，不是 Construct 节点。
+            // 泛型载荷局部量常无法精确匹配；仅在**唯一**时按简单名接受同元数
+            // 构造器（其次函数）（S-W2 / ADR 0009）。禁止用 max_by_key 在多个
+            // `new` / 同拼写候选中挑选——那会绑到无关所有者如 `TuiRuntime.new`。
+            let fallback_candidates = candidates
                 .iter()
                 .filter(|candidate| {
                     matches!(candidate.domain, OverloadDomain::Constructor | OverloadDomain::Function)
                         && symbol_matches_callee_name(&candidate.symbol, &callee_name)
                         && candidate.signature.params.len() == args.len()
                 })
-                .max_by_key(|candidate| {
-                    let domain_score = match candidate.domain {
-                        OverloadDomain::Constructor => 2,
-                        _ => 0,
-                    };
-                    let owner_score = usize::from(candidate.owner.is_some());
-                    domain_score + owner_score
-                })?;
+                .collect::<Vec<_>>();
+            if fallback_candidates.len() != 1 {
+                return None;
+            }
+            let fallback = fallback_candidates[0];
             return Some(HirResolvedCall {
                 symbol: overload_symbol_path(fallback),
                 domain: match fallback.domain {
@@ -1719,14 +1714,19 @@ fn try_resolve_constructor(
     let resolved = match resolve_overload(&filtered) {
         Ok(resolved) => resolved,
         Err(_) => {
-            // Generic pattern payload types (`error: E`) often fail exact match against
-            // constructor params; fall back to same-arity name match for unite variants.
-            let fallback = candidates
+            // 泛型模式载荷类型（`error: E`）常无法与构造器参数精确匹配；
+            // 仅在**唯一**时接受同元数的按名匹配（S-W2 / ADR 0009）。
+            // 禁止在多个同拼写构造器中 first-wins。
+            let fallback_candidates = candidates
                 .iter()
                 .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
                 .filter(|candidate| candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == name))
                 .filter(|candidate| candidate.signature.params.len() == bound_values.len())
-                .next()?;
+                .collect::<Vec<_>>();
+            if fallback_candidates.len() != 1 {
+                return None;
+            }
+            let fallback = fallback_candidates[0];
             return Some(HirResolvedCall {
                 symbol: fallback.symbol.clone(),
                 domain: HirCallableDomain::Constructor,
@@ -2736,6 +2736,137 @@ fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
         }
         ValkyrieType::r#SelfType => "Self".to_string(),
         other => format!("{other:?}"),
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::{ValkyrieCompiler, types::SourceID};
+
+    #[test]
+    fn ambiguous_bare_new_does_not_resolve_via_simple_name_fallback() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 5201 });
+        let hir = compiler
+            .compile_source(
+                r#"
+structure Alpha { value: i64 }
+
+structure Beta { value: i64 }
+
+imply Alpha {
+    micro new(value: i64): Self {
+        return Alpha { value: value }
+    }
+}
+
+imply Beta {
+    micro new(value: i64): Self {
+        return Beta { value: value }
+    }
+}
+
+micro main() {
+    let x = new(1)
+}
+"#,
+            );
+
+        match hir {
+            Ok(hir) => {
+                let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
+                let mut saw_bare_new = false;
+                for statement in &main.body.statements {
+                    visit_calls_looking_for_bare_new(&statement.kind, &mut saw_bare_new);
+                }
+                assert!(saw_bare_new, "expected bare `new` call in main");
+            }
+            Err(error) => {
+                let text = error.to_string();
+                assert!(
+                    text.contains("new") || text.contains("SMIR003") || text.contains("unresolved") || text.contains("ambiguous"),
+                    "ambiguous bare `new` must fail closed without inventing a binding, got {text}"
+                );
+            }
+        }
+    }
+
+    fn visit_calls_looking_for_bare_new(kind: &HirStatementKind, saw_bare_new: &mut bool) {
+        let expression = match kind {
+            HirStatementKind::Let { initializer: Some(value), .. } | HirStatementKind::Expr(value) => value.as_ref(),
+            _ => return,
+        };
+        if let HirExprKind::Call { callee, resolved, .. } = &expression.kind {
+            if extract_callable_name(callee).is_some_and(|name| name.as_str() == "new") {
+                *saw_bare_new = true;
+                assert!(resolved.is_none(), "ambiguous bare `new` must stay unresolved, got {resolved:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn qualified_type_static_call_does_not_fall_back_to_unrelated_new() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 5202 });
+        let result = compiler
+            .compile_source(
+                r#"
+structure HashMap<K, V> {
+    capacity: i64
+}
+
+structure TuiRuntime {
+    capacity: i64
+}
+
+imply HashMap<K, V> {
+    micro new(capacity: i64): Self {
+        return HashMap { capacity: capacity }
+    }
+}
+
+imply TuiRuntime {
+    micro new(capacity: i64): Self {
+        return TuiRuntime { capacity: capacity }
+    }
+}
+
+micro main() {
+    let map: HashMap<i64, i64> = HashMap::new(0)
+}
+"#,
+            );
+        match result {
+            Ok(hir) => {
+                let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
+                let mut saw_hashmap_new = false;
+                for statement in &main.body.statements {
+                    let HirStatementKind::Let { initializer: Some(value), .. } = &statement.kind else { continue };
+                    let HirExprKind::Call { callee, resolved, .. } = &value.kind else { continue };
+                    let path = match &callee.kind {
+                        HirExprKind::Path(path) => path.to_string(),
+                        _ => continue,
+                    };
+                    if path.contains("HashMap") && path.contains("new") {
+                        saw_hashmap_new = true;
+                        if let Some(resolved) = resolved {
+                            assert!(
+                                !resolved.symbol.to_string().contains("TuiRuntime"),
+                                "HashMap::new must not bind TuiRuntime.new, got {:?}",
+                                resolved.symbol
+                            );
+                        }
+                    }
+                }
+                assert!(saw_hashmap_new, "expected HashMap::new call");
+            }
+            Err(error) => {
+                let text = error.to_string();
+                assert!(
+                    text.contains("HashMap") || text.contains("new") || text.contains("SMIR003") || text.contains("unresolved") || text.contains("type"),
+                    "qualified HashMap::new must fail closed rather than bind TuiRuntime.new, got {text}"
+                );
+            }
+        }
     }
 }
 
