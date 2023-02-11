@@ -26,9 +26,10 @@ pub use self::{
     },
     nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall},
     semantic_ids::{
-        AttributeKind, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability, ImportIndex,
-        InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, OperatorFixity,
-        OperatorId, OperatorRegistration, ProvenanceId, SemanticId, SubstitutionId, TypeId, TypeInstanceId, VariantId, layout_choice,
+        AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
+        ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, OperatorFixity,
+        OperatorId, OperatorRegistration, ProvenanceId, SemanticId, SubstitutionId, TypeId, TypeInstanceId, VariantId, builtin_attribute,
+        layout_choice,
     },
     source::{Location, Position, SourceID, SourceSpan},
     symbols::{Identifier, NamePath, QualifiedName, SymbolIdentity},

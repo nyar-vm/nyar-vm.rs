@@ -270,37 +270,74 @@ impl fmt::Display for IntrinsicId {
     }
 }
 
-/// 解析后识别的源属性种类（ADR 0013）。
+/// 属性身份：由可扩展属性注册表分配（ADR 0013）。
 ///
-/// 解析后，代码必须 match 本 enum —— 不得 `attribute.name.as_str() == "export"`。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// **不是封闭 enum。** 内建 `[export]` / `[main]` 与用户自定义属性均获得稳定 id；
+/// 名称只留在 [`AttributeRegistration`] 旁表，解析后不得再用 `as_str() == "export"` 分派。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AttributeIdKind;
+impl IdKind for AttributeIdKind {
+    const NAME: &'static str = "AttributeId";
+}
+pub type AttributeId = SemanticId<AttributeIdKind>;
+
+/// 属性注册表旁表中的一行（解析阶段）。
+///
+/// 重复的属性名或重复的 [`AttributeId`] 分配必须失败关闭。
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum AttributeKind {
-    /// `[export]` / 导出面。
-    Export,
-    /// `@main` / `[main]` 入口。
-    Main,
-    /// `[test]`。
-    Test,
-    /// `[benchmark]`。
-    Benchmark,
+pub struct AttributeRegistration {
+    /// MIR / 规划所引用的稳定属性身份。
+    pub id: AttributeId,
+    /// 源属性简单名（`export`、`main`、用户自定义）；解析后仅诊断，不是分派键。
+    pub name: String,
 }
 
-impl AttributeKind {
-    /// 诊断用属性名。
-    pub fn diagnostic_name(self) -> &'static str {
-        match self {
-            Self::Export => "export",
-            Self::Main => "main",
-            Self::Test => "test",
-            Self::Benchmark => "benchmark",
-        }
+/// 内建属性的播种槽位（语言前端注册表先登记这些；其后才是用户属性）。
+///
+/// 槽位是注册约定，不是语言语义封闭集合。
+pub mod builtin_attribute {
+    use super::{AttributeId, AttributeRegistration};
+
+    /// `[export]`。
+    pub fn export() -> AttributeId {
+        AttributeId::from_index(0).expect("export attribute id")
     }
-}
 
-impl fmt::Display for AttributeKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.diagnostic_name())
+    /// `@main` / `[main]`。
+    pub fn main() -> AttributeId {
+        AttributeId::from_index(1).expect("main attribute id")
+    }
+
+    /// `[test]`。
+    pub fn test() -> AttributeId {
+        AttributeId::from_index(2).expect("test attribute id")
+    }
+
+    /// `[benchmark]`。
+    pub fn benchmark() -> AttributeId {
+        AttributeId::from_index(3).expect("benchmark attribute id")
+    }
+
+    /// 内建属性的初始注册行（供前端 `AttributeRegistry` 播种）。
+    pub fn seed_registrations() -> [AttributeRegistration; 4] {
+        [
+            AttributeRegistration { id: export(), name: "export".into() },
+            AttributeRegistration { id: main(), name: "main".into() },
+            AttributeRegistration { id: test(), name: "test".into() },
+            AttributeRegistration { id: benchmark(), name: "benchmark".into() },
+        ]
+    }
+
+    /// 由简单名查找已播种的内建 [`AttributeId`]；未知名返回 `None`（应交注册表 intern）。
+    pub fn lookup_seed(name: &str) -> Option<AttributeId> {
+        match name {
+            "export" => Some(export()),
+            "main" => Some(main()),
+            "test" => Some(test()),
+            "benchmark" => Some(benchmark()),
+            _ => None,
+        }
     }
 }
 
@@ -565,9 +602,14 @@ mod tests {
     }
 
     #[test]
-    fn intrinsic_attribute_display_is_diagnostic_only() {
+    fn intrinsic_and_attribute_ids_are_extensible() {
         assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
-        assert_eq!(AttributeKind::Export.diagnostic_name(), "export");
+        assert_eq!(builtin_attribute::export().index(), 0);
+        assert_eq!(builtin_attribute::main().index(), 1);
+        let seeds = builtin_attribute::seed_registrations();
+        assert_eq!(seeds[0].name, "export");
+        assert_eq!(builtin_attribute::lookup_seed("export"), Some(builtin_attribute::export()));
+        assert_eq!(builtin_attribute::lookup_seed("custom_attr"), None);
         let cap = ImportCapability::new("env", "console_log");
         assert_eq!(cap.to_string(), "env::console_log");
     }

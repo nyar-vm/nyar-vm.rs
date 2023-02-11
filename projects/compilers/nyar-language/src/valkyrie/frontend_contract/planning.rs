@@ -17,10 +17,11 @@ use crate::valkyrie::{
         NamePath,
         hir::{
             HirBlock, HirExpr, HirExprKind, HirFunction, HirImpl, HirLiteral, HirMatchArm, HirModule, HirStatementKind, HirStringSegment,
-            ValkyrieType, parse_export_spec_from_annotations,
+            ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id,
         },
     },
 };
+use nyar_types::builtin_attribute;
 
 pub trait NyarPlanningContract {
     fn program_facts(&self) -> ProgramFacts;
@@ -441,7 +442,7 @@ fn function_symbol(_module_name: &QualifiedName, function: &HirFunction) -> Qual
 }
 
 fn has_main_annotation(function: &HirFunction) -> bool {
-    function.annotations.iter().any(|attribute| attribute.name.parts().last().is_some_and(|name| name.as_str() == "main"))
+    function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main()))
 }
 
 fn wasm_export_names_for_operations(

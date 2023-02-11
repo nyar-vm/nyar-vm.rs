@@ -1,43 +1,52 @@
-//! `[export(..)]` metadata on HIR items.
+//! `[export(..)]` 注解在 HIR 项上的元数据。
 
-use super::{HirArgument, HirAttribute, HirExpr, HirExprKind, HirLiteral, HirStringSegment};
-use crate::types::{Identifier, NamePath};
+use super::{HirArgument, HirAttribute, HirExpr, HirExprKind, HirLiteral, HirStringLiteral, HirStringSegment};
+use crate::types::{Identifier, NamePath, SourceSpan};
+use nyar_types::{AttributeId, builtin_attribute};
 
-/// Export partition and optional rename for CLR / wasm / Nyar module surfaces.
+/// CLR / wasm / Nyar 模块表面上的导出分区与可选重命名。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirExportSpec {
-    /// Target export partitions. Empty means `default` at use sites.
+    /// 目标导出分区。空表示使用点上的 `default`。
     pub partitions: Vec<String>,
-    /// Optional exported symbol name override (`name: "twoSum"`).
+    /// 可选的导出名覆盖（`name: "twoSum"`）。
     pub export_name: Option<String>,
-    /// Optional casing transform (`case: "camelCase"`).
+    /// 可选的大小写变换（`case: "camelCase"`）。
     pub export_case: Option<String>,
 }
 
 impl HirExportSpec {
-    /// Primary partition for artifact routing.
+    /// 产物路由用的主分区。
     pub fn primary_partition(&self) -> String {
         self.partitions.first().cloned().unwrap_or_else(|| "default".to_string())
     }
 
-    /// Resolve the wasm / host export symbol for a local `micro` name.
+    /// 由本地 `micro` 名解析 wasm / 宿主导出符号。
+    ///
+    /// 非法 `case` 不得被当成导出名；未知 case 回退为本地名（诊断由调用方负责）。
     pub fn resolve_exported_name(&self, local_name: &Identifier) -> String {
         if let Some(name) = &self.export_name {
             return name.clone();
         }
         match self.export_case.as_deref() {
             Some("camelCase") => snake_case_to_camel_case(local_name.as_str()),
-            Some("snake_case") => local_name.as_str().to_string(),
-            Some(other) => other.to_string(),
-            None => local_name.as_str().to_string(),
+            Some("snake_case") | None => local_name.as_str().to_string(),
+            Some(_) => local_name.as_str().to_string(),
         }
     }
 }
 
-/// Parse `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`.
+/// 将属性简单名解析为 [`AttributeId`]（解析边界；之后只比较 id）。
+///
+/// 内建属性走播种槽；未知名暂返回 `None`，待完整 `AttributeRegistry::intern` 接入后再分配用户属性 id。
+pub fn resolve_attribute_id(attribute: &HirAttribute) -> Option<AttributeId> {
+    builtin_attribute::lookup_seed(attribute.name.parts().last()?.as_str())
+}
+
+/// 解析 `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`。
 pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Option<HirExportSpec> {
-    let attribute = annotations.iter().find(|attribute| attribute.name.parts().last().is_some_and(|name| name.as_str() == "export"))?;
+    let attribute = annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::export()))?;
 
     if attribute.arguments.is_empty() {
         return Some(HirExportSpec { partitions: vec!["default".to_string()], export_name: None, export_case: None });
@@ -52,9 +61,18 @@ pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Optio
             let key = key.as_str();
             if key == "name" {
                 export_name = argument_string_literal(argument);
-            } else if key == "case" {
-                export_case = argument_string_literal(argument);
-            } else {
+            }
+            else if key == "case" {
+                let Some(value) = argument_string_literal(argument) else {
+                    return None;
+                };
+                match value.as_str() {
+                    "camelCase" | "snake_case" => export_case = Some(value),
+                    // 非法 case：整条 export 合同失败闭合，禁止把拼写当导出名。
+                    _ => return None,
+                }
+            }
+            else {
                 export_name.get_or_insert_with(|| key.to_string());
             }
             continue;
@@ -121,7 +139,8 @@ pub fn snake_case_to_camel_case(name: &str) -> String {
         if upper_next {
             out.extend(ch.to_uppercase());
             upper_next = false;
-        } else {
+        }
+        else {
             out.push(ch);
         }
     }
@@ -137,5 +156,32 @@ mod tests {
         assert_eq!(snake_case_to_camel_case("two_sum"), "twoSum");
         assert_eq!(snake_case_to_camel_case("max_sub_array"), "maxSubArray");
         assert_eq!(snake_case_to_camel_case("api_ping"), "apiPing");
+    }
+
+    #[test]
+    fn attribute_id_maps_export_and_main() {
+        let export = HirAttribute::new(NamePath::new(vec![Identifier::new("export")]));
+        let main = HirAttribute::new(NamePath::new(vec![Identifier::new("main")]));
+        assert_eq!(resolve_attribute_id(&export), Some(builtin_attribute::export()));
+        assert_eq!(resolve_attribute_id(&main), Some(builtin_attribute::main()));
+        let custom = HirAttribute::new(NamePath::new(vec![Identifier::new("my_attr")]));
+        assert_eq!(resolve_attribute_id(&custom), None);
+    }
+
+    #[test]
+    fn illegal_export_case_fails_closed() {
+        let case_arg = HirArgument {
+            key: Some(Identifier::new("case")),
+            value: Box::new(HirExpr {
+                kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
+                    prefix: None,
+                    quote_count: 1,
+                    segments: vec![HirStringSegment::Text("PascalCase".into())],
+                })),
+                span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
+            }),
+        };
+        let annotations = vec![HirAttribute::with_arguments(NamePath::new(vec![Identifier::new("export")]), vec![case_arg])];
+        assert!(parse_export_spec_from_annotations(&annotations).is_none());
     }
 }
