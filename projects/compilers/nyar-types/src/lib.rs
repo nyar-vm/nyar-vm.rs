@@ -25,6 +25,9 @@ pub use self::{
         SemanticObservation, SemanticPackageInterface,
     },
     nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall},
+    registries::{
+        AttributeRegistry, AttributeRegistryError, OperatorRegistry, OperatorRegistryError, builtin_operator, parse_operator_display_name,
+    },
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
         ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, OperatorFixity,
@@ -50,6 +53,8 @@ pub mod layout;
 pub mod neutral_contract;
 /// Nullable intrinsic profiles shared by language assembly and backends.
 pub mod nullable;
+/// Extensible attribute / operator registries (ADR 0013).
+pub mod registries;
 /// Parametric MIR semantic identities and sparse RepresentationPlan.
 pub mod semantic_ids;
 mod source;
