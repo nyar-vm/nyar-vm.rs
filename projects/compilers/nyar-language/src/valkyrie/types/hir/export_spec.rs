@@ -2,7 +2,8 @@
 
 use super::{HirArgument, HirAttribute, HirExpr, HirExprKind, HirLiteral, HirStringLiteral, HirStringSegment};
 use crate::types::{Identifier, NamePath, SourceSpan};
-use nyar_types::{AttributeId, builtin_attribute};
+use nyar_types::{AttributeId, AttributeRegistry, builtin_attribute};
+use std::sync::{Mutex, OnceLock};
 
 /// CLR / wasm / Nyar 模块表面上的导出分区与可选重命名。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,11 +38,25 @@ impl HirExportSpec {
     }
 }
 
+/// 解析阶段共享的属性注册表（内建播种 + 用户属性 intern）。
+///
+/// 完整编译会话上下文接入前，用进程内单例保证同名 → 同 id；重复键失败关闭由
+/// [`AttributeRegistry::intern_unique`] 提供，此处 `intern` 对同名幂等。
+fn attribute_registry() -> &'static Mutex<AttributeRegistry> {
+    static REGISTRY: OnceLock<Mutex<AttributeRegistry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(AttributeRegistry::with_builtins()))
+}
+
 /// 将属性简单名解析为 [`AttributeId`]（解析边界；之后只比较 id）。
 ///
-/// 内建属性走播种槽；未知名暂返回 `None`，待完整 `AttributeRegistry::intern` 接入后再分配用户属性 id。
+/// 内建属性走播种槽；用户属性由 [`AttributeRegistry::intern`] 分配。
 pub fn resolve_attribute_id(attribute: &HirAttribute) -> Option<AttributeId> {
-    builtin_attribute::lookup_seed(attribute.name.parts().last()?.as_str())
+    let name = attribute.name.parts().last()?.as_str();
+    let Ok(mut registry) = attribute_registry().lock()
+    else {
+        return None;
+    };
+    Some(registry.intern(name))
 }
 
 /// 解析 `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`。
@@ -165,7 +180,9 @@ mod tests {
         assert_eq!(resolve_attribute_id(&export), Some(builtin_attribute::export()));
         assert_eq!(resolve_attribute_id(&main), Some(builtin_attribute::main()));
         let custom = HirAttribute::new(NamePath::new(vec![Identifier::new("my_attr")]));
-        assert_eq!(resolve_attribute_id(&custom), None);
+        let custom_id = resolve_attribute_id(&custom).expect("user attribute interned");
+        assert_ne!(custom_id, builtin_attribute::export());
+        assert_eq!(resolve_attribute_id(&custom), Some(custom_id));
     }
 
     #[test]

@@ -24,6 +24,7 @@ use crate::{
     },
     valkyrie::{hir::PatternRefutability, mir::collect_aggregate_field_map},
 };
+use nyar_types::builtin_operator;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadDomain {
@@ -1211,9 +1212,10 @@ fn try_resolve_call(
     })
 }
 
-/// Resolve parser-canonical language operators into a structured semantic
-/// opcode. The string here is the frontend's closed operator surface, not a
-/// user symbol or library lookup; all later stages consume only the opcode.
+/// 将前端显示名映到内建 [`OperatorId`] 后做 primitive 合同分派（ADR 0013）。
+///
+/// 迁移期仍接受 `infix ==` 显示字符串作为查找键；分派只比较 [`OperatorId`]。
+/// 诊断符号暂保留显示名；后续 HIR 节点应直接持有 id。
 fn primitive_operator_contract(
     operator: &Identifier,
     args: &[HirCallArgument],
@@ -1222,26 +1224,29 @@ fn primitive_operator_contract(
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
-    if operator.as_str() == "prefix !" && args.len() == 1 {
+    let operator_id = builtin_operator::lookup_display_name(operator.as_str())?;
+    let diagnostic_symbol = NamePath::new(vec![Identifier::new("primitive"), operator.clone()]);
+
+    if operator_id == builtin_operator::prefix_not() && args.len() == 1 {
         let operand = infer_scrutinee_type(&args[0].value, candidates, locals, struct_fields, singleton_names)?;
         if !matches!(operand, ValkyrieType::Boolean) {
             return None;
         }
         return Some(HirResolvedCall {
-            symbol: NamePath::new(vec![Identifier::new("primitive"), operator.clone()]),
+            symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
             parameter_types: vec![ValkyrieType::Boolean],
             extractor_payload_type: None,
         });
     }
-    if operator.as_str() == "prefix -" && args.len() == 1 {
+    if operator_id == builtin_operator::prefix_neg() && args.len() == 1 {
         let operand = infer_scrutinee_type(&args[0].value, candidates, locals, struct_fields, singleton_names)?;
         if !is_numeric_type(&operand) {
             return None;
         }
         return Some(HirResolvedCall {
-            symbol: NamePath::new(vec![Identifier::new("primitive"), operator.clone()]),
+            symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: operand.clone(),
             parameter_types: vec![operand],
@@ -1266,14 +1271,14 @@ fn primitive_operator_contract(
     // Nominal sum equality is a structural language operation.  The only
     // authority used here is the constructor metadata collected for the
     // module; do not infer it from a function/library/type spelling.
-    if operator.as_str() == "infix =="
+    if operator_id == builtin_operator::infix_eq()
         && matches!(&left, ValkyrieType::Named(name) if candidates.iter().any(|candidate| {
             matches!(candidate.domain, OverloadDomain::Constructor)
                 && candidate.owner.as_ref() == Some(name)
         }))
     {
         return Some(HirResolvedCall {
-            symbol: NamePath::new(vec![Identifier::new("primitive"), operator.clone()]),
+            symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
             parameter_types: vec![left, right],
@@ -1284,13 +1289,17 @@ fn primitive_operator_contract(
         return None;
     }
     // HIR may still type operators; MUST NOT mint IntrinsicOpcode (deleted).
-    let return_type = match operator.as_str() {
-        "infix +" | "infix -" | "infix *" | "infix /" | "infix %" | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>" => left.clone(),
-        "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" => ValkyrieType::Boolean,
-        _ => return None,
+    let return_type = if builtin_operator::is_numeric_result(operator_id) {
+        left.clone()
+    }
+    else if builtin_operator::is_boolean_result(operator_id) {
+        ValkyrieType::Boolean
+    }
+    else {
+        return None;
     };
     Some(HirResolvedCall {
-        symbol: NamePath::new(vec![Identifier::new("primitive"), operator.clone()]),
+        symbol: diagnostic_symbol,
         domain: HirCallableDomain::Operator,
         return_type,
         parameter_types: vec![left, right],
@@ -1625,7 +1634,7 @@ fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
 }
 
 fn is_boolean_operator(name: &Identifier) -> bool {
-    matches!(name.as_str(), "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" | "infix &&" | "infix ||")
+    builtin_operator::lookup_display_name(name.as_str()).is_some_and(builtin_operator::is_boolean_result)
 }
 
 fn try_resolve_constructor(
@@ -3146,7 +3155,7 @@ micro wrap<T>(value: T) -> Envelope<T> {
     }
 
     #[test]
-    fn utf8_slice_with_typed_local_uses_structured_intrinsic() {
+    fn utf8_slice_with_typed_local_stays_unresolved_until_adaptor_invoke() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4203 });
         let hir = compiler
             .compile_source(
@@ -3168,14 +3177,11 @@ micro slice_probe(text: utf8, start: i32, count: i32) -> utf8 {
         else {
             panic!("expected return expression")
         };
-        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind
+        // Utf8 method IntrinsicOpcode 路径已删除；在 std adaptor Invoke 闭合前必须失败关闭。
+        let HirExprKind::Call { resolved: None, .. } = &expression.kind
         else {
-            panic!("expected resolved slice call: {expression:?}")
+            panic!("utf8 slice must stay unresolved until adaptor Invoke: {expression:?}")
         };
-        assert_eq!(
-            resolved.parameter_types,
-            vec![ValkyrieType::Utf8, ValkyrieType::Integer32 { signed: true }, ValkyrieType::Integer32 { signed: true }]
-        );
     }
 
     #[test]
