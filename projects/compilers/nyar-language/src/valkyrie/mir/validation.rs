@@ -1,7 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{concretize_type, types::{NamePath, hir::ValkyrieType}};
-use nyar_types::NyarType;
+use crate::{
+    concretize_type,
+    mir::ssa::builtin_helpers::resolve_intrinsic_id,
+    types::{
+        NamePath,
+        hir::ValkyrieType,
+    },
+};
+use nyar_types::{NyarType, builtin_operator};
 use std_data::text::valkyrie::ParseError;
 
 use crate::mir::{
@@ -455,30 +462,23 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
     Ok(())
 }
 
-/// Language operators lower as `Call` to `infix +` / `prefix !` (sometimes `primitive.infix +`).
-/// Backends expand them to target primitives — they are not registry-linked functions.
+/// Language operators lower as `Call` to display names（迁移期）；后端展开，不进函数注册表。
+///
+/// 身份由 [`builtin_operator`] 注册表判定，不再维护封闭字符串表。
 pub fn is_language_operator_symbol(symbol: &NamePath) -> bool {
     is_language_operator_name(symbol.parts().last().map(|part| part.as_str()).unwrap_or(""))
 }
 
+/// 显示名是否为已播种内建运算符（迁移期查找键）。
 pub fn is_language_operator_name(name: &str) -> bool {
-    matches!(
-        name,
-        "infix ==" | "infix !="
-            | "infix <" | "infix <=" | "infix >" | "infix >="
-            | "infix +" | "infix -" | "infix *" | "infix /" | "infix %"
-            | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
-            | "prefix !" | "prefix -" | "prefix +"
-    )
+    builtin_operator::lookup_display_name(name).is_some()
 }
 
-/// Language builtins (`builtin.array.push`, …) lower as `Call` but expand in backends — not registry-linked.
+/// Language builtins / private intrinsic seeds lower as `Call` but expand in backends。
+///
+/// 身份由 [`resolve_intrinsic_id`] → [`nyar_types::IntrinsicId`] 判定。
 pub fn is_language_builtin_symbol(symbol: &NamePath) -> bool {
-    let parts = symbol.parts();
-    parts.len() == 3
-        && parts[0].as_str() == "builtin"
-        && parts[1].as_str() == "array"
-        && parts[2].as_str() == "push"
+    resolve_intrinsic_id(symbol).is_some()
 }
 
 fn validate_static_call_resolution(

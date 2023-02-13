@@ -7,18 +7,18 @@ use crate::{
         hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
-use nyar_types::NyarType;
+use nyar_types::{IntrinsicId, NyarType};
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
     builtin_helpers::{
-        array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, is_array_len_intrinsic_symbol,
-        is_ref_deref_intrinsic_symbol, language_operator_call_return_type,
+        array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, language_operator_call_return_type,
+        resolve_intrinsic_id,
     },
     callee_name_matches,
     expr_helpers::{
-        is_array_shaped_valkyrie_type, known_instance_method_return_type, peel_generic_apply, qualify_instance_method_symbol,
-        reject_text_operator_for_numeric_args, named_type_name,
+        is_array_shaped_valkyrie_type, known_instance_method_return_type, named_type_name, peel_generic_apply, qualify_instance_method_symbol,
+        reject_text_operator_for_numeric_args,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -27,16 +27,22 @@ use super::{
 };
 
 impl MirBuilder {
+    fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
+        resolved
+            .and_then(|call| resolve_intrinsic_id(&call.symbol))
+            .or_else(|| match callee {
+                MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
+                _ => None,
+            })
+    }
+
     fn try_lower_ref_deref_intrinsic(
         &mut self,
         resolved: Option<&HirResolvedCall>,
         callee: &MirOperand,
         arguments: &[MirOperand],
     ) -> Option<MirOperand> {
-        let is_intrinsic = resolved
-            .map(|call| is_ref_deref_intrinsic_symbol(&call.symbol))
-            .unwrap_or_else(|| matches!(callee, MirOperand::Symbol(symbol) if is_ref_deref_intrinsic_symbol(symbol)));
-        if !is_intrinsic {
+        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::RefDeref) {
             return None;
         }
         arguments.first().cloned()
@@ -57,6 +63,21 @@ impl MirBuilder {
             ValkyrieType::Apply(_, args) => args.first().cloned(),
             _ => None,
         }
+    }
+
+    fn option_uses_generic_payload(actual_type: &ValkyrieType) -> bool {
+        Self::option_payload_type(actual_type).is_some_and(|payload| {
+            matches!(payload, ValkyrieType::Named(name) if name.as_str() == "T")
+        })
+    }
+
+    fn infer_array_element_type(&self, array: &MirOperand) -> Option<ValkyrieType> {
+        infer_builder_operand_type(array, &self.value_types).and_then(|ty| match ty {
+            ValkyrieType::Array(inner) => Some(*inner),
+            ValkyrieType::Apply(base, args) if named_type_name(base.as_ref()) == Some("Array") => args.first().cloned(),
+            ValkyrieType::FixedArray { element, .. } => Some(*element),
+            _ => None,
+        })
     }
 
     fn try_lower_option_is_some(&mut self, receiver: MirOperand) -> Option<MirOperand> {
@@ -224,10 +245,7 @@ impl MirBuilder {
         arguments: &[MirOperand],
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        let is_intrinsic = resolved
-            .map(|call| is_array_len_intrinsic_symbol(&call.symbol))
-            .unwrap_or_else(|| matches!(callee, MirOperand::Symbol(symbol) if is_array_len_intrinsic_symbol(symbol)));
-        if !is_intrinsic {
+        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayLen) {
             return None;
         }
         let array = arguments.first().cloned()?;
@@ -239,6 +257,96 @@ impl MirBuilder {
             .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("usize")));
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
+    }
+
+    fn try_lower_array_get_on_array(
+        &mut self,
+        array: MirOperand,
+        ordinal: MirOperand,
+        resolved: Option<&HirResolvedCall>,
+        expected_type: Option<&ValkyrieType>,
+        wraps_option: bool,
+    ) -> Option<MirOperand> {
+        let array_element_type = self.infer_array_element_type(&array);
+        let one = MirOperand::Constant(MirConstant::Int(1));
+        let index_value = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(
+            MirOperation::Call {
+                callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("infix -")])),
+                arguments: vec![ordinal, one],
+            },
+            vec![index_value],
+        );
+        self.value_types.insert(index_value, ValkyrieType::Integer32 { signed: true });
+        let element_value = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(
+            MirOperation::ArrayGet { array, index: MirOperand::Value(index_value) },
+            vec![element_value],
+        );
+        let element_type = array_element_type
+            .clone()
+            .or_else(|| expected_type.and_then(|ty| Self::option_payload_type(ty)));
+        if let Some(element_type) = element_type.clone() {
+            self.value_types.insert(element_value, element_type);
+        }
+        if wraps_option {
+            let payload_type = element_type
+                .clone()
+                .or(array_element_type.clone())
+                .or_else(|| resolved.and_then(|call| Self::option_payload_type(&call.return_type)));
+            let return_type = expected_type
+                .cloned()
+                .filter(|ty| Self::option_sum_name(ty).is_some())
+                .or_else(|| {
+                    resolved
+                        .map(|call| call.return_type.clone())
+                        .filter(|ty| Self::option_sum_name(ty).is_some() && !Self::option_uses_generic_payload(ty))
+                })
+                .or_else(|| {
+                    payload_type.clone().map(|payload| {
+                        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload])
+                    })
+                })?;
+            let option_value = self.next_value(MirValueOrigin::CallResult);
+            self.push_instruction(
+                MirOperation::SumNew {
+                    sum_type: "Option".to_string(),
+                    type_args: type_args_from_sum_shaped(&return_type),
+                    variant: "Some".to_string(),
+                    payload_type,
+                    payload: Some(MirOperand::Value(element_value)),
+                },
+                vec![option_value],
+            );
+            self.value_types.insert(option_value, return_type);
+            return Some(MirOperand::Value(option_value));
+        }
+        let return_type = resolved
+            .map(|call| call.return_type.clone())
+            .or_else(|| expected_type.cloned())
+            .or(element_type)
+            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("i32")));
+        self.value_types.insert(element_value, return_type);
+        Some(MirOperand::Value(element_value))
+    }
+
+    fn try_lower_array_get_intrinsic(
+        &mut self,
+        resolved: Option<&HirResolvedCall>,
+        callee: &MirOperand,
+        arguments: &[MirOperand],
+        expected_type: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayGet) {
+            return None;
+        }
+        // Option 包装由返回类型合同决定，不按 `Array.get` 方法名猜。
+        let wraps_option = resolved
+            .map(|call| Self::option_sum_name(&call.return_type).is_some())
+            .unwrap_or_else(|| expected_type.is_some_and(|ty| Self::option_sum_name(ty).is_some()));
+        let array = arguments.first().cloned()?;
+        let ordinal = arguments.get(1).cloned()?;
+        self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type, wraps_option)
     }
 
     fn field_type_for_semantic_type(&self, ty: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
@@ -671,6 +779,9 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
+                    if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
                     let value = self.push_call(callee, arguments);
                     let return_type = return_type
                         .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
@@ -751,6 +862,9 @@ impl MirBuilder {
                         return operand;
                     }
                     if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
                     let value = self.push_call(callee, arguments);
@@ -837,6 +951,9 @@ impl MirBuilder {
                     }
                 }
                 if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                    return operand;
+                }
+                if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                     return operand;
                 }
                 // ADR 0010: Call is only { callee, arguments }. No intrinsic/dispatch/generic side-channels.

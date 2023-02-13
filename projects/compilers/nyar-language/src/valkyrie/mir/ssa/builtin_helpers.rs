@@ -1,6 +1,7 @@
 //! Builtin / pattern helpers for MIR lowering.
 //!
 //! ADR 0010: IntrinsicOpcode tables deleted. Do not restore operator→opcode maps.
+//! ADR 0013: 语义路径只消费 [`IntrinsicId`] / [`OperatorId`]，禁止按类型名末段猜。
 
 use std::collections::BTreeMap;
 
@@ -8,6 +9,7 @@ use crate::types::{
     NamePath,
     hir::{HirAttribute, HirFunction, HirModule, ValkyrieType},
 };
+use nyar_types::{IntrinsicId, builtin_operator};
 
 use super::{MirOperand, MirValueRef, infer_builder_operand_type};
 
@@ -48,38 +50,77 @@ pub(super) fn array_index_call_output_type(
     None
 }
 
-/// Language operators lower as `Call` to `infix +` / `prefix !` — not registry-linked.
-/// When HIR omits `resolved.return_type`, infer from the operator name and operand SSA types.
+/// 迁移期：由已进入 MIR 的符号路径映到 [`IntrinsicId`]。
+///
+/// 仅识别：
+/// - 私有 `[intrinsic(...)]` 种子名（`__array_len` 等，可带限定前缀）
+/// - 语言 builtin 路径 `builtin.array.*` / `builtin.ref.deref`
+///
+/// **禁止**按 `Array.get` / 类型名末段猜 —— 那会把 `HashMap.get` 等绑错。
+pub(crate) fn resolve_intrinsic_id(symbol: &NamePath) -> Option<IntrinsicId> {
+    let parts = symbol.parts();
+    if parts.len() == 3 && parts[0].as_str() == "builtin" {
+        return match (parts[1].as_str(), parts[2].as_str()) {
+            ("array", "push") => Some(IntrinsicId::ArrayPush),
+            ("array", "length") | ("array", "len") => Some(IntrinsicId::ArrayLen),
+            ("array", "get") => Some(IntrinsicId::ArrayGet),
+            ("array", "set") => Some(IntrinsicId::ArraySet),
+            ("ref", "deref") => Some(IntrinsicId::RefDeref),
+            _ => None,
+        };
+    }
+    match parts.last().map(|part| part.as_str()) {
+        Some("__array_len") => Some(IntrinsicId::ArrayLen),
+        Some("__array_get") => Some(IntrinsicId::ArrayGet),
+        Some("__array_set") => Some(IntrinsicId::ArraySet),
+        Some("__ref_deref") => Some(IntrinsicId::RefDeref),
+        _ => None,
+    }
+}
+
+/// Language operators lower as `Call` to display names during migration — not registry-linked.
+/// When HIR omits `resolved.return_type`, infer via [`OperatorId`] 旁表。
 pub(super) fn language_operator_call_return_type(
     symbol: &NamePath,
     arguments: &[MirOperand],
     value_types: &BTreeMap<MirValueRef, ValkyrieType>,
 ) -> Option<ValkyrieType> {
     let name = symbol.parts().last().map(|part| part.as_str()).unwrap_or("");
-    match name {
-        "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" | "prefix !" => Some(ValkyrieType::Boolean),
-        "infix +" | "infix -" | "infix *" | "infix /" | "infix %" | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
-        | "prefix -" | "prefix +" => arguments.first().and_then(|arg| infer_builder_operand_type(arg, value_types)),
-        _ => None,
+    let operator_id = builtin_operator::lookup_display_name(name)?;
+    if builtin_operator::is_boolean_result(operator_id) {
+        Some(ValkyrieType::Boolean)
+    }
+    else if builtin_operator::is_numeric_result(operator_id) {
+        arguments.first().and_then(|arg| infer_builder_operand_type(arg, value_types))
+    }
+    else {
+        None
     }
 }
 
-/// `std.collection.Array.length` lowers to a call of private `[intrinsic("array.len")]` `__array_len`.
-/// That symbol is not linked into the executable registry — emit `ArrayLength` instead of `Call`.
-pub(super) fn is_array_len_intrinsic_symbol(symbol: &NamePath) -> bool {
-    symbol.parts().last().is_some_and(|part| part.as_str() == "__array_len")
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Identifier;
 
-/// `marker.__ref_deref` is `[intrinsic("ref.deref")]` identity on class handles — not a linked function.
-pub(super) fn is_ref_deref_intrinsic_symbol(symbol: &NamePath) -> bool {
-    symbol.parts().last().is_some_and(|part| part.as_str() == "__ref_deref")
-}
+    #[test]
+    fn resolve_intrinsic_id_maps_builtin_paths_and_private_seeds() {
+        let push = NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]);
+        assert_eq!(resolve_intrinsic_id(&push), Some(IntrinsicId::ArrayPush));
+        let len = NamePath::new(vec![Identifier::new("__array_len")]);
+        assert_eq!(resolve_intrinsic_id(&len), Some(IntrinsicId::ArrayLen));
+        let qualified_deref = NamePath::new(vec![Identifier::new("marker"), Identifier::new("__ref_deref")]);
+        assert_eq!(resolve_intrinsic_id(&qualified_deref), Some(IntrinsicId::RefDeref));
+        // 禁止按类型名末段猜
+        let hashmap_get = NamePath::new(vec![Identifier::new("HashMap"), Identifier::new("get")]);
+        assert_eq!(resolve_intrinsic_id(&hashmap_get), None);
+        let array_get_method = NamePath::new(vec![Identifier::new("Array"), Identifier::new("get")]);
+        assert_eq!(resolve_intrinsic_id(&array_get_method), None);
+    }
 
-/// Overload registry routes `[intrinsic("array.push")]` to `builtin.array.push` (not a linked function).
-pub(super) fn is_language_builtin_array_push_symbol(symbol: &NamePath) -> bool {
-    let parts = symbol.parts();
-    parts.len() == 3
-        && parts[0].as_str() == "builtin"
-        && parts[1].as_str() == "array"
-        && parts[2].as_str() == "push"
+    #[test]
+    fn language_operator_return_type_uses_operator_id() {
+        let eq = NamePath::new(vec![Identifier::new("infix ==")]);
+        assert_eq!(language_operator_call_return_type(&eq, &[], &BTreeMap::new()), Some(ValkyrieType::Boolean));
+    }
 }
