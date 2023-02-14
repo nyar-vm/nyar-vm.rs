@@ -113,6 +113,30 @@ impl MirBuilder {
             })
     }
 
+    /// Option 结构操作入口：优先 `Extractor` / `extractor_payload_type` 合同；
+    /// 无合同时才回退迁移期表面名（ADR 0009 / S-W3）。
+    fn is_option_unwrap_call(resolved: Option<&HirResolvedCall>, surface_name: Option<&str>) -> bool {
+        if let Some(call) = resolved {
+            if matches!(call.domain, HirCallableDomain::Extractor) || call.extractor_payload_type.is_some() {
+                return true;
+            }
+            return call.symbol.parts().last().is_some_and(|part| part.as_str() == "unwrap");
+        }
+        surface_name == Some("unwrap")
+    }
+
+    fn is_option_is_some_call(resolved: Option<&HirResolvedCall>, surface_name: Option<&str>) -> bool {
+        if let Some(call) = resolved {
+            if matches!(call.return_type, ValkyrieType::Boolean)
+                && call.parameter_types.first().is_some_and(|ty| Self::option_sum_name(ty).is_some())
+            {
+                return true;
+            }
+            return call.symbol.parts().last().is_some_and(|part| part.as_str() == "is_some");
+        }
+        surface_name == Some("is_some")
+    }
+
     fn try_lower_option_unwrap(
         &mut self,
         receiver: MirOperand,
@@ -674,7 +698,13 @@ impl MirBuilder {
                     return result;
                 }
                 // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
-                if callee_name_matches(&callee.kind, "unwrap") && args.len() == 1 {
+                // 先要求 Option 形接收者，再按 Extractor 合同（或迁移显示名）进入结构操作。
+                let unwrap_surface = match &callee.kind {
+                    HirExprKind::Variable(id) => Some(id.name.as_str()),
+                    HirExprKind::Path(path) => path.parts().last().map(|part| part.as_str()),
+                    _ => None,
+                };
+                if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref(), unwrap_surface) {
                     let receiver_operand = self.lower_expr_to_operand(&args[0].value);
                     let payload_hint = resolved
                         .as_ref()
@@ -685,10 +715,12 @@ impl MirBuilder {
                             ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
                         })
                     });
-                    if let Some(operand) =
-                        self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
-                    {
-                        return operand;
+                    if Self::option_shaped_type(&receiver_operand, &self.value_types, hint.as_ref(), payload_hint.as_ref()).is_some() {
+                        if let Some(operand) =
+                            self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
+                        {
+                            return operand;
+                        }
                     }
                 }
                 if callee_name_matches(&callee.kind, "Some") && args.len() == 1 {
@@ -738,12 +770,14 @@ impl MirBuilder {
                         })
                         .collect::<Vec<_>>();
                     arguments.insert(0, receiver_operand.clone());
-                    if method_name.as_str() == "is_some" && args.is_empty() {
-                        if let Some(operand) = self.try_lower_option_is_some(receiver_operand.clone()) {
-                            return operand;
+                    if args.is_empty() && Self::is_option_is_some_call(resolved.as_ref(), Some(method_name.as_str())) {
+                        if Self::option_shaped_type(&receiver_operand, &self.value_types, None, None).is_some() {
+                            if let Some(operand) = self.try_lower_option_is_some(receiver_operand.clone()) {
+                                return operand;
+                            }
                         }
                     }
-                    if method_name.as_str() == "unwrap" && args.is_empty() {
+                    if args.is_empty() && Self::is_option_unwrap_call(resolved.as_ref(), Some(method_name.as_str())) {
                         let payload_hint = resolved
                             .as_ref()
                             .map(|call| call.return_type.clone())
@@ -753,10 +787,12 @@ impl MirBuilder {
                                 ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
                             })
                         });
-                        if let Some(operand) =
-                            self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
-                        {
-                            return operand;
+                        if Self::option_shaped_type(&receiver_operand, &self.value_types, hint.as_ref(), payload_hint.as_ref()).is_some() {
+                            if let Some(operand) =
+                                self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
+                            {
+                                return operand;
+                            }
                         }
                     }
                     // ADR 0010: no dispatch/witness/evidence/intrinsic/parameter_types on Call.
@@ -943,7 +979,10 @@ impl MirBuilder {
                 }
                 if arguments.len() == 1 {
                     if let MirOperand::Symbol(path) = &callee {
-                        if path.parts().last().is_some_and(|part| part.as_str() == "is_some") {
+                        let surface = path.parts().last().map(|part| part.as_str());
+                        if Self::is_option_is_some_call(resolved.as_ref(), surface)
+                            && Self::option_shaped_type(&arguments[0], &self.value_types, None, None).is_some()
+                        {
                             if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone()) {
                                 return operand;
                             }
@@ -1151,14 +1190,14 @@ impl MirBuilder {
             }
             HirExprKind::FieldAccess { object, field } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
+                // 数组长度属性：仅当对象已是 array-shaped 时映射到 ArrayLength（结构操作）。
+                // 词素 `length` 是迁移期表面语法；正式合同为 IntrinsicId::ArrayLen / FieldId。
+                // 禁止对非数组对象按短名猜 ArrayLen（ADR 0008）。
                 if field.as_str() == "length" {
                     if let Some(operand) = self.try_emit_array_length_field_access(object, &object_operand) {
                         return operand;
                     }
                 }
-                // `.length` as ArrayLen must arrive as a resolved HIR CallContract with
-                // IntrinsicOpcode::ArrayLen. Do not recover intrinsics from FieldAccess
-                // (ADR 0008: no upward inference from short names).
                 if let Some(struct_name) = self.struct_name_for_operand(&object_operand) {
                     let has_field = self.lookup_struct_field_type(&struct_name, field.as_str()).is_some();
                     if field.as_str() != "length" || has_field {
