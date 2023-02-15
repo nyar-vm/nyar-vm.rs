@@ -4,6 +4,8 @@
 //! does not choose JVM, WASM, CLR, or WASI representations; those decisions
 //! belong to backend-local preparation after this gate succeeds.
 
+use std::collections::BTreeMap;
+
 use crate::{
     FragmentSubmission,
     executable_provider::{
@@ -11,7 +13,7 @@ use crate::{
     },
 };
 use nyar::QualifiedName;
-use nyar_types::{Constant, NamePath, NyarType, ValueOrigin};
+use nyar_types::{AggregateLayout, Constant, NamePath, NyarFunctionType, NyarType, ValueOrigin};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SemanticMirContractError {
@@ -118,22 +120,27 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 let output_type = crate::contracts::instruction_primary_result(instruction)
                     .and_then(|output| function.value_types.get(&output))
                     .or(Some(&function.return_type));
+                // ADR 0009 §5：字段在「输出类型给出的同一 substitution」下比较，
+                // 禁止依赖 Named("Self") / 类型名单字母特判放行。
+                let substitution = output_type
+                    .map(|ty| type_args_substitution(ty, layout))
+                    .unwrap_or_default();
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(name, value)| {
                         layout.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
+                            let declared = substitute_nyar_type(&field.ty, &substitution);
                             matches!(
                                 value,
                                 ExecutableOperand::Value(value)
                                     if function
                                         .value_types
                                         .get(value)
-                                        .is_some_and(|actual| aggregate_field_types_compatible(actual, &field.ty))
+                                        .is_some_and(|actual| aggregate_field_types_compatible(actual, &declared))
                             )
                         })
                     });
-                let output_owner_matches = output_type.is_some_and(|ty| {
-                    struct_new_output_owner_compatible(ty, type_name.as_str(), layout_name.as_str(), function.symbol.as_str())
-                });
+                let output_owner_matches =
+                    output_type.is_some_and(|ty| aggregate_owner_name(ty) == Some(layout_name.as_str()));
                 if !output_owner_matches || !fields_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
@@ -301,26 +308,88 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
 }
 
 fn struct_new_layout_name(type_name: &str, function_symbol: &str) -> String {
+    // 迁移期：StructNew.type_name 仍可能是 `Self`；布局名从函数符号 owner 恢复。
+    // 输出值类型不得再是 Named("Self")——那必须在 MIR 侧代入（ADR 0009）。
     if type_name == "Self" {
         function_owner_from_symbol(function_symbol).map(str::to_string).unwrap_or_else(|| type_name.to_string())
-    } else {
+    }
+    else {
         type_name.to_string()
     }
 }
 
-fn struct_new_output_owner_compatible(output_type: &NyarType, type_name: &str, layout_name: &str, function_symbol: &str) -> bool {
-    let _ = type_name;
-    if aggregate_owner_name(output_type) == Some(layout_name) {
-        return true;
-    }
-    if matches!(output_type, NyarType::Named(name) if name.as_str() == "Self") {
-        return function_owner_from_symbol(function_symbol).is_some_and(|owner| owner == layout_name);
-    }
-    false
-}
-
 fn function_owner_from_symbol(symbol: &str) -> Option<&str> {
     symbol.rsplit_once('.').map(|(owner, _)| owner.rsplit([':', '.']).next().unwrap_or(owner))
+}
+
+/// 由 `Apply(Owner, [A, B, …])` 与 layout 字段中出现的类型形参名建立 substitution。
+fn type_args_substitution(output_type: &NyarType, layout: &AggregateLayout) -> BTreeMap<String, NyarType> {
+    let mut formals = Vec::new();
+    for field in &layout.fields {
+        collect_type_parameter_names(&field.ty, &mut formals);
+    }
+    let args = match output_type {
+        NyarType::Apply(base, args) if aggregate_owner_name(base.as_ref()) == Some(layout.name.as_str()) => args.as_slice(),
+        _ => return BTreeMap::new(),
+    };
+    formals.into_iter().zip(args.iter().cloned()).collect()
+}
+
+fn collect_type_parameter_names(ty: &NyarType, out: &mut Vec<String>) {
+    match ty {
+        NyarType::Named(name) if is_type_parameter(ty) => {
+            let text = name.as_str().to_string();
+            if !out.iter().any(|existing| existing == &text) {
+                out.push(text);
+            }
+        }
+        NyarType::Array(element) | NyarType::Nullable(element) => collect_type_parameter_names(element, out),
+        NyarType::FixedArray { element, .. } => collect_type_parameter_names(element, out),
+        NyarType::Apply(base, args) => {
+            collect_type_parameter_names(base, out);
+            for arg in args {
+                collect_type_parameter_names(arg, out);
+            }
+        }
+        NyarType::Tuple(elems) | NyarType::Union(elems) => {
+            for elem in elems {
+                collect_type_parameter_names(elem, out);
+            }
+        }
+        NyarType::Function(func) => {
+            for param in &func.params {
+                collect_type_parameter_names(param, out);
+            }
+            collect_type_parameter_names(&func.return_type, out);
+        }
+        _ => {}
+    }
+}
+
+fn substitute_nyar_type(ty: &NyarType, substitution: &BTreeMap<String, NyarType>) -> NyarType {
+    if substitution.is_empty() {
+        return ty.clone();
+    }
+    match ty {
+        NyarType::Named(name) => substitution.get(name.as_str()).cloned().unwrap_or_else(|| ty.clone()),
+        NyarType::Array(element) => NyarType::Array(Box::new(substitute_nyar_type(element, substitution))),
+        NyarType::Nullable(element) => NyarType::Nullable(Box::new(substitute_nyar_type(element, substitution))),
+        NyarType::FixedArray { element, length } => NyarType::FixedArray {
+            element: Box::new(substitute_nyar_type(element, substitution)),
+            length: *length,
+        },
+        NyarType::Apply(base, args) => NyarType::Apply(
+            Box::new(substitute_nyar_type(base, substitution)),
+            args.iter().map(|arg| substitute_nyar_type(arg, substitution)).collect(),
+        ),
+        NyarType::Tuple(elems) => NyarType::Tuple(elems.iter().map(|elem| substitute_nyar_type(elem, substitution)).collect()),
+        NyarType::Union(elems) => NyarType::Union(elems.iter().map(|elem| substitute_nyar_type(elem, substitution)).collect()),
+        NyarType::Function(func) => NyarType::Function(Box::new(NyarFunctionType {
+            params: func.params.iter().map(|param| substitute_nyar_type(param, substitution)).collect(),
+            return_type: substitute_nyar_type(&func.return_type, substitution),
+        })),
+        other => other.clone(),
+    }
 }
 
 fn is_self_parameter_operand(operand: &ExecutableOperand, function: &ExecutableFunction) -> bool {
@@ -341,16 +410,18 @@ fn aggregate_field_layout_name(
     function: &ExecutableFunction,
 ) -> Option<String> {
     if let Some(ty) = object_ty {
+        // ADR 0009：对象类型必须已代入；Named("Self") 不得在此按函数符号猜 owner。
+        if matches!(ty, NyarType::Named(name) if name.as_str() == "Self") {
+            return None;
+        }
         if let Some(owner) = aggregate_owner_name(ty) {
-            if owner == "Self" {
-                return function_owner_from_symbol(&function.symbol).map(str::to_string);
-            }
             if !matches!(ty, NyarType::TraitObject(_)) {
                 return Some(owner.to_string());
             }
         }
     }
-    if is_self_parameter_operand(object, function) {
+    // 无 SSA 类型时：仅允许从 `self` 形参槽恢复 layout 名（不是 Named("Self") 字符串特判）。
+    if object_ty.is_none() && is_self_parameter_operand(object, function) {
         return function_owner_from_symbol(&function.symbol).map(str::to_string);
     }
     None
