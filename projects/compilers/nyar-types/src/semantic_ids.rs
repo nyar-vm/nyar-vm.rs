@@ -262,6 +262,33 @@ impl IntrinsicId {
             Self::RefDeref => "builtin.ref.deref",
         }
     }
+
+    /// 迁移期：由已进入 MIR / executable 的符号路径段映到 [`IntrinsicId`]。
+    ///
+    /// 仅识别：
+    /// - 语言 builtin 路径 `builtin.array.*` / `builtin.ref.deref`
+    /// - 私有 `[intrinsic(...)]` 种子名（`__array_len` 等，可带限定前缀）
+    ///
+    /// **禁止**按 `Array.get` / 类型名末段猜 —— 那会把 `HashMap.get` 等绑错。
+    pub fn resolve_from_segments(parts: &[&str]) -> Option<Self> {
+        if parts.len() == 3 && parts[0] == "builtin" {
+            return match (parts[1], parts[2]) {
+                ("array", "push") => Some(Self::ArrayPush),
+                ("array", "length") | ("array", "len") => Some(Self::ArrayLen),
+                ("array", "get") => Some(Self::ArrayGet),
+                ("array", "set") => Some(Self::ArraySet),
+                ("ref", "deref") => Some(Self::RefDeref),
+                _ => None,
+            };
+        }
+        match parts.last().copied() {
+            Some("__array_len") => Some(Self::ArrayLen),
+            Some("__array_get") => Some(Self::ArrayGet),
+            Some("__array_set") => Some(Self::ArraySet),
+            Some("__ref_deref") => Some(Self::RefDeref),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for IntrinsicId {
@@ -604,6 +631,15 @@ mod tests {
     #[test]
     fn intrinsic_and_attribute_ids_are_extensible() {
         assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
+        assert_eq!(
+            IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]),
+            Some(IntrinsicId::ArrayPush)
+        );
+        assert_eq!(IntrinsicId::resolve_from_segments(&["__array_len"]), Some(IntrinsicId::ArrayLen));
+        assert_eq!(IntrinsicId::resolve_from_segments(&["marker", "__ref_deref"]), Some(IntrinsicId::RefDeref));
+        // 禁止按类型名末段猜
+        assert_eq!(IntrinsicId::resolve_from_segments(&["Array", "get"]), None);
+        assert_eq!(IntrinsicId::resolve_from_segments(&["HashMap", "get"]), None);
         assert_eq!(builtin_attribute::export().index(), 0);
         assert_eq!(builtin_attribute::main().index(), 1);
         let seeds = builtin_attribute::seed_registrations();

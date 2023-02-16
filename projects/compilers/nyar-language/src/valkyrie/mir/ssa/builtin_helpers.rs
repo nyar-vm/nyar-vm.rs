@@ -52,30 +52,10 @@ pub(super) fn array_index_call_output_type(
 
 /// 迁移期：由已进入 MIR 的符号路径映到 [`IntrinsicId`]。
 ///
-/// 仅识别：
-/// - 私有 `[intrinsic(...)]` 种子名（`__array_len` 等，可带限定前缀）
-/// - 语言 builtin 路径 `builtin.array.*` / `builtin.ref.deref`
-///
-/// **禁止**按 `Array.get` / 类型名末段猜 —— 那会把 `HashMap.get` 等绑错。
+/// 委托 [`IntrinsicId::resolve_from_segments`]；禁止按类型名末段猜。
 pub(crate) fn resolve_intrinsic_id(symbol: &NamePath) -> Option<IntrinsicId> {
-    let parts = symbol.parts();
-    if parts.len() == 3 && parts[0].as_str() == "builtin" {
-        return match (parts[1].as_str(), parts[2].as_str()) {
-            ("array", "push") => Some(IntrinsicId::ArrayPush),
-            ("array", "length") | ("array", "len") => Some(IntrinsicId::ArrayLen),
-            ("array", "get") => Some(IntrinsicId::ArrayGet),
-            ("array", "set") => Some(IntrinsicId::ArraySet),
-            ("ref", "deref") => Some(IntrinsicId::RefDeref),
-            _ => None,
-        };
-    }
-    match parts.last().map(|part| part.as_str()) {
-        Some("__array_len") => Some(IntrinsicId::ArrayLen),
-        Some("__array_get") => Some(IntrinsicId::ArrayGet),
-        Some("__array_set") => Some(IntrinsicId::ArraySet),
-        Some("__ref_deref") => Some(IntrinsicId::RefDeref),
-        _ => None,
-    }
+    let parts = symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+    IntrinsicId::resolve_from_segments(&parts)
 }
 
 /// Language operators lower as `Call` to display names during migration — not registry-linked.
