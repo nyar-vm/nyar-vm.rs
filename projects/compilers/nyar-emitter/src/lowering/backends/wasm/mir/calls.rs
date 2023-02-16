@@ -1546,18 +1546,17 @@ impl<'a> WasmMirLowerer<'a> {
         true
     }
 
+    /// 经 [`nyar_types::IntrinsicId`] 识别 `ArrayPush`；禁止 `builtin`/`array`/`push` 三分支。
     fn try_emit_builtin_array_push(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
         let MirOperand::Symbol(path) = callee
         else {
             return false;
         };
-        let parts = path.parts();
-        if parts.len() != 3
-            || parts[0].as_str() != "builtin"
-            || parts[1].as_str() != "array"
-            || parts[2].as_str() != "push"
-            || arguments.len() < 2
-        {
+        if arguments.len() < 2 {
+            return false;
+        }
+        let parts = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+        if nyar_types::IntrinsicId::resolve_from_segments(&parts) != Some(nyar_types::IntrinsicId::ArrayPush) {
             return false;
         }
         self.emit_intrinsic_array_push(arguments, output);

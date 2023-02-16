@@ -576,24 +576,16 @@ fn result_or_option_alias_compatible(actual: &NyarType, expected: &NyarType) -> 
     }
 }
 
-/// Keep aligned with `nyar-language` `mir::validation::is_language_operator_symbol`.
+/// Keep aligned with `nyar-language` operator registry（ADR 0013）。
 fn is_language_operator_symbol(path: &NamePath) -> bool {
-    matches!(
-        path.parts().last().map(|part| part.as_str()).unwrap_or(""),
-        "infix ==" | "infix !="
-            | "infix <" | "infix <=" | "infix >" | "infix >="
-            | "infix +" | "infix -" | "infix *" | "infix /" | "infix %"
-            | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
-            | "prefix !" | "prefix -" | "prefix +"
-    )
+    let name = path.parts().last().map(|part| part.as_str()).unwrap_or("");
+    nyar_types::builtin_operator::lookup_display_name(name).is_some()
 }
 
+/// Language builtins / private intrinsic seeds — identity via [`IntrinsicId`]，不是 `builtin.array.push` 字符串三分支。
 fn is_language_builtin_symbol(path: &NamePath) -> bool {
-    let parts = path.parts();
-    parts.len() == 3
-        && parts[0].as_str() == "builtin"
-        && parts[1].as_str() == "array"
-        && parts[2].as_str() == "push"
+    let parts = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+    nyar_types::IntrinsicId::resolve_from_segments(&parts).is_some()
 }
 
 fn static_callee_is_registered(executable: &dyn ExecutableProvider, path: &NamePath) -> bool {
