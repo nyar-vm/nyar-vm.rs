@@ -353,21 +353,20 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
+    /// 从操作数结构类型取 heap array 元素类型；仅认 `Array` / `FixedArray`，禁止类型名白名单。
     pub(crate) fn infer_array_element_type(&self, operand: &MirOperand) -> Option<NyarType> {
         match operand {
-            MirOperand::Value(value) => self.mir_fn.value_types.get(value).and_then(|ty| match ty {
-                NyarType::Array(item) => Some(item.as_ref().clone()),
-                NyarType::FixedArray { element, .. } => Some(element.as_ref().clone()),
-                NyarType::Apply(base, args)
-                    if matches!(base.as_ref(), NyarType::Named(name) if {
-                        let text = name.as_str();
-                        text == "Array" || text == "array" || text.ends_with("Array") || text == "List" || text == "list"
-                    }) =>
-                {
-                    args.first().cloned()
+            MirOperand::Value(value) => self.mir_fn.value_types.get(value).and_then(|ty| {
+                if let Some(element) = array_element_type(ty) {
+                    return Some(element.clone());
                 }
-                ty if is_generic_array_element_type(ty) => Some(ty.clone()),
-                _ => None,
+                // 迁移期：未代入的单字母类型参数仍可作元素占位；不得用 `Array`/`List` 名猜。
+                if is_generic_array_element_type(ty) {
+                    Some(ty.clone())
+                }
+                else {
+                    None
+                }
             }),
             _ => None,
         }
