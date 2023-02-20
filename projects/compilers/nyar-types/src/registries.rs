@@ -248,6 +248,11 @@ pub mod builtin_operator {
         builtins().lookup_display_name(display)
     }
 
+    /// 旁表查询（内建表）。
+    pub fn registration(id: OperatorId) -> Option<&'static super::OperatorRegistration> {
+        builtins().registration(id)
+    }
+
     /// `prefix !`
     pub fn prefix_not() -> OperatorId {
         lookup(OperatorFixity::Prefix, "!").expect("seeded")
@@ -258,9 +263,84 @@ pub mod builtin_operator {
         lookup(OperatorFixity::Prefix, "-").expect("seeded")
     }
 
+    /// `prefix +`
+    pub fn prefix_pos() -> OperatorId {
+        lookup(OperatorFixity::Prefix, "+").expect("seeded")
+    }
+
     /// `infix ==`
     pub fn infix_eq() -> OperatorId {
         lookup(OperatorFixity::Infix, "==").expect("seeded")
+    }
+
+    /// `infix !=`
+    pub fn infix_ne() -> OperatorId {
+        lookup(OperatorFixity::Infix, "!=").expect("seeded")
+    }
+
+    /// `infix <`
+    pub fn infix_lt() -> OperatorId {
+        lookup(OperatorFixity::Infix, "<").expect("seeded")
+    }
+
+    /// `infix <=`
+    pub fn infix_le() -> OperatorId {
+        lookup(OperatorFixity::Infix, "<=").expect("seeded")
+    }
+
+    /// `infix >`
+    pub fn infix_gt() -> OperatorId {
+        lookup(OperatorFixity::Infix, ">").expect("seeded")
+    }
+
+    /// `infix >=`
+    pub fn infix_ge() -> OperatorId {
+        lookup(OperatorFixity::Infix, ">=").expect("seeded")
+    }
+
+    /// `infix +`
+    pub fn infix_add() -> OperatorId {
+        lookup(OperatorFixity::Infix, "+").expect("seeded")
+    }
+
+    /// `infix -`
+    pub fn infix_sub() -> OperatorId {
+        lookup(OperatorFixity::Infix, "-").expect("seeded")
+    }
+
+    /// `infix *`
+    pub fn infix_mul() -> OperatorId {
+        lookup(OperatorFixity::Infix, "*").expect("seeded")
+    }
+
+    /// `infix /`
+    pub fn infix_div() -> OperatorId {
+        lookup(OperatorFixity::Infix, "/").expect("seeded")
+    }
+
+    /// `infix %`
+    pub fn infix_rem() -> OperatorId {
+        lookup(OperatorFixity::Infix, "%").expect("seeded")
+    }
+
+    /// `infix &`
+    pub fn infix_bit_and() -> OperatorId {
+        lookup(OperatorFixity::Infix, "&").expect("seeded")
+    }
+
+    /// `infix |`
+    pub fn infix_bit_or() -> OperatorId {
+        lookup(OperatorFixity::Infix, "|").expect("seeded")
+    }
+
+    /// `infix &&`
+    pub fn infix_and() -> OperatorId {
+        lookup(OperatorFixity::Infix, "&&").expect("seeded")
+    }
+
+    /// `infix ||`
+    pub fn infix_or() -> OperatorId {
+        lookup(OperatorFixity::Infix, "||").expect("seeded")
     }
 
     /// 是否为比较 / 相等 / 逻辑类运算符（返回 `bool`）。
@@ -279,6 +359,20 @@ pub mod builtin_operator {
             Some((OperatorFixity::Infix, "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"))
                 | Some((OperatorFixity::Prefix, "-" | "+"))
         )
+    }
+
+    /// 是否为 wasm / nyar i32 原语路径可直接编码的运算符。
+    pub fn is_i32_primitive(id: OperatorId) -> bool {
+        id == prefix_not()
+            || id == infix_eq()
+            || id == infix_ne()
+            || id == infix_lt()
+            || id == infix_le()
+            || id == infix_gt()
+            || id == infix_ge()
+            || id == infix_add()
+            || id == infix_sub()
+            || id == infix_mul()
     }
 }
 

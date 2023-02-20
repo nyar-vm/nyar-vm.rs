@@ -252,6 +252,29 @@ pub enum IntrinsicId {
 }
 
 impl IntrinsicId {
+    /// 写入 `CallIntrinsic` 操作数的稳定稠密下标（与 VM 分派表对齐；不是诊断路径）。
+    pub fn bytecode_index(self) -> u32 {
+        match self {
+            Self::ArrayPush => 0,
+            Self::ArrayLen => 1,
+            Self::ArrayGet => 2,
+            Self::ArraySet => 3,
+            Self::RefDeref => 4,
+        }
+    }
+
+    /// 由 `CallIntrinsic` 操作数还原；未知下标 → `None`（verify / 解释器 fail-closed）。
+    pub fn from_bytecode_index(index: u32) -> Option<Self> {
+        match index {
+            0 => Some(Self::ArrayPush),
+            1 => Some(Self::ArrayLen),
+            2 => Some(Self::ArrayGet),
+            3 => Some(Self::ArraySet),
+            4 => Some(Self::RefDeref),
+            _ => None,
+        }
+    }
+
     /// 诊断 / 注册表路径段（不是运行时分派键）。
     pub fn diagnostic_path(self) -> &'static str {
         match self {
@@ -631,6 +654,9 @@ mod tests {
     #[test]
     fn intrinsic_and_attribute_ids_are_extensible() {
         assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
+        assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);
+        assert_eq!(IntrinsicId::from_bytecode_index(2), Some(IntrinsicId::ArrayGet));
+        assert_eq!(IntrinsicId::from_bytecode_index(99), None);
         assert_eq!(
             IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]),
             Some(IntrinsicId::ArrayPush)
