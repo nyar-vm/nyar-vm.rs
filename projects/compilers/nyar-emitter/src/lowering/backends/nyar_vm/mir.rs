@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use nyar::QualifiedName;
-use nyar_types::AggregateLayout;
+use nyar_types::{AggregateLayout, builtin_operator};
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
 
 use super::{
@@ -457,7 +457,9 @@ impl<'a> NyarMirLowerer<'a> {
         }
     }
 
-    /// Expand language `Call` operators (`infix +`, `prefix !`, …) into Nyar VM opcodes / natives.
+    /// 将语言运算符 `Call` 经 [`OperatorId`] 降为 Nyar VM 原语 / 宿主 native。
+    ///
+    /// 路径末段仅经 `lookup_display_name` 映到 id（迁移期）；分派只比较 [`OperatorId`]。
     fn try_emit_language_operator_call(
         &mut self,
         path: &nyar::NamePath,
@@ -465,116 +467,165 @@ impl<'a> NyarMirLowerer<'a> {
         output: Option<MirValueRef>,
     ) -> bool {
         let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-        match simple {
-            "prefix !" => {
-                if arguments.len() != 1 {
-                    return false;
-                }
-                self.emit_operand(&arguments[0]);
-                self.emitter.emit_call_native("bool_not", 1);
+        let Some(op) = builtin_operator::lookup_display_name(simple)
+        else {
+            return false;
+        };
+        if op == builtin_operator::prefix_not() {
+            if arguments.len() != 1 {
+                return false;
             }
-            "prefix -" => {
-                if arguments.len() != 1 {
-                    return false;
+            self.emit_operand(&arguments[0]);
+            self.emitter.emit_call_native("bool_not", 1);
+        }
+        else if op == builtin_operator::prefix_neg() {
+            if arguments.len() != 1 {
+                return false;
+            }
+            match self.infer_numeric_width(&arguments[0]) {
+                NumericWidth::I64 => {
+                    self.emit_operand(&arguments[0]);
+                    self.emitter.emit_call_native("i64_neg", 1);
                 }
-                match self.infer_numeric_width(&arguments[0]) {
-                    NumericWidth::I64 => {
-                        self.emit_operand(&arguments[0]);
-                        self.emitter.emit_call_native("i64_neg", 1);
-                    }
-                    NumericWidth::I32 => {
-                        self.emitter.emit_const_i32(0);
-                        self.emit_operand(&arguments[0]);
-                        self.emitter.emit_plain(NyarHeadCode::I32Sub);
-                    }
+                NumericWidth::I32 => {
+                    self.emitter.emit_const_i32(0);
+                    self.emit_operand(&arguments[0]);
+                    self.emitter.emit_plain(NyarHeadCode::I32Sub);
                 }
             }
-            "prefix +" => {
-                if arguments.len() != 1 {
-                    return false;
-                }
-                self.emit_operand(&arguments[0]);
+        }
+        else if op == builtin_operator::prefix_pos() {
+            if arguments.len() != 1 {
+                return false;
             }
-            "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" => {
-                if arguments.len() < 2 {
-                    return false;
-                }
-                self.emit_operand(&arguments[0]);
-                self.emit_operand(&arguments[1]);
-                match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
-                    NumericWidth::I64 => {
-                        let native = match simple {
-                            "infix ==" => "i64_eq",
-                            "infix !=" => "i64_ne",
-                            "infix <" => "i64_lt",
-                            "infix <=" => "i64_le",
-                            "infix >" => "i64_gt",
-                            "infix >=" => "i64_ge",
-                            _ => return false,
-                        };
-                        self.emitter.emit_call_native(native, 2);
+            self.emit_operand(&arguments[0]);
+        }
+        else if op == builtin_operator::infix_eq()
+            || op == builtin_operator::infix_ne()
+            || op == builtin_operator::infix_lt()
+            || op == builtin_operator::infix_le()
+            || op == builtin_operator::infix_gt()
+            || op == builtin_operator::infix_ge()
+        {
+            if arguments.len() < 2 {
+                return false;
+            }
+            self.emit_operand(&arguments[0]);
+            self.emit_operand(&arguments[1]);
+            match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
+                NumericWidth::I64 => {
+                    let native = if op == builtin_operator::infix_eq() {
+                        "i64_eq"
                     }
-                    NumericWidth::I32 => {
-                        let opcode = match simple {
-                            "infix ==" => NyarHeadCode::I32Eq,
-                            "infix !=" => NyarHeadCode::I32Ne,
-                            "infix <" => NyarHeadCode::I32LtS,
-                            "infix <=" => NyarHeadCode::I32LeS,
-                            "infix >" => NyarHeadCode::I32GtS,
-                            "infix >=" => NyarHeadCode::I32GeS,
-                            _ => return false,
+                    else if op == builtin_operator::infix_ne() {
+                        "i64_ne"
+                    }
+                    else if op == builtin_operator::infix_lt() {
+                        "i64_lt"
+                    }
+                    else if op == builtin_operator::infix_le() {
+                        "i64_le"
+                    }
+                    else if op == builtin_operator::infix_gt() {
+                        "i64_gt"
+                    }
+                    else {
+                        "i64_ge"
+                    };
+                    self.emitter.emit_call_native(native, 2);
+                }
+                NumericWidth::I32 => {
+                    let opcode = if op == builtin_operator::infix_eq() {
+                        NyarHeadCode::I32Eq
+                    }
+                    else if op == builtin_operator::infix_ne() {
+                        NyarHeadCode::I32Ne
+                    }
+                    else if op == builtin_operator::infix_lt() {
+                        NyarHeadCode::I32LtS
+                    }
+                    else if op == builtin_operator::infix_le() {
+                        NyarHeadCode::I32LeS
+                    }
+                    else if op == builtin_operator::infix_gt() {
+                        NyarHeadCode::I32GtS
+                    }
+                    else {
+                        NyarHeadCode::I32GeS
+                    };
+                    self.emitter.emit_plain(opcode);
+                }
+            }
+        }
+        else if op == builtin_operator::infix_add()
+            || op == builtin_operator::infix_sub()
+            || op == builtin_operator::infix_mul()
+            || op == builtin_operator::infix_div()
+            || op == builtin_operator::infix_rem()
+        {
+            if arguments.len() < 2 {
+                return false;
+            }
+            self.emit_operand(&arguments[0]);
+            self.emit_operand(&arguments[1]);
+            match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
+                NumericWidth::I64 => {
+                    let native = if op == builtin_operator::infix_add() {
+                        "i64_add"
+                    }
+                    else if op == builtin_operator::infix_sub() {
+                        "i64_sub"
+                    }
+                    else if op == builtin_operator::infix_mul() {
+                        "i64_mul"
+                    }
+                    else if op == builtin_operator::infix_div() {
+                        "i64_div"
+                    }
+                    else {
+                        "i64_rem"
+                    };
+                    self.emitter.emit_call_native(native, 2);
+                }
+                NumericWidth::I32 => {
+                    if op == builtin_operator::infix_div() || op == builtin_operator::infix_rem() {
+                        self.emitter.emit_call_native("i32_div", 2);
+                    }
+                    else {
+                        let opcode = if op == builtin_operator::infix_add() {
+                            NyarHeadCode::I32Add
+                        }
+                        else if op == builtin_operator::infix_sub() {
+                            NyarHeadCode::I32Sub
+                        }
+                        else {
+                            NyarHeadCode::I32Mul
                         };
                         self.emitter.emit_plain(opcode);
                     }
                 }
             }
-            "infix +" | "infix -" | "infix *" | "infix /" | "infix %" => {
-                if arguments.len() < 2 {
-                    return false;
-                }
-                self.emit_operand(&arguments[0]);
-                self.emit_operand(&arguments[1]);
-                match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
-                    NumericWidth::I64 => {
-                        let native = match simple {
-                            "infix +" => "i64_add",
-                            "infix -" => "i64_sub",
-                            "infix *" => "i64_mul",
-                            "infix /" => "i64_div",
-                            "infix %" => "i64_rem",
-                            _ => return false,
-                        };
-                        self.emitter.emit_call_native(native, 2);
-                    }
-                    NumericWidth::I32 => match simple {
-                        "infix /" | "infix %" => {
-                            self.emitter.emit_call_native("i32_div", 2);
-                        }
-                        _ => {
-                            let opcode = match simple {
-                                "infix +" => NyarHeadCode::I32Add,
-                                "infix -" => NyarHeadCode::I32Sub,
-                                "infix *" => NyarHeadCode::I32Mul,
-                                _ => return false,
-                            };
-                            self.emitter.emit_plain(opcode);
-                        }
-                    },
-                }
+        }
+        else if op == builtin_operator::infix_bit_and()
+            || op == builtin_operator::infix_bit_or()
+            || op == builtin_operator::infix_and()
+            || op == builtin_operator::infix_or()
+        {
+            if arguments.len() < 2 {
+                return false;
             }
-            "infix &" | "infix |" | "infix &&" | "infix ||" => {
-                if arguments.len() < 2 {
-                    return false;
-                }
-                self.emit_operand(&arguments[0]);
-                self.emit_operand(&arguments[1]);
-                let native = match simple {
-                    "infix &" | "infix &&" => "bool_and",
-                    _ => "bool_or",
-                };
-                self.emitter.emit_call_native(native, 2);
+            self.emit_operand(&arguments[0]);
+            self.emit_operand(&arguments[1]);
+            let native = if op == builtin_operator::infix_bit_and() || op == builtin_operator::infix_and() {
+                "bool_and"
             }
-            _ => return false,
+            else {
+                "bool_or"
+            };
+            self.emitter.emit_call_native(native, 2);
+        }
+        else {
+            return false;
         }
         if let Some(output) = output {
             self.store_to_local(output);

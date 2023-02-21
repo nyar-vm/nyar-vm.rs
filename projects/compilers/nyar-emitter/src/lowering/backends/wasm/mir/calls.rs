@@ -639,36 +639,37 @@ impl<'a> WasmMirLowerer<'a> {
         None
     }
 
-    /// 判定 callee 是否?i32 原语运算（`prefix !`、`infix ==`、`infix +` 等）?
+    /// 判定 callee 是否为 i32 原语运算（经 [`OperatorId`]，非 `infix ==` 字符串表）。
     ///
-    /// ?`try_emit_i32_primitive_call` ?simple name 匹配保持一致?
-    /// 用于 `output_storage_kind` ?`value_types` 缺失时避免将这些 i32 原语
-    /// ?output 误分配到 `reference_locals`（anyref），从而触?
-    /// `local.set expected anyref, found i32.eqz of type i32` 类型错误?
+    /// 与 `try_emit_i32_primitive_call` 的 id 集合保持一致；
+    /// 用于 `output_storage_kind` 在 `value_types` 缺失时避免将这些 i32 原语
+    /// 的 output 误分配到 `reference_locals`（anyref），从而触发
+    /// `local.set expected anyref, found i32.eqz of type i32` 类型错误。
     fn is_i32_primitive_callee(&self, callee: &MirOperand) -> bool {
         let MirOperand::Symbol(path) = callee
         else {
             return false;
         };
         let simple = path.parts().last().map(|p| p.as_str()).unwrap_or("");
-        matches!(
-            simple,
-            "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" | "infix +" | "infix -" | "infix *" | "prefix !"
-        )
+        builtin_operator::lookup_display_name(simple).is_some_and(builtin_operator::is_i32_primitive)
     }
 
-    /// 将未解析?`infix ==` / `infix +` 等降?wasm i32 原语（整数路径）?
-    /// WASI 轨：两端均为 utf8 句柄时，`==`/`!=` ?`[len][bytes]` 做内容比较（非指针相等）?
-    /// 以便 `get-arguments` 拷贝出的句柄能匹配字面量?
+    /// 将未解析运算符经 [`OperatorId`] 降为 wasm i32 原语（整数路径）。
+    /// WASI 轨：两端均为 utf8 句柄时，`==`/`!=` 按 `[len][bytes]` 做内容比较（非指针相等），
+    /// 以便 `get-arguments` 拷贝出的句柄能匹配字面量。
     fn try_emit_i32_primitive_call(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
         let MirOperand::Symbol(path) = callee
         else {
             return false;
         };
         let simple = path.parts().last().map(|p| p.as_str()).unwrap_or("");
-        if self.wasi_mode && matches!(simple, "infix ==" | "infix !=") && arguments.len() >= 2 {
+        let Some(op) = builtin_operator::lookup_display_name(simple)
+        else {
+            return false;
+        };
+        if self.wasi_mode && (op == builtin_operator::infix_eq() || op == builtin_operator::infix_ne()) && arguments.len() >= 2 {
             if self.operand_is_wasi_utf8_handle(&arguments[0]) && self.operand_is_wasi_utf8_handle(&arguments[1]) {
-                self.emit_wasi_utf8_content_compare(&arguments[0], &arguments[1], simple == "infix !=");
+                self.emit_wasi_utf8_content_compare(&arguments[0], &arguments[1], op == builtin_operator::infix_ne());
                 if let Some(output) = output {
                     self.force_output_local_for_stack_type(output, VALTYPE_I32);
                     self.store_scalar(output);
@@ -676,29 +677,47 @@ impl<'a> WasmMirLowerer<'a> {
                 return true;
             }
         }
-        let opcode = match simple {
-            "infix ==" => WasmOpcode::I32Eq,
-            "infix !=" => WasmOpcode::I32Ne,
-            "infix <" => WasmOpcode::I32LtS,
-            "infix <=" => WasmOpcode::I32LeS,
-            "infix >" => WasmOpcode::I32GtS,
-            "infix >=" => WasmOpcode::I32GeS,
-            "infix +" => WasmOpcode::I32Add,
-            "infix -" => WasmOpcode::I32Sub,
-            "infix *" => WasmOpcode::I32Mul,
-            "prefix !" => {
-                if arguments.len() != 1 {
-                    return false;
-                }
-                self.emit_i32_operand(&arguments[0]);
-                WasmOpcode::I32Eqz.encode(&mut self.code);
-                if let Some(output) = output {
-                    self.force_output_local_for_stack_type(output, VALTYPE_I32);
-                    self.store_scalar(output);
-                }
-                return true;
+        if op == builtin_operator::prefix_not() {
+            if arguments.len() != 1 {
+                return false;
             }
-            _ => return false,
+            self.emit_i32_operand(&arguments[0]);
+            WasmOpcode::I32Eqz.encode(&mut self.code);
+            if let Some(output) = output {
+                self.force_output_local_for_stack_type(output, VALTYPE_I32);
+                self.store_scalar(output);
+            }
+            return true;
+        }
+        let opcode = if op == builtin_operator::infix_eq() {
+            WasmOpcode::I32Eq
+        }
+        else if op == builtin_operator::infix_ne() {
+            WasmOpcode::I32Ne
+        }
+        else if op == builtin_operator::infix_lt() {
+            WasmOpcode::I32LtS
+        }
+        else if op == builtin_operator::infix_le() {
+            WasmOpcode::I32LeS
+        }
+        else if op == builtin_operator::infix_gt() {
+            WasmOpcode::I32GtS
+        }
+        else if op == builtin_operator::infix_ge() {
+            WasmOpcode::I32GeS
+        }
+        else if op == builtin_operator::infix_add() {
+            WasmOpcode::I32Add
+        }
+        else if op == builtin_operator::infix_sub() {
+            WasmOpcode::I32Sub
+        }
+        else if op == builtin_operator::infix_mul() {
+            WasmOpcode::I32Mul
+        }
+        else {
+            return false;
         };
         if arguments.len() < 2 {
             return false;
