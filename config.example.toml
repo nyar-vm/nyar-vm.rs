@@ -5,4 +5,4 @@
 protocol = "sparse"
 
 [patch.'https://github.com/valkyrie-language/valkyrie.rs']
-std-data = { path = "../valkyrie.rs/projects/vcc-data", package = "vcc-data" }
+vcc-data = { path = "../valkyrie.rs/projects/compilers/vcc-data" }
