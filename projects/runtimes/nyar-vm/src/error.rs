@@ -21,6 +21,8 @@ pub enum NyarRuntimeError {
     EntryNotFound(String),
     /// Native function not registered.
     NativeNotRegistered(String),
+    /// `CallIntrinsic` 操作数不是已知 intrinsic 稠密下标。
+    UnknownIntrinsic(i32),
     /// Type mismatch at runtime.
     TypeMismatch {
         /// Expected type name.
@@ -45,6 +47,7 @@ impl Display for NyarRuntimeError {
             Self::ConstantIndexOutOfRange(idx) => write!(f, "constant index out of range: {idx}"),
             Self::EntryNotFound(name) => write!(f, "entry function not found: {name}"),
             Self::NativeNotRegistered(name) => write!(f, "native function not registered: {name}"),
+            Self::UnknownIntrinsic(index) => write!(f, "unknown intrinsic index: {index}"),
             Self::TypeMismatch { expected, actual } => {
                 write!(f, "type mismatch: expected {expected}, got {actual}")
             }

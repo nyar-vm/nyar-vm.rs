@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, builtin_operator};
+use nyar_types::{AggregateLayout, IntrinsicId, builtin_operator};
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
 
 use super::{
@@ -53,6 +53,13 @@ impl BytecodeEmitter {
         let name_index = self.intern_string(name);
         self.code_bytes.push(NyarHeadCode::CallNative as u8);
         self.code_bytes.extend_from_slice(&name_index.to_le_bytes());
+        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+    }
+
+    /// 经 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
+    fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
+        self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
+        self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
         self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 
@@ -318,7 +325,7 @@ impl<'a> NyarMirLowerer<'a> {
             MirInstructionKind::ArrayGet { array, index } => {
                 self.emit_operand(array);
                 self.emit_operand(index);
-                self.emitter.emit_call_native("array_get", 2);
+                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayGet, 2);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -327,12 +334,12 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emit_operand(array);
                 self.emit_operand(index);
                 self.emit_operand(value);
-                self.emitter.emit_call_native("array_set", 3);
+                self.emitter.emit_call_intrinsic(IntrinsicId::ArraySet, 3);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::ArrayLength { array } => {
                 self.emit_operand(array);
-                self.emitter.emit_call_native("array_len", 1);
+                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayLen, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }

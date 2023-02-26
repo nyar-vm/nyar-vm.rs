@@ -170,7 +170,8 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::LoadArg
         | NyarHeadCode::LoadGlobal
         | NyarHeadCode::StoreGlobal
-        | NyarHeadCode::CallNative => execute_control(instruction, frame, ctx),
+        | NyarHeadCode::CallNative
+        | NyarHeadCode::CallIntrinsic => execute_control(instruction, frame, ctx),
         NyarHeadCode::I32Add
         | NyarHeadCode::I32Sub
         | NyarHeadCode::I32Mul

@@ -1,6 +1,7 @@
 use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
 
 use crate::{
+    array_runtime::{array_get, array_len, array_set},
     error::NyarRuntimeError,
     frame::Frame,
     module::LoadedModule,
@@ -158,6 +159,39 @@ pub fn execute_control(
             else {
                 let handler = ctx.natives.get(&name).copied().ok_or_else(|| NyarRuntimeError::NativeNotRegistered(name.clone()))?;
                 handler(&args)?
+            };
+            ctx.stack.push(result);
+            frame.ip += instruction.size as usize;
+            Ok(StepResult::Continue)
+        }
+        NyarHeadCode::CallIntrinsic => {
+            // 稠密下标必须与 `nyar_types::IntrinsicId::bytecode_index` 对齐（VM 不依赖 nyar-types）。
+            let intrinsic_index = instruction.operand1;
+            let arg_count = instruction.operand2.max(0) as usize;
+            let mut args = Vec::with_capacity(arg_count);
+            for _ in 0..arg_count {
+                args.push(ctx.stack.pop()?);
+            }
+            args.reverse();
+
+            let result = match intrinsic_index {
+                0 => {
+                    // ArrayPush — 产品路径尚未 lower；fail-closed。
+                    return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic ArrayPush"));
+                }
+                1 => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
+                2 => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
+                3 => array_set(
+                    ctx.heap,
+                    args.first().unwrap_or(&Value::Null),
+                    args.get(1).unwrap_or(&Value::Null),
+                    args.get(2).unwrap_or(&Value::Null),
+                )?,
+                4 => {
+                    // RefDeref — 产品路径尚未 lower；fail-closed。
+                    return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
+                }
+                other => return Err(NyarRuntimeError::UnknownIntrinsic(other)),
             };
             ctx.stack.push(result);
             frame.ip += instruction.size as usize;

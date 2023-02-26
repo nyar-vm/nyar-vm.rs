@@ -14,6 +14,7 @@
 //!
 //! Crate package: `nyar-vm`. Rust import path: `nyar_vm`. CLI binary: `nyar-vm`.
 
+pub mod array_runtime;
 pub mod error;
 pub mod executor;
 pub mod frame;
