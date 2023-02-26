@@ -249,6 +249,10 @@ pub enum IntrinsicId {
     ArraySet,
     /// 引用解引用。
     RefDeref,
+    /// 可空 / 引用空检查（表面名 `is_null` 仅迁移期）。
+    IsNull,
+    /// 可空解包（表面名 `unwrap_null` 仅迁移期）。
+    UnwrapNull,
 }
 
 impl IntrinsicId {
@@ -260,6 +264,8 @@ impl IntrinsicId {
             Self::ArrayGet => 2,
             Self::ArraySet => 3,
             Self::RefDeref => 4,
+            Self::IsNull => 5,
+            Self::UnwrapNull => 6,
         }
     }
 
@@ -271,6 +277,8 @@ impl IntrinsicId {
             2 => Some(Self::ArrayGet),
             3 => Some(Self::ArraySet),
             4 => Some(Self::RefDeref),
+            5 => Some(Self::IsNull),
+            6 => Some(Self::UnwrapNull),
             _ => None,
         }
     }
@@ -283,6 +291,8 @@ impl IntrinsicId {
             Self::ArrayGet => "builtin.array.get",
             Self::ArraySet => "builtin.array.set",
             Self::RefDeref => "builtin.ref.deref",
+            Self::IsNull => "builtin.null.is_null",
+            Self::UnwrapNull => "builtin.null.unwrap",
         }
     }
 
@@ -301,6 +311,8 @@ impl IntrinsicId {
                 ("array", "get") => Some(Self::ArrayGet),
                 ("array", "set") => Some(Self::ArraySet),
                 ("ref", "deref") => Some(Self::RefDeref),
+                ("null", "is_null") | ("null", "isnull") => Some(Self::IsNull),
+                ("null", "unwrap") | ("null", "unwrap_null") => Some(Self::UnwrapNull),
                 _ => None,
             };
         }
@@ -309,6 +321,9 @@ impl IntrinsicId {
             Some("__array_get") => Some(Self::ArrayGet),
             Some("__array_set") => Some(Self::ArraySet),
             Some("__ref_deref") => Some(Self::RefDeref),
+            // 迁移期单段表面名：MIR 仍可能写出 `is_null` / `unwrap_null`。
+            Some("is_null") => Some(Self::IsNull),
+            Some("unwrap_null") => Some(Self::UnwrapNull),
             _ => None,
         }
     }
@@ -666,6 +681,12 @@ mod tests {
         // 禁止按类型名末段猜
         assert_eq!(IntrinsicId::resolve_from_segments(&["Array", "get"]), None);
         assert_eq!(IntrinsicId::resolve_from_segments(&["HashMap", "get"]), None);
+        assert_eq!(IntrinsicId::resolve_from_segments(&["is_null"]), Some(IntrinsicId::IsNull));
+        assert_eq!(IntrinsicId::resolve_from_segments(&["unwrap_null"]), Some(IntrinsicId::UnwrapNull));
+        assert_eq!(
+            IntrinsicId::resolve_from_segments(&["builtin", "null", "is_null"]),
+            Some(IntrinsicId::IsNull)
+        );
         assert_eq!(builtin_attribute::export().index(), 0);
         assert_eq!(builtin_attribute::main().index(), 1);
         let seeds = builtin_attribute::seed_registrations();
