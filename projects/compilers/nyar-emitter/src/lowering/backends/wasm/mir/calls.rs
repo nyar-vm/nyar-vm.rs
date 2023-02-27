@@ -1543,14 +1543,17 @@ impl<'a> WasmMirLowerer<'a> {
         })
     }
 
-    /// `is_null(x)` →?ref.is_null?
+    /// 经 [`IntrinsicId::IsNull`] 识别；禁止裸 `simple == "is_null"` 作为唯一合同。
     fn try_emit_is_null(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
         let MirOperand::Symbol(path) = callee
         else {
             return false;
         };
-        let simple = path.parts().last().map(|p| p.as_str()).unwrap_or("");
-        if simple != "is_null" || arguments.len() != 1 {
+        let parts = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+        if nyar_types::IntrinsicId::resolve_from_segments(&parts) != Some(nyar_types::IntrinsicId::IsNull) {
+            return false;
+        }
+        if arguments.len() != 1 {
             return false;
         }
         self.emit_operand_coerced(&arguments[0], VALTYPE_ANYREF);

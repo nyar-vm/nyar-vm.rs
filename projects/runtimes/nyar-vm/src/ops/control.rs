@@ -191,6 +191,23 @@ pub fn execute_control(
                     // RefDeref — 产品路径尚未 lower；fail-closed。
                     return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
                 }
+                5 => {
+                    // IsNull
+                    let value = args.first().unwrap_or(&Value::Null);
+                    Value::Bool(matches!(value, Value::Null))
+                }
+                6 => {
+                    // UnwrapNull：空值 fail-closed，不静默造值。
+                    match args.first().unwrap_or(&Value::Null) {
+                        Value::Null => {
+                            return Err(NyarRuntimeError::TypeMismatch {
+                                expected: "non-null value",
+                                actual: "null".to_string(),
+                            });
+                        }
+                        other => other.clone(),
+                    }
+                }
                 other => return Err(NyarRuntimeError::UnknownIntrinsic(other)),
             };
             ctx.stack.push(result);

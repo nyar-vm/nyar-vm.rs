@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use nyar::{ExternalCallArgument, ExternalCallEdge, InternalCallEdge, QualifiedName};
+use nyar_types::IntrinsicId;
 use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
 
 use super::sanitize_symbol;
@@ -94,6 +95,12 @@ impl BytecodeEmitter {
         let name_index = self.intern_string(name);
         self.code_bytes.push(NyarHeadCode::CallNative as u8);
         self.code_bytes.extend_from_slice(&name_index.to_le_bytes());
+        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+    }
+
+    fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
+        self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
+        self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
         self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 }
@@ -329,9 +336,9 @@ fn emit_nullable_try_propagate_test(
 
     emitter.emit_const_bool(true);
     emitter.emit_call(callee_index);
-    emitter.emit_call_native("is_null", 1);
+    emitter.emit_call_intrinsic(IntrinsicId::IsNull, 1);
     let early_exit_jump = emitter.emit_jump_if_true_placeholder();
-    emitter.emit_call_native("unwrap_null", 1);
+    emitter.emit_call_intrinsic(IntrinsicId::UnwrapNull, 1);
     emitter.emit_const_i32(expected_value as i32);
     emitter.emit_i32_ne();
     let panic_jump = emitter.emit_jump_if_true_placeholder();
