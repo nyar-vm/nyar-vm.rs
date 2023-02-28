@@ -542,7 +542,7 @@ fn aggregate_owner_name(ty: &NyarType) -> Option<&str> {
     sum_owner_name(ty)
 }
 
-fn is_option_shaped(ty: &NyarType) -> bool {
+pub(crate) fn is_option_shaped(ty: &NyarType) -> bool {
     matches!(ty, NyarType::Nullable(_)) || sum_owner_name(ty).is_some_and(|name| matches!(name, "Option" | "Nullable"))
 }
 

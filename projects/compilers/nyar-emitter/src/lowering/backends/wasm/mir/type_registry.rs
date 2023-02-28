@@ -12,6 +12,7 @@ use super::{
     representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
 use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
+use crate::lowering::features::semantic_mir_contract::is_option_shaped;
 use std::collections::{BTreeMap, BTreeSet};
 use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 
@@ -170,8 +171,8 @@ pub(super) fn register_gc_array_types(
                     NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
                         ensure(element.as_ref(), type_indices, &mut map);
                     }
-                    NyarType::Apply(base, _) if matches!(base.as_ref(), NyarType::Named(name) if name.as_str() == "Option") => {
-                        ensure(ty, type_indices, &mut map);
+                    option_ty if is_option_shaped(option_ty) => {
+                        ensure(option_ty, type_indices, &mut map);
                     }
                     _ => {}
                 }
