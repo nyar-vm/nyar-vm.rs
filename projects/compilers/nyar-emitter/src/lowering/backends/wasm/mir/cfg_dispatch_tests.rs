@@ -19,7 +19,6 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -27,7 +26,6 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks,
         diagnostics: Vec::new(),
     }

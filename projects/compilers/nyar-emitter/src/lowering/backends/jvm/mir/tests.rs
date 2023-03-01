@@ -73,7 +73,6 @@ fn jvm_lowering_stores_point_y_at_slot_two() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -81,7 +80,6 @@ fn jvm_lowering_stores_point_y_at_slot_two() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -118,7 +116,6 @@ fn jvm_call_lowering_handles_non_builtin_call() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -126,7 +123,6 @@ fn jvm_call_lowering_handles_non_builtin_call() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -143,7 +139,6 @@ fn jvm_call_lowering_handles_non_builtin_call() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -151,7 +146,6 @@ fn jvm_call_lowering_handles_non_builtin_call() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -215,7 +209,6 @@ fn jvm_value_receiver_call_marks_by_address() {
         value_types: [(ValueRef(0), NyarType::Named(Identifier::new("Point")))].into_iter().collect(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -223,7 +216,6 @@ fn jvm_value_receiver_call_marks_by_address() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -287,7 +279,6 @@ fn jvm_singleton_accessor_call_emits_invokestatic() {
         value_types: [(ValueRef(0), NyarType::Named(Identifier::new("Counter")))].into_iter().collect(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -295,7 +286,6 @@ fn jvm_singleton_accessor_call_emits_invokestatic() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -345,7 +335,6 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -353,7 +342,6 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: Vec::new(),
         diagnostics: Vec::new(),
     };
@@ -370,7 +358,6 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         value_types,
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -378,7 +365,6 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -455,7 +441,6 @@ fn jvm_reference_struct_new_uses_object_field_descriptor_for_utf8() {
         value_types: [(ValueRef(0), NyarType::Named(Identifier::new("Widget")))].into_iter().collect(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -463,7 +448,6 @@ fn jvm_reference_struct_new_uses_object_field_descriptor_for_utf8() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -518,7 +502,6 @@ fn jvm_parameters_keep_abi_slots_and_temporaries_start_after_them() {
         value_types: [(parameter, NyarType::Utf8), (temporary, NyarType::Utf8)].into_iter().collect(),
         entry: BlockRef(0),
         values: vec![Value { id: parameter, origin: ValueOrigin::Parameter { index: 0, name: "value".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -526,7 +509,6 @@ fn jvm_parameters_keep_abi_slots_and_temporaries_start_after_them() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -560,7 +542,6 @@ fn jvm_initializes_non_parameter_locals_with_stable_verifier_types() {
         value_types: [(text, NyarType::Utf8)].into_iter().collect(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -568,7 +549,6 @@ fn jvm_initializes_non_parameter_locals_with_stable_verifier_types() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -605,7 +585,6 @@ fn i64_zero_one_constants_use_category_two_jvm_opcodes() {
         value_types: [(zero, i64_ty.clone()), (one, i64_ty.clone())].into_iter().collect(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -613,7 +592,6 @@ fn i64_zero_one_constants_use_category_two_jvm_opcodes() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -650,7 +628,6 @@ fn store_var_int_after_string_reallocates_local() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -658,7 +635,6 @@ fn store_var_int_after_string_reallocates_local() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -742,7 +718,6 @@ fn enum_sum_type_returns_int_handle_not_areturn() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -750,7 +725,6 @@ fn enum_sum_type_returns_int_handle_not_areturn() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -802,7 +776,6 @@ fn enum_sum_type_param_is_int_not_object() {
         value_types: [(parameter, NyarType::Named(Identifier::new("WasmOpcode")))].into_iter().collect(),
         entry: BlockRef(0),
         values: vec![Value { id: parameter, origin: ValueOrigin::Parameter { index: 0, name: "op".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -810,7 +783,6 @@ fn enum_sum_type_param_is_int_not_object() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -876,7 +848,6 @@ fn boxed_value_type_call_arg_expands_fields_not_areference() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -884,7 +855,6 @@ fn boxed_value_type_call_arg_expands_fields_not_areference() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -907,7 +877,6 @@ fn boxed_value_type_call_arg_expands_fields_not_areference() {
             .collect(),
         entry: BlockRef(0),
         values: vec![Value { id: sig, origin: ValueOrigin::CallResult }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -915,7 +884,6 @@ fn boxed_value_type_call_arg_expands_fields_not_areference() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1028,7 +996,6 @@ fn aggregate_copy_preserves_nested_value_type_array_leaves() {
             Value { id: source, origin: ValueOrigin::Parameter { index: 0, name: "source".to_string() } },
             Value { id: dest, origin: ValueOrigin::Parameter { index: 1, name: "dest".to_string() } },
         ],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1036,7 +1003,6 @@ fn aggregate_copy_preserves_nested_value_type_array_leaves() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1095,7 +1061,6 @@ fn sum_type_tag_field_get_is_int_identity_not_getfield() {
             .collect(),
         entry: BlockRef(0),
         values: vec![Value { id: preview, origin: ValueOrigin::Parameter { index: 0, name: "preview".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1103,7 +1068,6 @@ fn sum_type_tag_field_get_is_int_identity_not_getfield() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1166,7 +1130,6 @@ fn sum_type_param_tag_field_get_without_value_types_is_identity() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: vec![Value { id: boundary, origin: ValueOrigin::Parameter { index: 0, name: "boundary".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1174,7 +1137,6 @@ fn sum_type_param_tag_field_get_without_value_types_is_identity() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1220,7 +1182,6 @@ fn i64_param_descriptor_is_single_long_not_jj() {
         value_types: [(value, NyarType::Integer64 { signed: true })].into_iter().collect(),
         entry: BlockRef(0),
         values: vec![Value { id: value, origin: ValueOrigin::Parameter { index: 0, name: "value".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1228,7 +1189,6 @@ fn i64_param_descriptor_is_single_long_not_jj() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1260,7 +1220,6 @@ fn i64_compare_uses_lcmp_not_if_icmp() {
             Value { id: value, origin: ValueOrigin::Parameter { index: 0, name: "value".to_string() } },
             Value { id: cmp, origin: ValueOrigin::CallResult },
         ],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1268,7 +1227,6 @@ fn i64_compare_uses_lcmp_not_if_icmp() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1322,7 +1280,6 @@ fn utf8_repr_field_get_uses_string_get_bytes_not_utf16_getfield() {
         value_types: [(param, NyarType::Utf8), (repr, NyarType::Array(Box::new(NyarType::Integer8 { signed: false })))].into_iter().collect(),
         entry: BlockRef(0),
         values: vec![Value { id: param, origin: ValueOrigin::Parameter { index: 0, name: "ch".to_string() } }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1330,7 +1287,6 @@ fn utf8_repr_field_get_uses_string_get_bytes_not_utf16_getfield() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1395,7 +1351,6 @@ fn primitive_owner_self_receiver_uses_int_abi_not_object() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1496,7 +1451,6 @@ fn fine_von_parsed_value_pushes_usize_leaf_not_dropped() {
             .collect(),
         entry: BlockRef(0),
         values: vec![Value { id: parsed, origin: ValueOrigin::CallResult }, Value { id: result, origin: ValueOrigin::CallResult }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1504,7 +1458,6 @@ fn fine_von_parsed_value_pushes_usize_leaf_not_dropped() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1600,7 +1553,6 @@ fn erased_unite_call_result_payload_uses_tuple_get_not_getfield() {
         value_types: [(payload, NyarType::Named(Identifier::new("VonValue")))].into_iter().collect(),
         entry: BlockRef(0),
         values: vec![Value { id: result, origin: ValueOrigin::CallResult }, Value { id: payload, origin: ValueOrigin::CallResult }],
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1608,7 +1560,6 @@ fn erased_unite_call_result_payload_uses_tuple_get_not_getfield() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),
@@ -1648,7 +1599,6 @@ fn erased_unite_call_result_payload_uses_tuple_get_not_getfield() {
         value_types: Default::default(),
         entry: BlockRef(0),
         values: Vec::new(),
-        intrinsic: None,
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
@@ -1656,7 +1606,6 @@ fn erased_unite_call_result_payload_uses_tuple_get_not_getfield() {
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
-        state_machine_lowered: true,
         blocks: Vec::new(),
         diagnostics: Vec::new(),
     };
