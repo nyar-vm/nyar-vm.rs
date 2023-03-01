@@ -294,17 +294,14 @@ fn physical_category(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, sync::Arc};
+    use std::sync::Arc;
 
     use nyar::{Identifier, QualifiedName};
-    use nyar_types::{
-        Block, BlockRef, DispatchKind, ExecutableFunction, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef,
-        executable::{TextConversionSemantics, TextEncoding, TextProjectionBoundary},
-    };
+    use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef};
 
     use crate::executable_provider::MirFunctionMapProvider;
 
-    use super::{PhysicalBackend, build_physical_plan, validate_physical_submission};
+    use super::{PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission};
 
     fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
         let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -315,7 +312,6 @@ mod tests {
             value_types: values,
             entry: BlockRef(0),
             values: Vec::new(),
-            intrinsic: None,
             suspend_points: Vec::new(),
             frame_layouts: Vec::new(),
             continuations: Vec::new(),
@@ -323,7 +319,6 @@ mod tests {
             #[allow(deprecated)]
             state_machine: None,
             suspend_plan: None,
-            state_machine_lowered: true,
             blocks: vec![Block {
                 id: BlockRef(0),
                 label: "entry".to_string(),
@@ -333,6 +328,12 @@ mod tests {
             }],
             diagnostics: Vec::new(),
         }
+    }
+
+    fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
+        let mut instruction = Instruction::from_kind(kind);
+        instruction.results = results;
+        instruction
     }
 
     fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> crate::FragmentSubmission {
@@ -347,19 +348,13 @@ mod tests {
         let target = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("target")]);
         let caller = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
         let mut caller_function = function("neutral.caller", NyarType::Integer64 { signed: true }, vec![NyarType::Integer64 { signed: true }]);
-        caller_function.blocks[0].instructions.push(Instruction {
-            output: None,
-            kind: InstructionKind::Call {
-                dispatch: DispatchKind::Static,
+        caller_function.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
                 arguments: vec![Operand::Value(ValueRef(0))],
-                witness: None,
-                effect: None,
-                receiver_kind: None,
-                parameter_types: Some(vec![NyarType::Integer64 { signed: true }]),
-                intrinsic_opcode: None,
             },
-        });
+            Vec::new(),
+        ));
         let submission = submission(vec![
             (target.clone(), function("neutral.target", NyarType::Integer64 { signed: true }, vec![NyarType::Integer64 { signed: true }])),
             (caller, caller_function),
@@ -379,33 +374,22 @@ mod tests {
         let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
         let value = ValueRef(0);
         caller.value_types.insert(value, NyarType::Integer64 { signed: true });
-        caller.blocks[0].instructions.push(Instruction {
-            output: Some(value),
-            kind: InstructionKind::Call {
-                dispatch: DispatchKind::Static,
+        caller.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
                 arguments: vec![],
-                witness: None,
-                effect: None,
-                receiver_kind: None,
-                parameter_types: Some(vec![]),
-                intrinsic_opcode: None,
             },
-        });
-        caller.blocks[0].instructions.push(Instruction {
-            output: Some(ValueRef(1)),
-            kind: InstructionKind::Call {
-                dispatch: DispatchKind::Static,
+            vec![value],
+        ));
+        caller.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("infix !=")])),
                 arguments: vec![Operand::Value(value), Operand::Value(ValueRef(2))],
-                witness: None,
-                effect: None,
-                receiver_kind: None,
-                parameter_types: Some(vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }]),
-                intrinsic_opcode: None,
             },
-        });
+            vec![ValueRef(1)],
+        ));
         caller.value_types.insert(ValueRef(2), NyarType::Integer64 { signed: true });
+        caller.value_types.insert(ValueRef(1), NyarType::Boolean);
         let submission = submission(vec![
             (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
             (main_op, caller),
@@ -420,21 +404,16 @@ mod tests {
         let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
         let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
         let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
-        caller.blocks[0].instructions.push(Instruction {
-            output: Some(ValueRef(0)),
-            kind: InstructionKind::Call {
-                dispatch: DispatchKind::Static,
+        caller.value_types.insert(ValueRef(0), NyarType::Integer64 { signed: true });
+        caller.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
                 arguments: vec![],
-                witness: None,
-                effect: None,
-                receiver_kind: None,
-                parameter_types: Some(vec![]),
-                intrinsic_opcode: None,
             },
-        });
+            vec![ValueRef(0)],
+        ));
         let submission = submission(vec![
-            (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
+            (answer_op.clone(), function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
             (main_op, caller),
         ]);
         let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("bare helper must resolve like SMIR003");
@@ -444,68 +423,19 @@ mod tests {
     }
 
     #[test]
-    fn wasm_text_requires_explicit_projection_not_a_handle_guess() {
-        let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text")]);
-        let submission = submission(vec![(operation, function("neutral.text", NyarType::Utf8, vec![]))]);
-        let error = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect_err("text must not become an implicit wasm handle");
-        assert_eq!(error.code, "BPHYS007");
-    }
-
-    #[test]
-    fn managed_text_requires_explicit_projection_on_every_backend() {
-        let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text")]);
-        let submission = submission(vec![(operation, function("neutral.text", NyarType::Utf16, vec![]))]);
+    fn utf8_and_utf16_map_to_reference_without_text_projection() {
+        let utf8 = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text8")]);
+        let utf16 = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text16")]);
+        let submission = submission(vec![
+            (utf8, function("neutral.text8", NyarType::Utf8, vec![])),
+            (utf16, function("neutral.text16", NyarType::Utf16, vec![])),
+        ]);
         for backend in
             [PhysicalBackend::Jvm, PhysicalBackend::Clr, PhysicalBackend::WasmCore, PhysicalBackend::WasmJsGlue, PhysicalBackend::WasiComponent]
         {
-            let error = build_physical_plan(&submission, backend).expect_err("text must not inherit a default managed carrier");
-            assert_eq!(error.code, "BPHYS007");
-        }
-    }
-
-    #[test]
-    fn explicit_text_projection_is_consumed_only_by_its_declared_boundary() {
-        let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("convert")]);
-        let input = ValueRef(0);
-        let output = ValueRef(1);
-        let function = ExecutableFunction {
-            symbol: "neutral.convert".to_string(),
-            return_type: NyarType::Utf16,
-            param_types: vec![NyarType::Utf8],
-            value_types: BTreeMap::from([(input, NyarType::Utf8), (output, NyarType::Utf16)]),
-            entry: BlockRef(0),
-            values: Vec::new(),
-            intrinsic: None,
-            suspend_points: Vec::new(),
-            frame_layouts: Vec::new(),
-            continuations: Vec::new(),
-            case_chains: Vec::new(),
-            #[allow(deprecated)]
-            state_machine: None,
-            suspend_plan: None,
-            state_machine_lowered: true,
-            blocks: vec![Block {
-                id: BlockRef(0),
-                label: "entry".to_string(),
-                parameters: vec![input],
-                instructions: vec![Instruction {
-                    output: Some(output),
-                    kind: InstructionKind::TextConvert {
-                        source_encoding: Some(TextEncoding::Utf8),
-                        target_encoding: Some(TextEncoding::Utf16),
-                        semantics: Some(TextConversionSemantics::UnicodeScalarPreserving),
-                        boundary: Some(TextProjectionBoundary::Jvm),
-                        value: Operand::Value(input),
-                    },
-                }],
-                terminator: Terminator::Return { value: Some(Operand::Value(output)) },
-            }],
-            diagnostics: Vec::new(),
-        };
-        let submission = submission(vec![(operation, function)]);
-        assert!(build_physical_plan(&submission, PhysicalBackend::Jvm).is_ok());
-        for backend in [PhysicalBackend::Clr, PhysicalBackend::WasmJsGlue, PhysicalBackend::WasiComponent] {
-            assert_eq!(build_physical_plan(&submission, backend).expect_err("a projection cannot cross backend boundaries").code, "BPHYS007");
+            let plans = build_physical_plan(&submission, backend).expect("Utf8/Utf16 identity maps to Reference");
+            assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.text8").expect("utf8").result, PhysicalValueCategory::Reference);
+            assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.text16").expect("utf16").result, PhysicalValueCategory::Reference);
         }
     }
 
@@ -513,19 +443,13 @@ mod tests {
     fn unresolved_call_is_rejected_before_backend_emission() {
         let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
         let mut caller = function("neutral.caller", NyarType::Unit, vec![]);
-        caller.blocks[0].instructions.push(Instruction {
-            output: None,
-            kind: InstructionKind::Call {
-                dispatch: DispatchKind::Static,
+        caller.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("neutral"), Identifier::new("missing")])),
                 arguments: vec![],
-                witness: None,
-                effect: None,
-                receiver_kind: None,
-                parameter_types: Some(vec![]),
-                intrinsic_opcode: None,
             },
-        });
+            Vec::new(),
+        ));
         let error =
             build_physical_plan(&submission(vec![(operation, caller)]), PhysicalBackend::Clr).expect_err("unresolved call must fail closed");
         assert_eq!(error.code, "BPHYS004");

@@ -919,7 +919,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::{Block, BlockRef, DispatchKind, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+    use crate::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
     use nyar::{Identifier, NamePath};
     use nyar_types::{
         NyarType,
@@ -927,15 +927,29 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
+    /// 从 terminator 推断 `return_type`，避免 `Return { Some(...) }` 与 Unit 返回类型触发 SMIR007。
     fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
+        let return_type = match &terminator {
+            Terminator::Return { value: Some(Operand::Value(v)) } => {
+                value_types.get(v).cloned().unwrap_or(NyarType::Unit)
+            }
+            Terminator::Return { value: Some(Operand::Constant(c)) } => match c {
+                crate::contracts::Constant::Bool(_) => NyarType::Boolean,
+                crate::contracts::Constant::Int(_) => NyarType::Integer64 { signed: true },
+                crate::contracts::Constant::Float64(_) => NyarType::Float64,
+                crate::contracts::Constant::Utf8(_) => NyarType::Utf8,
+                crate::contracts::Constant::Utf16(_) => NyarType::Utf16,
+                crate::contracts::Constant::Unit => NyarType::Unit,
+            },
+            _ => NyarType::Unit,
+        };
         ExecutableFunction {
             symbol: "contract_fixture".to_string(),
-            return_type: NyarType::Unit,
+            return_type,
             param_types: Vec::new(),
             value_types,
             entry: BlockRef(0),
             values: Vec::new(),
-            intrinsic: None,
             suspend_points: Vec::new(),
             frame_layouts: Vec::new(),
             continuations: Vec::new(),
@@ -943,19 +957,24 @@ mod tests {
             #[allow(deprecated)]
             state_machine: None,
             suspend_plan: None,
-            state_machine_lowered: true,
             blocks: vec![Block { id: BlockRef(0), label: "entry".to_string(), parameters: Vec::new(), instructions, terminator }],
             diagnostics: Vec::new(),
         }
     }
 
+    fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
+        let mut instruction = Instruction::from_kind(kind);
+        instruction.results = results;
+        instruction
+    }
+
     #[test]
     fn rejects_instruction_output_without_semantic_type() {
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(ValueRef(7)),
-                kind: InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
-            }],
+            vec![instr(
+                InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
+                vec![ValueRef(7)],
+            )],
             Terminator::Return { value: None },
             BTreeMap::new(),
         ));
@@ -965,13 +984,13 @@ mod tests {
     #[test]
     fn rejects_residual_pattern_match() {
         let result = validate_function(&function(
-            vec![Instruction {
-                output: None,
-                kind: InstructionKind::PatternMatch {
+            vec![instr(
+                InstructionKind::PatternMatch {
                     value: Operand::Constant(crate::contracts::Constant::Unit),
                     pattern_debug: "fixture".to_string(),
                 },
-            }],
+                Vec::new(),
+            )],
             Terminator::Return { value: None },
             BTreeMap::new(),
         ));
@@ -1019,87 +1038,28 @@ mod tests {
         assert_eq!(observation("valid_minimal", result.as_ref().map(|_| ()).map_err(|error| error)), "valid_minimal|accept||");
 
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(ValueRef(7)),
-                kind: InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
-            }],
+            vec![instr(
+                InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
+                vec![ValueRef(7)],
+            )],
             Terminator::Return { value: None },
             BTreeMap::new(),
         ));
         assert_eq!(
             observation("missing_value_type", result.as_ref().map(|_| ()).map_err(|error| error)),
-            "missing_value_type|reject|SMIR001|block 0 instruction 0"
+            "missing_value_type|reject|SMIR001|instruction"
         );
     }
 
-    fn sum_equal_fixture(left_ty: NyarType, right_ty: NyarType, include_result_type: bool) -> Result<(), SemanticMirContractError> {
-        let left = ValueRef(20);
-        let right = ValueRef(21);
-        let result = ValueRef(22);
-        let mut value_types = BTreeMap::new();
-        value_types.insert(left, left_ty.clone());
-        value_types.insert(right, right_ty.clone());
-        if include_result_type {
-            value_types.insert(result, NyarType::Boolean);
-        }
-        validate_function(&function(
-            vec![Instruction {
-                output: Some(result),
-                kind: InstructionKind::Call {
-                    dispatch: DispatchKind::Static,
-                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("primitive"), Identifier::new("sum_equal")])),
-                    arguments: vec![Operand::Value(left), Operand::Value(right)],
-                    witness: None,
-                    effect: None,
-                    receiver_kind: None,
-                    parameter_types: Some(vec![left_ty, right_ty]),
-                    intrinsic_opcode: Some(IntrinsicOpcode::SumStructuralEqual),
-                },
-            }],
-            Terminator::Return { value: Some(Operand::Value(result)) },
-            value_types,
-        ))
-    }
-
     #[test]
-    fn accepts_structural_sum_equality_for_same_nominal_type() {
-        let ty = NyarType::Named(Identifier::new("TokenKind"));
-        assert!(sum_equal_fixture(ty.clone(), ty, true).is_ok());
-    }
-
-    #[test]
-    fn rejects_structural_sum_equality_for_different_nominal_types() {
-        let result = sum_equal_fixture(NyarType::Named(Identifier::new("Left")), NyarType::Named(Identifier::new("Right")), true);
-        assert_eq!(result.unwrap_err().code, "SMIR005");
-    }
-
-    #[test]
-    fn rejects_structural_sum_equality_without_result_type() {
-        let ty = NyarType::Named(Identifier::new("TokenKind"));
-        assert_eq!(sum_equal_fixture(ty.clone(), ty, false).unwrap_err().code, "SMIR001");
-    }
-
-    #[test]
-    fn aggregate_array_sum_contract_uses_structured_array_len() {
+    fn accepts_structured_array_length() {
         let receiver = ValueRef(10);
         let output = ValueRef(11);
         let mut value_types = BTreeMap::new();
         value_types.insert(receiver, NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
         value_types.insert(output, NyarType::Integer32 { signed: true });
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(output),
-                kind: InstructionKind::Call {
-                    dispatch: DispatchKind::Static,
-                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("unrelated"), Identifier::new("operation")])),
-                    arguments: vec![Operand::Value(receiver)],
-                    witness: None,
-                    effect: None,
-                    receiver_kind: None,
-                    parameter_types: Some(vec![NyarType::Array(Box::new(NyarType::Integer32 { signed: true }))]),
-                    intrinsic_opcode: Some(IntrinsicOpcode::ArrayLen),
-                },
-            }],
+            vec![instr(InstructionKind::ArrayLength { array: Operand::Value(receiver) }, vec![output])],
             Terminator::Return { value: Some(Operand::Value(output)) },
             value_types,
         ));
@@ -1110,98 +1070,66 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_array_sum_rejects_array_len_arity_without_symbol_inference() {
+    fn rejects_array_length_without_result_type() {
         let receiver = ValueRef(10);
         let output = ValueRef(11);
         let mut value_types = BTreeMap::new();
         value_types.insert(receiver, NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
-        value_types.insert(output, NyarType::Integer32 { signed: true });
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(output),
-                kind: InstructionKind::Call {
-                    dispatch: DispatchKind::Static,
-                    callee: Operand::Symbol(NamePath::new(vec![
-                        Identifier::new("array"),
-                        Identifier::new("length"),
-                        Identifier::new("without"),
-                        Identifier::new("contract"),
-                    ])),
-                    arguments: vec![Operand::Value(receiver), Operand::Constant(crate::contracts::Constant::Unit)],
-                    witness: None,
-                    effect: None,
-                    receiver_kind: None,
-                    parameter_types: Some(vec![NyarType::Array(Box::new(NyarType::Integer32 { signed: true })), NyarType::Unit]),
-                    intrinsic_opcode: Some(IntrinsicOpcode::ArrayLen),
-                },
-            }],
-            Terminator::Return { value: Some(Operand::Value(output)) },
+            vec![instr(InstructionKind::ArrayLength { array: Operand::Value(receiver) }, vec![output])],
+            Terminator::Return { value: None },
             value_types,
         ));
         assert_eq!(
-            observation("aggregate_array_sum.invalid_array_len_arity", result.as_ref().map(|_| ()).map_err(|error| error)),
-            "aggregate_array_sum.invalid_array_len_arity|reject|SMIR004|block 0 instruction 0"
+            observation("aggregate_array_sum.missing_result_type", result.as_ref().map(|_| ()).map_err(|error| error)),
+            "aggregate_array_sum.missing_result_type|reject|SMIR001|instruction"
         );
     }
 
     #[test]
-    fn text_contract_uses_structured_unicode_scalar_length() {
-        let receiver = ValueRef(20);
-        let output = ValueRef(21);
+    fn accepts_thin_call_with_typed_results() {
+        let left = ValueRef(20);
+        let right = ValueRef(21);
+        let result_v = ValueRef(22);
+        let ty = NyarType::Named(Identifier::new("TokenKind"));
         let mut value_types = BTreeMap::new();
-        value_types.insert(receiver, NyarType::Utf8);
-        value_types.insert(output, NyarType::Integer32 { signed: true });
+        value_types.insert(left, ty.clone());
+        value_types.insert(right, ty);
+        value_types.insert(result_v, NyarType::Boolean);
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(output),
-                kind: InstructionKind::Call {
-                    dispatch: DispatchKind::Static,
-                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("unrelated"), Identifier::new("operation")])),
-                    arguments: vec![Operand::Value(receiver)],
-                    witness: None,
-                    effect: None,
-                    receiver_kind: None,
-                    parameter_types: Some(vec![NyarType::Utf8]),
-                    intrinsic_opcode: Some(IntrinsicOpcode::Utf8ScalarLength),
+            vec![instr(
+                InstructionKind::Call {
+                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("primitive"), Identifier::new("sum_equal")])),
+                    arguments: vec![Operand::Value(left), Operand::Value(right)],
                 },
-            }],
-            Terminator::Return { value: Some(Operand::Value(output)) },
+                vec![result_v],
+            )],
+            Terminator::Return { value: Some(Operand::Value(result_v)) },
             value_types,
         ));
-        assert_eq!(
-            observation("text.valid_scalar_length", result.as_ref().map(|_| ()).map_err(|error| error)),
-            "text.valid_scalar_length|accept||"
-        );
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn text_contract_rejects_utf16_for_utf8_scalar_length() {
-        let receiver = ValueRef(20);
-        let output = ValueRef(21);
+    fn rejects_call_result_without_semantic_type() {
+        let left = ValueRef(20);
+        let right = ValueRef(21);
+        let result_v = ValueRef(22);
+        let ty = NyarType::Named(Identifier::new("TokenKind"));
         let mut value_types = BTreeMap::new();
-        value_types.insert(receiver, NyarType::Utf16);
-        value_types.insert(output, NyarType::Integer32 { signed: true });
+        value_types.insert(left, ty.clone());
+        value_types.insert(right, ty);
         let result = validate_function(&function(
-            vec![Instruction {
-                output: Some(output),
-                kind: InstructionKind::Call {
-                    dispatch: DispatchKind::Static,
-                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("unrelated"), Identifier::new("operation")])),
-                    arguments: vec![Operand::Value(receiver)],
-                    witness: None,
-                    effect: None,
-                    receiver_kind: None,
-                    parameter_types: Some(vec![NyarType::Utf16]),
-                    intrinsic_opcode: Some(IntrinsicOpcode::Utf8ScalarLength),
+            vec![instr(
+                InstructionKind::Call {
+                    callee: Operand::Symbol(NamePath::new(vec![Identifier::new("primitive"), Identifier::new("sum_equal")])),
+                    arguments: vec![Operand::Value(left), Operand::Value(right)],
                 },
-            }],
-            Terminator::Return { value: Some(Operand::Value(output)) },
+                vec![result_v],
+            )],
+            Terminator::Return { value: None },
             value_types,
         ));
-        assert_eq!(
-            observation("text.invalid_scalar_length_receiver", result.as_ref().map(|_| ()).map_err(|error| error)),
-            "text.invalid_scalar_length_receiver|reject|SMIR005|block 0 instruction 0"
-        );
+        assert_eq!(result.unwrap_err().code, "SMIR001");
     }
-
 }
