@@ -9,9 +9,9 @@ use crate::NyarType;
 
 /// 可执行指令与后端引用的稳定布局标识。
 ///
-/// S-W1：本模块中仍为稠密 `u32` 表下标。语义消费者应
-/// 优先与 [`crate::FieldId`] / 类型 id 配对；不透明 `LayoutId` newtype 等到
-/// RepresentationPlan 不再使用裸下标时再落地（S-W3）。
+/// 本模块中仍为稠密 `u32` 表下标。语义消费者应优先与 [`crate::FieldId`] /
+/// 类型 id 配对；不透明 `LayoutId` newtype 可在 RepresentationPlan 不再依赖
+/// 裸下标时再落地。
 pub type LayoutId = u32;
 
 /// Physical storage class for aggregate values at lowering time.
@@ -104,10 +104,9 @@ pub struct SumTypeLayout {
     pub variants: Vec<SumVariantLayout>,
 }
 
-/// Semantic identity of a concrete nominal sum instance (`NominalTypeId × TypeArguments`).
+/// 名义 sum 具体实例的语义身份（`NominalTypeId × TypeArguments`）。
 ///
-/// This is the M1/M3 contract key. Bare sum names alone are not identity:
-/// `Result<Plan, E>` and `Result<OtherPlan, E>` must remain distinct.
+/// 裸 sum 名本身不是 identity：`Result<Plan, E>` 与 `Result<OtherPlan, E>` 必须保持区分。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NominalInstanceKey {
     /// Nominal type id (declaration name; package-qualified when available).
@@ -133,17 +132,15 @@ impl NominalInstanceKey {
     }
 }
 
-/// Wasm-planning identity produced from a [`NominalInstanceKey`].
+/// 由 [`NominalInstanceKey`] 派生的 Wasm 规划身份。
 ///
-/// Layering (strictly one-way):
-/// `NominalInstanceKey` → [`RepresentationId`] → GC type index.
-/// Emit consumes this id; it must never invent identity from a type index,
-/// `anyref`, or bare `layout_id` (ADR 0008 / M3).
+/// 单向分层：`NominalInstanceKey` → [`RepresentationId`] → GC 类型下标。
+/// Emit 只消费此 id；不得从类型下标、`anyref` 或裸 `layout_id` 反推身份。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RepresentationId(String);
 
 impl RepresentationId {
-    /// Borrow the stable string key used in Wasm type registries.
+    /// 借用 Wasm 类型注册表中的稳定字符串键。
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -161,10 +158,10 @@ impl AsRef<str> for RepresentationId {
     }
 }
 
-/// Interim Wasm / prepare RepresentationId key for a concrete sum instance.
+/// 具体 sum 实例的过渡 Wasm / prepare `RepresentationId` 键。
 ///
-/// Matches V `wasm_sum_representation_key`: `sum:Name` or `sum:Name<a,b>`.
-/// Emit must look up this key — never bare short names alone (ADR 0008 / M3).
+/// 与 V 侧 `wasm_sum_representation_key` 对齐：`sum:Name` 或 `sum:Name<a,b>`。
+/// Emit 必须查此键，不得仅凭裸短名。
 pub fn sum_representation_key(sum_type: &str, type_args: &[NyarType]) -> String {
     if type_args.is_empty() {
         format!("sum:{sum_type}")

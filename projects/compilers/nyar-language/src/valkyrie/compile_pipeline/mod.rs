@@ -1,14 +1,13 @@
-//! One-way compile **analysis** and **processing** stream (ADR 0011 / 0012).
+//! 单向编译**分析**与**处理**流。
 //!
 //! ```text
 //! Analysis:   AST → HIR → Semantic MIR → Link → Validate (M2) → CanonicalProgram
 //! Processing: CanonicalProgram → RepresentationPlan → BackendPrivatePlan → Emit
 //! ```
 //!
-//! This module owns **orchestration only**. It must not revive parallel authorities
-//! (`FrontendNeutralPlan`, `FragmentSubmission` body bypass, God Call fields).
-//! Invoke / ItemInstance wiring stays forbidden until CanonicalProgram + stable IDs
-//! are the sole success path consumers actually use.
+//! 本模块只负责编排。不得复活并行权威
+//! （`FrontendNeutralPlan`、`FragmentSubmission` 体旁路、God Call 字段）。
+//! 在 CanonicalProgram + 稳定 ID 成为唯一成功路径之前，禁止接通 Invoke / ItemInstance。
 
 mod diagnostics;
 mod driver;

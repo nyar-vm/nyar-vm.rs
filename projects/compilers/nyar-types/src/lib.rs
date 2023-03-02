@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
 
-//! Minimal shared types used by the current Rust bootstrap path.
+//! Rust seed 路径共用的最小类型与语义身份。
 
 pub use self::{
     canonical_program::{
@@ -44,36 +44,36 @@ pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 pub mod canonical_program;
 pub mod core_surface;
 mod errors;
-/// Backend-private executable views for lowering.
+/// 后端私有的可执行视图，供 lowering 使用。
 pub mod executable;
 mod external_import;
-/// Aggregate / singleton layout contracts for executable lowering.
+/// 聚合 / singleton 布局合同，供可执行 lowering 使用。
 pub mod layout;
-/// Neutral, auditable contracts shared by frontends, planners, emitters and runtimes.
+/// 前端、规划器、emitter 与运行时共享的中立可审计合同。
 pub mod neutral_contract;
-/// Nullable intrinsic profiles shared by language assembly and backends.
+/// 语言装配与后端共享的可空 intrinsic 配置。
 pub mod nullable;
-/// Extensible attribute / operator registries (ADR 0013).
+/// 可扩展属性 / 运算符注册表。
 pub mod registries;
-/// Parametric MIR semantic identities and sparse RepresentationPlan.
+/// 参数化 MIR 语义身份与稀疏 RepresentationPlan。
 pub mod semantic_ids;
 mod source;
 mod symbols;
 mod ty;
 mod witness_submission;
 
-/// Stable capability tag shared across analyzers, planners and backends.
+/// 分析器、规划器与后端共享的稳定能力标签。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CapabilityTag(String);
 
 impl CapabilityTag {
-    /// Creates a new capability tag.
+    /// 新建能力标签。
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
 
-    /// Returns the tag as a string slice.
+    /// 返回标签字符串切片。
     pub fn as_str(&self) -> &str {
         &self.0
     }

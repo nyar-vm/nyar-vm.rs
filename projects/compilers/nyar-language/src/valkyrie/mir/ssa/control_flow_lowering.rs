@@ -13,10 +13,9 @@ use super::{
 };
 
 impl MirBuilder {
-    /// `loop pat in coll` → indexed while using language `ArrayLength` / `ArrayGet`.
+    /// `loop pat in coll` → 用语言 `ArrayLength` / `ArrayGet` 做下标 while。
     ///
-    /// Comparison / increment go through operator `Call` (`infix <` / `infix +`), never an
-    /// IntrinsicOpcode table (ADR 0010 / ADR 0011).
+    /// 比较 / 自增走运算符 `Call`（`infix <` / `infix +`），不得经 IntrinsicOpcode 表。
     pub(super) fn lower_for_in_as_indexed_while(
         &mut self,
         label: &Option<crate::types::Identifier>,

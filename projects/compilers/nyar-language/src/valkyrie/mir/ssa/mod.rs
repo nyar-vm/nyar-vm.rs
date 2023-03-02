@@ -17,11 +17,11 @@ mod effect_lowering;
 mod exit_lowering;
 mod expr_helpers;
 mod expr_lowering;
-// DELETED ADR0011: mod frame_planning;
+// 已删除：mod frame_planning;
 mod match_lowering;
 mod pattern_lowering;
-// DELETED ADR0011: pub mod state_machine_cfg_rewrite;
-// DELETED ADR0011: mod suspend_analysis;
+// 已删除：pub mod state_machine_cfg_rewrite;
+// 已删除：mod suspend_analysis;
 /// `MIR` 单元测试辅助工具（构造 builder / 断言结构）。
 pub mod test_support;
 mod try_propagate_lowering;
@@ -31,7 +31,7 @@ mod value_semantics;
 #[cfg(test)]
 mod singleton_tests;
 
-// ADR 0010: IntrinsicOpcode authority deleted — do not `pub use` opcode enums.
+// IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
     compute_aggregate_layout_plan, ensure_layout_for_type, ensure_named_aggregate_layout, layout_id_for_nyar_type, layout_id_for_type,
@@ -95,10 +95,10 @@ pub struct MirModule {
     pub diagnostics: Vec<MirDiagnostic>,
 }
 
-/// A statically resolved call contract owned by an imported semantic export.
+/// 由导入语义导出持有的静态解析调用合同。
 ///
-/// ADR 0010: no `dispatch` / witness / intrinsic side-channels. Types belong on
-/// ItemInstance / type table once Invoke lands — not reattached here as God fields.
+/// 不得挂 `dispatch` / witness / intrinsic 旁路。类型归属 ItemInstance / 类型表
+///（Invoke 落地后），不得作为 God 字段回填。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirExternalCallContract {
     /// Exact source-level symbol selected by HIR overload resolution.
@@ -346,24 +346,24 @@ pub enum MirEffectKind {
     AsyncBlock,
 }
 
-/// `MIR` 指令信封（ADR 0012）。
+/// `MIR` 指令信封。
 ///
-/// Field `kind` is a transitional name; semantic role is **operation**.
-/// Result types live only in the value table (`MirValueDefinition`), not on the envelope.
+/// 字段 `kind` 为过渡名；语义角色是 **operation**。
+/// 结果类型只住在值表（`MirValueDefinition`），不在信封上。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirInstruction {
-    /// Stable instruction identity (plan / verifier key).
+    /// 稳定指令身份（规划 / 校验键）。
     pub id: nyar_types::InstructionId,
-    /// SSA results produced by this instruction (0..n).
+    /// 本指令产生的 SSA 结果（0..n）。
     pub results: Vec<MirValueRef>,
-    /// Operation payload (`MirOperation` only — no result types / layouts here).
+    /// 操作载荷（仅 `MirOperation` — 不含结果类型 / 布局）。
     pub kind: MirOperation,
-    /// Source or synthetic provenance.
+    /// 源码或合成 provenance。
     pub provenance: nyar_types::ProvenanceId,
 }
 
 impl MirInstruction {
-    /// Borrow the operation payload (ADR 0012 name).
+    /// 借用操作载荷。
     pub fn operation(&self) -> &MirOperation {
         &self.kind
     }
@@ -416,13 +416,13 @@ pub enum MirOperation {
         ty: Option<ValkyrieType>,
     },
     Call {
-        /// Callable operand. Transitional: will become `Invoke.callee` (`Item` | `Value`).
-        /// Must not carry dispatch / witness / intrinsic / generic side-channels (ADR 0010).
+        /// 可调用操作数。过渡期日后成为 `Invoke.callee`（`Item` | `Value`）。
+        /// 不得携带 dispatch / witness / intrinsic / generic 旁路。
         callee: MirOperand,
-        /// Semantic arguments (receiver is explicit arg 0 when present).
+        /// 语义实参（有 receiver 时显式为第 0 个）。
         arguments: Vec<MirOperand>,
     },
-    /// Construct a named aggregate. Physical StorageKind/LayoutId belong in RepresentationPlan (ADR 0011).
+    /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {
         type_name: String,
         fields: Vec<(String, MirOperand)>,
@@ -478,25 +478,24 @@ pub enum MirOperation {
         /// 待检查的模式。
         pattern: HirPattern,
     },
-    /// Construct a language array by runtime length + prescribed initialization (ADR 0011).
+    /// 按运行时长度 + 规定初始化构造语言数组。
     ///
-    /// Fixed vs runtime-length is expressed by `array_type` (full array type / transitional
-    /// stand-in for `TypeId`), **not** by a separate instruction. Do not invent
-    /// `Uninitialized` unless valkyrie-2020 defines a verifiable unobservable init phase.
-    /// Physical heap/inline/GC carrier belongs in RepresentationPlan — never here.
+    /// 定长与运行时长度由 `array_type`（完整数组类型 / `TypeId` 过渡替身）表达，
+    /// **不是**单独指令。除非 valkyrie-2020 定义可验证的不可观察初始化阶段，
+    /// 不得发明 `Uninitialized`。物理堆 / 内联 / GC 载体属于 RepresentationPlan。
     ArrayNew {
-        /// Full array type (`Array<T>` / `FixedArray<T,N>` …), not element-only.
+        /// 完整数组类型（`Array<T>` / `FixedArray<T,N>` …），非仅元素类型。
         array_type: ValkyrieType,
         length: MirOperand,
         initialization: ArrayInitialization,
     },
-    /// Construct a language array from a complete element sequence (ADR 0011).
+    /// 由完整元素序列构造语言数组。
     ///
-    /// Replaces the former `FixedArrayNew` + `ArrayLiteral` God split (type-class ×
-    /// init-style × surface syntax). Source “literal” is not a Semantic MIR category.
-    /// For fixed arrays, M2 checks `elements.len()` against the length in `array_type`.
+    /// 取代旧的 `FixedArrayNew` + `ArrayLiteral` 分裂（类型类 × 初始化风格 × 表面语法）。
+    /// 源码「字面量」不是 Semantic MIR 范畴。定长数组由 M2 按 `array_type` 中的长度
+    /// 核对 `elements.len()`。
     ArrayFromElements {
-        /// Full array type; element type and fixed length come from the type table.
+        /// 完整数组类型；元素类型与定长来自类型表。
         array_type: ValkyrieType,
         elements: Vec<MirOperand>,
     },
@@ -676,7 +675,7 @@ impl MirLowerer {
             &effectful_resume_map,
         ));
         eprintln!("[seed-debug] mir-lower-done module={} functions={} structs={}", module.name, functions.len(), structs.len());
-        // ADR 0011: MirFunction no longer carries per-function diagnostics.
+        // MirFunction 不再携带 per-function diagnostics。
         let result = MirModule {
             name: module.name.to_string(),
             functions,
@@ -743,7 +742,7 @@ impl MirLowerer {
             &singleton_accessors,
             &effectful_resume_map,
         ));
-        // ADR 0011: MirFunction no longer carries per-function diagnostics.
+        // MirFunction 不再携带 per-function diagnostics。
         MirModule {
             name: module.name.to_string(),
             functions,
@@ -1157,7 +1156,7 @@ fn lower_function_semantic(
         values: builder.values,
         blocks: builder.blocks,
     };
-    // DELETED (ADR 0011): suspend_analysis / frame_planning attached God metadata onto MirFunction.
+    // 已删除：suspend_analysis / frame_planning 向 MirFunction 挂 God 元数据。
     mir_function
 }
 
@@ -1185,9 +1184,9 @@ struct MirBuilder {
     static_bindings: BTreeMap<String, HirExpr>,
     terminator: Option<MirTerminator>,
     value_seed: u32,
-    /// Dense InstructionId allocator (ADR 0012).
+    /// 稠密 InstructionId 分配器。
     instruction_seed: u32,
-    /// Dense ProvenanceId allocator (ADR 0012).
+    /// 稠密 ProvenanceId 分配器。
     provenance_seed: u32,
     state_seed: u32,
     /// Unified loop / try / fallthrough scope tracking for lowering.
@@ -1279,7 +1278,7 @@ impl MirBuilder {
         id
     }
 
-    /// Push an instruction with fresh dense [`InstructionId`] + [`ProvenanceId`] (ADR 0012).
+    /// 推入指令并分配新的稠密 [`InstructionId`] + [`ProvenanceId`]。
     pub(super) fn push_instruction(&mut self, operation: MirOperation, results: Vec<MirValueRef>) {
         let id = nyar_types::InstructionId::from_index(self.instruction_seed).expect("InstructionId");
         self.instruction_seed = self.instruction_seed.saturating_add(1);

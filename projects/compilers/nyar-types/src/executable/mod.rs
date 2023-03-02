@@ -1,7 +1,7 @@
-//! Canonical Semantic MIR boundary consumed by all backend lowerers.
+//! 各后端 lowering 共用的 Canonical Semantic MIR 边界。
 //!
-//! IntrinsicOpcode / Call God fields / StorageKind·LayoutId on instructions are
-//! **deleted** (ADR 0010 / 0011). Physical layout belongs in RepresentationPlan.
+//! `IntrinsicOpcode`、Call 上的 God 字段，以及指令上的 `StorageKind` / `LayoutId`
+//! **已删除**。物理布局只属于 RepresentationPlan，不得塞回共享指令面。
 
 use std::collections::BTreeMap;
 
@@ -9,7 +9,7 @@ use ordered_float::OrderedFloat;
 
 use crate::{NamePath, NyarType};
 
-/// Tombstone — do not restore IntrinsicOpcode as MIR authority (ADR 0010).
+/// 墓碑模块：禁止把 IntrinsicOpcode 重新当作 MIR 权威。
 pub mod intrinsic;
 
 /// SSA value reference within an executable function.
@@ -118,7 +118,7 @@ pub enum EffectKind {
     AsyncBlock,
 }
 
-/// Executable instruction (thin mirror of Semantic MIR envelope; ADR 0012).
+/// 可执行指令（Semantic MIR 信封的薄镜像）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instruction {
     /// Stable instruction identity.
@@ -172,15 +172,15 @@ pub enum InstructionKind {
         /// Optional static type.
         ty: Option<NyarType>,
     },
-    /// Call a callee (transitional LegacyCall shape → ADR 0010 `Invoke`).
+    /// 调用 callee（过渡期 LegacyCall 形态 → 统一 `Invoke`）。
     ///
-    /// **Removed God fields (do not reintroduce):** `dispatch`, `witness`, `evidence`,
-    /// `generic_function`, `generic_arguments`, `effect`, `receiver_kind`,
-    /// `parameter_types`, `intrinsic_opcode`, `signature_complete`, `has_this`.
+    /// **已移除、禁止回填的 God 字段：** `dispatch`、`witness`、`evidence`、
+    /// `generic_function`、`generic_arguments`、`effect`、`receiver_kind`、
+    /// `parameter_types`、`intrinsic_opcode`、`signature_complete`、`has_this`。
     Call {
-        /// Callable operand (`ItemInstanceId` / function value TBD).
+        /// 可调用操作数（`ItemInstanceId` / 函数值，待定）。
         callee: Operand,
-        /// Arguments in semantic order.
+        /// 语义顺序的实参。
         arguments: Vec<Operand>,
     },
     /// Construct a named aggregate / struct instance.
@@ -192,7 +192,7 @@ pub enum InstructionKind {
     },
     /// Construct a tuple.
     TupleNew {
-        /// Element values. Arity/types come from result `TypeId` (ADR 0011).
+        /// 元素值；arity / 类型来自结果 `TypeId`。
         fields: Vec<Operand>,
     },
     /// Copy an aggregate by layout.
@@ -268,7 +268,7 @@ pub enum InstructionKind {
         /// Debug-only pattern description (not a language HIR pattern).
         pattern_debug: String,
     },
-    /// Runtime-length language array construction (ADR 0011). Full `array_type`, not element-only.
+    /// 运行时长度的语言数组构造。使用完整 `array_type`，而非仅元素类型。
     ArrayNew {
         /// Full array type (`Array<T>` / …); transitional stand-in for `TypeId`.
         array_type: NyarType,
@@ -592,7 +592,7 @@ pub struct ExecutableFunction {
     pub state_machine: Option<SuspendLoweringPlan>,
     /// Explicit suspend lowering plan.
     pub suspend_plan: Option<SuspendLoweringPlan>,
-    // DELETED (ADR 0011): state_machine_lowered parallel CFG-rewrite flag.
+    // 已删除：与 CFG 重写并行的 `state_machine_lowered` 标志。
     /// Blocks.
     pub blocks: Vec<Block>,
     /// Diagnostics.

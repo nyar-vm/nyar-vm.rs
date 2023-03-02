@@ -1,2 +1,2 @@
-//! DELETED — ADR 0010 / 0011: intrinsic opcode authority removed from Semantic MIR.
-//! Do not re-export IntrinsicOpcode from this module.
+//! 已删除 — IntrinsicOpcode 权威已从 Semantic MIR 移除。
+//! 不得从此模块再导出 IntrinsicOpcode。

@@ -120,7 +120,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 let output_type = crate::contracts::instruction_primary_result(instruction)
                     .and_then(|output| function.value_types.get(&output))
                     .or(Some(&function.return_type));
-                // ADR 0009 §5：字段在「输出类型给出的同一 substitution」下比较，
+                // 字段在「输出类型给出的同一 substitution」下比较，
                 // 禁止依赖 Named("Self") / 类型名单字母特判放行。
                 let substitution = output_type
                     .map(|ty| type_args_substitution(ty, layout))
@@ -309,7 +309,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
 
 fn struct_new_layout_name(type_name: &str, function_symbol: &str) -> String {
     // 迁移期：StructNew.type_name 仍可能是 `Self`；布局名从函数符号 owner 恢复。
-    // 输出值类型不得再是 Named("Self")——那必须在 MIR 侧代入（ADR 0009）。
+    // 输出值类型不得再是 Named("Self")——那必须在 MIR 侧代入。
     if type_name == "Self" {
         function_owner_from_symbol(function_symbol).map(str::to_string).unwrap_or_else(|| type_name.to_string())
     }
@@ -410,7 +410,7 @@ fn aggregate_field_layout_name(
     function: &ExecutableFunction,
 ) -> Option<String> {
     if let Some(ty) = object_ty {
-        // ADR 0009：对象类型必须已代入；Named("Self") 不得在此按函数符号猜 owner。
+        // 对象类型必须已代入；Named("Self") 不得在此按函数符号猜 owner。
         if matches!(ty, NyarType::Named(name) if name.as_str() == "Self") {
             return None;
         }
@@ -576,7 +576,7 @@ fn result_or_option_alias_compatible(actual: &NyarType, expected: &NyarType) -> 
     }
 }
 
-/// Keep aligned with `nyar-language` operator registry（ADR 0013）。
+/// 与 `nyar-language` 运算符注册表保持对齐。
 fn is_language_operator_symbol(path: &NamePath) -> bool {
     let name = path.parts().last().map(|part| part.as_str()).unwrap_or("");
     nyar_types::builtin_operator::lookup_display_name(name).is_some()

@@ -65,7 +65,7 @@ fn compare_mir_lir_modules(
                 mir_function.symbol
             )));
         };
-        // Semantic MIR no longer embeds suspend / case-chain metadata (ADR 0011).
+        // Semantic MIR 不再嵌入 suspend / case-chain 元数据。
         compare_suspend_points(&mir_function.symbol, &[], &lir_function.suspend_points)?;
         compare_frame_layouts(&mir_function.symbol, &[], &lir_function.frame_layouts)?;
         compare_continuations(&mir_function.symbol, &[], &lir_function.continuations)?;

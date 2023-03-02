@@ -1,7 +1,7 @@
 //! Builtin / pattern helpers for MIR lowering.
 //!
-//! ADR 0010: IntrinsicOpcode tables deleted. Do not restore operator→opcode maps.
-//! ADR 0013: 语义路径只消费 [`IntrinsicId`] / [`OperatorId`]，禁止按类型名末段猜。
+//! IntrinsicOpcode 表已删除；不得恢复 operator→opcode 映射。
+//! 语义路径只消费 [`IntrinsicId`] / [`OperatorId`]，禁止按类型名末段猜。
 
 use std::collections::BTreeMap;
 
@@ -13,12 +13,12 @@ use nyar_types::{IntrinsicId, builtin_operator};
 
 use super::{MirOperand, MirValueRef, infer_builder_operand_type};
 
-/// Fail-closed stub: IntrinsicOpcode / plain-type pattern tables deleted (ADR 0010).
+/// 失败关闭桩：IntrinsicOpcode / plain-type 模式表已删除。
 pub(super) fn plain_type_pattern_matches(_ty: &ValkyrieType, _name: &NamePath) -> bool {
     false
 }
 
-/// DELETED: do not collect IntrinsicOpcode into MirModule.
+/// 已删除：不得向 MirModule 收集 IntrinsicOpcode。
 pub(super) fn collect_intrinsic_opcodes(_module: &HirModule) -> BTreeMap<String, ()> {
     BTreeMap::new()
 }

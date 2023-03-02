@@ -1,7 +1,7 @@
-//! Canonical program success types and compile pipeline stages (ADR 0011).
+//! 规范程序成功类型与编译管线阶段。
 //!
-//! Failures use **structured diagnostics** (a *family* of diagnostic types sharing a
-//! common contract) — not a single struct named `StructuredDiagnostics`.
+//! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
+//! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
 use crate::semantic_ids::{EvidenceId, ItemInstanceId, NominalInstanceId, TypeId};
 use std::collections::BTreeMap;
@@ -63,10 +63,10 @@ pub enum CompileStage {
 /// Result alias for pipeline stages: success value or structured diagnostics category.
 pub type StageResult<T> = Result<T, StructuredDiagnosticSet>;
 
-/// Linked program after adaptor selection and cross-package closure (ADR 0011).
+/// 完成 adaptor 选择与跨包闭包后的链接程序。
 ///
-/// This is the **success** type entering validated Semantic MIR — not a parallel
-/// `FrontendNeutralPlan` / `FragmentSubmission` authority.
+/// 这是进入已校验 Semantic MIR 的**成功**类型——不是并行的
+/// `FrontendNeutralPlan` / `FragmentSubmission` 权威。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LinkedSemanticProgram {
     /// Module / package identity key.

@@ -1,11 +1,11 @@
-//! ADR 0010: LegacyCall must not drive representation planning.
+//! LegacyCall 不得驱动 representation planning。
 //!
-//! Provisional EvidenceId→CallLayout tables are **deleted**. Real planner awaits
-//! `Invoke` + `ItemInstance` and sparse `invoke_lowerings`.
+//! 临时 EvidenceId→CallLayout 表已**删除**。真正规划器等待
+//! `Invoke` + `ItemInstance` 与稀疏 `invoke_lowerings`。
 
 use crate::{FragmentSubmission, RepresentationPlan};
 
-/// Always clear / empty — do not stamp Call-site layouts from LegacyCall fields.
+/// 恒为空 — 不得从 LegacyCall 字段盖章 Call 点布局。
 pub(crate) fn provisional_representation_plan(_submission: &FragmentSubmission) -> RepresentationPlan {
     RepresentationPlan::default()
 }

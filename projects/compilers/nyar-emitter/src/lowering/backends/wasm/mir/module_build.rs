@@ -556,7 +556,7 @@ pub(crate) fn is_generic_array_element_type(element_type: &NyarType) -> bool {
 
 /// Prefer the `[utf8]` / i32-handle arraytype used for WASI/Node argv.
 pub(crate) fn prefer_utf8_argv_array_type(gc_array_type_indices: &BTreeMap<String, u32>) -> Option<u32> {
-    // Exact key only. Falling back to an arbitrary arraytype invents argv ABI (ADR 0008).
+    // Exact key only. Falling back to an arbitrary arraytype invents argv ABI.
     gc_array_type_indices.get("Utf8").copied()
 }
 

@@ -114,7 +114,7 @@ impl MirBuilder {
     }
 
     /// Option 结构操作入口：优先 `Extractor` / `extractor_payload_type` 合同；
-    /// 无合同时才回退迁移期表面名（ADR 0009 / S-W3）。
+    /// 无合同时才回退迁移期表面名（不得按类型名猜）。
     fn is_option_unwrap_call(resolved: Option<&HirResolvedCall>, surface_name: Option<&str>) -> bool {
         if let Some(call) = resolved {
             if matches!(call.domain, HirCallableDomain::Extractor) || call.extractor_payload_type.is_some() {
@@ -795,7 +795,7 @@ impl MirBuilder {
                             }
                         }
                     }
-                    // ADR 0010: no dispatch/witness/evidence/intrinsic/parameter_types on Call.
+                    // Call 不得携带 dispatch / witness / evidence / intrinsic / parameter_types。
                     let (callee_symbol, return_type) = qualify_instance_method_symbol(
                         &receiver_operand,
                         &method_name,
@@ -995,7 +995,7 @@ impl MirBuilder {
                 if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                     return operand;
                 }
-                // ADR 0010: Call is only { callee, arguments }. No intrinsic/dispatch/generic side-channels.
+                // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
                 let value = self.push_call(callee.clone(), arguments.clone());
                 if let Some(ty) = array_index_call_output_type(&arguments, &self.value_types)
                     .or_else(|| function_ty.map(|func| func.return_type))
@@ -1029,7 +1029,7 @@ impl MirBuilder {
                 MirOperand::Value(value)
             }
             HirExprKind::ArrayLiteral { items } => {
-                // ADR 0011: surface literal → ArrayFromElements; fixed vs Array from array_type only.
+                // 表面字面量 → ArrayFromElements；定长与 Array 只由 array_type 区分。
                 let array_type = match expected_type {
                     Some(ValkyrieType::FixedArray { element, length }) => {
                         ValkyrieType::FixedArray { element: element.clone(), length: *length }
@@ -1192,7 +1192,7 @@ impl MirBuilder {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 // 数组长度属性：仅当对象已是 array-shaped 时映射到 ArrayLength（结构操作）。
                 // 词素 `length` 是迁移期表面语法；正式合同为 IntrinsicId::ArrayLen / FieldId。
-                // 禁止对非数组对象按短名猜 ArrayLen（ADR 0008）。
+                // 禁止对非数组对象按短名猜 ArrayLen。
                 if field.as_str() == "length" {
                     if let Some(operand) = self.try_emit_array_length_field_access(object, &object_operand) {
                         return operand;

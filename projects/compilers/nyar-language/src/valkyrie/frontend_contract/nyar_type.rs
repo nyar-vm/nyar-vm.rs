@@ -71,7 +71,7 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
         ValkyrieType::Character => Ok(NyarType::Character),
         ValkyrieType::Utf8 => Ok(NyarType::Utf8),
         ValkyrieType::Utf16 => Ok(NyarType::Utf16),
-        // ADR 0009：`Named("Self")` 是未代入污点，与 `SelfType` 同等失败关闭；禁止进 executable。
+        // `Named("Self")` 是未代入污点，与 `SelfType` 同等失败关闭；禁止进 executable。
         ValkyrieType::Named(name) if name.as_str() == "Self" => {
             Err(ConcretizeError::new("Named(\"Self\") must be substituted before platform lowering"))
         }

@@ -52,7 +52,7 @@ pub struct AssembledFragment {
     pub sum_types: Vec<SumTypeLayout>,
     /// Flags bitmask layouts.
     pub flags_types: Vec<FlagsLayout>,
-    // DELETED (ADR 0010/0011): intrinsics / nullable_intrinsics / nullable_try_calls / nullable_bool_profiles.
+    // 已删除：intrinsics / nullable_intrinsics / nullable_try_calls / nullable_bool_profiles。
     /// Reachable executable functions for this partition.
     pub executable_functions: BTreeMap<QualifiedName, ExecutableFunction>,
     /// Singleton global instance initialization plans.

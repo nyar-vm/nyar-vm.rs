@@ -1,7 +1,7 @@
-//! Minimal M2 envelope checks (result counts / id density) — not full MIR verification.
+//! 最小 M2 信封检查（结果个数 / id 稠密度）— 非完整 MIR 校验。
 //!
-//! Full ADT / Invoke / effect closure lives later. This only guards ADR 0012 envelope
-//! invariants so the analysis stream has a fail-closed hook.
+//! 完整 ADT / Invoke / effect 闭包稍后。此处只守信封不变量，
+//! 让分析流有失败关闭钩子。
 
 use nyar_types::{CompileStage, StageResult};
 

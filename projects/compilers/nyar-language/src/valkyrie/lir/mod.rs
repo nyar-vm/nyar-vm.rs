@@ -539,7 +539,7 @@ fn lower_mir_module_internal(module: &MirModule, return_types: &BTreeMap<String,
 fn lower_mir_function(function: &MirFunction, return_types: &BTreeMap<String, HirType>) -> LirFunction {
     let mut return_type = return_types.get(function.symbol.as_str()).cloned().unwrap_or(HirType::Unit);
     erase_backend_opaque_type(&mut return_type);
-    // ADR 0011: Semantic MirFunction no longer carries suspend/frame/case God metadata.
+    // Semantic MirFunction 不再携带 suspend/frame/case God 元数据。
     let suspend_points: Vec<LirSuspendPoint> = Vec::new();
     let frame_layouts: Vec<LirFrameLayout> = Vec::new();
     let continuations: Vec<LirContinuation> = Vec::new();

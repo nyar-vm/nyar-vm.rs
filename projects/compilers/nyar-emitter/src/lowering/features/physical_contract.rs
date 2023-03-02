@@ -45,9 +45,9 @@ pub(crate) struct PhysicalCallContract {
     pub parameters: Vec<PhysicalValueCategory>,
 }
 
-/// Backend-private text projection placeholder.
+/// 后端私有文本投影占位。
 ///
-/// Semantic MIR no longer carries TextConvert / TextEncoding God fields (ADR 0011).
+/// Semantic MIR 不再携带 TextConvert / TextEncoding God 字段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PhysicalTextProjection {
     pub authorized: bool,

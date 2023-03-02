@@ -1,11 +1,10 @@
-//! Canonical Semantic MIR 的稳定语义身份
-//! （ADR 0009 / 0013；不透明 MIR id 亦覆盖 ADR 0010–0012）。
+//! Canonical Semantic MIR 的稳定语义身份。
 //!
-//! 这些 id 属于 Semantic MIR 与稀疏 RepresentationPlan 的键。
-//! 它们**不是** Wasm 类型下标、CLR token、JVM CP 下标，也不是 Rust `dyn`/`impl Trait`。
+//! 这些 id 是 Semantic MIR 与稀疏 RepresentationPlan 的键，
+//! **不是** Wasm 类型下标、CLR token、JVM CP 下标，也不是 Rust `dyn` / `impl Trait`。
 //!
-//! **禁止：** `function@block:index`、把 EvidenceId 挂在 LegacyCall 上、CallLayout 上帝表、
-//! 解析后的字符串/`as_str()` 分派（见 ADR 0013 / S-W1 门禁）。
+//! **禁止：** 用 `function@block:index` 当长期身份、把 EvidenceId 挂在 LegacyCall 上、
+//! CallLayout 上帝表，以及解析后的字符串 / `as_str()` 语义分派。
 
 use std::{fmt, marker::PhantomData, num::NonZeroU32};
 
@@ -132,12 +131,11 @@ impl IdKind for NominalInstanceIdKind {
 }
 pub type NominalInstanceId = SemanticId<NominalInstanceIdKind>;
 
-/// 由可扩展运算符注册表分配的运算符身份（ADR 0013）。
+/// 由可扩展运算符注册表分配的运算符身份。
 ///
-/// **不是封闭 enum。** 内置与用户定义运算符（`infix 4 +*`、自定义
-/// 词素）在解析/链接时从注册表获得稳定 id。结合性、
-/// 优先级与词素存放在旁表（[`OperatorRegistration`]）；MIR 只存
-/// `OperatorId` —— 从不存 `"infix =="` 这类显示字符串。
+/// **不是封闭 enum。** 内置与用户定义运算符在解析/链接时从注册表获得稳定 id。
+/// 结合性、优先级与词素只存旁表（[`OperatorRegistration`]）；MIR 只存
+/// `OperatorId`，从不存 `"infix =="` 这类显示字符串。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperatorIdKind;
 impl IdKind for OperatorIdKind {
@@ -145,8 +143,8 @@ impl IdKind for OperatorIdKind {
 }
 pub type OperatorId = SemanticId<OperatorIdKind>;
 
-/// 字节码 / 宿主能力表中的已校验导入槽（ADR 0013）。
-/// 字节码只存此下标；从不存宿主函数名字符串。
+/// 字节码 / 宿主能力表中的已校验导入槽。
+/// 字节码只存此下标，从不存宿主函数名字符串。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportIndexKind;
 impl IdKind for ImportIndexKind {
@@ -233,9 +231,9 @@ pub struct OperatorRegistration {
     pub callee: Option<ItemInstanceId>,
 }
 
-/// 语言与 emitter 共享的有限内置 / intrinsic 操作（ADR 0013）。
+/// 语言与 emitter 共享的有限内置 / intrinsic 操作。
 ///
-/// 注册一次；后端消费 id，而不是 `builtin.array.push` 路径字符串。
+/// 注册一次；后端消费 id，而不是 `builtin.array.push` 这类路径字符串。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IntrinsicId {
@@ -335,7 +333,7 @@ impl fmt::Display for IntrinsicId {
     }
 }
 
-/// 属性身份：由可扩展属性注册表分配（ADR 0013）。
+/// 属性身份：由可扩展属性注册表分配。
 ///
 /// **不是封闭 enum。** 内建 `[export]` / `[main]` 与用户自定义属性均获得稳定 id；
 /// 名称只留在 [`AttributeRegistration`] 旁表，解析后不得再用 `as_str() == "export"` 分派。
@@ -433,8 +431,8 @@ impl fmt::Display for ImportCapability {
 
 /// trait/imply evidence 绑定的稳定身份（语义证明，不是运行时 witness）。
 ///
-/// S-W1 冻结：字符串键仍是**诊断 / provenance** 载体。
-/// 调用点不得为降低而对 `as_str()` 分支；优先按本 id 查旁表。
+/// 字符串键只作诊断 / provenance 载体。
+/// 调用点不得为 lowering 对 `as_str()` 分支；应按本 id 查旁表。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EvidenceId(String);
 
@@ -494,7 +492,7 @@ impl fmt::Display for GenericFunctionId {
     }
 }
 
-/// SSA 值如何被定义（ADR 0012）。
+/// SSA 值如何被定义。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MirValueDefinition {
     /// 某条指令的结果槽。
@@ -518,7 +516,9 @@ pub enum MirValueDefinition {
     },
 }
 
-/// 稀疏的、与目标无关的表示计划（ADR 0009 / 0011 / 0012）。
+/// 稀疏的、与目标无关的表示计划。
+///
+/// 以稳定语义 id 为键；不得复制 CFG，也不得用 `function@block:index` 当长期 identity。
 ///
 /// 键只能是稳定语义 id。禁止 `function@block:index`。
 pub mod layout_choice {

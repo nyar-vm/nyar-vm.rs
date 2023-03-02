@@ -1,4 +1,4 @@
-//! Split from former monolithic wasm mir lowerer (ADR 0008).
+//! 自旧单体 wasm mir lowerer 拆出。
 #![allow(deprecated)]
 
 #[allow(deprecated)]
@@ -65,7 +65,7 @@ impl<'a> WasmMirLowerer<'a> {
                                     .map(|ty| wasm_param_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
                                     .unwrap_or_else(|| {
                                         panic!(
-                                            "WASM emit fail-closed: missing value_types for scalar plan %{} in `{}` (ADR 0008)",
+                                            "WASM emit fail-closed: missing value_types for scalar plan %{} in `{}`",
                                             output.0, self.mir_fn.symbol
                                         )
                                     });
@@ -254,7 +254,7 @@ impl<'a> WasmMirLowerer<'a> {
                     .get(vref)
                     .map(|ty| type_is_wasm_gc_heap_reference(ty) || self.storage_for_type(ty) == StorageKind::Reference)
                     .unwrap_or_else(|| panic!(
-                        "WASM emit fail-closed: missing value_types for reference-storage probe in `{}` (ADR 0008)",
+                        "WASM emit fail-closed: missing value_types for reference-storage probe in `{}`",
                         self.mir_fn.symbol
                     ))
             }
@@ -264,7 +264,7 @@ impl<'a> WasmMirLowerer<'a> {
                 // 未解析的 Symbol 默认引用语义,避免 plan 分配 i32 local
                 // ?emit ?ref.null 导致 `local.set expected i32, found ref.null`?
                 self.var_locals.get(&path.to_string()).copied().map(|local| self.wasm_local_value_type(local) == WASM_GC_ANYREF).unwrap_or_else(|| panic!(
-                    "WASM emit fail-closed: unresolved Symbol in reference-storage probe in `{}` (ADR 0008)",
+                    "WASM emit fail-closed: unresolved Symbol in reference-storage probe in `{}`",
                     self.mir_fn.symbol
                 ))
             }
@@ -282,7 +282,7 @@ impl<'a> WasmMirLowerer<'a> {
             return if self.array_element_is_anyref(out_ty) { StorageKind::Reference } else { StorageKind::Value };
         }
         panic!(
-            "WASM emit fail-closed: array element output missing value_types / receiver element type in `{}` (ADR 0008)",
+            "WASM emit fail-closed: array element output missing value_types / receiver element type in `{}`",
             self.mir_fn.symbol
         );
     }

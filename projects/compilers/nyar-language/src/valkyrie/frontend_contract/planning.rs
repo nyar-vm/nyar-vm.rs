@@ -54,10 +54,10 @@ impl NyarPlanningContract for HirModule {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Transitional neutral plan for ArtifactPartition / fragment assembly.
+/// ArtifactPartition / 片段装配用的过渡中立 plan。
 ///
-/// ADR 0011 wants LinkedSemanticProgram as sole authority; until that wiring
-/// lands, seed assembly still needs these side tables on the plan.
+/// 目标是以 LinkedSemanticProgram 为唯一权威；在该接线落地前，
+/// seed 装配仍需要 plan 上的这些侧表。
 pub struct FrontendNeutralPlan {
     pub module_name: QualifiedName,
     pub program_facts: ProgramFacts,

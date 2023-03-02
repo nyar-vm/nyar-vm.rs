@@ -3,7 +3,7 @@
 
 pub mod assembly;
 pub(crate) mod backend_contract;
-/// One-way analysis / processing compile stream (ADR 0011).
+/// 单向分析 / 处理编译流。
 pub mod compile_pipeline;
 pub mod control_flow;
 pub(crate) mod cst_format;

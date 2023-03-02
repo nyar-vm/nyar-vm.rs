@@ -1167,7 +1167,7 @@ fn try_resolve_call(
         Err(_) => {
             // `Fine(x)` / `Fail(e)` / `Some(v)` 是 Call，不是 Construct 节点。
             // 泛型载荷局部量常无法精确匹配；仅在**唯一**时按简单名接受同元数
-            // 构造器（其次函数）（S-W2 / ADR 0009）。禁止用 max_by_key 在多个
+            // 构造器（其次函数）。禁止用 max_by_key 在多个
             // `new` / 同拼写候选中挑选——那会绑到无关所有者如 `TuiRuntime.new`。
             let fallback_candidates = candidates
                 .iter()
@@ -1212,7 +1212,7 @@ fn try_resolve_call(
     })
 }
 
-/// 将前端显示名映到内建 [`OperatorId`] 后做 primitive 合同分派（ADR 0013）。
+/// 将前端显示名映到内建 [`OperatorId`] 后做 primitive 合同分派。
 ///
 /// 迁移期仍接受 `infix ==` 显示字符串作为查找键；分派只比较 [`OperatorId`]。
 /// 诊断符号暂保留显示名；后续 HIR 节点应直接持有 id。
@@ -1724,7 +1724,7 @@ fn try_resolve_constructor(
         Ok(resolved) => resolved,
         Err(_) => {
             // 泛型模式载荷类型（`error: E`）常无法与构造器参数精确匹配；
-            // 仅在**唯一**时接受同元数的按名匹配（S-W2 / ADR 0009）。
+            // 仅在**唯一**时接受同元数的按名匹配。
             // 禁止在多个同拼写构造器中 first-wins。
             let fallback_candidates = candidates
                 .iter()

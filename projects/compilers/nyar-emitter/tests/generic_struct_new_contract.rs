@@ -1,4 +1,4 @@
-//! S-W3 / ADR 0009：泛型 `StructNew` 在同一 substitution 下通过 SMIR010。
+//! 泛型 `StructNew`：字段类型须在同一 substitution 下与布局声明对齐（SMIR010）。
 
 use std::{collections::BTreeMap, sync::Arc};
 

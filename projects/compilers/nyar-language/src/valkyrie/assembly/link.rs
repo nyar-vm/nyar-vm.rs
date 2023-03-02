@@ -88,11 +88,11 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
         return;
     }
 
-    // Supporting metadata per contributing dependency. Layout ids are module-local:
-    // reassign collisions and rewrite only that dep's linked function bodies
-    // (SMIR010: Option.tag FieldGet must not resolve to consumer FunctionAnalysis id).
-    // ADR 0011: Semantic MIR ops no longer carry layout_id; remap is still applied to
-    // the side-table plan and kept as a no-op pass over linked bodies for future use.
+    // 支撑元数据按贡献依赖划分。布局 id 是模块局部的：
+    // 重分配冲突后，只改写该依赖的已链接函数体
+    // （SMIR010：Option.tag FieldGet 不得解析到消费方 FunctionAnalysis id）。
+    // Semantic MIR 操作不再携带 layout_id；remap 仍作用于侧表 plan，
+    // 并对已链接函数体保留空操作遍历以备后用。
     for (dep_index, symbols) in &linked_by_dep {
         let dep = &dependency_mirs[*dep_index];
         let remap = merge_aggregate_layout_plan(&mut consumer.aggregate_layouts, &dep.aggregate_layouts);
@@ -119,7 +119,7 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
 }
 
 fn remap_function_layout_ids(_function: &mut MirFunction, _remap: &BTreeMap<LayoutId, LayoutId>) {
-    // ADR 0011: aggregate instructions no longer carry layout_id on Semantic MIR ops.
+    // 聚合指令不再在 Semantic MIR 操作上携带 layout_id。
 }
 
 fn simple_symbol_name(symbol: &str) -> &str {

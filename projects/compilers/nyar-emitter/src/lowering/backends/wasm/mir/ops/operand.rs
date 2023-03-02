@@ -1,4 +1,4 @@
-//! Operand stack-width checks against MIR `value_types` (ADR 0008).
+//! Operand stack-width checks against MIR `value_types`.
 //!
 //! Physical locals may validate an already-planned Representation; they must
 //! not invent language types when MIR metadata is missing.
@@ -12,7 +12,7 @@ impl<'a> WasmMirLowerer<'a> {
     pub(crate) fn require_value_type(&self, value: MirValueRef) -> &NyarType {
         self.mir_fn.value_types.get(&value).unwrap_or_else(|| {
             panic!(
-                "WASM emit fail-closed: missing value_types for %{} in `{}` (ADR 0008)",
+                "WASM emit fail-closed: missing value_types for %{} in `{}`",
                 value.0, self.mir_fn.symbol
             )
         })

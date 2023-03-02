@@ -30,7 +30,7 @@ pub fn mir_function_to_executable(function: &MirFunction) -> ExecutableFunction 
     let param_types = function.param_types.iter().map(concretize_type_lossy).collect();
     let value_types = function.value_types.iter().map(|(key, ty)| (convert_value_ref(*key), concretize_type_lossy(ty))).collect();
 
-    // ADR 0011: Semantic MirFunction no longer carries suspend/frame/case God metadata.
+    // Semantic MirFunction 不再携带 suspend/frame/case God 元数据。
     #[allow(deprecated)]
     let state_machine = None;
     let suspend_plan = None;
@@ -238,5 +238,5 @@ fn convert_block(block: &MirBlock) -> Block {
     }
 }
 
-// ADR 0011: suspend/frame/case/diagnostic God converters deleted with Semantic MIR slim.
-// mir_function_to_executable emits empty side tables; do not restore MirSuspendState / StateMachine here.
+// suspend/frame/case/diagnostic God 转换器已随 Semantic MIR 瘦身删除。
+// mir_function_to_executable 产出空侧表；不得在此恢复 MirSuspendState / StateMachine。

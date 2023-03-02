@@ -196,8 +196,8 @@ impl MirBuilder {
     }
 }
 
-// ADR 0010 purge: removed mint_receiver_call_evidence / receiver_uses_witness_dispatch /
-// generic_call_facts — those stuffed EvidenceId/GenericFunctionId onto LegacyCall.
+// 已清除：mint_receiver_call_evidence / receiver_uses_witness_dispatch /
+// generic_call_facts — 那些把 EvidenceId/GenericFunctionId 塞进 LegacyCall。
 
 pub(super) fn peel_generic_apply(callee: &HirExpr) -> (Vec<ValkyrieType>, &HirExpr) {
     match &callee.kind {
@@ -366,7 +366,7 @@ pub(super) fn qualify_instance_method_symbol(
             }
             else {
                 eprintln!(
-                    "[mir] unresolved receiver call; lowering `{}` as diagnostic static symbol (ADR 0008)",
+                    "[mir] unresolved receiver call; lowering `{}` as diagnostic static symbol",
                     method_name.as_str()
                 );
                 (NamePath::new(vec![method_name.clone()]), None)

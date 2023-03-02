@@ -1,4 +1,4 @@
-//! Split from former monolithic wasm mir lowerer (ADR 0008).
+//! 自旧单体 wasm mir lowerer 拆出。
 #![allow(deprecated)]
 
 #[allow(deprecated)]
@@ -37,7 +37,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: missing f64 operand producer in `{}`; refuse f64.const 0 (ADR 0008)",
+                        "WASM emit fail-closed: missing f64 operand producer in `{}`; refuse f64.const 0",
                         self.mir_fn.symbol
                     );
                 }
@@ -47,7 +47,7 @@ impl<'a> WasmMirLowerer<'a> {
                 MirConstant::Int(value) => self.emit_f64_const(*value as f64),
                 MirConstant::Bool(value) => self.emit_f64_const(if *value { 1.0 } else { 0.0 }),
                 MirConstant::Utf8(_) | MirConstant::Unit => panic!(
-                    "WASM emit fail-closed: Utf8/Unit cannot be f64 operand in `{}` (ADR 0008)",
+                    "WASM emit fail-closed: Utf8/Unit cannot be f64 operand in `{}`",
                     self.mir_fn.symbol
                 ),
                 MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
@@ -61,7 +61,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: unresolved Symbol `{}` as f64 operand in `{}` (ADR 0008)",
+                        "WASM emit fail-closed: unresolved Symbol `{}` as f64 operand in `{}`",
                         path, self.mir_fn.symbol
                     );
                 }
@@ -95,7 +95,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: missing i32 operand producer for %{} in `{}` (ADR 0008)",
+                        "WASM emit fail-closed: missing i32 operand producer for %{} in `{}`",
                         value.0, self.mir_fn.symbol
                     );
                 }
@@ -119,7 +119,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: unresolved Symbol `{}` as i32 operand in `{}` (ADR 0008)",
+                        "WASM emit fail-closed: unresolved Symbol `{}` as i32 operand in `{}`",
                         path, self.mir_fn.symbol
                     );
                 }
@@ -148,7 +148,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: missing producer local for MirValue {:?} in `{}`; refuse typed placeholder (ADR 0008)",
+                        "WASM emit fail-closed: missing producer local for MirValue {:?} in `{}`; refuse typed placeholder",
                         value, self.mir_fn.symbol
                     );
                 }
@@ -160,7 +160,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 else {
                     panic!(
-                        "WASM emit fail-closed: unresolved Symbol `{}` in `{}`; refuse ref.null placeholder (ADR 0008)",
+                        "WASM emit fail-closed: unresolved Symbol `{}` in `{}`; refuse ref.null placeholder",
                         path, self.mir_fn.symbol
                     );
                 }
@@ -168,13 +168,12 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    /// Removed from formal emit path: inventing 0/null for missing locals
-    /// is forbidden upward inference (ADR 0008). Kept only as documentation
-    /// of the old anti-pattern; callers must panic instead.
+    /// 已从正式 emit 路径移除：为缺失 local 发明 0/null
+    /// 属于禁止的向上推断。仅作旧反模式文档；调用方必须 panic。
     #[allow(dead_code)]
     pub(crate) fn emit_typed_placeholder_for_value(&mut self, value: &MirValueRef) {
         panic!(
-            "WASM emit fail-closed: emit_typed_placeholder_for_value called for {:?} in `{}` (ADR 0008)",
+            "WASM emit fail-closed: emit_typed_placeholder_for_value called for {:?} in `{}`",
             value, self.mir_fn.symbol
         );
     }
@@ -202,7 +201,7 @@ impl<'a> WasmMirLowerer<'a> {
             .map(|ty| wasm_param_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
             .unwrap_or_else(|| {
                 panic!(
-                    "WASM emit fail-closed: missing value_types for scalar slot %{} in `{}`; refuse I32 default (ADR 0008)",
+                    "WASM emit fail-closed: missing value_types for scalar slot %{} in `{}`; refuse I32 default",
                     output.0, self.mir_fn.symbol
                 )
             })
@@ -492,7 +491,7 @@ impl<'a> WasmMirLowerer<'a> {
         else if let Some(local) = self.value_locals.get(&output).copied() {
             if self.wasm_local_value_type(local) == WASM_GC_ANYREF || self.wasm_local_value_type(local) == WASM_GC_EXTERNREF {
                 panic!(
-                    "WASM emit fail-closed: assign_output_local type mismatch (scalar on stack, anyref local) for %{} in `{}` (ADR 0008)",
+                    "WASM emit fail-closed: assign_output_local type mismatch (scalar on stack, anyref local) for %{} in `{}`",
                     output.0, self.mir_fn.symbol
                 );
             }
@@ -517,7 +516,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(crate) fn emit_placeholder_for_output(&mut self, output: MirValueRef) {
         panic!(
-            "WASM emit fail-closed: emit_placeholder_for_output(%{}) in `{}`; refuse invent 0/ref.null (ADR 0008)",
+            "WASM emit fail-closed: emit_placeholder_for_output(%{}) in `{}`; refuse invent 0/ref.null",
             output.0, self.mir_fn.symbol
         );
     }
@@ -549,7 +548,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return wasm_param_value_type(self.ctx, ty, self.js_glue_utf8_as_anyref);
                 }
                 panic!(
-                    "WASM emit fail-closed: missing value_types for %{} in `{}`; refuse ANYREF default (ADR 0008)",
+                    "WASM emit fail-closed: missing value_types for %{} in `{}`; refuse ANYREF default",
                     vref.0, self.mir_fn.symbol
                 )
             }
@@ -563,7 +562,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Symbol(path) => {
                 self.var_locals.get(&path.to_string()).copied().map(|local| self.wasm_local_value_type(local)).unwrap_or_else(|| {
                     panic!(
-                        "WASM emit fail-closed: unresolved Symbol `{}` stack type in `{}`; refuse ANYREF default (ADR 0008)",
+                        "WASM emit fail-closed: unresolved Symbol `{}` stack type in `{}`; refuse ANYREF default",
                         path, self.mir_fn.symbol
                     )
                 })
@@ -598,7 +597,7 @@ impl<'a> WasmMirLowerer<'a> {
             return;
         }
         panic!(
-            "WASM emit fail-closed: operand coerce expected {expected:#x} got {actual:#x} in `{}`; refuse invent 0/null (ADR 0008)",
+            "WASM emit fail-closed: operand coerce expected {expected:#x} got {actual:#x} in `{}`; refuse invent 0/null",
             self.mir_fn.symbol
         );
     }

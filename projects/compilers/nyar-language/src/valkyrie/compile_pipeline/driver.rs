@@ -60,7 +60,7 @@ where
         Ok(ProcessingOutcome { program: program.clone(), representation })
     }
 
-    /// Run analysis then sparse representation planning (through ADR 0011 processing entry).
+    /// 先跑分析，再进入稀疏 representation planning。
     pub fn run_through_representation_plan(&self) -> StageResult<ProcessingOutcome> {
         let analysis = self.run_analysis()?;
         self.run_processing(&analysis.program)

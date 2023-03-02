@@ -1,4 +1,4 @@
-//! Split from former monolithic wasm mir lowerer (ADR 0008).
+//! 自旧单体 wasm mir lowerer 拆出。
 #![allow(deprecated)]
 
 #[allow(deprecated)]
@@ -38,7 +38,7 @@ impl<'a> WasmMirLowerer<'a> {
                     match value {
                         MirOperand::Symbol(path) if !self.var_locals.contains_key(&path.to_string()) => {
                             panic!(
-                                "WASM emit fail-closed: StoreVar unresolved Symbol `{}` in `{}`; refuse invent 0/null (ADR 0008)",
+                                "WASM emit fail-closed: StoreVar unresolved Symbol `{}` in `{}`; refuse invent 0/null",
                                 path, self.mir_fn.symbol
                             );
                         }
@@ -51,7 +51,7 @@ impl<'a> WasmMirLowerer<'a> {
                             }
                             else {
                                 panic!(
-                                    "WASM emit fail-closed: StoreVar Unit into non-anyref local `{name}` in `{}` (ADR 0008)",
+                                    "WASM emit fail-closed: StoreVar Unit into non-anyref local `{name}` in `{}`",
                                     self.mir_fn.symbol
                                 );
                             }
@@ -65,7 +65,7 @@ impl<'a> WasmMirLowerer<'a> {
                             let local_is_anyref = local_ty == WASM_GC_ANYREF || local_ty == WASM_GC_EXTERNREF;
                             if local_is_anyref && !value_is_reference {
                                 panic!(
-                                    "WASM emit fail-closed: StoreVar anyref local `{name}` got non-reference value in `{}` (ADR 0008)",
+                                    "WASM emit fail-closed: StoreVar anyref local `{name}` got non-reference value in `{}`",
                                     self.mir_fn.symbol
                                 );
                             }
@@ -493,28 +493,28 @@ impl<'a> WasmMirLowerer<'a> {
                             let Some(object_local) = self.operand_reference_local(object)
                             else {
                                 panic!(
-                                    "WASM emit fail-closed: FieldGet object is not a reference local in `{}` (ADR 0008)",
+                                    "WASM emit fail-closed: FieldGet object is not a reference local in `{}`",
                                     self.mir_fn.symbol
                                 );
                             };
                             let Some(layout_id) = layout_id
                             else {
                                 panic!(
-                                    "WASM emit fail-closed: FieldGet missing layout_id in `{}`; refuse invent null (ADR 0008)",
+                                    "WASM emit fail-closed: FieldGet missing layout_id in `{}`; refuse invent null",
                                     self.mir_fn.symbol
                                 );
                             };
                             let Some(layout) = self.ctx.layout_by_id(*layout_id)
                             else {
                                 panic!(
-                                    "WASM emit fail-closed: FieldGet unknown layout_id in `{}` (ADR 0008)",
+                                    "WASM emit fail-closed: FieldGet unknown layout_id in `{}`",
                                     self.mir_fn.symbol
                                 );
                             };
                             let Some(field_index) = layout.fields.iter().position(|item| item.name == *field)
                             else {
                                 panic!(
-                                    "WASM emit fail-closed: FieldGet unknown field `{field}` in `{}` (ADR 0008)",
+                                    "WASM emit fail-closed: FieldGet unknown field `{field}` in `{}`",
                                     self.mir_fn.symbol
                                 );
                             };
@@ -584,7 +584,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::Call { callee, arguments } => {
-                // ADR 0010: no intrinsic_opcode / dispatch / witness on Call.
+                // Call 不得携带 intrinsic_opcode / dispatch / witness。
             }
             MirInstructionKind::SumNew { sum_type, type_args, variant, payload_type, payload, .. } => {
             }
@@ -600,7 +600,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             other => {
                 panic!(
-                    "WASM emit fail-closed: unhandled Semantic MIR instruction in `{}`: {other:?}; refuse silent drop (ADR 0008)",
+                    "WASM emit fail-closed: unhandled Semantic MIR instruction in `{}`: {other:?}; refuse silent drop",
                     self.mir_fn.symbol
                 );
             }

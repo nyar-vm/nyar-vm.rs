@@ -276,10 +276,10 @@ impl<'a> ExecutableLoweringContext<'a> {
         }
     }
 
-    /// Resolve a typed intrinsic opcode for a call callee.
+    /// 解析调用 callee 的类型化 intrinsic opcode。
     ///
-    /// IntrinsicOpcode registries were removed from Semantic MIR (ADR 0010/0011).
-    /// Always returns `None`; backends must lower ArrayGet/Set/Length and Invoke.
+    /// IntrinsicOpcode 注册表已从 Semantic MIR 移除。
+    /// 恒返回 `None`；后端必须降低 ArrayGet/Set/Length 与 Invoke。
     pub fn resolve_intrinsic_opcode(&self, _callee: &crate::executable_provider::ExecutableOperand) -> Option<()> {
         None
     }

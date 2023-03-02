@@ -1,10 +1,10 @@
-//! Driver-side backend executable contracts (backend-private).
+//! 驱动侧后端可执行合同（backend-private）。
 //!
-//! **Rule**: backend lowering code must depend on driver-owned executable views and helpers,
-//! not on `nyar-language` MIR types.
+//! **规则**：后端 lowering 只依赖驱动拥有的可执行视图与辅助物，
+//! 不得依赖 `nyar-language` 的 MIR 类型。
 //!
-//! Dispatch / receiver enums below are **emitter-private** routing hints for BackendPrivatePlan.
-//! They must not be reintroduced onto `nyar_types::InstructionKind::Call` (ADR 0010).
+//! 下列 dispatch / receiver 枚举是 emitter 私有的 BackendPrivatePlan 路由提示，
+//! 不得重新挂回 [`nyar_types::InstructionKind::Call`]。
 
 pub use nyar_types::{
     ArrayInitialization, Block, BlockRef, CarrierTable, CaseArm, CaseChain, Constant, Continuation, Diagnostic, EffectKind, ExecutableFunction,
@@ -12,23 +12,23 @@ pub use nyar_types::{
     Value, ValueOrigin, ValueRef,
 };
 
-/// Backend-private call routing (not Semantic MIR authority).
+/// 后端私有的调用路由（不是 Semantic MIR 权威）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DispatchKind {
-    /// Direct / known callee.
+    /// 直接 / 已知 callee。
     Static,
-    /// Function-value / indirect call.
+    /// 函数值 / 间接调用。
     Indirect,
-    /// Witness / trait dispatch.
+    /// Witness / trait 分派。
     Witness,
 }
 
-/// Backend-private receiver ABI hint (not Semantic MIR authority).
+/// 后端私有的 receiver ABI 提示（不是 Semantic MIR 权威）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReceiverPassingKind {
-    /// Pass by value.
+    /// 按值传递。
     ByValue,
-    /// Pass by address / reference.
+    /// 按地址 / 引用传递。
     ByAddress,
 }
 

@@ -602,7 +602,7 @@ fn validate_function(function: &MirFunction) -> Result<(), ParseError> {
                     let _ = case_key;
                 }
             }
-            // ADR 0011: suspend_plan / frame_layouts no longer live on Semantic MirFunction.
+            // suspend_plan / frame_layouts 不再挂在 Semantic MirFunction 上。
             MirTerminator::YieldToRuntime { effect, payload, resume_state: _ } => {
                 validate_effect_payload(&function.symbol, block.label.as_str(), *effect, payload.is_some())?;
                 if let Some(payload_type) = payload.as_ref().and_then(|payload| infer_operand_static_type(function, payload)) {
@@ -804,7 +804,7 @@ fn infer_effect_resume_static_type(
 /// 校验阶段需要 carrier_type 来推断 `Raise` 路径的 resume 参数类型；该函数从函数的
 /// `suspend_points` 中匹配 `resume_target` 一致的挂起点并返回其 carrier_type。
 fn carrier_type_for_block(_function: &MirFunction, _resume_target: MirBlockRef) -> Option<&ValkyrieType> {
-    // ADR 0011: suspend_points no longer live on Semantic MirFunction.
+    // suspend_points 不再挂在 Semantic MirFunction 上。
     None
 }
 

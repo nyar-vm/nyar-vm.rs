@@ -1,4 +1,4 @@
-//! Split from former monolithic wasm mir lowerer (ADR 0008).
+//! 自旧单体 wasm mir lowerer 拆出。
 #![allow(deprecated)]
 
 #[allow(deprecated)]

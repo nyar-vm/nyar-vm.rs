@@ -1,2 +1,2 @@
-//! DELETED (ADR 0011) — suspend point analysis must not attach to Semantic MirFunction.
+//! 已删除 — suspend 点分析不得挂到 Semantic MirFunction。
 #![allow(dead_code)]

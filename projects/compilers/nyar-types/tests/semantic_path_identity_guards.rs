@@ -1,15 +1,14 @@
-//! S-W1 / ADR 0013：语义路径上的字符串分派不得继续增长。
+//! 语义路径上的字符串分派不得继续增长。
 //!
-//! 彻底清除属于 S-W2–S-W6。本门禁冻结一份**基线计数**，使新增的
-//! `as_str() == "` / `.ends_with("` 语义查找无法悄然合入。
-//! 仅在删除违规用法后下调基线（严禁上调）。
+//! 本门禁冻结一份**基线计数**：新增的 `as_str() == "` / `.ends_with("`
+//! 语义查找不得悄然合入。仅在删除违规用法后下调基线（严禁上调）。
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-/// 其 `src/` 必须收缩字符串身份分派的 crate（ADR 0013）。
+/// 必须收缩字符串身份分派的 crate 的 `src/` 根（相对本测试文件）。
 const SEMANTIC_SRC_ROOTS: &[&str] = &[
     "../nyar-language/src",
     "../nyar-emitter/src",
@@ -74,7 +73,7 @@ fn as_str_eq_dispatch_does_not_grow() {
     assert!(
         total <= AS_STR_EQ_BASELINE,
         "as_str() == \" count grew: {total} > baseline {AS_STR_EQ_BASELINE}. \
-         Delete string semantic dispatch (ADR 0013); top offenders: {:?}",
+         删除语义路径字符串分派后再合入；top offenders: {:?}",
         hits.iter().take(12).map(|(p, c)| (p.display().to_string(), *c)).collect::<Vec<_>>()
     );
 }
@@ -85,7 +84,7 @@ fn ends_with_symbol_heuristics_do_not_grow() {
     assert!(
         total <= ENDS_WITH_BASELINE,
         ".ends_with(\" count grew: {total} > baseline {ENDS_WITH_BASELINE}. \
-         Delete suffix fallbacks (ADR 0013); top offenders: {:?}",
+         删除路径后缀启发式后再合入；top offenders: {:?}",
         hits.iter().take(12).map(|(p, c)| (p.display().to_string(), *c)).collect::<Vec<_>>()
     );
 }

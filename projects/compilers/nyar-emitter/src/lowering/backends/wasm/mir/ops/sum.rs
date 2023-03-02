@@ -1,4 +1,4 @@
-//! Sum construction / payload projection / variant test from exact MIR contracts (ADR 0008).
+//! Sum construction / payload projection / variant test from exact MIR contracts.
 //!
 //! `SumNew` / `SumPayloadGet` / `SumVariantIs` carry `sum_type` + `type_args` + `variant`
 //! (`NominalInstanceKey`). This module maps that identity onto a registered
@@ -29,7 +29,7 @@ impl<'a> WasmMirLowerer<'a> {
         let Some(type_index) = self.gc_sum_type_indices.get(repr.as_str()).copied()
         else {
             panic!(
-                "WASM emit fail-closed: SumNew missing RepresentationId `{}` in `{}` (ADR 0008 / M3)",
+                "WASM emit fail-closed: SumNew missing RepresentationId `{}` in `{}`",
                 repr, self.mir_fn.symbol
             );
         };
@@ -41,7 +41,7 @@ impl<'a> WasmMirLowerer<'a> {
             .and_then(|s| s.variants.iter().find(|v| v.name == variant).map(|v| v.tag))
             .unwrap_or_else(|| {
                 panic!(
-                    "WASM emit fail-closed: SumNew unknown variant `{sum_type}::{variant}` in `{}` (ADR 0008)",
+                    "WASM emit fail-closed: SumNew unknown variant `{sum_type}::{variant}` in `{}`",
                     self.mir_fn.symbol
                 )
             });
@@ -76,7 +76,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_operand_as_unite_payload_contract(operand);
                 }
                 else {
-                    // Typed payload field: no anyref box invent (ADR 0008).
+                    // Typed payload field: no anyref box invent.
                     self.emit_operand_coerced(operand, payload_field);
                 }
             }
@@ -114,20 +114,20 @@ impl<'a> WasmMirLowerer<'a> {
         let Some(type_index) = self.gc_sum_type_indices.get(&repr).copied()
         else {
             panic!(
-                "WASM emit fail-closed: SumPayloadGet missing RepresentationId `{}` in `{}` (ADR 0008 / M3)",
+                "WASM emit fail-closed: SumPayloadGet missing RepresentationId `{}` in `{}`",
                 repr, self.mir_fn.symbol
             );
         };
         let Some(object_local) = self.operand_reference_local(object)
         else {
             panic!(
-                "WASM emit fail-closed: SumPayloadGet object is not a reference local in `{}` (ADR 0008)",
+                "WASM emit fail-closed: SumPayloadGet object is not a reference local in `{}`",
                 self.mir_fn.symbol
             );
         };
         if self.wasm_local_value_type(object_local) == VALTYPE_I32 {
             panic!(
-                "WASM emit fail-closed: SumPayloadGet object local is i32, not GC ref in `{}` (ADR 0008)",
+                "WASM emit fail-closed: SumPayloadGet object local is i32, not GC ref in `{}`",
                 self.mir_fn.symbol
             );
         }
@@ -171,7 +171,7 @@ impl<'a> WasmMirLowerer<'a> {
         let Some(type_index) = self.gc_sum_type_indices.get(&repr).copied()
         else {
             panic!(
-                "WASM emit fail-closed: SumVariantIs missing RepresentationId `{}` in `{}` (ADR 0008 / M3)",
+                "WASM emit fail-closed: SumVariantIs missing RepresentationId `{}` in `{}`",
                 repr, self.mir_fn.symbol
             );
         };
@@ -183,14 +183,14 @@ impl<'a> WasmMirLowerer<'a> {
             .and_then(|s| s.variants.iter().find(|v| v.name == variant).map(|v| v.tag))
             .unwrap_or_else(|| {
                 panic!(
-                    "WASM emit fail-closed: SumVariantIs unknown variant `{sum_type}::{variant}` in `{}` (ADR 0008)",
+                    "WASM emit fail-closed: SumVariantIs unknown variant `{sum_type}::{variant}` in `{}`",
                     self.mir_fn.symbol
                 )
             });
         let Some(object_local) = self.operand_reference_local(object)
         else {
             panic!(
-                "WASM emit fail-closed: SumVariantIs object is not a reference local in `{}` (ADR 0008)",
+                "WASM emit fail-closed: SumVariantIs object is not a reference local in `{}`",
                 self.mir_fn.symbol
             );
         };
@@ -226,7 +226,7 @@ impl<'a> WasmMirLowerer<'a> {
             return;
         }
         panic!(
-            "WASM emit fail-closed: unite payload has no Representation for stack type {actual:#x} in `{}` (ADR 0008)",
+            "WASM emit fail-closed: unite payload has no Representation for stack type {actual:#x} in `{}`",
             self.mir_fn.symbol
         );
     }

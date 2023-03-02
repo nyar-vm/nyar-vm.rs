@@ -1,7 +1,7 @@
-//! DELETED route — do not restore IntrinsicOpcode as Semantic MIR / Call authority (ADR 0010/0011).
+//! 已删除路由 — 不得把 IntrinsicOpcode 恢复为 Semantic MIR / Call 权威。
 //!
-//! Array/std ops lower via first-class InstructionKind (ArrayGet/Set/Length/…) or
-//! Invoke → std adaptor → BackendPrivatePlan. This module remains only so historical
-//! `use …::intrinsic_opcode` paths fail closed at the type layer.
+//! 数组 / std 操作经一等 InstructionKind（ArrayGet/Set/Length/…）或
+//! Invoke → std adaptor → BackendPrivatePlan 降低。本模块仅使历史
+//! `use …::intrinsic_opcode` 路径在类型层失败关闭。
 
 #![allow(dead_code)]

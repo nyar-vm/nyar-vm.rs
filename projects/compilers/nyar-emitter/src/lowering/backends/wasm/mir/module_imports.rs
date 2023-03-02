@@ -385,7 +385,7 @@ pub(super) fn wasm_function_type_result_byte(type_bytes: &[u8]) -> Option<u8> {
     type_bytes.get(offset).copied()
 }
 
-/// Short-name call target matching is forbidden (ADR 0008).
+/// Short-name call target matching is forbidden.
 #[allow(dead_code)]
 pub(super) fn unique_simple_name_match<'a, V>(_map: &'a BTreeMap<String, V>, _simple: &str) -> Option<&'a V> {
     None
@@ -405,7 +405,7 @@ pub(super) fn build_param_types_by_name(
             continue;
         };
         let params = wasm_param_types(&ctx, &mir_fn, gc_struct_type_indices, js_glue_utf8_as_anyref);
-        // Exact qualified name only — no simple-name alias keys (ADR 0008).
+        // Exact qualified name only — no simple-name alias keys.
         map.insert(operation.to_string(), params);
     }
     map

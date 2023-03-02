@@ -1,4 +1,4 @@
-//! Split from former monolithic wasm mir lowerer (ADR 0008).
+//! 自旧单体 wasm mir lowerer 拆出。
 #![allow(deprecated)]
 
 #[allow(deprecated)]
@@ -292,7 +292,7 @@ impl<'a> WasmMirLowerer<'a> {
                     if vt == WASM_GC_ANYREF || vt == WASM_GC_EXTERNREF { WASM_GC_ANYREF } else { vt }
                 }
                 None => panic!(
-                    "WASM emit fail-closed: unknown param local {} in `{}`; refuse I32 default (ADR 0008)",
+                    "WASM emit fail-closed: unknown param local {} in `{}`; refuse I32 default",
                     local_index, self.mir_fn.symbol
                 ),
             };
@@ -306,7 +306,7 @@ impl<'a> WasmMirLowerer<'a> {
             Some([VALTYPE_I64]) => VALTYPE_I64,
             Some([VALTYPE_F64]) => VALTYPE_F64,
             other => panic!(
-                "WASM emit fail-closed: unknown local valtype {:?} at {} in `{}`; refuse I32 default (ADR 0008)",
+                "WASM emit fail-closed: unknown local valtype {:?} at {} in `{}`; refuse I32 default",
                 other, local_index, self.mir_fn.symbol
             ),
         }
