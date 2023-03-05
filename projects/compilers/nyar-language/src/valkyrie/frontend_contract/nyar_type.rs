@@ -77,6 +77,10 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
         }
         ValkyrieType::Named(name) => Ok(concretize_primitive_named_alias(name.as_str()).unwrap_or_else(|| NyarType::Named(name.clone()))),
         ValkyrieType::Apply(base, args) => {
+            // 迁移残留：`Apply(Named("Array"), [T])` 与 `[T]` 同一平台身份。
+            if args.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Array") {
+                return Ok(NyarType::Array(Box::new(concretize_type(&args[0])?)));
+            }
             Ok(NyarType::Apply(Box::new(concretize_type(base)?), args.iter().map(concretize_type).collect::<Result<Vec<_>, _>>()?))
         }
         ValkyrieType::Function(func) => Ok(NyarType::Function(Box::new(NyarFunctionType {
@@ -131,7 +135,12 @@ pub fn concretize_type_lossy(ty: &ValkyrieType) -> NyarType {
                 // Nested failures (e.g. Apply with Auto arg): recurse lossy.
                 match other {
                     ValkyrieType::Apply(base, args) => {
-                        NyarType::Apply(Box::new(concretize_type_lossy(base)), args.iter().map(concretize_type_lossy).collect())
+                        if args.len() == 1 && matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == "Array") {
+                            NyarType::Array(Box::new(concretize_type_lossy(&args[0])))
+                        }
+                        else {
+                            NyarType::Apply(Box::new(concretize_type_lossy(base)), args.iter().map(concretize_type_lossy).collect())
+                        }
                     }
                     ValkyrieType::Function(func) => NyarType::Function(Box::new(NyarFunctionType {
                         params: func.params.iter().map(concretize_type_lossy).collect(),
@@ -185,6 +194,16 @@ mod tests {
     fn concretizes_scalars_and_arrays() {
         let ty = ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true }));
         assert_eq!(concretize_type(&ty).unwrap(), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
+    }
+
+    #[test]
+    fn concretizes_nominal_array_apply_like_bracket_sugar() {
+        let ty = ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))),
+            vec![ValkyrieType::Integer32 { signed: true }],
+        );
+        assert_eq!(concretize_type(&ty).unwrap(), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
+        assert_eq!(concretize_type_lossy(&ty), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
     }
 
     #[test]

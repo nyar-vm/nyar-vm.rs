@@ -391,6 +391,11 @@ fn lower_type_path(path: &AstTypePath) -> ValkyrieType {
             return expanded;
         }
     }
+    // 名义 `Array<T>` 与语法糖 `[T]` 共用 `ValkyrieType::Array`（语言数组身份）。
+    // 解析期完成名→结构化类型；后续不得再按 `"Array"` 字符串猜。
+    if last.as_str() == "Array" && arguments.len() == 1 {
+        return ValkyrieType::Array(Box::new(arguments.into_iter().next().expect("len checked")));
+    }
     if arguments.is_empty() { base } else { ValkyrieType::Apply(Box::new(base), arguments) }
 }
 
@@ -436,5 +441,30 @@ mod tests {
         assert_eq!(canonical_builtin_type("utf16"), Some(ValkyrieType::Utf16));
         assert_eq!(canonical_builtin_type("c_str"), Some(ValkyrieType::Named(Identifier::new("c_str"))));
         assert!(canonical_builtin_type("string").is_none());
+    }
+
+    #[test]
+    fn nominal_array_path_shares_identity_with_bracket_sugar() {
+        let sugar = TypeExpression::Array {
+            item: Box::new(path_type("i32")),
+            span: 0..0,
+        };
+        let nominal = TypeExpression::Path(TypePath {
+            name: std_data::text::valkyrie::ast::NamePath { parts: vec!["Array".to_string()], span: 0..5 },
+            arguments: vec![path_type("i32")],
+            span: 0..5,
+        });
+        let qualified = TypeExpression::Path(TypePath {
+            name: std_data::text::valkyrie::ast::NamePath {
+                parts: vec!["std".into(), "collection".into(), "Array".into()],
+                span: 0..20,
+            },
+            arguments: vec![path_type("i32")],
+            span: 0..20,
+        });
+        let expected = ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true }));
+        assert_eq!(lower_type_expression(&sugar), expected);
+        assert_eq!(lower_type_expression(&nominal), expected);
+        assert_eq!(lower_type_expression(&qualified), expected);
     }
 }
