@@ -290,17 +290,35 @@ impl<'a> NyarSingletonEmitter<'a> {
         self.module.code_bytes.extend_from_slice(&operand.to_le_bytes());
     }
 
-    fn emit_call_native(&mut self, name: &str, arg_count: i32) {
-        let name_index = self.intern_string(name);
-        self.module.code_bytes.push(NyarHeadCode::CallNative as u8);
-        self.module.code_bytes.extend_from_slice(&name_index.to_le_bytes());
+    fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
+        const HOST_IMPORT_MODULE: &str = "nyar.host";
+        let import_index = if let Some((index, _)) = self
+            .module
+            .imports
+            .iter()
+            .enumerate()
+            .find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
+        {
+            index as i32
+        }
+        else {
+            let index = self.module.imports.len() as i32;
+            self.module.imports.push(std_data::binary::nyar_ir::NyarImport {
+                kind: std_data::binary::nyar_ir::NyarImportKind::Function,
+                module_name: HOST_IMPORT_MODULE.to_string(),
+                symbol_name: symbol.to_string(),
+            });
+            index
+        };
+        self.module.code_bytes.push(NyarHeadCode::CallImport as u8);
+        self.module.code_bytes.extend_from_slice(&import_index.to_le_bytes());
         self.module.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 
     fn emit_alloc_record(&mut self, type_name: &str) {
         let type_index = self.intern_string(type_name);
         self.emit_imm1(NyarHeadCode::Const, type_index);
-        self.emit_call_native("alloc_record", 1);
+        self.emit_call_import("alloc_record", 1);
     }
 
     fn emit_store_global(&mut self, global_index: i32) {

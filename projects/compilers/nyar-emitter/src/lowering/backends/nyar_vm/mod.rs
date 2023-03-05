@@ -2,19 +2,25 @@ use std::collections::BTreeMap;
 
 use nyar::{ExternalCallArgument, ExternalCallEdge, InternalCallEdge, QualifiedName};
 use nyar_types::IntrinsicId;
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
+use std_data::binary::nyar_ir::{
+    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData, NYAR_VERSION,
+};
 
 use super::sanitize_symbol;
 use crate::FragmentSubmission;
 
+/// ?? builtin ???????
+const HOST_IMPORT_MODULE: &str = "nyar.host";
+
 struct BytecodeEmitter {
     constants: Vec<NyarConstant>,
     code_bytes: Vec<u8>,
+    imports: Vec<NyarImport>,
 }
 
 impl BytecodeEmitter {
     fn new() -> Self {
-        Self { constants: Vec::new(), code_bytes: Vec::new() }
+        Self { constants: Vec::new(), code_bytes: Vec::new(), imports: Vec::new() }
     }
 
     fn intern_string(&mut self, value: &str) -> i32 {
@@ -91,10 +97,26 @@ impl BytecodeEmitter {
         self.emit_plain(NyarHeadCode::Pop);
     }
 
-    fn emit_call_native(&mut self, name: &str, arg_count: i32) {
-        let name_index = self.intern_string(name);
-        self.code_bytes.push(NyarHeadCode::CallNative as u8);
-        self.code_bytes.extend_from_slice(&name_index.to_le_bytes());
+    fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
+        let import_index = if let Some((index, _)) = self
+            .imports
+            .iter()
+            .enumerate()
+            .find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
+        {
+            index as i32
+        }
+        else {
+            let index = self.imports.len() as i32;
+            self.imports.push(NyarImport {
+                kind: NyarImportKind::Function,
+                module_name: HOST_IMPORT_MODULE.to_string(),
+                symbol_name: symbol.to_string(),
+            });
+            index
+        };
+        self.code_bytes.push(NyarHeadCode::CallImport as u8);
+        self.code_bytes.extend_from_slice(&import_index.to_le_bytes());
         self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 
@@ -107,24 +129,24 @@ impl BytecodeEmitter {
 
 /// Lower a non-suspend fragment into a `.nyar` module payload.
 ///
-/// Dispatch 策略：当 fragment 携带 MIR 函数（`mir_functions` 非空）时，统一走
-/// `nyar_vm_mir` 的值语义 lowering 主路径——这是值聚合体（StructNew / TupleNew /
-/// FixedArrayNew / AggregateCopy / FieldGet / FieldSet）唯一可用的路径。旧
-/// edge-based lowering 仅作为无 MIR 时的回退保留，负责 nullable helper 与外部
-/// call edge 的字节码生成。
+/// Dispatch ???? fragment ?? MIR ???`mir_functions` ?????????
+/// `nyar_vm_mir` ?????lowering ????????????StructNew / TupleNew /
+/// FixedArrayNew / AggregateCopy / FieldGet / FieldSet??????????
+/// edge-based lowering ???? MIR ??????????nullable helper ????
+/// call edge ????????
 pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> NyarModuleData {
     if submission.suspend_runtime.is_some() && submission.exported_operations.is_empty() {
         return empty_module(submission);
     }
 
-    // 值语义主路径：MIR-backed lowering。值聚合体必须经此路径，否则会 fallthrough 到
-    // 旧 edge-based 路径的 `_ => {}` 而丢失指令。
+    // ???????MIR-backed lowering??????????????? fallthrough ??
+    // ??edge-based ????`_ => {}` ???????
     if submission.executable.as_ref().is_some_and(|exec| !exec.operations().is_empty()) {
         return super::nyar_vm_mir::lower_fragment_mir_to_nyar_module(submission);
     }
 
-    // 回退路径：edge-based lowering。仅处理 nullable helper / 外部 call edge，
-    // 不支持值聚合体指令。值语义代码必须先在前端生成 MIR 再进入此函数。
+    // ?????edge-based lowering???? nullable helper / ?? call edge??
+    // ????????????????????????MIR ????????
     let mut local_operations = submission.exported_operations.clone();
     for edge in &submission.internal_call_edges {
         if !local_operations.iter().any(|operation| operation == &edge.caller) {
@@ -209,11 +231,11 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
         .collect();
 
     let mut module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: format!("{}__{}", sanitize_symbol(&submission.module_name), sanitize_symbol(submission.fragment_id.as_str())),
         constants: emitter.constants,
         functions,
-        imports: Vec::new(),
+        imports: emitter.imports,
         exports,
         witness_entries: Vec::new(),
         code_bytes: emitter.code_bytes,
@@ -226,7 +248,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
 
 fn empty_module(submission: &FragmentSubmission) -> NyarModuleData {
     NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: format!("{}__{}", sanitize_symbol(&submission.module_name), sanitize_symbol(submission.fragment_id.as_str())),
         constants: Vec::new(),
         functions: Vec::new(),
@@ -272,7 +294,7 @@ fn lower_operation_bytecode(
     for edge in external_call_edges {
         let native_name = native_name_for_external_call(external_import_links.get(&edge.callee_symbol), &edge.arguments);
         let arg_count = edge.arguments.len() as i32;
-        emitter.emit_call_native(&native_name, arg_count);
+        emitter.emit_call_import(&native_name, arg_count);
     }
     for edge in internal_call_edges {
         if let Some(&index) = symbol_to_index.get(&edge.callee_symbol) {
@@ -347,6 +369,6 @@ fn emit_nullable_try_propagate_test(
     emitter.patch_jump_offset(panic_jump, emitter.code_bytes.len());
     let panic_message = emitter.intern_string("nullable value");
     emitter.emit_const_from_pool(panic_message);
-    emitter.emit_call_native("panic", 1);
+    emitter.emit_call_import("panic", 1);
     emitter.emit_return_void();
 }

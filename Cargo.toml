@@ -85,6 +85,10 @@ nyar-runner = { path = "projects/compilers/nyar-runner" }
 nyar-types = { path = "projects/compilers/nyar-types" }
 nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 
+# 本机与 valkyrie.rs 联调时覆盖 git `std-data`（包名仍为 vcc-data）。
+[patch."https://github.com/valkyrie-language/valkyrie.rs"]
+vcc-data = { path = "../valkyrie.rs/projects/compilers/vcc-data" }
+
 [profile.release]
 lto = false
 opt-level = "s"

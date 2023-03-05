@@ -12,7 +12,9 @@ use crate::{
 };
 use nyar::QualifiedName;
 use nyar_types::{AggregateLayout, IntrinsicId, builtin_operator};
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData};
+use std_data::binary::nyar_ir::{
+    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData, NYAR_VERSION,
+};
 
 use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
@@ -21,17 +23,28 @@ use super::{
 };
 use crate::FragmentSubmission;
 
-struct BytecodeEmitter {
+/// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）�?
+const HOST_IMPORT_MODULE: &str = "nyar.host";
+
+struct BytecodeEmitter<'a> {
     constants: Vec<NyarConstant>,
     code_bytes: Vec<u8>,
     pending_jumps: Vec<(usize, MirBlockRef)>,
     block_starts: BTreeMap<MirBlockRef, usize>,
     constants_base: i32,
+    imports: &'a mut Vec<NyarImport>,
 }
 
-impl BytecodeEmitter {
-    fn new(constants_base: i32) -> Self {
-        Self { constants: Vec::new(), code_bytes: Vec::new(), pending_jumps: Vec::new(), block_starts: BTreeMap::new(), constants_base }
+impl<'a> BytecodeEmitter<'a> {
+    fn new(constants_base: i32, imports: &'a mut Vec<NyarImport>) -> Self {
+        Self {
+            constants: Vec::new(),
+            code_bytes: Vec::new(),
+            pending_jumps: Vec::new(),
+            block_starts: BTreeMap::new(),
+            constants_base,
+            imports,
+        }
     }
 
     fn intern_string(&mut self, value: &str) -> i32 {
@@ -49,14 +62,33 @@ impl BytecodeEmitter {
         self.code_bytes.extend_from_slice(&operand.to_le_bytes());
     }
 
-    fn emit_call_native(&mut self, name: &str, arg_count: i32) {
-        let name_index = self.intern_string(name);
-        self.code_bytes.push(NyarHeadCode::CallNative as u8);
-        self.code_bytes.extend_from_slice(&name_index.to_le_bytes());
+    fn ensure_host_import(&mut self, symbol: &str) -> i32 {
+        if let Some((index, _)) = self
+            .imports
+            .iter()
+            .enumerate()
+            .find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
+        {
+            return index as i32;
+        }
+        let index = self.imports.len() as i32;
+        self.imports.push(NyarImport {
+            kind: NyarImportKind::Function,
+            module_name: HOST_IMPORT_MODULE.to_string(),
+            symbol_name: symbol.to_string(),
+        });
+        index
+    }
+
+    /// �?imports 表下标调用宿主能力；operand1 = import index，operand2 = argc�?
+    fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
+        let import_index = self.ensure_host_import(symbol);
+        self.code_bytes.push(NyarHeadCode::CallImport as u8);
+        self.code_bytes.extend_from_slice(&import_index.to_le_bytes());
         self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 
-    /// 经 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
+    /// �?[`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc�?
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
         self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
         self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
@@ -87,7 +119,7 @@ impl BytecodeEmitter {
 /// Lower MIR-backed fragment operations into a `.nyar` module.
 pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> NyarModuleData {
     let mut module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: format!("{}__{}", super::sanitize_symbol(&submission.module_name), super::sanitize_symbol(submission.fragment_id.as_str())),
         constants: Vec::new(),
         functions: Vec::new(),
@@ -112,7 +144,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             let export_name = nyar_mir_export_name(submission, &operation);
             let code_offset = module.code_bytes.len() as i32;
             let constants_base = module.constants.len() as i32;
-            let mut emitter = BytecodeEmitter::new(constants_base);
+            let mut emitter = BytecodeEmitter::new(constants_base, &mut module.imports);
 
             lower_mir_function_to_bytecode(submission, mir_fn, &function_index_by_name, &mut emitter);
 
@@ -275,8 +307,8 @@ impl<'a> NyarMirLowerer<'a> {
                     self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
                     self.emit_operand(source);
                     self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
-                    self.emitter.emit_call_native("record_get", 2);
-                    self.emitter.emit_call_native("record_set", 3);
+                    self.emitter.emit_call_import("record_get", 2);
+                    self.emitter.emit_call_import("record_set", 3);
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
@@ -284,7 +316,7 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emit_operand(object);
                 let field_index = self.emitter.intern_string(field);
                 self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
-                self.emitter.emit_call_native("record_get", 2);
+                self.emitter.emit_call_import("record_get", 2);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
@@ -294,7 +326,7 @@ impl<'a> NyarMirLowerer<'a> {
                 let field_index = self.emitter.intern_string(field);
                 self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
                 self.emit_operand(value);
-                self.emitter.emit_call_native("record_set", 3);
+                self.emitter.emit_call_import("record_set", 3);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::Call { callee, arguments } => {
@@ -370,14 +402,14 @@ impl<'a> NyarMirLowerer<'a> {
             MirTerminator::PerformEffect { effect, payload, resume_target } => {
                 match effect {
                     EffectKind::Yield | EffectKind::DelegateYield => {
-                        // `yield expr` / `yield from expr`：把 payload 压栈后发射 `Yield` opcode。
-                        // VM 弹出 yielded 值、捕获当前帧为 `CoroutineState`、挂起返回父帧；
-                        // 当父帧 `Resume` 时从 `Yield` 之后继续，跳到 resume_target。
+                        // `yield expr` / `yield from expr`：把 payload 压栈后发�?`Yield` opcode�?
+                        // VM 弹出 yielded 值、捕获当前帧�?`CoroutineState`、挂起返回父帧；
+                        // 当父�?`Resume` 时从 `Yield` 之后继续，跳�?resume_target�?
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                         }
                         else {
-                            // 无 payload 的 yield：压入 i32(0) 作为 unit 占位，满足 Yield 弹出语义。
+                            // �?payload �?yield：压�?i32(0) 作为 unit 占位，满�?Yield 弹出语义�?
                             self.emitter.emit_const_i32(0);
                         }
                         self.emitter.emit_plain(NyarHeadCode::Yield);
@@ -385,17 +417,17 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Raise => {
-                        // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
-                        // operand1 = 常量池索引（effect 的 method_name 字符串），
-                        // VM 用此字符串在 witness_entries 中查找 handler。
-                        // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶）
-                        // 或不 resume（控制流不返回此处）。
-                        // 若 `Effectful::Resume = !`，resume 路径不可达，VM 在尝试 resume 时报错。
+                        // `raise expr`：将 payload 压栈后发�?`PerformEffect` opcode�?
+                        // operand1 = 常量池索引（effect �?method_name 字符串）�?
+                        // VM 用此字符串在 witness_entries 中查�?handler�?
+                        // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶�?
+                        // 或不 resume（控制流不返回此处）�?
+                        // �?`Effectful::Resume = !`，resume 路径不可达，VM 在尝�?resume 时报错�?
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                         }
                         else {
-                            // 无 payload 的 raise：压入 i32(0) 作为 unit 占位。
+                            // �?payload �?raise：压�?i32(0) 作为 unit 占位�?
                             self.emitter.emit_const_i32(0);
                         }
                         let effect_name_index = self.emitter.intern_string("raise");
@@ -404,10 +436,10 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
+                        // future / async 相关 effect 暂未落地 VM opcode，保�?console_log 调试桩�?
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
-                            self.emitter.emit_call_native("console_log", 1);
+                            self.emitter.emit_call_import("console_log", 1);
                         }
                         self.emit_block_argument_copies(*resume_target, &[]);
                         self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
@@ -415,8 +447,8 @@ impl<'a> NyarMirLowerer<'a> {
                 }
             }
             MirTerminator::YieldToRuntime { effect, payload, resume_state: _ } => {
-                // 状态机重写后的 effect：与 `PerformEffect` 同构地发射对应 opcode。
-                // resume_state 由后续 `StateDispatch` 在恢复时读取（暂以 fallthrough 桩处理）。
+                // 状态机重写后的 effect：与 `PerformEffect` 同构地发射对�?opcode�?
+                // resume_state 由后�?`StateDispatch` 在恢复时读取（暂�?fallthrough 桩处理）�?
                 match effect {
                     EffectKind::Yield | EffectKind::DelegateYield => {
                         if let Some(payload) = payload {
@@ -438,17 +470,17 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_imm1(NyarHeadCode::PerformEffect, effect_name_index);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
+                        // future / async 相关 effect 暂未落地 VM opcode，保�?console_log 调试桩�?
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
-                            self.emitter.emit_call_native("console_log", 1);
+                            self.emitter.emit_call_import("console_log", 1);
                         }
                     }
                 }
             }
             MirTerminator::StateDispatch { state, cases, default_target } => {
-                // 状态机入口：读取 state local，与每个 case_key 比较，
-                // 匹配则跳到对应 target，否则跳到 default_target。
+                // 状态机入口：读�?state local，与每个 case_key 比较�?
+                // 匹配则跳到对�?target，否则跳�?default_target�?
                 for (case_key, target) in cases {
                     self.emit_operand(&MirOperand::Value(*state));
                     self.emitter.emit_const_i32(*case_key as i32);
@@ -458,15 +490,15 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
-                // 不可达：发射 Return 防止 fall-through 到下一函数。
+                // 不可达：发射 Return 防止 fall-through 到下一函数�?
                 self.emitter.emit_plain(NyarHeadCode::Return);
             }
         }
     }
 
-    /// 将语言运算符 `Call` 经 [`OperatorId`] 降为 Nyar VM 原语 / 宿主 native。
+    /// 将语言运算�?`Call` �?[`OperatorId`] 降为 Nyar VM 原语 / 宿主 native�?
     ///
-    /// 路径末段仅经 `lookup_display_name` 映到 id（迁移期）；分派只比较 [`OperatorId`]。
+    /// 路径末段仅经 `lookup_display_name` 映到 id（迁移期）；分派只比�?[`OperatorId`]�?
     fn try_emit_language_operator_call(
         &mut self,
         path: &nyar::NamePath,
@@ -483,7 +515,7 @@ impl<'a> NyarMirLowerer<'a> {
                 return false;
             }
             self.emit_operand(&arguments[0]);
-            self.emitter.emit_call_native("bool_not", 1);
+            self.emitter.emit_call_import("bool_not", 1);
         }
         else if op == builtin_operator::prefix_neg() {
             if arguments.len() != 1 {
@@ -492,7 +524,7 @@ impl<'a> NyarMirLowerer<'a> {
             match self.infer_numeric_width(&arguments[0]) {
                 NumericWidth::I64 => {
                     self.emit_operand(&arguments[0]);
-                    self.emitter.emit_call_native("i64_neg", 1);
+                    self.emitter.emit_call_import("i64_neg", 1);
                 }
                 NumericWidth::I32 => {
                     self.emitter.emit_const_i32(0);
@@ -539,7 +571,7 @@ impl<'a> NyarMirLowerer<'a> {
                     else {
                         "i64_ge"
                     };
-                    self.emitter.emit_call_native(native, 2);
+                    self.emitter.emit_call_import(native, 2);
                 }
                 NumericWidth::I32 => {
                     let opcode = if op == builtin_operator::infix_eq() {
@@ -592,11 +624,11 @@ impl<'a> NyarMirLowerer<'a> {
                     else {
                         "i64_rem"
                     };
-                    self.emitter.emit_call_native(native, 2);
+                    self.emitter.emit_call_import(native, 2);
                 }
                 NumericWidth::I32 => {
                     if op == builtin_operator::infix_div() || op == builtin_operator::infix_rem() {
-                        self.emitter.emit_call_native("i32_div", 2);
+                        self.emitter.emit_call_import("i32_div", 2);
                     }
                     else {
                         let opcode = if op == builtin_operator::infix_add() {
@@ -629,7 +661,7 @@ impl<'a> NyarMirLowerer<'a> {
             else {
                 "bool_or"
             };
-            self.emitter.emit_call_native(native, 2);
+            self.emitter.emit_call_import(native, 2);
         }
         else {
             return false;
@@ -681,7 +713,7 @@ impl<'a> NyarMirLowerer<'a> {
         self.function_index_by_name.iter().find(|(name, _)| name.ends_with(simple) || name.contains(simple)).map(|(_, index)| *index)
     }
 
-    /// 解析聚合体 layout，优先按 layout_id 查找，缺失时回退到 type_name。
+    /// 解析聚合�?layout，优先按 layout_id 查找，缺失时回退�?type_name�?
     fn resolve_layout(&self, layout_id: Option<nyar_types::LayoutId>, type_name: &str) -> Option<AggregateLayout> {
         layout_id.and_then(|id| self.ctx.layout_by_id(id).cloned()).or_else(|| self.ctx.layout_by_type_name(type_name).cloned())
     }
@@ -700,21 +732,21 @@ impl<'a> NyarMirLowerer<'a> {
         }
     }
 
-    /// 发射 `alloc_record(type_name)` 字节码序列，结果（新 Record 的对象 id）压栈。
+    /// 发射 `alloc_record(type_name)` 字节码序列，结果（新 Record 的对�?id）压栈�?
     fn emit_alloc_record(&mut self, type_name: &str) {
         let name_index = self.emitter.intern_string(type_name);
         self.emitter.emit_imm1(NyarHeadCode::Const, name_index);
-        self.emitter.emit_call_native("alloc_record", 1);
+        self.emitter.emit_call_import("alloc_record", 1);
     }
 
-    /// 发射 `record_set(object, field, value)` 字节码序列并弹出返回的 Null。
+    /// 发射 `record_set(object, field, value)` 字节码序列并弹出返回�?Null�?
     fn emit_record_set(&mut self, object: &MirOperand, field: &str, value: &MirOperand) {
         self.emit_operand(object);
         let field_index = self.emitter.intern_string(field);
         self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
         self.emit_operand(value);
-        self.emitter.emit_call_native("record_set", 3);
-        // record_set 返回 Null，必须弹出以保持栈平衡。
+        self.emitter.emit_call_import("record_set", 3);
+        // record_set 返回 Null，必须弹出以保持栈平衡�?
         self.emitter.emit_plain(NyarHeadCode::Pop);
     }
 
@@ -921,13 +953,13 @@ impl BytecodeEmitter {
     fn emit_const_i64(&mut self, value: i64) {
         if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
             self.emit_const_i32(value as i32);
-            self.emit_call_native("i32_to_i64", 1);
+            self.emit_call_import("i32_to_i64", 1);
             return;
         }
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(NyarConstant::Integer32(value as i32));
         self.emit_imm1(NyarHeadCode::Const, index);
-        self.emit_call_native("i32_to_i64", 1);
+        self.emit_call_import("i32_to_i64", 1);
         let _ = index;
     }
 

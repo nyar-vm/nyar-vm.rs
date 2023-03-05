@@ -170,7 +170,7 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::LoadArg
         | NyarHeadCode::LoadGlobal
         | NyarHeadCode::StoreGlobal
-        | NyarHeadCode::CallNative
+        | NyarHeadCode::CallImport
         | NyarHeadCode::CallIntrinsic => execute_control(instruction, frame, ctx),
         NyarHeadCode::I32Add
         | NyarHeadCode::I32Sub
@@ -184,14 +184,5 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::I32GtS
         | NyarHeadCode::I32GeS => execute_arithmetic(instruction, frame, ctx.stack),
         _ => execute_object(instruction, frame, ctx),
-    }
-}
-
-/// Resolves a native function name from the constant pool.
-pub(crate) fn native_name_from_constant(module: &LoadedModule, index: i32) -> Result<String, NyarRuntimeError> {
-    let constant = module.constant_at(index).ok_or(NyarRuntimeError::ConstantIndexOutOfRange(index))?;
-    match constant {
-        std_data::binary::nyar_ir::NyarConstant::String(name) => Ok(name.clone()),
-        other => Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: format!("{other:?}") }),
     }
 }

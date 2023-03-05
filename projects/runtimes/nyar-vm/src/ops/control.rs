@@ -5,7 +5,7 @@ use crate::{
     error::NyarRuntimeError,
     frame::Frame,
     module::LoadedModule,
-    ops::{ExecutionContext, StepResult, native_name_from_constant},
+    ops::{ExecutionContext, StepResult},
     value::Value,
 };
 use nyar_gc::ObjectPayload;
@@ -66,8 +66,12 @@ pub fn execute_control(
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::CallNative => {
-            let name = native_name_from_constant(ctx.module, instruction.operand1)?;
+        NyarHeadCode::CallImport => {
+            let import_index = instruction.operand1;
+            if import_index < 0 || (import_index as usize) >= ctx.module.imports.len() {
+                return Err(NyarRuntimeError::ImportIndexOutOfRange(import_index));
+            }
+            let name = ctx.module.imports[import_index as usize].symbol_name.clone();
             let arg_count = instruction.operand2.max(0) as usize;
             let mut args = Vec::with_capacity(arg_count);
             for _ in 0..arg_count {

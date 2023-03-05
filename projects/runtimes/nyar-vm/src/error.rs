@@ -17,6 +17,8 @@ pub enum NyarRuntimeError {
     GlobalIndexOutOfRange(i32),
     /// Constant pool index out of range.
     ConstantIndexOutOfRange(i32),
+    /// Import table index out of range.
+    ImportIndexOutOfRange(i32),
     /// Entry function not found.
     EntryNotFound(String),
     /// Native function not registered.
@@ -45,6 +47,7 @@ impl Display for NyarRuntimeError {
             Self::LocalIndexOutOfRange(idx) => write!(f, "local index out of range: {idx}"),
             Self::GlobalIndexOutOfRange(idx) => write!(f, "global index out of range: {idx}"),
             Self::ConstantIndexOutOfRange(idx) => write!(f, "constant index out of range: {idx}"),
+            Self::ImportIndexOutOfRange(idx) => write!(f, "import index out of range: {idx}"),
             Self::EntryNotFound(name) => write!(f, "entry function not found: {name}"),
             Self::NativeNotRegistered(name) => write!(f, "native function not registered: {name}"),
             Self::UnknownIntrinsic(index) => write!(f, "unknown intrinsic index: {index}"),
