@@ -2,31 +2,33 @@
 //!
 //! Lives here (not in `emitter` unit tests) so the driver crate stays free of
 //! `nyar-language` while still covering compiler → executable → VM bytecode.
+//!
+//! Requires `emitter/legacy-lanes`（nyar_vm bytecode 车道；见本仓 Cargo feature `nyar-vm-lane`）。
 
 use std::sync::Arc;
 
 use emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, testing};
 use nyar::Identifier;
 use nyar_language::{MirLowerer, ValkyrieCompiler, mir_function_to_executable, types::SourceID};
+use std_data::binary::nyar_ir::{NyarHeadCode, NyarModuleData};
 
-/// 检查 module 的常量池中是否存在指定的 native call 名称字符串。
-fn module_has_native_call(module: &std_data::binary::nyar_ir::NyarModuleData, name: &str) -> bool {
-    module.constants.iter().any(|constant| matches!(constant, std_data::binary::nyar_ir::NyarConstant::String(text) if text == name))
+/// 模块 imports 表是否声明指定宿主符号（`nyar.host`）。
+fn module_declares_host_import(module: &NyarModuleData, name: &str) -> bool {
+    module.imports.iter().any(|import| import.module_name == "nyar.host" && import.symbol_name == name)
 }
 
-/// 检查 module 的字节码中是否包含 CallNative 指令调用指定名称。
-fn module_invokes_native(module: &std_data::binary::nyar_ir::NyarModuleData, name: &str) -> bool {
-    let Some(name_index) =
-        module.constants.iter().position(|constant| matches!(constant, std_data::binary::nyar_ir::NyarConstant::String(text) if text == name))
+/// 字节码是否含 `CallImport`，且 operand1 为该宿主符号在 imports 表中的下标。
+fn module_invokes_import(module: &NyarModuleData, name: &str) -> bool {
+    let Some(import_index) =
+        module.imports.iter().position(|import| import.module_name == "nyar.host" && import.symbol_name == name)
     else {
         return false;
     };
-    let name_index = name_index as i32;
-    let needle = name_index.to_le_bytes();
-    module.code_bytes.windows(9).any(|window| window[0] == std_data::binary::nyar_ir::NyarHeadCode::CallNative as u8 && window[1..5] == needle)
+    let index_bytes = (import_index as i32).to_le_bytes();
+    module.code_bytes.windows(9).any(|window| window[0] == NyarHeadCode::CallImport as u8 && window[1..5] == index_bytes)
 }
 
-fn lower_main_from_source(source: &str, version_id: u32) -> std_data::binary::nyar_ir::NyarModuleData {
+fn lower_main_from_source(source: &str, version_id: u32) -> NyarModuleData {
     let hir = ValkyrieCompiler::new(SourceID { version_id }).compile_source(source).expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
     let plan = mir.aggregate_layouts.clone();
@@ -54,11 +56,11 @@ micro main() {
 "#,
         9700,
     );
-    // StructNew Value 路径必须经 alloc_record 构造新 Record，再逐字段 record_set 写入。
-    assert!(module_has_native_call(&module, "alloc_record"), "StructNew should emit alloc_record native call");
-    assert!(module_has_native_call(&module, "record_set"), "StructNew should emit record_set native call for each field");
-    assert!(module_invokes_native(&module, "alloc_record"), "bytecode should contain CallNative(alloc_record)");
-    assert!(module_invokes_native(&module, "record_set"), "bytecode should contain CallNative(record_set)");
+    // StructNew Value 路径经 CallImport(alloc_record) 构造 Record，再 CallImport(record_set) 写字段。
+    assert!(module_declares_host_import(&module, "alloc_record"), "StructNew should declare alloc_record import");
+    assert!(module_declares_host_import(&module, "record_set"), "StructNew should declare record_set import");
+    assert!(module_invokes_import(&module, "alloc_record"), "bytecode should contain CallImport(alloc_record)");
+    assert!(module_invokes_import(&module, "record_set"), "bytecode should contain CallImport(record_set)");
 }
 
 #[test]
@@ -78,11 +80,10 @@ micro main() {
 "#,
         9701,
     );
-    // AggregateCopy 必须分配新 Record 并逐字段复制：record_get 读源、record_set 写目标。
-    assert!(module_has_native_call(&module, "alloc_record"), "AggregateCopy should emit alloc_record for new record");
-    assert!(module_has_native_call(&module, "record_get"), "AggregateCopy should emit record_get to read source fields");
-    assert!(module_has_native_call(&module, "record_set"), "AggregateCopy should emit record_set to write dest fields");
-    assert!(module_invokes_native(&module, "record_get"), "bytecode should contain CallNative(record_get)");
+    assert!(module_declares_host_import(&module, "alloc_record"), "AggregateCopy should declare alloc_record");
+    assert!(module_declares_host_import(&module, "record_get"), "AggregateCopy should declare record_get");
+    assert!(module_declares_host_import(&module, "record_set"), "AggregateCopy should declare record_set");
+    assert!(module_invokes_import(&module, "record_get"), "bytecode should contain CallImport(record_get)");
 }
 
 #[test]
@@ -101,7 +102,6 @@ micro main() {
 "#,
         9702,
     );
-    // FieldGet Value 路径在 NyarVM 上复用 record_get native call。
-    assert!(module_has_native_call(&module, "record_get"), "FieldGet should emit record_get native call");
-    assert!(module_invokes_native(&module, "record_get"), "bytecode should contain CallNative(record_get)");
+    assert!(module_declares_host_import(&module, "record_get"), "FieldGet should declare record_get import");
+    assert!(module_invokes_import(&module, "record_get"), "bytecode should contain CallImport(record_get)");
 }

@@ -10,6 +10,8 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 [features]
 default = []
 serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
+# NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
+nyar-vm-lane = ["emitter/legacy-lanes"]
 
 [dependencies]
 # Layering: language → driver → std-data (language is the upper layer).
@@ -38,5 +40,11 @@ harness = true
 [[test]]
 name = "call_parameter_types_probe"
 path = "tests/call_parameter_types_probe.rs"
+harness = true
+
+[[test]]
+name = "nyar_vm_value_storage"
+path = "tests/nyar_vm_value_storage.rs"
+required-features = ["nyar-vm-lane"]
 harness = true
 
