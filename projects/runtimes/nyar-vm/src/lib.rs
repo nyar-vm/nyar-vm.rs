@@ -24,6 +24,7 @@ pub mod module;
 pub mod ops;
 pub mod stack;
 pub mod value;
+pub mod verify;
 pub mod vm;
 
 pub use error::NyarRuntimeError;

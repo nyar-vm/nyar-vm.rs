@@ -1,12 +1,12 @@
 //! End-to-end golden path: encode `.nyar` → load → execute.
 
 use nyar_vm::{NyarVm, Value};
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 #[test]
 fn golden_const_add_return_roundtrip() {
     let module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "golden".to_string(),
         constants: vec![NyarConstant::Integer32(0), NyarConstant::Integer32(1)],
         functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: 12 }],

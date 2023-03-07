@@ -5,7 +5,7 @@
 //! independent of any emitter-side lowering path.
 
 use nyar_vm::{NyarVm, Value};
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 /// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
 fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
@@ -48,7 +48,7 @@ fn build_yield_resume_module() -> NyarModuleData {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "coroutine_dispatch".to_string(),
         constants: vec![NyarConstant::Integer32(42), NyarConstant::Integer32(999)],
         functions: vec![
@@ -94,7 +94,7 @@ fn yield_without_call_returns_coroutine_at_top_level() {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "top_yield".to_string(),
         constants: vec![NyarConstant::Integer32(42)],
         functions: vec![NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
@@ -164,7 +164,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "coroutine_double_resume".to_string(),
         constants: vec![NyarConstant::Integer32(42), NyarConstant::Integer32(100), NyarConstant::Integer32(999)],
         functions: vec![

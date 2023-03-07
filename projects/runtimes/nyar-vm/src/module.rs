@@ -2,7 +2,7 @@ use std_data::binary::nyar_ir::{
     NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
 };
 
-use crate::{error::NyarRuntimeError, value::Value};
+use crate::{error::NyarRuntimeError, value::Value, verify::verify_module};
 
 /// Persistent module global slots for singleton state across multiple runs.
 #[derive(Debug, Clone)]
@@ -59,12 +59,13 @@ impl LoadedModule {
     /// Loads a module from `.nyar` bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, NyarRuntimeError> {
         let data = decode_module(bytes).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
-        Ok(Self::from_data(data))
+        Self::from_data(data)
     }
 
-    /// Wraps decoded module data.
-    pub fn from_data(data: NyarModuleData) -> Self {
-        Self {
+    /// Wraps decoded module data after import / bytecode verify.
+    pub fn from_data(data: NyarModuleData) -> Result<Self, NyarRuntimeError> {
+        verify_module(&data)?;
+        Ok(Self {
             version: data.version,
             name: data.name,
             constants: data.constants,
@@ -75,7 +76,7 @@ impl LoadedModule {
             code_bytes: data.code_bytes,
             globals: data.globals,
             init_function_indices: data.init_function_indices,
-        }
+        })
     }
 
     /// Returns a constant-pool entry by index.

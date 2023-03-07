@@ -8,7 +8,8 @@
 
 use nyar_vm::{NyarVm, Value};
 use std_data::binary::nyar_ir::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, encode_module,
+    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, NYAR_VERSION,
+    encode_module,
 };
 
 /// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
@@ -68,7 +69,7 @@ fn build_effect_handler_module() -> NyarModuleData {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "effect_dispatch".to_string(),
         constants: vec![
             NyarConstant::Integer32(123),              // effect payload
@@ -139,7 +140,7 @@ fn perform_effect_without_witness_entry_falls_back_to_suspend() {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "effect_no_witness".to_string(),
         constants: vec![NyarConstant::Integer32(42), NyarConstant::String("raise".to_string()), NyarConstant::Integer32(999)],
         functions: vec![NyarFunction { name: "raiser".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
@@ -193,7 +194,7 @@ fn handler_unwind_when_not_resuming_continuation() {
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let module = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "effect_unwind".to_string(),
         constants: vec![
             NyarConstant::Integer32(123),

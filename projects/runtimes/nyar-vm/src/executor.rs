@@ -395,7 +395,9 @@ fn native_i32_arg(args: &[Value], index: usize) -> Result<i32, NyarRuntimeError>
 
 #[cfg(test)]
 mod tests {
-    use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+    use std_data::binary::nyar_ir::{
+        NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module,
+    };
 
     use super::*;
     use crate::module::LoadedModule;
@@ -418,7 +420,7 @@ mod tests {
         ];
 
         let data = NyarModuleData {
-            version: 1,
+            version: NYAR_VERSION,
             name: "test".to_string(),
             constants: vec![NyarConstant::Integer32(0), NyarConstant::Integer32(1)],
             functions: vec![NyarFunction {

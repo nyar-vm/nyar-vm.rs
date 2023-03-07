@@ -1,11 +1,11 @@
 use nyar_vm::{jit::JitError, NyarVm};
 
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
+use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 fn empty_module() -> nyar_vm::module::LoadedModule {
     let code = vec![NyarHeadCode::Return as u8];
     let data = NyarModuleData {
-        version: 1,
+        version: NYAR_VERSION,
         name: "jit-hook".to_string(),
         constants: vec![NyarConstant::Integer32(0)],
         functions: vec![NyarFunction {
