@@ -4,11 +4,11 @@ use crate::{
     array_runtime::{array_get, array_len, array_set},
     error::NyarRuntimeError,
     frame::Frame,
+    host::{ResolvedImport, execute_host_op},
     module::LoadedModule,
     ops::{ExecutionContext, StepResult},
     value::Value,
 };
-use nyar_gc::ObjectPayload;
 
 /// Dispatches control-flow and variable instructions.
 pub fn execute_control(
@@ -68,10 +68,10 @@ pub fn execute_control(
         }
         NyarHeadCode::CallImport => {
             let import_index = instruction.operand1;
-            if import_index < 0 || (import_index as usize) >= ctx.module.imports.len() {
+            if import_index < 0 || (import_index as usize) >= ctx.module.resolved_imports.len() {
                 return Err(NyarRuntimeError::ImportIndexOutOfRange(import_index));
             }
-            let name = ctx.module.imports[import_index as usize].symbol_name.clone();
+            let resolved = ctx.module.resolved_imports[import_index as usize];
             let arg_count = instruction.operand2.max(0) as usize;
             let mut args = Vec::with_capacity(arg_count);
             for _ in 0..arg_count {
@@ -79,90 +79,14 @@ pub fn execute_control(
             }
             args.reverse();
 
-            let result = if name == "alloc_record" {
-                let type_name = match args.first() {
-                    Some(Value::String(name)) => name.clone(),
-                    Some(other) => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                    }
-                    None => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: "empty".to_string() });
-                    }
-                };
-                let object_id = ctx.heap.alloc(ObjectPayload::Record(vec![("__type__".to_string(), Value::String(type_name))]));
-                Value::Object(object_id)
-            }
-            else if name == "record_get" {
-                let field = match args.get(1) {
-                    Some(Value::String(name)) => name.as_str(),
-                    Some(other) => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                    }
-                    None => return Ok(StepResult::Continue),
-                };
-                let object_id = match args.first() {
-                    Some(Value::Object(id)) => *id,
-                    Some(Value::Null) => {
-                        ctx.stack.push(Value::Null);
-                        frame.ip += instruction.size as usize;
-                        return Ok(StepResult::Continue);
-                    }
-                    Some(other) => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: other.type_name().to_string() });
-                    }
-                    None => {
-                        ctx.stack.push(Value::Null);
-                        frame.ip += instruction.size as usize;
-                        return Ok(StepResult::Continue);
-                    }
-                };
-                let payload = ctx.heap.get(object_id).ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")))?;
-                match payload {
-                    ObjectPayload::Record(fields) => {
-                        fields.iter().find(|(key, _)| key == field).map(|(_, value)| value.clone()).unwrap_or(Value::Null)
-                    }
-                    // Coroutines expose no record fields; reads on them resolve to Null.
-                    ObjectPayload::Coroutine(_) => Value::Null,
+            let result = match resolved {
+                ResolvedImport::Host(op) => execute_host_op(op, &args, ctx.heap)?,
+                ResolvedImport::External => {
+                    // 迁移桥：非宿主 import 仍可按符号名查 `register_native`。
+                    let name = ctx.module.imports[import_index as usize].symbol_name.clone();
+                    let handler = ctx.natives.get(&name).copied().ok_or_else(|| NyarRuntimeError::NativeNotRegistered(name))?;
+                    handler(&args)?
                 }
-            }
-            else if name == "record_set" {
-                let value = args.get(2).cloned().unwrap_or(Value::Null);
-                let field = match args.get(1) {
-                    Some(Value::String(name)) => name.clone(),
-                    Some(other) => {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                    }
-                    None => {
-                        ctx.stack.push(Value::Null);
-                        frame.ip += instruction.size as usize;
-                        return Ok(StepResult::Continue);
-                    }
-                };
-                if let Some(Value::Object(object_id)) = args.first() {
-                    if let Some(ObjectPayload::Record(fields)) = ctx.heap.get_mut(*object_id) {
-                        if let Some(entry) = fields.iter_mut().find(|(key, _)| key == &field) {
-                            entry.1 = value;
-                        }
-                        else {
-                            fields.push((field, value));
-                        }
-                    }
-                }
-                Value::Null
-            }
-            else if name == "print" {
-                let text = args.iter().map(value_display).collect::<Vec<_>>().join("\t");
-                println!("{text}");
-                args.last().cloned().unwrap_or(Value::Null)
-            }
-            else if name == "string_concat" {
-                let left = args.first().map(value_display).unwrap_or_default();
-                let right = args.get(1).map(value_display).unwrap_or_default();
-                Value::String(format!("{left}{right}"))
-            }
-            else {
-                let handler = ctx.natives.get(&name).copied().ok_or_else(|| NyarRuntimeError::NativeNotRegistered(name.clone()))?;
-                handler(&args)?
             };
             ctx.stack.push(result);
             frame.ip += instruction.size as usize;
@@ -180,7 +104,6 @@ pub fn execute_control(
 
             let result = match intrinsic_index {
                 0 => {
-                    // ArrayPush — 产品路径尚未 lower；fail-closed。
                     return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic ArrayPush"));
                 }
                 1 => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
@@ -192,26 +115,21 @@ pub fn execute_control(
                     args.get(2).unwrap_or(&Value::Null),
                 )?,
                 4 => {
-                    // RefDeref — 产品路径尚未 lower；fail-closed。
                     return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic RefDeref"));
                 }
                 5 => {
-                    // IsNull
                     let value = args.first().unwrap_or(&Value::Null);
                     Value::Bool(matches!(value, Value::Null))
                 }
-                6 => {
-                    // UnwrapNull：空值 fail-closed，不静默造值。
-                    match args.first().unwrap_or(&Value::Null) {
-                        Value::Null => {
-                            return Err(NyarRuntimeError::TypeMismatch {
-                                expected: "non-null value",
-                                actual: "null".to_string(),
-                            });
-                        }
-                        other => other.clone(),
+                6 => match args.first().unwrap_or(&Value::Null) {
+                    Value::Null => {
+                        return Err(NyarRuntimeError::TypeMismatch {
+                            expected: "non-null value",
+                            actual: "null".to_string(),
+                        });
                     }
-                }
+                    other => other.clone(),
+                },
                 other => return Err(NyarRuntimeError::UnknownIntrinsic(other)),
             };
             ctx.stack.push(result);
@@ -219,27 +137,6 @@ pub fn execute_control(
             Ok(StepResult::Continue)
         }
         _ => Err(NyarRuntimeError::UnknownOpcode(instruction.code as u8)),
-    }
-}
-
-fn value_display(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(value) => value.to_string(),
-        Value::I32(value) => value.to_string(),
-        Value::I64(value) => value.to_string(),
-        Value::F32(value) => value.to_string(),
-        Value::F64(value) => {
-            if value.fract() == 0.0 && value.is_finite() {
-                format!("{:.0}", value)
-            }
-            else {
-                value.to_string()
-            }
-        }
-        Value::String(value) => value.clone(),
-        Value::Object(_) => "object".to_string(),
-        Value::Coroutine(_) => "coroutine".to_string(),
     }
 }
 

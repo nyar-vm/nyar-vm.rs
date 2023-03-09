@@ -2,43 +2,13 @@
 
 use std_data::binary::nyar_ir::{NyarHeadCode, NyarImport, NyarModuleData, NYAR_VERSION, decode_at};
 
-use crate::error::NyarRuntimeError;
-
-/// 与 emitter 约定的宿主导入模块名。
-pub const HOST_IMPORT_MODULE: &str = "nyar.host";
+use crate::{
+    error::NyarRuntimeError,
+    host::resolve_import,
+};
 
 /// 已删除的 `CallNative` 操作码（v1）；v2 模块不得再出现。
 const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
-
-/// 种子宿主符号白名单（`nyar.host`）。未知符号在加载期失败，禁止热路径再猜。
-fn is_known_host_symbol(symbol: &str) -> bool {
-    matches!(
-        symbol,
-        "alloc_record"
-            | "record_get"
-            | "record_set"
-            | "print"
-            | "string_concat"
-            | "console_log"
-            | "i32_to_i64"
-            | "i32_div"
-            | "i64_add"
-            | "i64_sub"
-            | "i64_mul"
-            | "i64_div"
-            | "i64_rem"
-            | "i64_neg"
-            | "i64_eq"
-            | "i64_ne"
-            | "i64_lt"
-            | "i64_le"
-            | "i64_gt"
-            | "i64_ge"
-            | "bool_not"
-            | "bool_and"
-            | "bool_or"
-    )
-}
 
 /// 校验已解码模块：版本、导入白名单、`CallImport` 下标、禁止旧 `CallNative`。
 pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
@@ -89,18 +59,15 @@ fn verify_import(index: usize, import: &NyarImport) -> Result<(), NyarRuntimeErr
     if import.module_name.is_empty() || import.symbol_name.is_empty() {
         return Err(NyarRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
     }
-    if import.module_name == HOST_IMPORT_MODULE && !is_known_host_symbol(&import.symbol_name) {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "unknown host import `{HOST_IMPORT_MODULE}::{}`",
-            import.symbol_name
-        )));
-    }
+    // 解析一次：未知 `nyar.host` 符号在此失败；结果在 `LoadedModule` 侧缓存。
+    let _ = resolve_import(import)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::HOST_IMPORT_MODULE;
     use std_data::binary::nyar_ir::{NyarImportKind, NyarModuleData};
 
     fn empty_module() -> NyarModuleData {

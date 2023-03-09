@@ -26,32 +26,16 @@ pub struct Executor {
 
 impl Executor {
     /// Creates a new executor with default natives.
+    ///
+    /// 内建 `nyar.host` 操作已迁到 [`crate::host::HostOp`]；此表仅服务非宿主
+    /// `ResolvedImport::External` 的 `register_native` 迁移桥。
     pub fn new() -> Self {
-        let mut natives: HashMap<String, NativeHandler> = HashMap::new();
-        natives.insert("console_log".to_string(), native_console_log as NativeHandler);
-        natives.insert("i32_to_i64".to_string(), native_i32_to_i64 as NativeHandler);
-        natives.insert("i64_add".to_string(), native_i64_add as NativeHandler);
-        natives.insert("i64_sub".to_string(), native_i64_sub as NativeHandler);
-        natives.insert("i64_mul".to_string(), native_i64_mul as NativeHandler);
-        natives.insert("i64_div".to_string(), native_i64_div as NativeHandler);
-        natives.insert("i64_rem".to_string(), native_i64_rem as NativeHandler);
-        natives.insert("i64_neg".to_string(), native_i64_neg as NativeHandler);
-        natives.insert("i64_eq".to_string(), native_i64_eq as NativeHandler);
-        natives.insert("i64_ne".to_string(), native_i64_ne as NativeHandler);
-        natives.insert("i64_lt".to_string(), native_i64_lt as NativeHandler);
-        natives.insert("i64_le".to_string(), native_i64_le as NativeHandler);
-        natives.insert("i64_gt".to_string(), native_i64_gt as NativeHandler);
-        natives.insert("i64_ge".to_string(), native_i64_ge as NativeHandler);
-        natives.insert("bool_not".to_string(), native_bool_not as NativeHandler);
-        natives.insert("bool_and".to_string(), native_bool_and as NativeHandler);
-        natives.insert("bool_or".to_string(), native_bool_or as NativeHandler);
-        natives.insert("i32_div".to_string(), native_i32_div as NativeHandler);
         Self {
             stack: ValueStack::new(),
             heap: ObjectHeap::new(),
             gc: GarbageCollector::new(),
             frames: Vec::new(),
-            natives,
+            natives: HashMap::new(),
             jit: Box::new(DisabledJit),
         }
     }
@@ -283,113 +267,6 @@ impl Debug for Executor {
             .field("natives", &self.natives.keys().collect::<Vec<_>>())
             .field("jit_enabled", &self.jit.enabled())
             .finish()
-    }
-}
-
-fn native_console_log(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    if let Some(value) = args.first() {
-        println!("{value}");
-    }
-    else {
-        println!();
-    }
-    Ok(Value::Null)
-}
-
-fn native_i32_to_i64(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    match args.first() {
-        Some(Value::I32(value)) => Ok(Value::I64(*value as i64)),
-        Some(Value::I64(value)) => Ok(Value::I64(*value)),
-        Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
-        None => Ok(Value::I64(0)),
-    }
-}
-
-fn native_i64_add(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::I64(native_i64_arg(args, 0)? + native_i64_arg(args, 1)?))
-}
-
-fn native_i64_sub(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::I64(native_i64_arg(args, 0)? - native_i64_arg(args, 1)?))
-}
-
-fn native_i64_mul(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::I64(native_i64_arg(args, 0)? * native_i64_arg(args, 1)?))
-}
-
-fn native_i64_div(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    let lhs = native_i64_arg(args, 0)?;
-    let rhs = native_i64_arg(args, 1)?;
-    Ok(Value::I64(if rhs == 0 { 0 } else { lhs / rhs }))
-}
-
-fn native_i64_rem(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    let lhs = native_i64_arg(args, 0)?;
-    let rhs = native_i64_arg(args, 1)?;
-    Ok(Value::I64(if rhs == 0 { 0 } else { lhs % rhs }))
-}
-
-fn native_i64_neg(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::I64(-native_i64_arg(args, 0)?))
-}
-
-fn native_i64_eq(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? == native_i64_arg(args, 1)?))
-}
-
-fn native_i64_ne(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? != native_i64_arg(args, 1)?))
-}
-
-fn native_i64_lt(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? < native_i64_arg(args, 1)?))
-}
-
-fn native_i64_le(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? <= native_i64_arg(args, 1)?))
-}
-
-fn native_i64_gt(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? > native_i64_arg(args, 1)?))
-}
-
-fn native_i64_ge(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(native_i64_arg(args, 0)? >= native_i64_arg(args, 1)?))
-}
-
-fn native_bool_not(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(!args.first().map(Value::to_bool).unwrap_or(false)))
-}
-
-fn native_bool_and(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) && args.get(1).map(Value::to_bool).unwrap_or(false)))
-}
-
-fn native_bool_or(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    Ok(Value::Bool(args.first().map(Value::to_bool).unwrap_or(false) || args.get(1).map(Value::to_bool).unwrap_or(false)))
-}
-
-fn native_i32_div(args: &[Value]) -> Result<Value, NyarRuntimeError> {
-    let lhs = native_i32_arg(args, 0)?;
-    let rhs = native_i32_arg(args, 1)?;
-    Ok(Value::I32(if rhs == 0 { 0 } else { lhs / rhs }))
-}
-
-fn native_i64_arg(args: &[Value], index: usize) -> Result<i64, NyarRuntimeError> {
-    match args.get(index) {
-        Some(Value::I64(value)) => Ok(*value),
-        Some(Value::I32(value)) => Ok(*value as i64),
-        Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i64", actual: other.type_name().to_string() }),
-        None => Ok(0),
-    }
-}
-
-fn native_i32_arg(args: &[Value], index: usize) -> Result<i32, NyarRuntimeError> {
-    match args.get(index) {
-        Some(Value::I32(value)) => Ok(*value),
-        Some(Value::I64(value)) => Ok(*value as i32),
-        Some(other) => Err(NyarRuntimeError::TypeMismatch { expected: "i32", actual: other.type_name().to_string() }),
-        None => Ok(0),
     }
 }
 

@@ -2,7 +2,12 @@ use std_data::binary::nyar_ir::{
     NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
 };
 
-use crate::{error::NyarRuntimeError, value::Value, verify::verify_module};
+use crate::{
+    error::NyarRuntimeError,
+    host::{ResolvedImport, resolve_import},
+    value::Value,
+    verify::verify_module,
+};
 
 /// Persistent module global slots for singleton state across multiple runs.
 #[derive(Debug, Clone)]
@@ -41,8 +46,10 @@ pub struct LoadedModule {
     pub constants: Vec<NyarConstant>,
     /// Function table.
     pub functions: Vec<NyarFunction>,
-    /// Import table.
+    /// Import table（诊断 / 外部绑定；热路径用 [`Self::resolved_imports`]）。
     pub imports: Vec<NyarImport>,
+    /// 加载期解析的导入槽（`CallImport` 只消费此表）。
+    pub resolved_imports: Vec<ResolvedImport>,
     /// Export table.
     pub exports: Vec<NyarExport>,
     /// Witness dispatch table.
@@ -65,12 +72,14 @@ impl LoadedModule {
     /// Wraps decoded module data after import / bytecode verify.
     pub fn from_data(data: NyarModuleData) -> Result<Self, NyarRuntimeError> {
         verify_module(&data)?;
+        let resolved_imports = data.imports.iter().map(resolve_import).collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             version: data.version,
             name: data.name,
             constants: data.constants,
             functions: data.functions,
             imports: data.imports,
+            resolved_imports,
             exports: data.exports,
             witness_entries: data.witness_entries,
             code_bytes: data.code_bytes,
