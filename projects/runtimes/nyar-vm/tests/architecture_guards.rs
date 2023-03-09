@@ -18,6 +18,10 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "HostScriptModule",
     "HostScriptBridge",
     "mod host_script",
+    // S-W5：禁止复活字符串宿主分派与旧 CallNative 枚举用法。
+    "register_native",
+    "NativeHandler",
+    "NyarHeadCode::CallNative",
 ];
 
 fn crate_src() -> PathBuf {
