@@ -263,4 +263,14 @@ mod tests {
         assert_eq!(parse_host_op("i64_add"), Some(HostOp::I64Add));
         assert!(parse_host_op("not_a_real_host_op").is_none());
     }
+
+    #[test]
+    fn resolves_non_host_as_external() {
+        let import = NyarImport {
+            kind: std_data::binary::nyar_ir::NyarImportKind::Function,
+            module_name: "guest.mod".into(),
+            symbol_name: "whatever".into(),
+        };
+        assert_eq!(resolve_import(&import).unwrap(), ResolvedImport::External);
+    }
 }

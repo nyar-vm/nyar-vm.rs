@@ -14,7 +14,7 @@ pub struct NyarVm {
 }
 
 impl NyarVm {
-    /// Creates a VM with built-in natives.
+    /// Creates a VM. Host imports dispatch via [`crate::host::HostOp`].
     pub fn new() -> Self {
         Self::default()
     }
@@ -49,11 +49,6 @@ impl NyarVm {
 
         let function_index = module.export_index(entry).ok_or_else(|| NyarRuntimeError::EntryNotFound(entry.to_string()))?;
         self.executor.run_function_frame(module, function_index, args, globals.slots_mut())
-    }
-
-    /// Registers a native handler on the underlying executor.
-    pub fn register_native(&mut self, name: impl Into<String>, handler: crate::ops::NativeHandler) {
-        self.executor.register_native(name, handler);
     }
 
     /// Whether the installed JIT backend is enabled.

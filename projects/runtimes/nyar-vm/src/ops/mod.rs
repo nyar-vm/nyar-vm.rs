@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
 
 use crate::{
@@ -75,12 +73,7 @@ pub struct ExecutionContext<'a> {
     pub stack: &'a mut ValueStack,
     /// Object heap.
     pub heap: &'a mut ObjectHeap,
-    /// Registered native handlers keyed by name.
-    pub natives: &'a HashMap<String, NativeHandler>,
 }
-
-/// Native function signature.
-pub type NativeHandler = for<'a> fn(&'a [Value]) -> Result<Value, NyarRuntimeError>;
 
 /// Dispatches one decoded instruction.
 pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, NyarRuntimeError> {

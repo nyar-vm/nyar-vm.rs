@@ -82,10 +82,9 @@ pub fn execute_control(
             let result = match resolved {
                 ResolvedImport::Host(op) => execute_host_op(op, &args, ctx.heap)?,
                 ResolvedImport::External => {
-                    // 迁移桥：非宿主 import 仍可按符号名查 `register_native`。
-                    let name = ctx.module.imports[import_index as usize].symbol_name.clone();
-                    let handler = ctx.natives.get(&name).copied().ok_or_else(|| NyarRuntimeError::NativeNotRegistered(name))?;
-                    handler(&args)?
+                    return Err(NyarRuntimeError::UnsupportedFeature(
+                        "non-host CallImport requires import-index binding; string register_native removed",
+                    ));
                 }
             };
             ctx.stack.push(result);

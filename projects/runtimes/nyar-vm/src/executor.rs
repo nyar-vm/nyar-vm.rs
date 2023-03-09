@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 
 use std_data::binary::nyar_ir::decode_at;
@@ -8,7 +7,7 @@ use crate::{
     frame::Frame,
     jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, compile_request},
     module::LoadedModule,
-    ops::{ExecutionContext, NativeHandler, StepResult, dispatch},
+    ops::{ExecutionContext, StepResult, dispatch},
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
@@ -20,22 +19,17 @@ pub struct Executor {
     heap: ObjectHeap,
     gc: GarbageCollector,
     frames: Vec<Frame>,
-    natives: HashMap<String, NativeHandler>,
     jit: Box<dyn JitCompiler>,
 }
 
 impl Executor {
-    /// Creates a new executor with default natives.
-    ///
-    /// 内建 `nyar.host` 操作已迁到 [`crate::host::HostOp`]；此表仅服务非宿主
-    /// `ResolvedImport::External` 的 `register_native` 迁移桥。
+    /// Creates a new executor. Host imports dispatch via [`crate::host::HostOp`].
     pub fn new() -> Self {
         Self {
             stack: ValueStack::new(),
             heap: ObjectHeap::new(),
             gc: GarbageCollector::new(),
             frames: Vec::new(),
-            natives: HashMap::new(),
             jit: Box::new(DisabledJit),
         }
     }
@@ -63,11 +57,6 @@ impl Executor {
     /// Replaces the JIT backend.
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.jit = jit;
-    }
-
-    /// Registers or replaces a native handler.
-    pub fn register_native(&mut self, name: impl Into<String>, handler: NativeHandler) {
-        self.natives.insert(name.into(), handler);
     }
 
     /// Borrows the object heap for inspection by callers (e.g. `NyarVm::heap`).
@@ -137,7 +126,7 @@ impl Executor {
                 return Err(NyarRuntimeError::UnknownOpcode(module.code_bytes.get(current.ip).copied().unwrap_or(0)));
             }
 
-            let mut ctx = ExecutionContext { module, globals, stack: &mut self.stack, heap: &mut self.heap, natives: &self.natives };
+            let mut ctx = ExecutionContext { module, globals, stack: &mut self.stack, heap: &mut self.heap };
 
             match dispatch(instruction, current, &mut ctx)? {
                 StepResult::Continue => {}
@@ -264,7 +253,6 @@ impl Debug for Executor {
             .field("heap", &self.heap)
             .field("gc", &self.gc)
             .field("frames", &self.frames)
-            .field("natives", &self.natives.keys().collect::<Vec<_>>())
             .field("jit_enabled", &self.jit.enabled())
             .finish()
     }
