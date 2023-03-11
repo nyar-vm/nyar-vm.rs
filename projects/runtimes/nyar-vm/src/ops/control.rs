@@ -83,7 +83,7 @@ pub fn execute_control(
                 ResolvedImport::Host(op) => execute_host_op(op, &args, ctx.heap)?,
                 ResolvedImport::External => {
                     return Err(NyarRuntimeError::UnsupportedFeature(
-                        "non-host CallImport requires import-index binding; string register_native removed",
+                        "non-host CallImport requires import-index binding; string host dispatch removed",
                     ));
                 }
             };
