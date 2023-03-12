@@ -25,6 +25,11 @@ fn trace_payload(payload: &ObjectPayload, heap: &ObjectHeap, marked: &mut [bool]
                 trace_value(value, heap, marked);
             }
         }
+        ObjectPayload::LayoutObject { slots, .. } => {
+            for value in slots {
+                trace_value(value, heap, marked);
+            }
+        }
         ObjectPayload::Coroutine(state) => {
             trace_value(&state.yielded_value, heap, marked);
             for value in &state.locals {
