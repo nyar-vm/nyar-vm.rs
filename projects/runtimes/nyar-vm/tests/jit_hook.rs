@@ -21,6 +21,7 @@ fn empty_module() -> nyar_vm::module::LoadedModule {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let bytes = encode_module(&data);
     NyarVm::new().load(&bytes).expect("load module")

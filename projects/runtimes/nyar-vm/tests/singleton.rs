@@ -65,6 +65,7 @@ fn eager_singleton_init_and_accessor_roundtrip() {
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
+        layouts: Vec::new(),
     };
 
     let bytes = encode_module(&module);
@@ -115,6 +116,7 @@ fn lazy_singleton_accessor_allocates_once() {
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "Counter__get_instance".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
+        layouts: Vec::new(),
     };
 
     let bytes = encode_module(&module);
@@ -240,6 +242,7 @@ fn singleton_field_read_write_roundtrip() {
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
+        layouts: Vec::new(),
     };
 
     let bytes = encode_module(&module);
@@ -349,6 +352,7 @@ fn lazy_singleton_field_write_persists_across_calls() {
         ],
         witness_entries: Vec::new(),
         code_bytes: code,
+        layouts: Vec::new(),
     };
 
     let bytes = encode_module(&module);

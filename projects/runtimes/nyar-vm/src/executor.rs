@@ -301,6 +301,7 @@ mod tests {
             code_bytes: code,
             globals: Vec::new(),
             init_function_indices: Vec::new(),
+            layouts: Vec::new(),
         };
 
         let bytes = encode_module(&data);

@@ -19,6 +19,10 @@ pub enum NyarRuntimeError {
     ConstantIndexOutOfRange(i32),
     /// Import table index out of range.
     ImportIndexOutOfRange(i32),
+    /// Layouts 表下标越界（`ObjectNew`）。
+    LayoutIndexOutOfRange(i32),
+    /// 字段槽越界（`FieldGet` / `FieldSet`）。
+    FieldSlotOutOfRange(i32),
     /// Entry function not found.
     EntryNotFound(String),
     /// `CallIntrinsic` 操作数不是已知 intrinsic 稠密下标。
@@ -46,6 +50,8 @@ impl Display for NyarRuntimeError {
             Self::GlobalIndexOutOfRange(idx) => write!(f, "global index out of range: {idx}"),
             Self::ConstantIndexOutOfRange(idx) => write!(f, "constant index out of range: {idx}"),
             Self::ImportIndexOutOfRange(idx) => write!(f, "import index out of range: {idx}"),
+            Self::LayoutIndexOutOfRange(idx) => write!(f, "layout index out of range: {idx}"),
+            Self::FieldSlotOutOfRange(idx) => write!(f, "field slot out of range: {idx}"),
             Self::EntryNotFound(name) => write!(f, "entry function not found: {name}"),
             Self::UnknownIntrinsic(index) => write!(f, "unknown intrinsic index: {index}"),
             Self::TypeMismatch { expected, actual } => {

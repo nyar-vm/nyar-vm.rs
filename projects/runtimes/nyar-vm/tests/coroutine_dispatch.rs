@@ -67,6 +67,7 @@ fn build_yield_resume_module() -> NyarModuleData {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     }
 }
 
@@ -104,6 +105,7 @@ fn yield_without_call_returns_coroutine_at_top_level() {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let bytes = encode_module(&module);
     let mut vm = NyarVm::new();
@@ -183,6 +185,7 @@ fn resuming_a_completed_coroutine_is_rejected() {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let bytes = encode_module(&module);
     let mut vm = NyarVm::new();

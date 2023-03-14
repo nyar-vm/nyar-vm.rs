@@ -112,6 +112,7 @@ fn build_effect_handler_module() -> NyarModuleData {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     }
 }
 
@@ -150,6 +151,7 @@ fn perform_effect_without_witness_entry_falls_back_to_suspend() {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let bytes = encode_module(&module);
     let mut vm = NyarVm::new();
@@ -238,6 +240,7 @@ fn handler_unwind_when_not_resuming_continuation() {
         code_bytes: code,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let bytes = encode_module(&module);
     let mut vm = NyarVm::new();

@@ -163,7 +163,7 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::LoadArg
         | NyarHeadCode::LoadGlobal
         | NyarHeadCode::StoreGlobal
-        | NyarHeadCode::CallImport
+        |         NyarHeadCode::CallImport
         | NyarHeadCode::CallIntrinsic => execute_control(instruction, frame, ctx),
         NyarHeadCode::I32Add
         | NyarHeadCode::I32Sub
@@ -176,6 +176,8 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::I32LeS
         | NyarHeadCode::I32GtS
         | NyarHeadCode::I32GeS => execute_arithmetic(instruction, frame, ctx.stack),
-        _ => execute_object(instruction, frame, ctx),
+        NyarHeadCode::ObjectNew | NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => {
+            execute_object(instruction, frame, ctx)
+        }
     }
 }

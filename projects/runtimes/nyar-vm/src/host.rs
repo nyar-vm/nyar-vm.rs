@@ -130,7 +130,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
                 ObjectPayload::Record(fields) => {
                     fields.iter().find(|(key, _)| key == field).map(|(_, value)| value.clone()).unwrap_or(Value::Null)
                 }
-                ObjectPayload::Coroutine(_) => Value::Null,
+                ObjectPayload::LayoutObject { .. } | ObjectPayload::Coroutine(_) => Value::Null,
             })
         }
         HostOp::RecordSet => {

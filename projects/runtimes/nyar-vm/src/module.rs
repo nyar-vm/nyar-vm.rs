@@ -1,5 +1,6 @@
 use std_data::binary::nyar_ir::{
-    NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
+    NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry,
+    decode_module,
 };
 
 use crate::{
@@ -60,6 +61,8 @@ pub struct LoadedModule {
     pub globals: Vec<NyarGlobal>,
     /// Eager init function indices.
     pub init_function_indices: Vec<i32>,
+    /// 稠密布局表（`ObjectNew` / 字段槽校验）。
+    pub layouts: Vec<NyarLayout>,
 }
 
 impl LoadedModule {
@@ -85,6 +88,7 @@ impl LoadedModule {
             code_bytes: data.code_bytes,
             globals: data.globals,
             init_function_indices: data.init_function_indices,
+            layouts: data.layouts,
         })
     }
 
