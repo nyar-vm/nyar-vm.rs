@@ -23,6 +23,7 @@ fn emits_minimal_module_bytes() {
         code_bytes: vec![0x30],
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let path = std::env::temp_dir().join(format!("nyar-backend-vm-{}.nyar", std::process::id()));
     emit_nyar_module(&module, &path).expect("emit");

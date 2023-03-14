@@ -18,7 +18,7 @@ use nyar_types::{AggregateLayout, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZE
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{FieldLayout, SINGLETON_UNLOAD_ACCESSOR};
 use std_data::binary::{
-    nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarModuleData},
+    nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData},
     pe::NativeImageBuilder,
 };
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
@@ -202,10 +202,12 @@ pub(crate) fn augment_nyar_module_with_singletons(
             function_index_by_name.get(&export_name).copied()
         });
 
+        let layout_index = ensure_singleton_nyar_layout(module, submission, plan);
+
         if !plan.is_lazy {
             let init_offset = module.code_bytes.len() as i32;
             let mut emitter = NyarSingletonEmitter::new(module);
-            emitter.emit_alloc_record(&plan.name);
+            emitter.emit_object_new(layout_index);
             if let Some(ctor_index) = constructor_index {
                 emitter.emit_plain(NyarHeadCode::Dup);
                 emitter.emit_call_function(ctor_index);
@@ -226,7 +228,7 @@ pub(crate) fn augment_nyar_module_with_singletons(
         let accessor_offset = module.code_bytes.len() as i32;
         let mut emitter = NyarSingletonEmitter::new(module);
         if plan.is_lazy {
-            emitter.emit_lazy_accessor(global_index, &plan.name, constructor_index);
+            emitter.emit_lazy_accessor(global_index, layout_index, constructor_index);
         }
         else {
             emitter.emit_load_global_return(global_index);
@@ -275,12 +277,6 @@ impl<'a> NyarSingletonEmitter<'a> {
         Self { module }
     }
 
-    fn intern_string(&mut self, value: &str) -> i32 {
-        let index = self.module.constants.len() as i32;
-        self.module.constants.push(NyarConstant::String(value.to_string()));
-        index
-    }
-
     fn emit_plain(&mut self, opcode: NyarHeadCode) {
         self.module.code_bytes.push(opcode as u8);
     }
@@ -290,35 +286,9 @@ impl<'a> NyarSingletonEmitter<'a> {
         self.module.code_bytes.extend_from_slice(&operand.to_le_bytes());
     }
 
-    fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
-        const HOST_IMPORT_MODULE: &str = "nyar.host";
-        let import_index = if let Some((index, _)) = self
-            .module
-            .imports
-            .iter()
-            .enumerate()
-            .find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
-        {
-            index as i32
-        }
-        else {
-            let index = self.module.imports.len() as i32;
-            self.module.imports.push(std_data::binary::nyar_ir::NyarImport {
-                kind: std_data::binary::nyar_ir::NyarImportKind::Function,
-                module_name: HOST_IMPORT_MODULE.to_string(),
-                symbol_name: symbol.to_string(),
-            });
-            index
-        };
-        self.module.code_bytes.push(NyarHeadCode::CallImport as u8);
-        self.module.code_bytes.extend_from_slice(&import_index.to_le_bytes());
-        self.module.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
-    }
-
-    fn emit_alloc_record(&mut self, type_name: &str) {
-        let type_index = self.intern_string(type_name);
-        self.emit_imm1(NyarHeadCode::Const, type_index);
-        self.emit_call_import("alloc_record", 1);
+    /// 按 layouts 表下标分配 singleton 实例（不再经字符串 `alloc_record`）。
+    fn emit_object_new(&mut self, layout_index: i32) {
+        self.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
     }
 
     fn emit_store_global(&mut self, global_index: i32) {
@@ -334,12 +304,12 @@ impl<'a> NyarSingletonEmitter<'a> {
         self.emit_plain(NyarHeadCode::Return);
     }
 
-    fn emit_lazy_accessor(&mut self, global_index: i32, type_name: &str, constructor_index: Option<i32>) {
+    fn emit_lazy_accessor(&mut self, global_index: i32, layout_index: i32, constructor_index: Option<i32>) {
         self.emit_imm1(NyarHeadCode::LoadGlobal, global_index);
         self.emit_plain(NyarHeadCode::Dup);
         let jump_pos = self.emit_jump_if_true_placeholder();
         self.emit_plain(NyarHeadCode::Pop);
-        self.emit_alloc_record(type_name);
+        self.emit_object_new(layout_index);
         if let Some(ctor_index) = constructor_index {
             self.emit_plain(NyarHeadCode::Dup);
             self.emit_call_function(ctor_index);
@@ -451,6 +421,14 @@ pub(crate) fn nyar_singleton_method_export_name(type_name: &str, method_name: &s
 
 fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
     submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
+}
+
+/// 为 singleton 分配写入 `layouts` section，返回供 `ObjectNew` 使用的下标。
+fn ensure_singleton_nyar_layout(module: &mut NyarModuleData, submission: &FragmentSubmission, plan: &SingletonInstancePlan) -> i32 {
+    let field_count = singleton_layout(submission, plan).map(|layout| layout.fields.len() as i32).unwrap_or(0);
+    let index = module.layouts.len() as i32;
+    module.layouts.push(NyarLayout { field_count });
+    index
 }
 
 /// 计算 singleton plan 对应的 JVM 内部类名（斜杠分隔），与 `build_jvm_singleton_class` 生成的 `internal_name` 一致。

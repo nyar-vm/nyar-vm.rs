@@ -9,7 +9,7 @@ use std_data::binary::nyar_ir::{
 use super::sanitize_symbol;
 use crate::FragmentSubmission;
 
-/// ?? builtin ???????
+/// 宿主 builtin 导入模块名。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
 struct BytecodeEmitter {
@@ -241,6 +241,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
         code_bytes: emitter.code_bytes,
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     super::singleton::augment_nyar_module_with_singletons(submission, &mut module, &std::collections::BTreeMap::new());
     module
@@ -258,6 +259,7 @@ fn empty_module(submission: &FragmentSubmission) -> NyarModuleData {
         code_bytes: Vec::new(),
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     }
 }
 

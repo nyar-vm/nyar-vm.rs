@@ -17,15 +17,9 @@ fn module_declares_host_import(module: &NyarModuleData, name: &str) -> bool {
     module.imports.iter().any(|import| import.module_name == "nyar.host" && import.symbol_name == name)
 }
 
-/// 字节码是否含 `CallImport`，且 operand1 为该宿主符号在 imports 表中的下标。
-fn module_invokes_import(module: &NyarModuleData, name: &str) -> bool {
-    let Some(import_index) =
-        module.imports.iter().position(|import| import.module_name == "nyar.host" && import.symbol_name == name)
-    else {
-        return false;
-    };
-    let index_bytes = (import_index as i32).to_le_bytes();
-    module.code_bytes.windows(9).any(|window| window[0] == NyarHeadCode::CallImport as u8 && window[1..5] == index_bytes)
+/// 字节码是否含给定单字节操作码。
+fn module_contains_opcode(module: &NyarModuleData, opcode: NyarHeadCode) -> bool {
+    module.code_bytes.contains(&(opcode as u8))
 }
 
 fn lower_main_from_source(source: &str, version_id: u32) -> NyarModuleData {
@@ -42,7 +36,7 @@ fn lower_main_from_source(source: &str, version_id: u32) -> NyarModuleData {
 }
 
 #[test]
-fn nyar_vm_struct_new_value_storage_lowers_to_record() {
+fn nyar_vm_struct_new_value_storage_lowers_to_object_new() {
     let module = lower_main_from_source(
         r#"
 structure Point {
@@ -56,15 +50,16 @@ micro main() {
 "#,
         9700,
     );
-    // StructNew Value 路径经 CallImport(alloc_record) 构造 Record，再 CallImport(record_set) 写字段。
-    assert!(module_declares_host_import(&module, "alloc_record"), "StructNew should declare alloc_record import");
-    assert!(module_declares_host_import(&module, "record_set"), "StructNew should declare record_set import");
-    assert!(module_invokes_import(&module, "alloc_record"), "bytecode should contain CallImport(alloc_record)");
-    assert!(module_invokes_import(&module, "record_set"), "bytecode should contain CallImport(record_set)");
+    // StructNew → ObjectNew(layout_id) + FieldSet(slot)；不再经字符串宿主 alloc_record。
+    assert!(!module.layouts.is_empty(), "StructNew should populate layouts section");
+    assert!(module_contains_opcode(&module, NyarHeadCode::ObjectNew), "bytecode should contain ObjectNew");
+    assert!(module_contains_opcode(&module, NyarHeadCode::FieldSet), "bytecode should contain FieldSet");
+    assert!(!module_declares_host_import(&module, "alloc_record"), "StructNew must not declare alloc_record");
+    assert!(!module_declares_host_import(&module, "record_set"), "StructNew must not declare record_set");
 }
 
 #[test]
-fn nyar_vm_aggregate_copy_lowers() {
+fn nyar_vm_aggregate_copy_lowers_to_field_ops() {
     let module = lower_main_from_source(
         r#"
 structure Point {
@@ -80,14 +75,17 @@ micro main() {
 "#,
         9701,
     );
-    assert!(module_declares_host_import(&module, "alloc_record"), "AggregateCopy should declare alloc_record");
-    assert!(module_declares_host_import(&module, "record_get"), "AggregateCopy should declare record_get");
-    assert!(module_declares_host_import(&module, "record_set"), "AggregateCopy should declare record_set");
-    assert!(module_invokes_import(&module, "record_get"), "bytecode should contain CallImport(record_get)");
+    assert!(!module.layouts.is_empty(), "AggregateCopy should populate layouts section");
+    assert!(module_contains_opcode(&module, NyarHeadCode::ObjectNew), "bytecode should contain ObjectNew");
+    assert!(module_contains_opcode(&module, NyarHeadCode::FieldGet), "bytecode should contain FieldGet");
+    assert!(module_contains_opcode(&module, NyarHeadCode::FieldSet), "bytecode should contain FieldSet");
+    assert!(!module_declares_host_import(&module, "alloc_record"), "AggregateCopy must not declare alloc_record");
+    assert!(!module_declares_host_import(&module, "record_get"), "AggregateCopy must not declare record_get");
+    assert!(!module_declares_host_import(&module, "record_set"), "AggregateCopy must not declare record_set");
 }
 
 #[test]
-fn nyar_vm_field_get_value_path_uses_record_get() {
+fn nyar_vm_field_get_value_path_uses_field_get() {
     let module = lower_main_from_source(
         r#"
 structure Point {
@@ -102,6 +100,6 @@ micro main() {
 "#,
         9702,
     );
-    assert!(module_declares_host_import(&module, "record_get"), "FieldGet should declare record_get import");
-    assert!(module_invokes_import(&module, "record_get"), "bytecode should contain CallImport(record_get)");
+    assert!(module_contains_opcode(&module, NyarHeadCode::FieldGet), "bytecode should contain FieldGet");
+    assert!(!module_declares_host_import(&module, "record_get"), "FieldGet must not declare record_get");
 }

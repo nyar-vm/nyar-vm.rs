@@ -84,6 +84,7 @@ fn emits_nyar_module_with_run_contract() {
         code_bytes: vec![0x10, 0x00, 0x00, 0x00, 0x30],
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
     let input = LoweredBackendInput::nyar_vm(NyarVmBackendInput {
         suspend_runtime: None,

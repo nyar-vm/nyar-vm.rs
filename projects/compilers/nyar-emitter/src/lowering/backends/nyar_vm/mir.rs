@@ -11,9 +11,10 @@ use crate::{
     },
 };
 use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, IntrinsicId, builtin_operator};
+use nyar_types::{AggregateLayout, IntrinsicId, LayoutId, builtin_operator};
 use std_data::binary::nyar_ir::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData, NYAR_VERSION,
+    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
+    NYAR_VERSION,
 };
 
 use super::{
@@ -23,7 +24,7 @@ use super::{
 };
 use crate::FragmentSubmission;
 
-/// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）�?
+/// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
 struct BytecodeEmitter<'a> {
@@ -80,7 +81,7 @@ impl<'a> BytecodeEmitter<'a> {
         index
     }
 
-    /// �?imports 表下标调用宿主能力；operand1 = import index，operand2 = argc�?
+    /// 按 imports 表下标调用宿主能力；operand1 = import index，operand2 = argc。
     fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
         let import_index = self.ensure_host_import(symbol);
         self.code_bytes.push(NyarHeadCode::CallImport as u8);
@@ -88,7 +89,7 @@ impl<'a> BytecodeEmitter<'a> {
         self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
     }
 
-    /// �?[`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc�?
+    /// 按 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
         self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
         self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
@@ -129,10 +130,12 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         code_bytes: Vec::new(),
         globals: Vec::new(),
         init_function_indices: Vec::new(),
+        layouts: Vec::new(),
     };
 
     let function_index_by_name =
         module.functions.iter().enumerate().map(|(index, function)| (function.name.clone(), index as i32)).collect::<BTreeMap<_, _>>();
+    let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
 
     if let Some(exec) = &submission.executable {
         for operation in exec.operations() {
@@ -146,7 +149,14 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             let constants_base = module.constants.len() as i32;
             let mut emitter = BytecodeEmitter::new(constants_base, &mut module.imports);
 
-            lower_mir_function_to_bytecode(submission, mir_fn, &function_index_by_name, &mut emitter);
+            lower_mir_function_to_bytecode(
+                submission,
+                mir_fn,
+                &function_index_by_name,
+                &mut emitter,
+                &mut module.layouts,
+                &mut layout_index_by_id,
+            );
 
             module.constants.extend(emitter.constants);
             module.code_bytes.extend_from_slice(&emitter.code_bytes);
@@ -190,13 +200,24 @@ fn lower_mir_function_to_bytecode(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
     function_index_by_name: &BTreeMap<String, i32>,
-    emitter: &mut BytecodeEmitter,
+    emitter: &mut BytecodeEmitter<'_>,
+    layouts: &mut Vec<NyarLayout>,
+    layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
 ) {
     let ctx = ExecutableLoweringContext::new(submission);
     let slots = ExecutableSlotPlan::plan_nyar(&ctx, mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
 
-    let mut lowerer = NyarMirLowerer { submission, ctx, mir_fn, slots, emitter, function_index_by_name };
+    let mut lowerer = NyarMirLowerer {
+        submission,
+        ctx,
+        mir_fn,
+        slots,
+        emitter,
+        function_index_by_name,
+        layouts,
+        layout_index_by_id,
+    };
     for block_id in block_order {
         lowerer.emitter.block_starts.insert(block_id, lowerer.emitter.code_bytes.len());
         if let Some(block) = mir_fn.blocks.get(block_id.0 as usize) {
@@ -206,16 +227,18 @@ fn lower_mir_function_to_bytecode(
     lowerer.emitter.patch_pending_jumps();
 }
 
-struct NyarMirLowerer<'a> {
+struct NyarMirLowerer<'a, 'e> {
     submission: &'a FragmentSubmission,
     ctx: ExecutableLoweringContext<'a>,
     mir_fn: &'a MirFunction,
     slots: ExecutableSlotPlan,
-    emitter: &'a mut BytecodeEmitter,
+    emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_name: &'a BTreeMap<String, i32>,
+    layouts: &'a mut Vec<NyarLayout>,
+    layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
 
-impl<'a> NyarMirLowerer<'a> {
+impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     fn emit_block(&mut self, block: &MirBlock) {
         let _ = block_label(block.id);
         for instruction in &block.instructions {
@@ -252,81 +275,87 @@ impl<'a> NyarMirLowerer<'a> {
                 }
             }
             MirInstructionKind::StructNew { type_name, fields } => {
-                self.emit_alloc_record(type_name);
+                // executable InstructionKind 不携带 layout_id；从 type_name / 字段数闭合 layouts。
+                let layout = self.resolve_layout(None, type_name);
+                let layout_index = match &layout {
+                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
+                    None => self.ensure_nyar_layout_count(fields.len() as i32),
+                };
+                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("StructNew must produce an output");
                 self.store_to_local(output);
-                let _ = self.resolve_layout(None, type_name);
                 let output_operand = MirOperand::Value(output);
-                for (field_name, value) in fields {
-                    self.emit_record_set(&output_operand, field_name, value);
+                for (index, (field_name, value)) in fields.iter().enumerate() {
+                    let slot = layout
+                        .as_ref()
+                        .and_then(|aggregate| aggregate.fields.iter().position(|entry| entry.name == *field_name))
+                        .unwrap_or(index) as i32;
+                    self.emit_field_set_slot(&output_operand, slot, value);
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             MirInstructionKind::TupleNew { fields } => {
                 let layout = self.resolve_layout(None, "__tuple");
-                let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("__tuple");
-                self.emit_alloc_record(type_name);
+                let layout_index = match &layout {
+                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
+                    None => self.ensure_nyar_layout_count(fields.len() as i32),
+                };
+                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("TupleNew must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in fields.iter().enumerate() {
-                    let owned = layout
-                        .as_ref()
-                        .and_then(|item| item.fields.get(index))
-                        .map(|item| item.name.clone())
-                        .unwrap_or_else(|| index.to_string());
-                    self.emit_record_set(&output_operand, &owned, value);
+                    self.emit_field_set_slot(&output_operand, index as i32, value);
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             MirInstructionKind::ArrayFromElements { elements, .. } => {
                 let layout = self.resolve_layout(None, "__fixedarray");
-                let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("__fixedarray");
-                self.emit_alloc_record(type_name);
+                let layout_index = match &layout {
+                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
+                    None => self.ensure_nyar_layout_count(elements.len() as i32),
+                };
+                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("ArrayFromElements must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in elements.iter().enumerate() {
-                    let owned = layout
-                        .as_ref()
-                        .and_then(|item| item.fields.get(index))
-                        .map(|item| item.name.clone())
-                        .unwrap_or_else(|| index.to_string());
-                    self.emit_record_set(&output_operand, &owned, value);
+                    self.emit_field_set_slot(&output_operand, index as i32, value);
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             MirInstructionKind::AggregateCopy { source, dest } => {
                 let layout = self.infer_layout_for_operand(source);
-                let type_name = layout.as_ref().map(|item| item.name.as_str()).unwrap_or("aggregate");
-                let fields = layout.as_ref().map(|item| item.fields.clone()).unwrap_or_default();
-                self.emit_alloc_record(type_name);
+                let field_count = layout.as_ref().map(|item| item.fields.len() as i32).unwrap_or(0);
+                let layout_index = match &layout {
+                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
+                    None => self.ensure_nyar_layout_count(field_count),
+                };
+                self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 if let MirOperand::Value(dest_value) = dest {
                     self.store_to_local(*dest_value);
                 }
-                for field in &fields {
-                    let field_index = self.emitter.intern_string(&field.name);
+                for slot in 0..field_count {
                     self.emit_operand(dest);
-                    self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
                     self.emit_operand(source);
-                    self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
-                    self.emitter.emit_call_import("record_get", 2);
-                    self.emitter.emit_call_import("record_set", 3);
+                    self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
+                    self.emitter.emit_imm1(NyarHeadCode::FieldSet, slot);
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
-            MirInstructionKind::FieldGet { object, field, .. } => {
+            MirInstructionKind::FieldGet { object, field } => {
+                let type_name = self.type_name_for_operand(object);
+                let slot = self.nyar_field_slot(None, &type_name, field);
                 self.emit_operand(object);
-                let field_index = self.emitter.intern_string(field);
-                self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
-                self.emitter.emit_call_import("record_get", 2);
+                self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::FieldSet { object, field, value, .. } => {
-                self.emit_operand(object);
-                let field_index = self.emitter.intern_string(field);
-                self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
-                self.emit_operand(value);
-                self.emitter.emit_call_import("record_set", 3);
+            MirInstructionKind::FieldSet { object, field, value } => {
+                let type_name = self.type_name_for_operand(object);
+                let slot = self.nyar_field_slot(None, &type_name, field);
+                self.emit_field_set_slot(object, slot, value);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::Call { callee, arguments } => {
@@ -402,14 +431,14 @@ impl<'a> NyarMirLowerer<'a> {
             MirTerminator::PerformEffect { effect, payload, resume_target } => {
                 match effect {
                     EffectKind::Yield | EffectKind::DelegateYield => {
-                        // `yield expr` / `yield from expr`：把 payload 压栈后发�?`Yield` opcode�?
-                        // VM 弹出 yielded 值、捕获当前帧�?`CoroutineState`、挂起返回父帧；
-                        // 当父�?`Resume` 时从 `Yield` 之后继续，跳�?resume_target�?
+                        // `yield expr` / `yield from expr`：把 payload 压栈后发射 `Yield` opcode。
+                        // VM 弹出 yielded 值、捕获当前帧为 `CoroutineState`、挂起返回父帧；
+                        // 当父帧 `Resume` 时从 `Yield` 之后继续，跳到 resume_target。
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                         }
                         else {
-                            // �?payload �?yield：压�?i32(0) 作为 unit 占位，满�?Yield 弹出语义�?
+                            // 无 payload 的 yield：压 i32(0) 作为 unit 占位后再发 Yield。
                             self.emitter.emit_const_i32(0);
                         }
                         self.emitter.emit_plain(NyarHeadCode::Yield);
@@ -417,17 +446,17 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Raise => {
-                        // `raise expr`：将 payload 压栈后发�?`PerformEffect` opcode�?
-                        // operand1 = 常量池索引（effect �?method_name 字符串）�?
-                        // VM 用此字符串在 witness_entries 中查�?handler�?
-                        // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶�?
-                        // 或不 resume（控制流不返回此处）�?
-                        // �?`Effectful::Resume = !`，resume 路径不可达，VM 在尝�?resume 时报错�?
+                        // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
+                        // operand1 = 常量池索引（effect 的 method_name 字符串）。
+                        // VM 用此字符串在 witness_entries 中查找 handler。
+                        // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶）；
+                        // 若未 resume 则按未处理效果传播。
+                        // 对 `Effectful::Resume = !`：resume 不可达时 VM 不必保留 resume 续体。
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                         }
                         else {
-                            // �?payload �?raise：压�?i32(0) 作为 unit 占位�?
+                            // 无 payload 的 raise：压 i32(0) 作为 unit 占位。
                             self.emitter.emit_const_i32(0);
                         }
                         let effect_name_index = self.emitter.intern_string("raise");
@@ -436,7 +465,7 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *resume_target);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保�?console_log 调试桩�?
+                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                             self.emitter.emit_call_import("console_log", 1);
@@ -447,8 +476,8 @@ impl<'a> NyarMirLowerer<'a> {
                 }
             }
             MirTerminator::YieldToRuntime { effect, payload, resume_state: _ } => {
-                // 状态机重写后的 effect：与 `PerformEffect` 同构地发射对�?opcode�?
-                // resume_state 由后�?`StateDispatch` 在恢复时读取（暂�?fallthrough 桩处理）�?
+                // 状态机重写后的 effect：与 `PerformEffect` 同构地发射对应 opcode。
+                // resume_state 由后续 `StateDispatch` 在恢复时读取（暂用 fallthrough 桩处理）。
                 match effect {
                     EffectKind::Yield | EffectKind::DelegateYield => {
                         if let Some(payload) = payload {
@@ -470,7 +499,7 @@ impl<'a> NyarMirLowerer<'a> {
                         self.emitter.emit_imm1(NyarHeadCode::PerformEffect, effect_name_index);
                     }
                     EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保�?console_log 调试桩�?
+                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
                         if let Some(payload) = payload {
                             self.emit_operand(payload);
                             self.emitter.emit_call_import("console_log", 1);
@@ -479,8 +508,8 @@ impl<'a> NyarMirLowerer<'a> {
                 }
             }
             MirTerminator::StateDispatch { state, cases, default_target } => {
-                // 状态机入口：读�?state local，与每个 case_key 比较�?
-                // 匹配则跳到对�?target，否则跳�?default_target�?
+                // 状态机入口：读取 state local，与每个 case_key 比较；
+                // 匹配则跳到对应 target，否则跳到 default_target。
                 for (case_key, target) in cases {
                     self.emit_operand(&MirOperand::Value(*state));
                     self.emitter.emit_const_i32(*case_key as i32);
@@ -490,15 +519,15 @@ impl<'a> NyarMirLowerer<'a> {
                 self.emitter.emit_jump_placeholder(NyarHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
-                // 不可达：发射 Return 防止 fall-through 到下一函数�?
+                // 不可达：发射 Return 防止 fall-through 到下一函数。
                 self.emitter.emit_plain(NyarHeadCode::Return);
             }
         }
     }
 
-    /// 将语言运算�?`Call` �?[`OperatorId`] 降为 Nyar VM 原语 / 宿主 native�?
+    /// 尝试把语言 `Call` 降为 [`OperatorId`] 对应的 Nyar VM 指令 / 宿主 import。
     ///
-    /// 路径末段仅经 `lookup_display_name` 映到 id（迁移期）；分派只比�?[`OperatorId`]�?
+    /// 先用 `lookup_display_name` 解析为 id，再按 [`OperatorId`] 发射，不按字符串猜语义。
     fn try_emit_language_operator_call(
         &mut self,
         path: &nyar::NamePath,
@@ -713,8 +742,8 @@ impl<'a> NyarMirLowerer<'a> {
         self.function_index_by_name.iter().find(|(name, _)| name.ends_with(simple) || name.contains(simple)).map(|(_, index)| *index)
     }
 
-    /// 解析聚合�?layout，优先按 layout_id 查找，缺失时回退�?type_name�?
-    fn resolve_layout(&self, layout_id: Option<nyar_types::LayoutId>, type_name: &str) -> Option<AggregateLayout> {
+    /// 解析聚合 layout：优先 layout_id，否则回退 type_name。
+    fn resolve_layout(&self, layout_id: Option<LayoutId>, type_name: &str) -> Option<AggregateLayout> {
         layout_id.and_then(|id| self.ctx.layout_by_id(id).cloned()).or_else(|| self.ctx.layout_by_type_name(type_name).cloned())
     }
 
@@ -732,22 +761,46 @@ impl<'a> NyarMirLowerer<'a> {
         }
     }
 
-    /// 发射 `alloc_record(type_name)` 字节码序列，结果（新 Record 的对�?id）压栈�?
-    fn emit_alloc_record(&mut self, type_name: &str) {
-        let name_index = self.emitter.intern_string(type_name);
-        self.emitter.emit_imm1(NyarHeadCode::Const, name_index);
-        self.emitter.emit_call_import("alloc_record", 1);
+    fn type_name_for_operand(&self, operand: &MirOperand) -> String {
+        match operand {
+            MirOperand::Value(value) => match self.mir_fn.value_types.get(value) {
+                Some(NyarType::Named(name)) => name.to_string(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
     }
 
-    /// 发射 `record_set(object, field, value)` 字节码序列并弹出返回�?Null�?
-    fn emit_record_set(&mut self, object: &MirOperand, field: &str, value: &MirOperand) {
+    /// 按布局解析字段槽，供 `FieldGet`/`FieldSet` 使用（与 JVM 槽位合同对齐）。
+    fn nyar_field_slot(&self, layout_id: Option<LayoutId>, type_name: &str, field: &str) -> i32 {
+        let Some(layout) = self.ctx.layout_for_named_field(layout_id, type_name, field)
+        else {
+            return 0;
+        };
+        layout.fields.iter().position(|entry| entry.name == field).unwrap_or(0) as i32
+    }
+
+    fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {
+        if let Some(index) = self.layout_index_by_id.get(&aggregate.id) {
+            return *index;
+        }
+        let index = self.layouts.len() as i32;
+        self.layouts.push(NyarLayout { field_count: aggregate.fields.len() as i32 });
+        self.layout_index_by_id.insert(aggregate.id, index);
+        index
+    }
+
+    fn ensure_nyar_layout_count(&mut self, field_count: i32) -> i32 {
+        let index = self.layouts.len() as i32;
+        self.layouts.push(NyarLayout { field_count });
+        index
+    }
+
+    /// `FieldSet` 栈效果为 `[obj, value] -> [obj]`；调用方随后 `Pop`。
+    fn emit_field_set_slot(&mut self, object: &MirOperand, field_slot: i32, value: &MirOperand) {
         self.emit_operand(object);
-        let field_index = self.emitter.intern_string(field);
-        self.emitter.emit_imm1(NyarHeadCode::Const, field_index);
         self.emit_operand(value);
-        self.emitter.emit_call_import("record_set", 3);
-        // record_set 返回 Null，必须弹出以保持栈平衡�?
-        self.emitter.emit_plain(NyarHeadCode::Pop);
+        self.emitter.emit_imm1(NyarHeadCode::FieldSet, field_slot);
     }
 
     fn emit_block_argument_copies(&mut self, target: MirBlockRef, arguments: &[MirOperand]) {
@@ -943,7 +996,7 @@ enum NumericWidth {
     I64,
 }
 
-impl BytecodeEmitter {
+impl BytecodeEmitter<'_> {
     fn emit_const_i32(&mut self, value: i32) {
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(NyarConstant::Integer32(value));
