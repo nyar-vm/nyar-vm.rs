@@ -1,7 +1,7 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
 use crate::error::NyarRuntimeError;
-use nyar_gc::{ObjectHeap, ObjectPayload};
+use nyar_gc::ObjectHeap;
 use std_data::binary::nyar_ir::NyarImport;
 
 use crate::value::Value;
@@ -10,12 +10,11 @@ use crate::value::Value;
 pub const HOST_IMPORT_MODULE: &str = "nyar.host";
 
 /// `nyar.host` 上已冻结的宿主操作（稠密枚举，非字符串合同）。
+///
+/// 结构分配与字段访问不在此枚举：由 `ObjectNew` / `FieldGet` / `FieldSet` 闭合。
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOp {
-    AllocRecord,
-    RecordGet,
-    RecordSet,
     Print,
     StringConcat,
     ConsoleLog,
@@ -66,9 +65,6 @@ pub fn resolve_import(import: &NyarImport) -> Result<ResolvedImport, NyarRuntime
 /// 加载期符号 → [`HostOp`]；未知符号返回 `None`。
 pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
     Some(match symbol {
-        "alloc_record" => HostOp::AllocRecord,
-        "record_get" => HostOp::RecordGet,
-        "record_set" => HostOp::RecordSet,
         "print" => HostOp::Print,
         "string_concat" => HostOp::StringConcat,
         "console_log" => HostOp::ConsoleLog,
@@ -94,66 +90,8 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
 }
 
 /// 执行已解析的宿主操作（热路径无符号字符串）。
-pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, NyarRuntimeError> {
+pub fn execute_host_op(op: HostOp, args: &[Value], _heap: &mut ObjectHeap) -> Result<Value, NyarRuntimeError> {
     match op {
-        HostOp::AllocRecord => {
-            let type_name = match args.first() {
-                Some(Value::String(name)) => name.clone(),
-                Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                }
-                None => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: "empty".to_string() });
-                }
-            };
-            let object_id = heap.alloc(ObjectPayload::Record(vec![("__type__".to_string(), Value::String(type_name))]));
-            Ok(Value::Object(object_id))
-        }
-        HostOp::RecordGet => {
-            let field = match args.get(1) {
-                Some(Value::String(name)) => name.as_str(),
-                Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                }
-                None => return Ok(Value::Null),
-            };
-            let object_id = match args.first() {
-                Some(Value::Object(id)) => *id,
-                Some(Value::Null) => return Ok(Value::Null),
-                Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: other.type_name().to_string() });
-                }
-                None => return Ok(Value::Null),
-            };
-            let payload = heap.get(object_id).ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")))?;
-            Ok(match payload {
-                ObjectPayload::Record(fields) => {
-                    fields.iter().find(|(key, _)| key == field).map(|(_, value)| value.clone()).unwrap_or(Value::Null)
-                }
-                ObjectPayload::LayoutObject { .. } | ObjectPayload::Coroutine(_) => Value::Null,
-            })
-        }
-        HostOp::RecordSet => {
-            let value = args.get(2).cloned().unwrap_or(Value::Null);
-            let field = match args.get(1) {
-                Some(Value::String(name)) => name.clone(),
-                Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch { expected: "string", actual: other.type_name().to_string() });
-                }
-                None => return Ok(Value::Null),
-            };
-            if let Some(Value::Object(object_id)) = args.first() {
-                if let Some(ObjectPayload::Record(fields)) = heap.get_mut(*object_id) {
-                    if let Some(entry) = fields.iter_mut().find(|(key, _)| key == &field) {
-                        entry.1 = value;
-                    }
-                    else {
-                        fields.push((field, value));
-                    }
-                }
-            }
-            Ok(Value::Null)
-        }
         HostOp::Print => {
             let text = args.iter().map(value_display).collect::<Vec<_>>().join("\t");
             println!("{text}");
@@ -259,7 +197,8 @@ mod tests {
 
     #[test]
     fn parses_all_seed_host_ops() {
-        assert_eq!(parse_host_op("alloc_record"), Some(HostOp::AllocRecord));
+        assert!(parse_host_op("alloc_record").is_none(), "struct ops must not revive string host bridge");
+        assert_eq!(parse_host_op("print"), Some(HostOp::Print));
         assert_eq!(parse_host_op("i64_add"), Some(HostOp::I64Add));
         assert!(parse_host_op("not_a_real_host_op").is_none());
     }

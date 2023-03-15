@@ -165,7 +165,7 @@ mod tests {
         module.imports.push(NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
-            symbol_name: "alloc_record".into(),
+            symbol_name: "print".into(),
         });
         let mut code = Vec::new();
         code.push(NyarHeadCode::CallImport as u8);
