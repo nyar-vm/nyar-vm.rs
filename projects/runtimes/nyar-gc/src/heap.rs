@@ -3,8 +3,6 @@ use crate::value::{CoroutineState, ObjectId, Value};
 /// Object payload stored in the heap.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjectPayload {
-    /// Generic key/value object（宿主遗留桥；结构指令热路径不用字段名）。
-    Record(Vec<(String, Value)>),
     /// 稠密布局对象：槽位由 layout_id + field_slot 寻址，不含字段名。
     LayoutObject {
         /// 模块 layouts 表下标。

@@ -119,10 +119,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_record_payload_for_array_intrinsics() {
-        let mut heap = ObjectHeap::new();
-        let record = Value::Object(heap.alloc(ObjectPayload::Record(vec![("0".to_string(), Value::I32(1))])));
-        let err = array_len(&heap, &record).expect_err("record must fail");
+    fn rejects_non_object_for_array_intrinsics() {
+        let heap = ObjectHeap::new();
+        let err = array_len(&heap, &Value::I32(1)).expect_err("non-object must fail");
         assert!(matches!(err, NyarRuntimeError::TypeMismatch { .. }));
     }
 }

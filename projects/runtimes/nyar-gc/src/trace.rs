@@ -20,11 +20,6 @@ fn trace_object(id: ObjectId, heap: &ObjectHeap, marked: &mut [bool]) {
 
 fn trace_payload(payload: &ObjectPayload, heap: &ObjectHeap, marked: &mut [bool]) {
     match payload {
-        ObjectPayload::Record(fields) => {
-            for (_, value) in fields {
-                trace_value(value, heap, marked);
-            }
-        }
         ObjectPayload::LayoutObject { slots, .. } => {
             for value in slots {
                 trace_value(value, heap, marked);
