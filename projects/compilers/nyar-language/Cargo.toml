@@ -11,7 +11,7 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 default = []
 serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
 # NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
-nyar-vm-lane = ["emitter/legacy-lanes"]
+nyar-vm-lane = ["emitter/nyar-vm-lane"]
 
 [dependencies]
 # Layering: language → driver → std-data (language is the upper layer).
