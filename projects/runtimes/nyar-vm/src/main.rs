@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar_vm::{NyarVm, json_bridge, value::Value};
+use nyar_vm::{NyarVm, json_bridge};
 
 /// Nyar VM command-line runner.
 #[derive(Debug, Parser)]
@@ -72,6 +72,7 @@ mod tests {
 
     #[test]
     fn parse_args_json_array() {
+        use nyar_vm::value::Value;
         let args = json_bridge::parse_call_args_json("[1, 2, 3]").expect("parse");
         assert_eq!(args.len(), 3);
         assert!(matches!(args[0], Value::I32(1)));
