@@ -65,6 +65,7 @@ impl WorkspaceCache {
             code_bytes: payload.to_vec(),
             globals: Vec::new(),
             init_function_indices: Vec::new(),
+            layouts: Vec::new(),
         };
         let encoded = encode_module(&module);
         fs::write(&path, encoded).map_err(|source| WorkspaceCacheError::io(path, source))
