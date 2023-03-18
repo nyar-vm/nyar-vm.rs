@@ -16,11 +16,11 @@ const SEMANTIC_SRC_ROOTS: &[&str] = &[
 ];
 
 /// `as_str() == "` 出现次数的冻结上限（仅生产 `src/`）。
-/// 删除违规用法后重新计数并下调这些常量。
-const AS_STR_EQ_BASELINE: usize = 220;
+/// 删除违规用法后重新计数并下调这些常量（严禁上调）。
+const AS_STR_EQ_BASELINE: usize = 91;
 
 /// 用作符号/路径启发式的 `.ends_with("` 出现次数的冻结上限。
-const ENDS_WITH_BASELINE: usize = 80;
+const ENDS_WITH_BASELINE: usize = 44;
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     if !dir.is_dir() {
