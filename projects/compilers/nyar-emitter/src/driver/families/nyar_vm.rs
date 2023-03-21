@@ -87,11 +87,20 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
 }
 
 fn resolve_entry_symbol(module: &NyarModuleData) -> String {
+    // Prefer an explicit `main` export/function over the first table entry so
+    // helper symbols lowered earlier do not steal the run contract entry.
+    let is_main = |name: &str| {
+        name == "main"
+            || name.rsplit_once('.').is_some_and(|(_, tail)| tail == "main")
+            || name.rsplit_once("::").is_some_and(|(_, tail)| tail == "main")
+    };
     module
         .exports
         .iter()
-        .find(|export| export.kind == NyarExportKind::Function)
+        .find(|export| export.kind == NyarExportKind::Function && is_main(&export.symbol_name))
+        .or_else(|| module.exports.iter().find(|export| export.kind == NyarExportKind::Function))
         .map(|export| export.symbol_name.clone())
+        .or_else(|| module.functions.iter().find(|function| is_main(&function.name)).map(|function| function.name.clone()))
         .or_else(|| module.functions.first().map(|function| function.name.clone()))
         .unwrap_or_else(|| "main".to_string())
 }

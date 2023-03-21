@@ -4,7 +4,7 @@ use nyar::{
     backends::CompilationOptions,
 };
 use nyar_emitter::{LoweredBackendInput, NyarVmBackendInput, testing::compile_lowered_backend_input};
-use std_data::binary::nyar_ir::{NyarConstant, NyarFunction, NyarModuleData};
+use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarModuleData};
 use tempfile::tempdir;
 
 fn vm_options() -> CompilationOptions {
@@ -101,4 +101,39 @@ fn emits_nyar_module_with_run_contract() {
     assert_eq!(contract.logical_entry, "main");
     assert_eq!(contract.physical_entry, "demo.nyar");
     assert_eq!(contract.invocation, "nyar-vm");
+}
+
+#[test]
+fn prefers_main_export_over_earlier_helper_symbol() {
+    let output_dir = tempdir().expect("temp dir");
+    let options = vm_options();
+    let module = NyarModuleData {
+        version: 2,
+        name: "demo".to_string(),
+        constants: vec![NyarConstant::Integer32(0)],
+        functions: vec![
+            NyarFunction { name: "add_one".to_string(), arity: 1, local_count: 0, code_offset: 0, code_length: 1 },
+            NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 1, code_length: 1 },
+        ],
+        imports: Vec::new(),
+        exports: vec![
+            NyarExport { kind: NyarExportKind::Function, symbol_name: "add_one".to_string(), function_index: 0 },
+            NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 1 },
+        ],
+        witness_entries: Vec::new(),
+        code_bytes: vec![0x05, 0x05],
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let input = LoweredBackendInput::nyar_vm(NyarVmBackendInput {
+        suspend_runtime: None,
+        control_flow: None,
+        nyar_module: Some(module),
+        output_dir: output_dir.path().to_path_buf(),
+    });
+    let report =
+        compile_lowered_backend_input("demo", vm_requirement("main", options.target.clone()), input, false, &options).expect("nyar-vm compile");
+    assert_eq!(report.entry_symbol.as_deref(), Some("main"));
+    assert_eq!(report.run_contracts[0].logical_entry, "main");
 }
