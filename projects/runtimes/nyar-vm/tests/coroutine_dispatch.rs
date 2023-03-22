@@ -199,3 +199,99 @@ fn resuming_a_completed_coroutine_is_rejected() {
         other => panic!("expected TypeMismatch(active coroutine vs completed coroutine), got {other:?}"),
     }
 }
+
+#[test]
+fn yield_preserves_operand_values_above_stack_base() {
+    // gen 在 Yield 前栈上仍有一个非 yielded 值；挂起必须捕获该片段，Resume 后与 resume 值一起可见。
+    //
+    // gen:
+    //   Const 0 (7)          ; 挂起后仍应保留的操作数
+    //   Const 1 (42)         ; yielded value
+    //   Yield
+    //   I32Add               ; resume_value + 7
+    //   Return
+    // main:
+    //   Call 0
+    //   StoreLocal 0
+    //   LoadLocal 0
+    //   Const 2 (100)        ; resume value
+    //   Resume
+    //   Return               ; expect 107
+    let mut code = Vec::new();
+    let gen_offset = 0i32;
+    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Const, 1);
+    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
+    emit_plain(&mut code, NyarHeadCode::I32Add);
+    emit_plain(&mut code, NyarHeadCode::Return);
+
+    let main_offset = code.len() as i32;
+    emit_imm1(&mut code, NyarHeadCode::Call, 0);
+    emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
+    emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
+    emit_imm1(&mut code, NyarHeadCode::Const, 2);
+    emit_plain(&mut code, NyarHeadCode::Resume);
+    emit_plain(&mut code, NyarHeadCode::Return);
+
+    let module = NyarModuleData {
+        version: NYAR_VERSION,
+        name: "yield_operand_stack".to_string(),
+        constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(42), NyarConstant::Integer32(100)],
+        functions: vec![
+            NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: gen_offset, code_length: main_offset - gen_offset },
+            NyarFunction {
+                name: "main".to_string(),
+                arity: 0,
+                local_count: 1,
+                code_offset: main_offset,
+                code_length: code.len() as i32 - main_offset,
+            },
+        ],
+        imports: Vec::new(),
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 1 }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let bytes = encode_module(&module);
+    let mut vm = NyarVm::new();
+    let loaded = vm.load(&bytes).expect("load module");
+    let result = vm.run(&loaded, "main", Vec::new()).expect("execute main");
+    assert_eq!(result, Value::I32(107));
+}
+
+#[test]
+fn top_level_yield_captures_operand_stack_fragment() {
+    let mut code = Vec::new();
+    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 7 — remains above stack_base
+    emit_imm1(&mut code, NyarHeadCode::Const, 1); // 42 — yielded
+    emit_imm1(&mut code, NyarHeadCode::Yield, 0);
+    emit_plain(&mut code, NyarHeadCode::Return);
+
+    let module = NyarModuleData {
+        version: NYAR_VERSION,
+        name: "top_yield_stack".to_string(),
+        constants: vec![NyarConstant::Integer32(7), NyarConstant::Integer32(42)],
+        functions: vec![NyarFunction { name: "gen".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
+        imports: Vec::new(),
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "gen".to_string(), function_index: 0 }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let bytes = encode_module(&module);
+    let mut vm = NyarVm::new();
+    let loaded = vm.load(&bytes).expect("load module");
+    let result = vm.run(&loaded, "gen", Vec::new()).expect("execute gen");
+    let coroutine_id = match result {
+        Value::Coroutine(id) => id,
+        other => panic!("expected coroutine, got {other:?}"),
+    };
+    let state = vm.heap().get_coroutine(coroutine_id).expect("coroutine in heap");
+    assert_eq!(state.yielded_value, Value::I32(42));
+    assert_eq!(state.operand_stack, vec![Value::I32(7)]);
+}

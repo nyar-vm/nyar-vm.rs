@@ -48,4 +48,20 @@ impl ValueStack {
     pub fn values(&self) -> &[Value] {
         &self.slots
     }
+
+    /// Splits off every value above `base`, leaving the stack truncated to `base`.
+    ///
+    /// Used when capturing a suspended frame so parent frames do not observe the
+    /// callee's remaining operand values, and so resume can restore them later.
+    pub fn split_off_above(&mut self, base: usize) -> Result<Vec<Value>, NyarRuntimeError> {
+        if base > self.slots.len() {
+            return Err(NyarRuntimeError::StackUnderflow);
+        }
+        Ok(self.slots.split_off(base))
+    }
+
+    /// Appends previously captured operand values (for coroutine resume).
+    pub fn extend(&mut self, values: impl IntoIterator<Item = Value>) {
+        self.slots.extend(values);
+    }
 }

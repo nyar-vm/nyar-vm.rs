@@ -146,8 +146,18 @@ impl Executor {
                     }
                     let mut frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
                     frame_locals.push(finished.locals.as_slice());
+                    let mut frame_coroutines: Vec<_> =
+                        self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
+                    if let Some(coroutine_id) = finished.coroutine_origin {
+                        frame_coroutines.push(coroutine_id);
+                    }
                     self.gc.collect(
-                        GcRoots { stack: self.stack.values(), frame_locals: &frame_locals, globals },
+                        GcRoots {
+                            stack: self.stack.values(),
+                            frame_locals: &frame_locals,
+                            globals,
+                            frame_coroutines: &frame_coroutines,
+                        },
                         &mut self.heap,
                     );
                     if self.frames.is_empty() {
@@ -170,15 +180,16 @@ impl Executor {
                 }
                 StepResult::Suspend { yielded_value } => {
                     // `Yield` 已由 dispatch 弹出 yielded 值并推进 ip。
-                    // 此处将当前帧捕获为 `CoroutineState`（嵌入 yielded 值），存入 heap,
-                    // 把 `Coroutine(ObjectId)` 作为 `Call` 的"返回值"压入父帧栈，
-                    // 父帧据此感知一次挂起。若没有父帧（顶层调用），直接返回该 coroutine。
+                    // 此处将当前帧及其挂起时仍存活的操作数栈片段捕获为 `CoroutineState`，
+                    // 存入 heap，把 `Coroutine(ObjectId)` 作为调用方的“返回值”压栈。
                     let suspended = self.frames.pop().expect("suspend without frame");
+                    let operand_stack = self.stack.split_off_above(suspended.stack_base)?;
                     let state = CoroutineState {
                         function_index: suspended.function_index,
                         ip: suspended.ip,
                         locals: suspended.locals,
                         stack_base: suspended.stack_base,
+                        operand_stack,
                         done: false,
                         yielded_value,
                     };
@@ -190,42 +201,35 @@ impl Executor {
                 }
                 StepResult::ResumeCoroutine { coroutine_id, state, resume_value } => {
                     // `Resume` 已由 dispatch 弹出 [resume_value, coroutine(ObjectId)]。
-                    // 此处将 coroutine 的帧快照恢复为新的 Frame 压回 frames 栈，并记录
-                    // `coroutine_origin` 以便该 frame Return 时回写 `done=true` 与最终返回值;
-                    // 再把 resume_value 推入操作数栈，coroutine 从挂起点之后继续执行。
+                    // 恢复帧快照与挂起时的操作数栈片段，记录 `coroutine_origin`，
+                    // 再注入 resume_value，从挂起点之后继续执行。
                     let mut frame = Frame::new(state.function_index, 0, self.stack.len());
                     frame.ip = state.ip;
                     frame.locals = state.locals;
                     frame.coroutine_origin = Some(coroutine_id);
                     self.frames.push(frame);
+                    self.stack.extend(state.operand_stack);
                     self.stack.push(resume_value);
                 }
                 StepResult::InvokeHandler { handler_function_index, effect_value } => {
                     // `PerformEffect` 已由 dispatch 弹出 effect_value 并推进 ip。
-                    // 此处将当前帧捕获为 continuation（heap-backed coroutine），
-                    // 然后压入 handler 的 fresh frame，并把 [continuation, effect_value]
-                    // 推入操作数栈供 handler 使用。
-                    //
-                    // 栈布局（handler 视角）：
-                    //   栈顶 = effect_value（raise 的 payload）
-                    //   次顶 = Value::Coroutine(continuation_id)（被捕获的续延）
-                    //
-                    // handler 可以：
-                    //   1. Resume continuation（用 Resume opcode 恢复续延，注入 resume 值）
-                    //   2. Return 不 resume（unwind，续延被丢弃，其 done 保持 false 但无人引用）
+                    // 捕获当前帧与操作数栈片段为 continuation，再压入 handler 帧。
                     let suspended = self.frames.pop().expect("invoke_handler without frame");
+                    let operand_stack = self.stack.split_off_above(suspended.stack_base)?;
                     let continuation_state = CoroutineState {
                         function_index: suspended.function_index,
                         ip: suspended.ip,
                         locals: suspended.locals,
                         stack_base: suspended.stack_base,
+                        operand_stack,
                         done: false,
                         yielded_value: effect_value.clone(),
                     };
                     let continuation_id = self.heap.alloc_coroutine(continuation_state);
 
                     let target = &module.functions[handler_function_index];
-                    let mut handler_frame = Frame::new(handler_function_index, target.local_count.max(target.arity) as usize, self.stack.len());
+                    let mut handler_frame =
+                        Frame::new(handler_function_index, target.local_count.max(target.arity) as usize, self.stack.len());
                     handler_frame.ip = target.code_offset as usize;
                     self.frames.push(handler_frame);
 

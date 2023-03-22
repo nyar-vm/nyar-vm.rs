@@ -12,8 +12,18 @@ pub struct CoroutineState {
     pub ip: usize,
     /// Captured local variable slots.
     pub locals: Vec<Value>,
-    /// Operand stack depth at the time of suspension.
+    /// Operand stack depth of the parent frame when this coroutine was entered.
+    ///
+    /// On resume the executor restores [`Self::operand_stack`] above a fresh base
+    /// equal to the caller's current stack depth; this field records the original
+    /// base for diagnostics and verifier cross-checks.
     pub stack_base: usize,
+    /// Live operand-stack values that belonged to this frame above [`Self::stack_base`]
+    /// at suspension time (after the yielded value was already popped).
+    ///
+    /// These values are roots while the coroutine remains reachable. Resume pushes
+    /// them back before injecting the resume value.
+    pub operand_stack: Vec<Value>,
     /// Whether the coroutine has completed and must not be resumed again.
     pub done: bool,
     /// Most recently yielded or final return value.

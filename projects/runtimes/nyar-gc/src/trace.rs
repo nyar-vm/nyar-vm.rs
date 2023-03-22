@@ -30,6 +30,9 @@ fn trace_payload(payload: &ObjectPayload, heap: &ObjectHeap, marked: &mut [bool]
             for value in &state.locals {
                 trace_value(value, heap, marked);
             }
+            for value in &state.operand_stack {
+                trace_value(value, heap, marked);
+            }
         }
     }
 }

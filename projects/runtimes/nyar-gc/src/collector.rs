@@ -1,6 +1,6 @@
 use crate::heap::ObjectHeap;
 use crate::trace::trace_value;
-use crate::value::Value;
+use crate::value::{ObjectId, Value};
 
 /// Root set for a mark-sweep collection.
 #[derive(Debug, Clone, Copy)]
@@ -11,6 +11,13 @@ pub struct GcRoots<'a> {
     pub frame_locals: &'a [&'a [Value]],
     /// Module global slots.
     pub globals: &'a [Value],
+    /// Heap ids of coroutines currently being resumed by active frames.
+    ///
+    /// A resume frame may hold the only strong reference to its coroutine after the
+    /// `Resume` opcode has already popped the coroutine value from the operand stack.
+    /// Omitting these ids would allow a mid-resume collection to reclaim a still-running
+    /// coroutine object.
+    pub frame_coroutines: &'a [ObjectId],
 }
 
 /// Mark-sweep garbage collector.
@@ -45,6 +52,9 @@ impl GarbageCollector {
         }
         for value in roots.globals {
             trace_value(value, heap, &mut self.marked);
+        }
+        for &coroutine_id in roots.frame_coroutines {
+            trace_value(&Value::Coroutine(coroutine_id), heap, &mut self.marked);
         }
 
         heap.sweep(&self.marked);
