@@ -1,6 +1,8 @@
-//! 加载期模块校验：`CallImport` 下标、`ObjectNew` layout、字段槽与宿主导入边界失败关闭。
+//! 加载期模块校验：结构边界、函数控制流、栈高度汇合，以及导入 / layout 下标。
 
-use std_data::binary::nyar_ir::{NyarHeadCode, NyarImport, NyarModuleData, NYAR_VERSION, decode_at};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use std_data::binary::nyar_ir::{NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, decode_at};
 
 use crate::{
     error::NyarRuntimeError,
@@ -10,7 +12,7 @@ use crate::{
 /// 已删除的 `CallNative` 操作码（v1）；v2 模块不得再出现。
 const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 
-/// 校验已解码模块：版本、导入白名单、`CallImport` / layout / field 下标、禁止旧 `CallNative`。
+/// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界与栈高度。
 pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     if data.version != NYAR_VERSION {
         return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -32,6 +34,25 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
         verify_import(index, import)?;
     }
 
+    verify_code_stream(data)?;
+    for (function_index, function) in data.functions.iter().enumerate() {
+        verify_function(data, function_index, function)?;
+    }
+
+    Ok(())
+}
+
+fn verify_import(index: usize, import: &NyarImport) -> Result<(), NyarRuntimeError> {
+    if import.module_name.is_empty() || import.symbol_name.is_empty() {
+        return Err(NyarRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
+    }
+    // 解析一次：未知 `nyar.host` 符号在此失败；结果在 `LoadedModule` 侧缓存。
+    let _ = resolve_import(import)?;
+    Ok(())
+}
+
+/// 整段代码流的操作码与截断检查（不依赖函数表覆盖）。
+fn verify_code_stream(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     let mut pc = 0usize;
     while pc < data.code_bytes.len() {
         let opcode = data.code_bytes[pc];
@@ -84,20 +105,272 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     Ok(())
 }
 
-fn verify_import(index: usize, import: &NyarImport) -> Result<(), NyarRuntimeError> {
-    if import.module_name.is_empty() || import.symbol_name.is_empty() {
-        return Err(NyarRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
+fn verify_function(
+    data: &NyarModuleData,
+    function_index: usize,
+    function: &std_data::binary::nyar_ir::NyarFunction,
+) -> Result<(), NyarRuntimeError> {
+    if function.code_offset < 0 || function.code_length < 0 {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] has negative code_offset or code_length"
+        )));
     }
-    // 解析一次：未知 `nyar.host` 符号在此失败；结果在 `LoadedModule` 侧缓存。
-    let _ = resolve_import(import)?;
+
+    let start = function.code_offset as usize;
+    let length = function.code_length as usize;
+    let end = start.checked_add(length).ok_or_else(|| {
+        NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range overflows"))
+    })?;
+    if end > data.code_bytes.len() {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] code range [{start}, {end}) exceeds code section length {}",
+            data.code_bytes.len()
+        )));
+    }
+
+    if length == 0 {
+        return Ok(());
+    }
+
+    let instructions = decode_function_instructions(data, function_index, start, end)?;
+    let boundaries: BTreeSet<usize> = instructions.iter().map(|(pc, _)| *pc).collect();
+    let local_slots = function.local_count.max(function.arity).max(0) as usize;
+
+    // 普通函数入口相对 `stack_base` 高度为 0。
+    // effect handler 由 `InvokeHandler` 压入 `[continuation, effect_value]`，入口高度为 2。
+    let entry_height = if data.witness_entries.iter().any(|entry| entry.function_index == function_index as i32) {
+        2
+    } else {
+        0
+    };
+
+    let mut heights: BTreeMap<usize, i32> = BTreeMap::new();
+    let mut queue = VecDeque::new();
+    heights.insert(start, entry_height);
+    queue.push_back(start);
+
+    while let Some(pc) = queue.pop_front() {
+        let height = heights[&pc];
+        let instruction = instructions.get(&pc).copied().ok_or_else(|| {
+            NyarRuntimeError::ModuleLoad(format!(
+                "function[{function_index}] control reaches non-instruction pc {pc}"
+            ))
+        })?;
+
+        verify_instruction_operands(data, function_index, pc, instruction, local_slots)?;
+
+        let (next_height, edges) = stack_transfer(data, function_index, pc, instruction, height)?;
+        for (target, edge_height) in edges {
+            if !boundaries.contains(&target) {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] jump from pc {pc} lands off instruction boundary at {target}"
+                )));
+            }
+            if target < start || target >= end {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] jump from pc {pc} escapes function range to {target}"
+                )));
+            }
+            match heights.get(&target) {
+                Some(existing) if *existing != edge_height => {
+                    return Err(NyarRuntimeError::ModuleLoad(format!(
+                        "function[{function_index}] stack height mismatch at pc {target}: {existing} vs {edge_height}"
+                    )));
+                }
+                Some(_) => {}
+                None => {
+                    heights.insert(target, edge_height);
+                    queue.push_back(target);
+                }
+            }
+        }
+
+        // 不可达指令不强制覆盖；可达路径上的高度必须自洽。
+        let _ = next_height;
+    }
+
     Ok(())
+}
+
+fn decode_function_instructions(
+    data: &NyarModuleData,
+    function_index: usize,
+    start: usize,
+    end: usize,
+) -> Result<BTreeMap<usize, NyarInstruction>, NyarRuntimeError> {
+    let mut instructions = BTreeMap::new();
+    let mut pc = start;
+    while pc < end {
+        let instruction = decode_at(&data.code_bytes, pc);
+        if instruction.size == 0 {
+            return Err(NyarRuntimeError::ModuleLoad(format!(
+                "function[{function_index}] truncated instruction at pc {pc}"
+            )));
+        }
+        let next = pc.checked_add(instruction.size as usize).ok_or_else(|| {
+            NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction size overflows at pc {pc}"))
+        })?;
+        if next > end {
+            return Err(NyarRuntimeError::ModuleLoad(format!(
+                "function[{function_index}] instruction at pc {pc} crosses function end {end}"
+            )));
+        }
+        instructions.insert(pc, instruction);
+        pc = next;
+    }
+    if pc != end {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] code range leaves a gap ending at {pc}, expected {end}"
+        )));
+    }
+    Ok(instructions)
+}
+
+fn verify_instruction_operands(
+    data: &NyarModuleData,
+    function_index: usize,
+    pc: usize,
+    instruction: NyarInstruction,
+    local_slots: usize,
+) -> Result<(), NyarRuntimeError> {
+    match instruction.code {
+        NyarHeadCode::Const => {
+            if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.constants.len() {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] Const at pc {pc} constant index {} out of range",
+                    instruction.operand1
+                )));
+            }
+        }
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::StoreLocal => {
+            if instruction.operand1 < 0 || (instruction.operand1 as usize) >= local_slots {
+                return Err(NyarRuntimeError::LocalIndexOutOfRange(instruction.operand1));
+            }
+        }
+        NyarHeadCode::LoadGlobal | NyarHeadCode::StoreGlobal => {
+            if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.globals.len() {
+                return Err(NyarRuntimeError::GlobalIndexOutOfRange(instruction.operand1));
+            }
+        }
+        NyarHeadCode::Call | NyarHeadCode::CallStatic => {
+            if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.functions.len() {
+                return Err(NyarRuntimeError::FunctionIndexOutOfRange(instruction.operand1));
+            }
+        }
+        NyarHeadCode::CallImport | NyarHeadCode::CallIntrinsic => {
+            if instruction.operand2 < 0 {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] {:?} at pc {pc} has negative argc {}",
+                    instruction.code, instruction.operand2
+                )));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// 返回「本指令相对高度变化后的参考高度」以及后继边 `(目标 pc, 到达时栈高度)`。
+fn stack_transfer(
+    data: &NyarModuleData,
+    function_index: usize,
+    pc: usize,
+    instruction: NyarInstruction,
+    height: i32,
+) -> Result<(i32, Vec<(usize, i32)>), NyarRuntimeError> {
+    let fallthrough = pc + instruction.size as usize;
+
+    let require = |needed: i32| -> Result<(), NyarRuntimeError> {
+        if height < needed {
+            Err(NyarRuntimeError::ModuleLoad(format!(
+                "function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}"
+            )))
+        }
+        else {
+            Ok(())
+        }
+    };
+
+    match instruction.code {
+        NyarHeadCode::Nop => Ok((height, vec![(fallthrough, height)])),
+        NyarHeadCode::Jump => {
+            let target = pc.wrapping_add(instruction.operand1 as usize);
+            Ok((height, vec![(target, height)]))
+        }
+        NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
+            require(1)?;
+            let after = height - 1;
+            let target = pc.wrapping_add(instruction.operand1 as usize);
+            Ok((after, vec![(fallthrough, after), (target, after)]))
+        }
+        NyarHeadCode::Return => {
+            // Return 结束本帧，返回值留在调用方可见的操作数栈上。
+            Ok((height, Vec::new()))
+        }
+        NyarHeadCode::Yield | NyarHeadCode::PerformEffect => {
+            // 弹出 yielded / effect payload 后挂起；若日后 Resume，则恢复操作数片段并压入
+            // resume 值，净效果使 fallthrough 处高度回到本指令执行前的高度。
+            require(1)?;
+            Ok((height, vec![(fallthrough, height)]))
+        }
+        NyarHeadCode::Resume => {
+            require(2)?;
+            Ok((height - 1, vec![(fallthrough, height - 1)]))
+        }
+        NyarHeadCode::Const | NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::LoadGlobal | NyarHeadCode::ObjectNew => {
+            Ok((height + 1, vec![(fallthrough, height + 1)]))
+        }
+        NyarHeadCode::Pop | NyarHeadCode::StoreLocal | NyarHeadCode::StoreGlobal => {
+            require(1)?;
+            Ok((height - 1, vec![(fallthrough, height - 1)]))
+        }
+        NyarHeadCode::Dup => {
+            require(1)?;
+            Ok((height + 1, vec![(fallthrough, height + 1)]))
+        }
+        NyarHeadCode::I32Add
+        | NyarHeadCode::I32Sub
+        | NyarHeadCode::I32Mul
+        | NyarHeadCode::I32DivS
+        | NyarHeadCode::I32RemS
+        | NyarHeadCode::I32Eq
+        | NyarHeadCode::I32Ne
+        | NyarHeadCode::I32LtS
+        | NyarHeadCode::I32LeS
+        | NyarHeadCode::I32GtS
+        | NyarHeadCode::I32GeS => {
+            require(2)?;
+            Ok((height - 1, vec![(fallthrough, height - 1)]))
+        }
+        NyarHeadCode::FieldGet => {
+            require(1)?;
+            Ok((height, vec![(fallthrough, height)]))
+        }
+        NyarHeadCode::FieldSet => {
+            require(2)?;
+            Ok((height - 1, vec![(fallthrough, height - 1)]))
+        }
+        NyarHeadCode::Call | NyarHeadCode::CallStatic => {
+            let callee = &data.functions[instruction.operand1 as usize];
+            let arity = callee.arity.max(0);
+            require(arity)?;
+            let after = height - arity + 1;
+            Ok((after, vec![(fallthrough, after)]))
+        }
+        NyarHeadCode::CallImport | NyarHeadCode::CallIntrinsic => {
+            let argc = instruction.operand2.max(0);
+            require(argc)?;
+            let after = height - argc + 1;
+            Ok((after, vec![(fallthrough, after)]))
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::HOST_IMPORT_MODULE;
-    use std_data::binary::nyar_ir::{NyarImportKind, NyarLayout, NyarModuleData};
+    use std_data::binary::nyar_ir::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData};
 
     fn empty_module() -> NyarModuleData {
         NyarModuleData {
@@ -115,6 +388,15 @@ mod tests {
         }
     }
 
+    fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
+        code.push(opcode as u8);
+        code.extend_from_slice(&operand.to_le_bytes());
+    }
+
+    fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
+        code.push(opcode as u8);
+    }
+
     #[test]
     fn accepts_empty_v2_module() {
         verify_module(&empty_module()).expect("empty v2 ok");
@@ -130,7 +412,7 @@ mod tests {
     #[test]
     fn rejects_unknown_host_import() {
         let mut module = empty_module();
-        module.imports.push(NyarImport {
+        module.imports.push(std_data::binary::nyar_ir::NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
             symbol_name: "not_a_real_host_op".into(),
@@ -142,7 +424,6 @@ mod tests {
     #[test]
     fn rejects_call_import_out_of_range() {
         let mut module = empty_module();
-        // CallImport import=0 argc=0，但 imports 表为空。
         let mut code = Vec::new();
         code.push(NyarHeadCode::CallImport as u8);
         code.extend_from_slice(&0i32.to_le_bytes());
@@ -162,7 +443,7 @@ mod tests {
     #[test]
     fn accepts_in_range_call_import() {
         let mut module = empty_module();
-        module.imports.push(NyarImport {
+        module.imports.push(std_data::binary::nyar_ir::NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
             symbol_name: "print".into(),
@@ -171,8 +452,45 @@ mod tests {
         code.push(NyarHeadCode::CallImport as u8);
         code.extend_from_slice(&0i32.to_le_bytes());
         code.extend_from_slice(&1i32.to_le_bytes());
+        // 无函数表覆盖时只做流式检查；补一个覆盖整段代码的函数以启用 CFG。
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        // CallImport argc=1 需要栈上有 1 个值——构造 Const + CallImport 会更完整；此处仅保留索引检查路径：
+        // 空栈 CallImport 应在函数校验中因 underflow 失败。
         module.code_bytes = code;
-        verify_module(&module).expect("in-range CallImport");
+        let err = verify_module(&module).expect_err("underflow");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack underflow")));
+    }
+
+    #[test]
+    fn accepts_const_call_import_return() {
+        let mut module = empty_module();
+        module.imports.push(std_data::binary::nyar_ir::NyarImport {
+            kind: NyarImportKind::Function,
+            module_name: HOST_IMPORT_MODULE.into(),
+            symbol_name: "print".into(),
+        });
+        module.constants.push(NyarConstant::Integer32(1));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        code.push(NyarHeadCode::CallImport as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.extend_from_slice(&1i32.to_le_bytes());
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("balanced CallImport");
     }
 
     #[test]
@@ -193,6 +511,7 @@ mod tests {
         code.push(NyarHeadCode::ObjectNew as u8);
         code.extend_from_slice(&0i32.to_le_bytes());
         module.code_bytes = code;
+        // 无函数覆盖时流式检查通过即可。
         verify_module(&module).expect("ObjectNew ok");
     }
 
@@ -205,5 +524,99 @@ mod tests {
         code.extend_from_slice(&1i32.to_le_bytes());
         module.code_bytes = code;
         assert!(matches!(verify_module(&module), Err(NyarRuntimeError::FieldSlotOutOfRange(1))));
+    }
+
+    #[test]
+    fn rejects_jump_off_instruction_boundary() {
+        let mut module = empty_module();
+        let mut code = Vec::new();
+        // Jump +1 落到 Imm1 立即数中间。
+        emit_imm1(&mut code, NyarHeadCode::Jump, 1);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("bad jump");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("instruction boundary")));
+    }
+
+    #[test]
+    fn rejects_stack_height_mismatch_at_join() {
+        // path_a 汇合高度 1，path_b 汇合高度 2。
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(0));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0); // condition
+        let jif_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0); // -> path_b
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jump_a_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Jump, 0);
+        let path_b = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jump_b_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Jump, 0);
+        let join = code.len();
+        emit_plain(&mut code, NyarHeadCode::Return);
+
+        let to_path_b = (path_b as i32) - (jif_at as i32);
+        code[jif_at + 1..jif_at + 5].copy_from_slice(&to_path_b.to_le_bytes());
+        let to_join_a = (join as i32) - (jump_a_at as i32);
+        code[jump_a_at + 1..jump_a_at + 5].copy_from_slice(&to_join_a.to_le_bytes());
+        let to_join_b = (join as i32) - (jump_b_at as i32);
+        code[jump_b_at + 1..jump_b_at + 5].copy_from_slice(&to_join_b.to_le_bytes());
+
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("height mismatch");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack height mismatch")));
+    }
+
+    #[test]
+    fn accepts_balanced_branch_join() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(0));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jif_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jump_a_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Jump, 0);
+        let path_b = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jump_b_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Jump, 0);
+        let join = code.len();
+        emit_plain(&mut code, NyarHeadCode::Return);
+
+        let to_path_b = (path_b as i32) - (jif_at as i32);
+        code[jif_at + 1..jif_at + 5].copy_from_slice(&to_path_b.to_le_bytes());
+        let to_join_a = (join as i32) - (jump_a_at as i32);
+        code[jump_a_at + 1..jump_a_at + 5].copy_from_slice(&to_join_a.to_le_bytes());
+        let to_join_b = (join as i32) - (jump_b_at as i32);
+        code[jump_b_at + 1..jump_b_at + 5].copy_from_slice(&to_join_b.to_le_bytes());
+
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("balanced join");
     }
 }

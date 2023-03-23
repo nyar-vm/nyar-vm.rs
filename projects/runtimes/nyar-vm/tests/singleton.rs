@@ -70,19 +70,26 @@ fn eager_singleton_init_and_accessor_roundtrip() {
 fn lazy_singleton_accessor_allocates_once() {
     let mut code = Vec::new();
     let accessor_offset = 0i32;
+    // 惰性分配：两路径在 Return 处栈高度均为 1。
+    //   LoadGlobal; Dup; JumpIfTrue -> hit; Pop; ObjectNew; Dup; StoreGlobal; Jump -> hit; hit: Return
     emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
     code.push(NyarHeadCode::Dup as u8);
+    let jump_if_pc = code.len();
     code.push(NyarHeadCode::JumpIfTrue as u8);
-    let jump_pos = code.len();
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Pop as u8);
     emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+    code.push(NyarHeadCode::Dup as u8);
     emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
-    let return_target = code.len();
-    let offset = (return_target as i32) - (jump_pos as i32);
-    code[jump_pos..jump_pos + 4].copy_from_slice(&offset.to_le_bytes());
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
+    let jump_to_hit_pc = code.len();
+    code.push(NyarHeadCode::Jump as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    let hit = code.len();
     code.push(NyarHeadCode::Return as u8);
+    let to_hit_if = (hit as i32) - (jump_if_pc as i32);
+    code[jump_if_pc + 1..jump_if_pc + 5].copy_from_slice(&to_hit_if.to_le_bytes());
+    let to_hit_jump = (hit as i32) - (jump_to_hit_pc as i32);
+    code[jump_to_hit_pc + 1..jump_to_hit_pc + 5].copy_from_slice(&to_hit_jump.to_le_bytes());
 
     let module = NyarModuleData {
         version: NYAR_VERSION,
@@ -225,19 +232,26 @@ fn lazy_singleton_field_write_persists_across_calls() {
 
     // constants: 0 = i32 100
     let accessor_offset = code.len() as i32;
+    // 惰性分配：两路径在 Return 处栈高度均为 1。
+    //   LoadGlobal; Dup; JumpIfTrue -> hit; Pop; ObjectNew; Dup; StoreGlobal; Jump -> hit; hit: Return
     emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
     code.push(NyarHeadCode::Dup as u8);
+    let jump_if_pc = code.len();
     code.push(NyarHeadCode::JumpIfTrue as u8);
-    let jump_pos = code.len();
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Pop as u8);
     emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+    code.push(NyarHeadCode::Dup as u8);
     emit_imm1(&mut code, NyarHeadCode::StoreGlobal, 0);
-    let return_target = code.len();
-    let offset = (return_target as i32) - (jump_pos as i32);
-    code[jump_pos..jump_pos + 4].copy_from_slice(&offset.to_le_bytes());
-    emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
+    let jump_to_hit_pc = code.len();
+    code.push(NyarHeadCode::Jump as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    let hit = code.len();
     code.push(NyarHeadCode::Return as u8);
+    let to_hit_if = (hit as i32) - (jump_if_pc as i32);
+    code[jump_if_pc + 1..jump_if_pc + 5].copy_from_slice(&to_hit_if.to_le_bytes());
+    let to_hit_jump = (hit as i32) - (jump_to_hit_pc as i32);
+    code[jump_to_hit_pc + 1..jump_to_hit_pc + 5].copy_from_slice(&to_hit_jump.to_le_bytes());
     let accessor_length = code.len() as i32 - accessor_offset;
 
     // set_field: Call(accessor); Const(100); FieldSet(0); Pop; Return
