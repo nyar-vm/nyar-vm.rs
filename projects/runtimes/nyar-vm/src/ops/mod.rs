@@ -1,4 +1,4 @@
-use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
+use nyar_format::{NyarHeadCode, NyarInstruction};
 
 use crate::{
     error::NyarRuntimeError,
@@ -136,7 +136,7 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
 
             let effect_name_index = instruction.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
-                Some(std_data::binary::nyar_ir::NyarConstant::String(name)) => name.as_str(),
+                Some(nyar_format::NyarConstant::String(name)) => name.as_str(),
                 _ => "raise",
             };
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar::{ExternalCallArgument, ExternalCallEdge, InternalCallEdge, QualifiedName};
 use nyar_types::IntrinsicId;
-use std_data::binary::nyar_ir::{
+use nyar_format::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData, NYAR_VERSION,
 };
 

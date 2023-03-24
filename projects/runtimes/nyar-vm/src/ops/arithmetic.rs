@@ -1,4 +1,4 @@
-use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
+use nyar_format::{NyarHeadCode, NyarInstruction};
 
 use crate::{error::NyarRuntimeError, frame::Frame, ops::StepResult, stack::ValueStack, value::Value};
 

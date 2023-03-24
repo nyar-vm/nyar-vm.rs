@@ -3,13 +3,13 @@
 pub use nyar_gc::{CoroutineState, ObjectId, Value};
 
 /// Converts a constant-pool entry into a runtime value.
-pub fn value_from_constant(constant: &std_data::binary::nyar_ir::NyarConstant) -> Value {
+pub fn value_from_constant(constant: &nyar_format::NyarConstant) -> Value {
     match constant {
-        std_data::binary::nyar_ir::NyarConstant::Null => Value::Null,
-        std_data::binary::nyar_ir::NyarConstant::Boolean(value) => Value::Bool(*value),
-        std_data::binary::nyar_ir::NyarConstant::Integer32(value) => Value::I32(*value),
-        std_data::binary::nyar_ir::NyarConstant::Float64(value) => Value::F64(*value),
-        std_data::binary::nyar_ir::NyarConstant::String(value) => Value::String(value.clone()),
-        std_data::binary::nyar_ir::NyarConstant::BigInt(_) => Value::Null,
+        nyar_format::NyarConstant::Null => Value::Null,
+        nyar_format::NyarConstant::Boolean(value) => Value::Bool(*value),
+        nyar_format::NyarConstant::Integer32(value) => Value::I32(*value),
+        nyar_format::NyarConstant::Float64(value) => Value::F64(*value),
+        nyar_format::NyarConstant::String(value) => Value::String(value.clone()),
+        nyar_format::NyarConstant::BigInt(_) => Value::Null,
     }
 }

@@ -30,6 +30,8 @@ pub mod vm;
 
 pub use error::NyarRuntimeError;
 pub use module::ModuleGlobals;
-pub use nyar_gc::{GarbageCollector, GcRoots, ObjectHeap, ObjectPayload};
+pub use nyar_gc::{
+    GarbageCollector, GcMode, GcPolicy, GcRoots, LayoutDescriptor, LayoutId, ObjectHeap, ObjectPayload, WorkloadHints, WriteBarrier,
+};
 pub use value::{CoroutineState, ObjectId, Value};
 pub use vm::NyarVm;

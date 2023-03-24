@@ -16,9 +16,11 @@ nyar-vm-lane = ["legacy-lanes"]
 legacy-lanes-clr-jvm-native = []
 
 [dependencies]
-# Layering: language → emitter → std-data. Emitter must not depend on nyar-language.
+# Layering: language → emitter → std-data (wasm/pe/…) + nyar-format (外码).
+# Emitter must not depend on nyar-language.
 miette = { workspace = true }
 nyar = { workspace = true }
+nyar-format = { workspace = true }
 nyar-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

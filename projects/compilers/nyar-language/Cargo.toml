@@ -27,6 +27,9 @@ serde_json = { workspace = true }
 syntect = { workspace = true }
 katex-rs = { workspace = true }
 
+[dev-dependencies]
+nyar-format = { workspace = true }
+
 [[test]]
 name = "format_parity"
 path = "tests/format_parity.rs"

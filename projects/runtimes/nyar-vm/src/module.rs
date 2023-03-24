@@ -1,4 +1,4 @@
-use std_data::binary::nyar_ir::{
+use nyar_format::{
     NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry,
     decode_module,
 };
@@ -104,7 +104,7 @@ impl LoadedModule {
     pub fn export_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == std_data::binary::nyar_ir::NyarExportKind::Function && export.symbol_name == name)
+            .find(|export| export.kind == nyar_format::NyarExportKind::Function && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 
@@ -112,7 +112,7 @@ impl LoadedModule {
     pub fn export_global_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == std_data::binary::nyar_ir::NyarExportKind::Global && export.symbol_name == name)
+            .find(|export| export.kind == nyar_format::NyarExportKind::Global && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 }

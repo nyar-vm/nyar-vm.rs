@@ -14,7 +14,7 @@ use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
 #[cfg(feature = "legacy-lanes")]
-use std_data::binary::nyar_ir::NyarModuleData;
+use nyar_format::NyarModuleData;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use std_data::binary::{elf::NativeElfImageBuilder, pe::NativeImageBuilder};
 

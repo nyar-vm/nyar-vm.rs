@@ -15,9 +15,8 @@ name = "nyar-vm"
 path = "src/main.rs"
 
 [dependencies]
-# Language-agnostic bytecode substrate: consumes `std_data::binary::nyar_ir` only.
-# Must not depend on language frontends.
-std-data = { workspace = true }
+# 外码合同：`nyar-format`。不得依赖语言前端。
+nyar-format = { workspace = true }
 nyar-gc = { workspace = true }
 nyar-jit = { workspace = true }
 miette = { workspace = true }

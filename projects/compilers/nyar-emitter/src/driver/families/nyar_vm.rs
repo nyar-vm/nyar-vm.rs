@@ -3,7 +3,7 @@ use std::fs;
 use crate::nyar_backend_vm::emit_nyar_module;
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
-use std_data::binary::nyar_ir::{NyarExportKind, NyarModuleData};
+use nyar_format::{NyarExportKind, NyarModuleData};
 
 use super::BundledBackendCompiler;
 use crate::{

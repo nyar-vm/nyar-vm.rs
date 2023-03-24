@@ -2,7 +2,7 @@
 
 use crate::error::NyarRuntimeError;
 use nyar_gc::ObjectHeap;
-use std_data::binary::nyar_ir::NyarImport;
+use nyar_format::NyarImport;
 
 use crate::value::Value;
 
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn resolves_non_host_as_external() {
         let import = NyarImport {
-            kind: std_data::binary::nyar_ir::NyarImportKind::Function,
+            kind: nyar_format::NyarImportKind::Function,
             module_name: "guest.mod".into(),
             symbol_name: "whatever".into(),
         };

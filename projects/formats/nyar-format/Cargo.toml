@@ -1,0 +1,11 @@
+[package]
+name = "nyar-format"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Nyar .nyar outer bytecode format contract (encode/decode/version)"
+repository.workspace = true
+
+[dependencies]
+# 叶子格式 crate：禁止依赖编译器、VM、GC 或语言前端。

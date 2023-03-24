@@ -7,7 +7,7 @@
 //! on its operand stack.
 
 use nyar_vm::{NyarVm, Value};
-use std_data::binary::nyar_ir::{
+use nyar_format::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, NYAR_VERSION,
     encode_module,
 };

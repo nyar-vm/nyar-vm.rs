@@ -1,6 +1,6 @@
 //! 结构指令：`ObjectNew` / `FieldGet` / `FieldSet`（按 layout_id + field_slot）。
 
-use std_data::binary::nyar_ir::{NyarHeadCode, NyarInstruction};
+use nyar_format::{NyarHeadCode, NyarInstruction};
 
 use nyar_gc::ObjectPayload;
 
@@ -27,11 +27,7 @@ pub fn execute_object(
             if field_count < 0 {
                 return Err(NyarRuntimeError::ModuleLoad(format!("layout[{layout_id}] has negative field_count")));
             }
-            let slots = vec![Value::Null; field_count as usize];
-            let object_id = ctx.heap.alloc(ObjectPayload::LayoutObject {
-                layout_id: layout_id as u32,
-                slots,
-            });
+            let object_id = ctx.heap.alloc_layout_object(layout_id as u32, field_count as usize);
             ctx.stack.push(Value::Object(object_id));
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
@@ -71,6 +67,9 @@ pub fn execute_object(
         }
         NyarHeadCode::FieldSet => {
             let field_slot = instruction.operand1;
+            if field_slot < 0 {
+                return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot));
+            }
             let value = ctx.stack.pop()?;
             let object = ctx.stack.pop()?;
             let object_id = match object {
@@ -82,21 +81,17 @@ pub fn execute_object(
                     });
                 }
             };
-            match ctx.heap.get_mut(object_id) {
-                Some(ObjectPayload::LayoutObject { slots, .. }) => {
-                    if field_slot < 0 || (field_slot as usize) >= slots.len() {
-                        return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot));
-                    }
-                    slots[field_slot as usize] = value;
-                }
-                Some(_) => {
+            if ctx.heap.get(object_id).is_none() {
+                return Err(NyarRuntimeError::ModuleLoad(format!("object heap id {object_id} not found")));
+            }
+            match ctx.heap.set_field(object_id, field_slot as usize, value) {
+                Ok(()) => {}
+                Err("field slot out of range") => return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot)),
+                Err(_) => {
                     return Err(NyarRuntimeError::TypeMismatch {
                         expected: "layout object",
                         actual: "non-layout object".to_string(),
                     });
-                }
-                None => {
-                    return Err(NyarRuntimeError::ModuleLoad(format!("object heap id {object_id} not found")));
                 }
             }
             ctx.stack.push(Value::Object(object_id));

@@ -12,7 +12,7 @@ use crate::{
 };
 use nyar::QualifiedName;
 use nyar_types::{AggregateLayout, IntrinsicId, LayoutId, builtin_operator};
-use std_data::binary::nyar_ir::{
+use nyar_format::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
     NYAR_VERSION,
 };

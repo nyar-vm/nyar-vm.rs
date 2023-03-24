@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use std_data::binary::nyar_ir::{NYAR_VERSION, NyarModuleData, decode_module, encode_module};
+use nyar_format::{NYAR_VERSION, NyarModuleData, decode_module, encode_module};
 
 use crate::{Result, WorkspaceCacheError, sanitize_bucket_name};
 

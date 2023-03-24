@@ -5,7 +5,7 @@
 //! independent of any emitter-side lowering path.
 
 use nyar_vm::{NyarVm, Value};
-use std_data::binary::nyar_ir::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
+use nyar_format::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 /// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
 fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {

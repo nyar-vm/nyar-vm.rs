@@ -14,6 +14,7 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "nyar_language::{",
     "use nyar_language",
     "std_data::text::",
+    "std_data::",
     "ValkyrieCompiler",
     "HostScriptModule",
     "HostScriptBridge",

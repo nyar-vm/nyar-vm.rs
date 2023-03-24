@@ -4,7 +4,7 @@
 //! 不再经字符串宿主 `alloc_record` / `record_*`。
 
 use nyar_vm::{ModuleGlobals, NyarVm, Value};
-use std_data::binary::nyar_ir::{
+use nyar_format::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData, NYAR_VERSION,
     encode_module,
 };

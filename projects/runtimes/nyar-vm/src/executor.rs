@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Formatter};
 
-use std_data::binary::nyar_ir::decode_at;
+use nyar_format::decode_at;
 
 use crate::{
     error::NyarRuntimeError,
@@ -11,7 +11,7 @@ use crate::{
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
-use nyar_gc::{GarbageCollector, GcRoots, ObjectHeap};
+use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
 
 /// Bytecode interpreter loop.
 pub struct Executor {
@@ -102,6 +102,12 @@ impl Executor {
     ) -> Result<Value, NyarRuntimeError> {
         if function_index >= module.functions.len() {
             return Err(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32));
+        }
+
+        // 将外码 layouts 登记为 GC 可见的 LayoutDescriptor（保守：全部槽可能含引用）。
+        for (index, layout) in module.layouts.iter().enumerate() {
+            let field_count = layout.field_count.max(0) as u32;
+            self.heap.register_layout(LayoutDescriptor::all_references(index as u32, field_count));
         }
 
         let function = &module.functions[function_index];
@@ -264,7 +270,7 @@ impl Debug for Executor {
 
 #[cfg(test)]
 mod tests {
-    use std_data::binary::nyar_ir::{
+    use nyar_format::{
         NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module,
     };
 

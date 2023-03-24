@@ -49,15 +49,17 @@ fn collect_traces_nested_layout_references() {
 }
 
 #[test]
-fn collect_reuses_freed_slots() {
+fn collect_reuses_freed_slots_via_free_list() {
     let mut heap = ObjectHeap::new();
     let dead = heap.alloc(empty_layout(0));
     let mut gc = GarbageCollector::new();
     gc.collect(roots(&[], &[], &[], &[]), &mut heap);
     assert!(heap.get(dead).is_none());
+    assert_eq!(heap.free_list_len(), 1);
 
     let reused = heap.alloc(empty_layout(0));
     assert_eq!(reused, dead);
+    assert_eq!(heap.free_list_len(), 0);
 }
 
 #[test]

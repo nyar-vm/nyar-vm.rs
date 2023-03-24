@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "projects/formats/nyar-format",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
     "projects/runtimes/nyar-vm",
@@ -46,6 +47,7 @@ nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
 
+nyar-format = { path = "projects/formats/nyar-format" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
 nyar-vm = { path = "projects/runtimes/nyar-vm" }
@@ -77,6 +79,7 @@ thiserror = "2.0.17"
 nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
+nyar-format = { path = "projects/formats/nyar-format" }
 nyar-language = { path = "projects/compilers/nyar-language" }
 nyar-optimizer = { path = "projects/compilers/nyar-optimizer" }
 nyar-package-manager = { path = "projects/compilers/nyar-package-manager" }
