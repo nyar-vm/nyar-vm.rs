@@ -33,7 +33,8 @@ pub use error::NyarRuntimeError;
 pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
 pub use module::ModuleGlobals;
 pub use nyar_gc::{
-    GarbageCollector, GcMode, GcPolicy, GcRoots, LayoutDescriptor, LayoutId, ObjectHeap, ObjectPayload, WorkloadHints, WriteBarrier,
+    GarbageCollector, GcMode, GcPolicy, GcRoots, Generation, HostRoots, LayoutDescriptor, LayoutId, ObjectHeap, ObjectPayload,
+    RootHandle, WorkloadHints, WriteBarrier,
 };
 pub use value::{CoroutineState, ObjectId, Value};
 pub use vm::NyarVm;

@@ -74,4 +74,24 @@ impl NyarVm {
     pub fn heap(&self) -> &ObjectHeap {
         self.executor.heap()
     }
+
+    /// Mutably borrows the object heap（宿主根固定等）。
+    pub fn heap_mut(&mut self) -> &mut ObjectHeap {
+        self.executor.heap_mut()
+    }
+
+    /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
+    pub fn pin_root(&mut self, value: Value) -> nyar_gc::RootHandle {
+        self.executor.heap_mut().pin_root(value)
+    }
+
+    /// 释放宿主根。
+    pub fn unpin_root(&mut self, handle: nyar_gc::RootHandle) {
+        self.executor.heap_mut().unpin_root(handle);
+    }
+
+    /// 读取宿主根当前值。
+    pub fn get_root(&self, handle: nyar_gc::RootHandle) -> Option<&Value> {
+        self.executor.heap().get_root(handle)
+    }
 }

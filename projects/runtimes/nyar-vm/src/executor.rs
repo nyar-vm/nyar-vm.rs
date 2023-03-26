@@ -62,6 +62,11 @@ impl Executor {
         &self.heap
     }
 
+    /// Mutably borrows the object heap（宿主根 / 策略调整）。
+    pub fn heap_mut(&mut self) -> &mut ObjectHeap {
+        &mut self.heap
+    }
+
     /// Executes a function in `module` and returns its result value.
     pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])

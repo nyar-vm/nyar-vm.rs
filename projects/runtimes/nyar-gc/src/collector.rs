@@ -1,8 +1,9 @@
+use crate::generation::Generation;
 use crate::heap::ObjectHeap;
 use crate::trace::trace_value;
 use crate::value::{ObjectId, Value};
 
-/// Root set for a mark-sweep collection.
+/// Root set for a mark-sweep collection（不含宿主根；宿主根始终从堆内读取）。
 #[derive(Debug, Clone, Copy)]
 pub struct GcRoots<'a> {
     /// Operand stack values.
@@ -20,7 +21,7 @@ pub struct GcRoots<'a> {
     pub frame_coroutines: &'a [ObjectId],
 }
 
-/// Mark-sweep garbage collector.
+/// Mark-sweep garbage collector（全堆 + nursery 两种入口）。
 #[derive(Debug, Default)]
 pub struct GarbageCollector {
     marked: Vec<bool>,
@@ -32,7 +33,7 @@ impl GarbageCollector {
         Self::default()
     }
 
-    /// Marks roots and sweeps unreachable heap objects.
+    /// 全堆标记清扫：根 + 宿主根；回收后清空记忆集。
     pub fn collect(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) {
         let slot_count = heap.slot_count();
         if slot_count == 0 {
@@ -41,7 +42,41 @@ impl GarbageCollector {
 
         self.marked.resize(slot_count, false);
         self.marked.fill(false);
+        self.mark_interpreter_roots(roots, heap);
+        self.mark_host_roots(heap);
 
+        heap.sweep(&self.marked);
+        heap.clear_remembered();
+    }
+
+    /// Nursery 回收：根 + 宿主根 + 记忆集中的老年代容器；
+    /// 只清扫年轻代，并将存活年轻代晋升为老年代。
+    pub fn collect_nursery(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) {
+        let slot_count = heap.slot_count();
+        if slot_count == 0 {
+            return;
+        }
+
+        self.marked.resize(slot_count, false);
+        self.marked.fill(false);
+        self.mark_interpreter_roots(roots, heap);
+        self.mark_host_roots(heap);
+
+        // 记忆集：老年代对象可能指向年轻代，必须从这些容器继续追踪。
+        // `trace_object` 按 payload 展开，Object / Coroutine 槽共用 ObjectId。
+        let remembered: Vec<ObjectId> = heap.remembered_set().to_vec();
+        for container in remembered {
+            if heap.generation(container) == Some(Generation::Tenured) {
+                trace_value(&Value::Object(container), heap, &mut self.marked);
+            }
+        }
+
+        heap.sweep_nursery(&self.marked);
+        heap.promote_marked_nursery(&self.marked);
+        heap.clear_remembered();
+    }
+
+    fn mark_interpreter_roots(&mut self, roots: GcRoots<'_>, heap: &ObjectHeap) {
         for value in roots.stack {
             trace_value(value, heap, &mut self.marked);
         }
@@ -56,7 +91,13 @@ impl GarbageCollector {
         for &coroutine_id in roots.frame_coroutines {
             trace_value(&Value::Coroutine(coroutine_id), heap, &mut self.marked);
         }
+    }
 
-        heap.sweep(&self.marked);
+    fn mark_host_roots(&mut self, heap: &ObjectHeap) {
+        // 先收集再追踪，避免与 heap 借用冲突（trace 只读 heap）。
+        let pinned: Vec<Value> = heap.host_roots().iter().cloned().collect();
+        for value in &pinned {
+            trace_value(value, heap, &mut self.marked);
+        }
     }
 }

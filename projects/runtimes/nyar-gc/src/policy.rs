@@ -9,7 +9,7 @@ pub enum GcMode {
     /// 同步标记清扫（当前默认实现）。
     #[default]
     MarkSweep,
-    /// 预留：分代低延迟（尚未实现）。
+    /// 预留：分代低延迟（nursery 回收与晋升已落地；并发/物理拷贝未实现）。
     GenerationalLowLatency,
     /// 预留：吞吐优先大批次（尚未实现）。
     ThroughputBatch,
