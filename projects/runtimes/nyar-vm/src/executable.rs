@@ -45,6 +45,8 @@ impl ExecOp {
 pub struct ExecutableFunction {
     /// 预解码指令序列。
     pub ops: Vec<ExecOp>,
+    /// 可作为 GC safepoint 的指令下标（调用、分配、挂起、导入等）。
+    pub safepoints: Vec<InstructionIndex>,
     /// 外码 `code_offset`（诊断）。
     pub source_code_offset: u32,
     /// 外码 `code_length`（诊断）。
@@ -54,7 +56,12 @@ pub struct ExecutableFunction {
 impl ExecutableFunction {
     /// 空函数。
     pub fn empty() -> Self {
-        Self { ops: Vec::new(), source_code_offset: 0, source_code_length: 0 }
+        Self {
+            ops: Vec::new(),
+            safepoints: Vec::new(),
+            source_code_offset: 0,
+            source_code_length: 0,
+        }
     }
 }
 
@@ -76,6 +83,7 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     if length == 0 {
         return Ok(ExecutableFunction {
             ops: Vec::new(),
+            safepoints: Vec::new(),
             source_code_offset: start as u32,
             source_code_length: 0,
         });
@@ -102,7 +110,8 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     }
 
     let mut ops = Vec::with_capacity(decoded.len());
-    for (byte_pc, instruction) in &decoded {
+    let mut safepoints = Vec::new();
+    for (index, (byte_pc, instruction)) in decoded.iter().enumerate() {
         let mut target: InstructionIndex = 0;
         if matches!(
             instruction.code,
@@ -115,6 +124,9 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
                 ))
             })?;
         }
+        if is_safepoint(instruction.code) {
+            safepoints.push(index as InstructionIndex);
+        }
         ops.push(ExecOp {
             code: instruction.code,
             operand1: instruction.operand1,
@@ -126,9 +138,25 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
 
     Ok(ExecutableFunction {
         ops,
+        safepoints,
         source_code_offset: start as u32,
         source_code_length: length as u32,
     })
+}
+
+fn is_safepoint(code: NyarHeadCode) -> bool {
+    matches!(
+        code,
+        NyarHeadCode::Call
+            | NyarHeadCode::CallStatic
+            | NyarHeadCode::CallImport
+            | NyarHeadCode::CallIntrinsic
+            | NyarHeadCode::ObjectNew
+            | NyarHeadCode::Yield
+            | NyarHeadCode::Resume
+            | NyarHeadCode::PerformEffect
+            | NyarHeadCode::Return
+    )
 }
 
 /// 为模块中每个函数构建内码表。
@@ -171,5 +199,6 @@ mod tests {
         assert_eq!(exec.ops[0].code, NyarHeadCode::Jump);
         assert_eq!(exec.ops[0].target, 2); // Return is instruction index 2
         assert_eq!(exec.ops[2].code, NyarHeadCode::Return);
+        assert!(exec.safepoints.contains(&2));
     }
 }
