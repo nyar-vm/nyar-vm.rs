@@ -8,7 +8,9 @@ pub type ObjectId = usize;
 pub struct CoroutineState {
     /// Function index in the owning module.
     pub function_index: usize,
-    /// Instruction pointer to resume from (already advanced past the `Yield` opcode).
+    /// 内码指令下标：恢复点（已越过 `Yield` / `PerformEffect`）。
+    ///
+    /// 与解释器帧的 `ip` 同为函数内 `ExecOp` 下标，不再是外码字节偏移。
     pub ip: usize,
     /// Captured local variable slots.
     pub locals: Vec<Value>,

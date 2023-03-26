@@ -16,6 +16,7 @@
 
 pub mod array_runtime;
 pub mod error;
+pub mod executable;
 pub mod executor;
 pub mod frame;
 pub mod host;
@@ -29,6 +30,7 @@ pub mod verify;
 pub mod vm;
 
 pub use error::NyarRuntimeError;
+pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
 pub use module::ModuleGlobals;
 pub use nyar_gc::{
     GarbageCollector, GcMode, GcPolicy, GcRoots, LayoutDescriptor, LayoutId, ObjectHeap, ObjectPayload, WorkloadHints, WriteBarrier,

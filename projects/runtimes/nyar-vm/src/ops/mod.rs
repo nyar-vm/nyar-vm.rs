@@ -1,7 +1,8 @@
-use nyar_format::{NyarHeadCode, NyarInstruction};
+use nyar_format::NyarHeadCode;
 
 use crate::{
     error::NyarRuntimeError,
+    executable::ExecOp,
     frame::Frame,
     module::LoadedModule,
     stack::ValueStack,
@@ -35,11 +36,6 @@ pub enum StepResult {
         yielded_value: Value,
     },
     /// Resume a coroutine: restore a suspended frame and inject the resume value.
-    ///
-    /// Carries the heap id of the resumed coroutine so the executor can stamp it onto
-    /// the freshly pushed frame's `coroutine_origin`. When that frame later reaches
-    /// `Return`, the executor writes `done = true` back into the heap entry — visible
-    /// to every stack/local copy that holds the same `Value::Coroutine(id)`.
     ResumeCoroutine {
         /// Heap id of the coroutine being resumed.
         coroutine_id: ObjectId,
@@ -49,12 +45,6 @@ pub enum StepResult {
         resume_value: Value,
     },
     /// Invoke an effect handler found via `witness_entries`.
-    ///
-    /// The executor pops the current frame and captures it as a continuation
-    /// (heap-backed coroutine), then pushes a fresh handler frame with the effect
-    /// payload and `Value::Coroutine(continuation_id)` on its operand stack. The
-    /// handler can `Resume` the continuation (if the effect's `Resume` type allows)
-    /// or simply `Return` to unwind past it.
     InvokeHandler {
         /// Handler function index from `witness_entries`.
         handler_function_index: usize,
@@ -75,96 +65,101 @@ pub struct ExecutionContext<'a> {
     pub heap: &'a mut ObjectHeap,
 }
 
-/// Dispatches one decoded instruction.
-pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, NyarRuntimeError> {
-    match instruction.code {
+/// 执行一条预解码内码；`frame.ip` 为函数内指令下标。
+pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, NyarRuntimeError> {
+    match op.code {
+        NyarHeadCode::Jump => {
+            frame.ip = op.target as usize;
+            Ok(StepResult::Continue)
+        }
+        NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
+            let condition = ctx.stack.pop()?.to_bool();
+            let should_jump = match op.code {
+                NyarHeadCode::JumpIfTrue => condition,
+                NyarHeadCode::JumpIfFalse => !condition,
+                _ => false,
+            };
+            if should_jump {
+                frame.ip = op.target as usize;
+            }
+            else {
+                frame.ip += 1;
+            }
+            Ok(StepResult::Continue)
+        }
         NyarHeadCode::Nop => {
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             Ok(StepResult::Continue)
         }
         NyarHeadCode::Const => {
-            let index = instruction.operand1;
+            let index = op.operand1;
             let constant = ctx.module.constant_at(index).ok_or(NyarRuntimeError::ConstantIndexOutOfRange(index))?;
             ctx.stack.push(value_from_constant(constant));
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             Ok(StepResult::Continue)
         }
         NyarHeadCode::Pop => {
             ctx.stack.pop()?;
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             Ok(StepResult::Continue)
         }
         NyarHeadCode::Dup => {
             ctx.stack.dup()?;
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             Ok(StepResult::Continue)
         }
         NyarHeadCode::Return => Ok(StepResult::Return),
         NyarHeadCode::Yield => {
             let yielded_value = ctx.stack.pop()?;
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             Ok(StepResult::Suspend { yielded_value })
         }
         NyarHeadCode::Resume => {
             let resume_value = ctx.stack.pop()?;
             let coroutine = ctx.stack.pop()?;
-            // Advance the caller's ip past the Resume opcode *before* the executor swaps frames.
-            // Without this, control returns to the Resume instruction and re-executes it,
-            // popping an already-empty stack (`StackUnderflow`).
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
             match coroutine {
                 Value::Coroutine(id) => {
-                    let state = ctx.heap.get_coroutine(id).ok_or(NyarRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
+                    let state =
+                        ctx.heap.get_coroutine(id).ok_or(NyarRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
                     if state.done {
-                        return Err(NyarRuntimeError::TypeMismatch { expected: "active coroutine", actual: "completed coroutine".to_string() });
+                        return Err(NyarRuntimeError::TypeMismatch {
+                            expected: "active coroutine",
+                            actual: "completed coroutine".to_string(),
+                        });
                     }
-                    // Clone the snapshot for frame restoration; the heap entry stays in place so
-                    // subsequent `done` / `yielded_value` mutations are visible to all copies.
                     Ok(StepResult::ResumeCoroutine { coroutine_id: id, state: state.clone(), resume_value })
                 }
                 other => Err(NyarRuntimeError::TypeMismatch { expected: "coroutine", actual: other.type_name().to_string() }),
             }
         }
         NyarHeadCode::PerformEffect => {
-            // `raise expr`：payload 已在栈顶。
-            // operand1 = 常量池索引，指向 effect 的 method_name 字符串。
-            // VM 用 method_name 在 witness_entries 中查找 handler：
-            //   找到 -> InvokeHandler（捕获续延 + 调用 handler）
-            //   没找到 -> 降级为 Suspend（向后兼容无 witness_entries 的模块）
             let effect_value = ctx.stack.pop()?;
-            frame.ip += instruction.size as usize;
+            frame.ip += 1;
 
-            let effect_name_index = instruction.operand1;
+            let effect_name_index = op.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
                 Some(nyar_format::NyarConstant::String(name)) => name.as_str(),
                 _ => "raise",
             };
 
-            // 在 witness_entries 中搜索匹配的 handler
             let handler_entry = ctx.module.witness_entries.iter().find(|entry| entry.method_name == effect_name);
 
             match handler_entry {
                 Some(entry) if entry.function_index >= 0 => {
-                    // 找到 handler：由 executor 捕获当前帧为 continuation 并 push handler frame。
                     Ok(StepResult::InvokeHandler { handler_function_index: entry.function_index as usize, effect_value })
                 }
-                _ => {
-                    // 没找到 handler：降级为 Suspend（向后兼容）
-                    Ok(StepResult::Suspend { yielded_value: effect_value })
-                }
+                _ => Ok(StepResult::Suspend { yielded_value: effect_value }),
             }
         }
-        NyarHeadCode::Call | NyarHeadCode::CallStatic => execute_call(instruction, frame, ctx.module),
-        NyarHeadCode::Jump
-        | NyarHeadCode::JumpIfTrue
-        | NyarHeadCode::JumpIfFalse
-        | NyarHeadCode::LoadLocal
+        NyarHeadCode::Call | NyarHeadCode::CallStatic => execute_call(op.as_instruction(), frame, ctx.module),
+        NyarHeadCode::LoadLocal
         | NyarHeadCode::StoreLocal
         | NyarHeadCode::LoadArg
         | NyarHeadCode::LoadGlobal
         | NyarHeadCode::StoreGlobal
-        |         NyarHeadCode::CallImport
-        | NyarHeadCode::CallIntrinsic => execute_control(instruction, frame, ctx),
+        | NyarHeadCode::CallImport
+        | NyarHeadCode::CallIntrinsic => execute_control(op.as_instruction(), frame, ctx),
         NyarHeadCode::I32Add
         | NyarHeadCode::I32Sub
         | NyarHeadCode::I32Mul
@@ -175,9 +170,9 @@ pub fn dispatch(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut Execu
         | NyarHeadCode::I32LtS
         | NyarHeadCode::I32LeS
         | NyarHeadCode::I32GtS
-        | NyarHeadCode::I32GeS => execute_arithmetic(instruction, frame, ctx.stack),
+        | NyarHeadCode::I32GeS => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
         NyarHeadCode::ObjectNew | NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => {
-            execute_object(instruction, frame, ctx)
+            execute_object(op.as_instruction(), frame, ctx)
         }
     }
 }

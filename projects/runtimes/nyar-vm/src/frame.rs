@@ -5,7 +5,7 @@ use crate::value::{ObjectId, Value};
 pub struct Frame {
     /// Local variable slots.
     pub locals: Vec<Value>,
-    /// Instruction pointer into the module code section.
+    /// 内码指令下标（相对当前函数的 [`crate::executable::ExecutableFunction::ops`]）。
     pub ip: usize,
     /// Index into the module function table.
     pub function_index: usize,

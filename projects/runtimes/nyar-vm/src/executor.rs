@@ -1,13 +1,11 @@
 use std::fmt::{self, Debug, Formatter};
 
-use nyar_format::decode_at;
-
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
     jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, compile_request},
     module::LoadedModule,
-    ops::{ExecutionContext, StepResult, dispatch},
+    ops::{ExecutionContext, StepResult, dispatch_exec},
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
@@ -112,29 +110,27 @@ impl Executor {
 
         let function = &module.functions[function_index];
         let mut frame = Frame::new(function_index, function.local_count.max(function.arity) as usize, 0);
-        frame.ip = function.code_offset as usize;
+        // 内码从指令下标 0 开始。
+        frame.ip = 0;
         frame.set_arguments(args);
         self.frames = vec![frame];
 
         while let Some(current) = self.frames.last_mut() {
-            let end = {
-                let function = &module.functions[current.function_index];
-                function.code_offset as usize + function.code_length as usize
-            };
+            let ops_len = module
+                .executable
+                .get(current.function_index)
+                .map(|exec| exec.ops.len())
+                .unwrap_or(0);
 
-            if current.ip >= end {
+            if current.ip >= ops_len {
                 self.frames.pop();
                 continue;
             }
 
-            let instruction = decode_at(&module.code_bytes, current.ip);
-            if !instruction.is_valid() {
-                return Err(NyarRuntimeError::UnknownOpcode(module.code_bytes.get(current.ip).copied().unwrap_or(0)));
-            }
-
+            let op = module.executable[current.function_index].ops[current.ip];
             let mut ctx = ExecutionContext { module, globals, stack: &mut self.stack, heap: &mut self.heap };
 
-            match dispatch(instruction, current, &mut ctx)? {
+            match dispatch_exec(op, current, &mut ctx)? {
                 StepResult::Continue => {}
                 StepResult::Return => {
                     let finished = self.frames.pop().expect("return without frame");
@@ -180,7 +176,7 @@ impl Executor {
                     call_args.reverse();
 
                     let mut child = Frame::new(function_index, target.local_count.max(target.arity) as usize, self.stack.len());
-                    child.ip = target.code_offset as usize;
+                    child.ip = 0;
                     child.set_arguments(call_args);
                     self.frames.push(child);
                 }
@@ -210,7 +206,7 @@ impl Executor {
                     // 恢复帧快照与挂起时的操作数栈片段，记录 `coroutine_origin`，
                     // 再注入 resume_value，从挂起点之后继续执行。
                     let mut frame = Frame::new(state.function_index, 0, self.stack.len());
-                    frame.ip = state.ip;
+                    frame.ip = state.ip; // 内码指令下标
                     frame.locals = state.locals;
                     frame.coroutine_origin = Some(coroutine_id);
                     self.frames.push(frame);
@@ -236,7 +232,7 @@ impl Executor {
                     let target = &module.functions[handler_function_index];
                     let mut handler_frame =
                         Frame::new(handler_function_index, target.local_count.max(target.arity) as usize, self.stack.len());
-                    handler_frame.ip = target.code_offset as usize;
+                    handler_frame.ip = 0;
                     self.frames.push(handler_frame);
 
                     // 推入 handler 参数：先 continuation，再 effect_value（effect_value 在栈顶）

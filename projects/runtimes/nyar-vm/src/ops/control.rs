@@ -62,7 +62,7 @@ pub fn execute_control(
             let index = instruction.operand1 as usize;
             let value = ctx.stack.pop()?;
             let slot = ctx.globals.get_mut(index).ok_or(NyarRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
-            *slot = value;
+            nyar_gc::write_value_slot(ctx.heap.barrier_mut(), slot, value);
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }

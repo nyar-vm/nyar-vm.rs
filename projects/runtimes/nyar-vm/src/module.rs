@@ -5,6 +5,7 @@ use nyar_format::{
 
 use crate::{
     error::NyarRuntimeError,
+    executable::{ExecutableFunction, build_executable_table},
     host::{ResolvedImport, resolve_import},
     value::Value,
     verify::verify_module,
@@ -55,8 +56,10 @@ pub struct LoadedModule {
     pub exports: Vec<NyarExport>,
     /// Witness dispatch table.
     pub witness_entries: Vec<NyarWitnessDispatchEntry>,
-    /// Flat code section bytes.
+    /// Flat code section bytes（外码；诊断与 JIT 原始视图）。
     pub code_bytes: Vec<u8>,
+    /// 按函数索引排列的预解码内码（加载期由外码生成）。
+    pub executable: Vec<ExecutableFunction>,
     /// Module-level global slot metadata.
     pub globals: Vec<NyarGlobal>,
     /// Eager init function indices.
@@ -76,6 +79,7 @@ impl LoadedModule {
     pub fn from_data(data: NyarModuleData) -> Result<Self, NyarRuntimeError> {
         verify_module(&data)?;
         let resolved_imports = data.imports.iter().map(resolve_import).collect::<Result<Vec<_>, _>>()?;
+        let executable = build_executable_table(&data.code_bytes, &data.functions)?;
         Ok(Self {
             version: data.version,
             name: data.name,
@@ -86,6 +90,7 @@ impl LoadedModule {
             exports: data.exports,
             witness_entries: data.witness_entries,
             code_bytes: data.code_bytes,
+            executable,
             globals: data.globals,
             init_function_indices: data.init_function_indices,
             layouts: data.layouts,
