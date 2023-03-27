@@ -158,7 +158,7 @@ impl Executor {
                     if let Some(coroutine_id) = finished.coroutine_origin {
                         frame_coroutines.push(coroutine_id);
                     }
-                    self.gc.collect(
+                    self.gc.collect_for_policy(
                         GcRoots {
                             stack: self.stack.values(),
                             frame_locals: &frame_locals,

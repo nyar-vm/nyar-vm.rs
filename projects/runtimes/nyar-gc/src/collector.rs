@@ -21,16 +21,38 @@ pub struct GcRoots<'a> {
     pub frame_coroutines: &'a [ObjectId],
 }
 
-/// Mark-sweep garbage collector（全堆 + nursery 两种入口）。
+/// Mark-sweep garbage collector（全堆 + nursery + 策略入口）。
 #[derive(Debug, Default)]
 pub struct GarbageCollector {
     marked: Vec<bool>,
+    /// 自上次全堆回收以来已完成的 nursery 次数（分代模式）。
+    nursery_collects_since_full: u32,
 }
 
 impl GarbageCollector {
     /// Creates a collector.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 按堆上 [`crate::GcPolicy`] 选择 nursery 或全堆回收。
+    pub fn collect_for_policy(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) {
+        use crate::policy::GcMode;
+
+        let mode = heap.policy().mode;
+        let force_full = heap.policy().hints.allow_heavy_collection
+            || self.nursery_collects_since_full >= heap.policy().full_collect_every_n_nursery;
+
+        match mode {
+            GcMode::GenerationalLowLatency if !force_full => {
+                self.collect_nursery(roots, heap);
+                self.nursery_collects_since_full = self.nursery_collects_since_full.saturating_add(1);
+            }
+            GcMode::MarkSweep | GcMode::ThroughputBatch | GcMode::GenerationalLowLatency => {
+                self.collect(roots, heap);
+                self.nursery_collects_since_full = 0;
+            }
+        }
     }
 
     /// 全堆标记清扫：根 + 宿主根；回收后清空记忆集。

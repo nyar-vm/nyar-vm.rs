@@ -177,3 +177,32 @@ fn write_barrier_remembers_old_to_young_for_nursery_collect() {
     assert_eq!(heap.generation(young), Some(Generation::Tenured));
     assert!(heap.barrier().remembered_set().is_empty());
 }
+
+#[test]
+fn collect_for_policy_uses_nursery_then_forces_full() {
+    use nyar_gc::GcPolicy;
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::generational_low_latency().with_full_collect_every(2));
+    let keep = heap.alloc(empty_layout(0));
+    let _dead1 = heap.alloc(empty_layout(1));
+    let stack = [Value::Object(keep)];
+    let mut gc = GarbageCollector::new();
+
+    gc.collect_for_policy(roots(&stack, &[], &[], &[]), &mut heap);
+    assert!(heap.get(keep).is_some());
+    assert_eq!(heap.generation(keep), Some(Generation::Tenured));
+
+    let young = heap.alloc(empty_layout(2));
+    let orphan = heap.alloc(empty_layout(3));
+    let stack2 = [Value::Object(young)];
+    // 第二次仍为 nursery（every=2 表示满 2 次后下一次全堆）
+    gc.collect_for_policy(roots(&stack2, &[], &[], &[]), &mut heap);
+    assert!(heap.get(orphan).is_none());
+
+    let tenured_keep = heap.alloc_tenured(empty_layout(4));
+    let orphan2 = heap.alloc(empty_layout(5));
+    // 第三次：nursery_collects_since_full >= 2 → 全堆
+    gc.collect_for_policy(roots(&[], &[], &[], &[]), &mut heap);
+    assert!(heap.get(tenured_keep).is_none());
+    assert!(heap.get(orphan2).is_none());
+}

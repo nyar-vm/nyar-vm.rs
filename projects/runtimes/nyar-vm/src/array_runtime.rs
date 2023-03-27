@@ -87,20 +87,15 @@ fn read_layout_element(heap: &ObjectHeap, object_id: ObjectId, index: usize) -> 
 }
 
 fn write_layout_element(heap: &mut ObjectHeap, object_id: ObjectId, index: usize, value: Value) -> Result<(), NyarRuntimeError> {
-    match heap.get_mut(object_id) {
-        Some(ObjectPayload::LayoutObject { slots, .. }) => {
-            if index >= slots.len() {
-                return Err(NyarRuntimeError::FieldSlotOutOfRange(index as i32));
-            }
-            slots[index] = value;
-            Ok(())
-        }
-        Some(_) => Err(NyarRuntimeError::TypeMismatch {
+    // 与 FieldSet 同一写屏障入口，保证老→年轻记忆集不漏数组元素写。
+    heap.set_field(object_id, index, value).map_err(|reason| match reason {
+        "field slot out of range" => NyarRuntimeError::FieldSlotOutOfRange(index as i32),
+        "object not found" => NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")),
+        other => NyarRuntimeError::TypeMismatch {
             expected: "layout array",
-            actual: "non-layout object".to_string(),
-        }),
-        None => Err(NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}"))),
-    }
+            actual: other.to_string(),
+        },
+    })
 }
 
 #[cfg(test)]
@@ -123,5 +118,25 @@ mod tests {
         let heap = ObjectHeap::new();
         let err = array_len(&heap, &Value::I32(1)).expect_err("non-object must fail");
         assert!(matches!(err, NyarRuntimeError::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn array_set_records_old_to_young_barrier() {
+        use nyar_gc::Generation;
+
+        let mut heap = ObjectHeap::new();
+        let array_id = heap.alloc_tenured(ObjectPayload::LayoutObject {
+            layout_id: 0,
+            slots: vec![Value::Null, Value::Null],
+        });
+        let young = heap.alloc(ObjectPayload::LayoutObject {
+            layout_id: 1,
+            slots: vec![],
+        });
+        let array = Value::Object(array_id);
+        array_set(&mut heap, &array, &Value::I32(0), &Value::Object(young)).expect("set");
+        assert!(!heap.barrier().remembered_set().is_empty());
+        assert_eq!(heap.generation(array_id), Some(Generation::Tenured));
+        assert_eq!(heap.generation(young), Some(Generation::Nursery));
     }
 }

@@ -75,9 +75,14 @@ impl NyarVm {
         self.executor.heap()
     }
 
-    /// Mutably borrows the object heap（宿主根固定等）。
+    /// Mutably borrows the object heap（宿主根 / 策略调整）。
     pub fn heap_mut(&mut self) -> &mut ObjectHeap {
         self.executor.heap_mut()
+    }
+
+    /// 设置堆级 GC 策略（立即生效于后续 safepoint）。
+    pub fn set_gc_policy(&mut self, policy: nyar_gc::GcPolicy) {
+        self.executor.heap_mut().set_policy(policy);
     }
 
     /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
