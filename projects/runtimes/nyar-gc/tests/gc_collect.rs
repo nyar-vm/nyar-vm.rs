@@ -206,3 +206,31 @@ fn collect_for_policy_uses_nursery_then_forces_full() {
     assert!(heap.get(tenured_keep).is_none());
     assert!(heap.get(orphan2).is_none());
 }
+
+#[test]
+fn accounting_tracks_live_bytes_and_soft_limit_forces_full() {
+    use nyar_gc::{GcPolicy, WorkloadHints};
+
+    let mut heap = ObjectHeap::with_policy(
+        GcPolicy::generational_low_latency()
+            .with_full_collect_every(100)
+            .with_hints(WorkloadHints {
+                heap_soft_limit_bytes: Some(1),
+                ..WorkloadHints::default()
+            }),
+    );
+    let live = heap.alloc(empty_layout(0));
+    let dead = heap.alloc(empty_layout(1));
+    assert!(heap.live_bytes() > 0);
+    assert!(heap.over_soft_limit());
+
+    let before_total = heap.total_allocated_bytes();
+    let stack = [Value::Object(live)];
+    let mut gc = GarbageCollector::new();
+    // 软上限 → 即使分代模式也走全堆
+    gc.collect_for_policy(roots(&stack, &[], &[], &[]), &mut heap);
+    assert!(heap.get(live).is_some());
+    assert!(heap.get(dead).is_none());
+    assert!(heap.live_bytes() < before_total);
+    assert_eq!(heap.total_allocated_bytes(), before_total);
+}

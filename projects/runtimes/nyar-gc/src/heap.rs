@@ -5,6 +5,11 @@ use crate::policy::GcPolicy;
 use crate::roots::{HostRoots, RootHandle};
 use crate::value::{CoroutineState, ObjectId, Value};
 
+/// 单对象头部近似开销（诊断用，非物理分配器精确值）。
+const OBJECT_HEADER_BYTES: u64 = 16;
+/// 每个值槽近似宽度。
+const VALUE_SLOT_BYTES: u64 = 24;
+
 /// Object payload stored in the heap.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjectPayload {
@@ -19,7 +24,23 @@ pub enum ObjectPayload {
     Coroutine(CoroutineState),
 }
 
-/// Managed object heap：自由列表分配 + 布局表 + 写屏障 + 宿主根 + 分代标签。
+impl ObjectPayload {
+    /// 近似托管字节数（记账用）。
+    pub fn accounting_bytes(&self) -> u64 {
+        match self {
+            Self::LayoutObject { slots, .. } => {
+                OBJECT_HEADER_BYTES + (slots.len() as u64).saturating_mul(VALUE_SLOT_BYTES)
+            }
+            Self::Coroutine(state) => {
+                let locals = (state.locals.len() as u64).saturating_mul(VALUE_SLOT_BYTES);
+                let ops = (state.operand_stack.len() as u64).saturating_mul(VALUE_SLOT_BYTES);
+                OBJECT_HEADER_BYTES + locals + ops + VALUE_SLOT_BYTES // yielded_value
+            }
+        }
+    }
+}
+
+/// Managed object heap：自由列表分配 + 布局表 + 写屏障 + 宿主根 + 分代标签 + 字节记账。
 #[derive(Debug)]
 pub struct ObjectHeap {
     objects: Vec<Option<ObjectPayload>>,
@@ -31,6 +52,10 @@ pub struct ObjectHeap {
     barrier: WriteBarrier,
     policy: GcPolicy,
     host_roots: HostRoots,
+    /// 当前存活对象近似字节合计。
+    live_bytes: u64,
+    /// 进程内累计分配字节（含已回收）。
+    total_allocated_bytes: u64,
 }
 
 impl Default for ObjectHeap {
@@ -50,6 +75,8 @@ impl ObjectHeap {
             barrier: WriteBarrier::new(),
             policy: GcPolicy::mark_sweep_baseline(),
             host_roots: HostRoots::new(),
+            live_bytes: 0,
+            total_allocated_bytes: 0,
         }
     }
 
@@ -154,6 +181,10 @@ impl ObjectHeap {
     }
 
     fn alloc_in(&mut self, payload: ObjectPayload, generation: Generation) -> ObjectId {
+        let bytes = payload.accounting_bytes();
+        self.live_bytes = self.live_bytes.saturating_add(bytes);
+        self.total_allocated_bytes = self.total_allocated_bytes.saturating_add(bytes);
+
         if let Some(id) = self.free_list.pop() {
             self.objects[id] = Some(payload);
             if id >= self.generations.len() {
@@ -166,6 +197,24 @@ impl ObjectHeap {
         self.objects.push(Some(payload));
         self.generations.push(generation);
         id
+    }
+
+    /// 当前存活对象近似字节数。
+    pub fn live_bytes(&self) -> u64 {
+        self.live_bytes
+    }
+
+    /// 累计分配字节（含已回收对象）。
+    pub fn total_allocated_bytes(&self) -> u64 {
+        self.total_allocated_bytes
+    }
+
+    /// 是否超过工作负载声明的堆软上限。
+    pub fn over_soft_limit(&self) -> bool {
+        match self.policy.hints.heap_soft_limit_bytes {
+            Some(limit) if limit > 0 => self.live_bytes >= limit,
+            _ => false,
+        }
     }
 
     /// Allocate a layout object with `field_count` null slots.
@@ -256,7 +305,9 @@ impl ObjectHeap {
     pub(crate) fn sweep(&mut self, marked: &[bool]) {
         for (index, slot) in self.objects.iter_mut().enumerate() {
             if slot.is_some() && (index >= marked.len() || !marked[index]) {
-                *slot = None;
+                if let Some(payload) = slot.take() {
+                    self.live_bytes = self.live_bytes.saturating_sub(payload.accounting_bytes());
+                }
                 self.free_list.push(index);
             }
         }
@@ -273,7 +324,9 @@ impl ObjectHeap {
                 continue;
             }
             if index >= marked.len() || !marked[index] {
-                *slot = None;
+                if let Some(payload) = slot.take() {
+                    self.live_bytes = self.live_bytes.saturating_sub(payload.accounting_bytes());
+                }
                 self.free_list.push(index);
             }
         }

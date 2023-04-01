@@ -41,6 +41,7 @@ impl GarbageCollector {
 
         let mode = heap.policy().mode;
         let force_full = heap.policy().hints.allow_heavy_collection
+            || heap.over_soft_limit()
             || self.nursery_collects_since_full >= heap.policy().full_collect_every_n_nursery;
 
         match mode {
