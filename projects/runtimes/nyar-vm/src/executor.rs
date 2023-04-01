@@ -132,11 +132,28 @@ impl Executor {
                 continue;
             }
 
-            let op = module.executable[current.function_index].ops[current.ip];
-            let mut ctx = ExecutionContext { module, globals, stack: &mut self.stack, heap: &mut self.heap };
+            let function_index = current.function_index;
+            let ip_at_op = current.ip as u32;
+            let pressure_safepoint = self.heap.over_soft_limit()
+                && module
+                    .executable
+                    .get(function_index)
+                    .map(|exec| exec.safepoints.binary_search(&ip_at_op).is_ok())
+                    .unwrap_or(false);
 
-            match dispatch_exec(op, current, &mut ctx)? {
-                StepResult::Continue => {}
+            let op = module.executable[function_index].ops[current.ip];
+            let step = {
+                let mut ctx = ExecutionContext { module, globals, stack: &mut self.stack, heap: &mut self.heap };
+                dispatch_exec(op, current, &mut ctx)?
+            };
+
+            match step {
+                StepResult::Continue => {
+                    // 软上限压力下，在分配/调用等 safepoint 触发策略回收，避免拖到 Return。
+                    if pressure_safepoint {
+                        self.collect_active_roots(globals);
+                    }
+                }
                 StepResult::Return => {
                     let finished = self.frames.pop().expect("return without frame");
                     // If this frame was resuming a coroutine, mark the heap entry as done and
@@ -249,6 +266,21 @@ impl Executor {
 
         Ok(Value::Null)
     }
+
+    /// 以当前帧 / 栈 / 全局为根执行策略回收（压力 safepoint 与 Return 共用合同）。
+    fn collect_active_roots(&mut self, globals: &mut [Value]) {
+        let frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
+        let frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
+        self.gc.collect_for_policy(
+            GcRoots {
+                stack: self.stack.values(),
+                frame_locals: &frame_locals,
+                globals,
+                frame_coroutines: &frame_coroutines,
+            },
+            &mut self.heap,
+        );
+    }
 }
 
 impl Default for Executor {
@@ -271,7 +303,7 @@ impl Debug for Executor {
 
 #[cfg(test)]
 mod tests {
-    use nyar_format::{
+    use nyar_bytecode::{
         NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module,
     };
 

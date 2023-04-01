@@ -73,6 +73,11 @@ impl GcPolicy {
         self
     }
 
+    /// 仅更新工作负载提示，保留模式与周期配置。
+    pub fn apply_hints(&mut self, hints: WorkloadHints) {
+        self.hints = hints;
+    }
+
     /// 调整 nursery→全堆周期。
     pub fn with_full_collect_every(mut self, n: u32) -> Self {
         self.full_collect_every_n_nursery = n.max(1);

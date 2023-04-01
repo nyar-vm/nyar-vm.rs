@@ -85,6 +85,11 @@ impl NyarVm {
         self.executor.heap_mut().set_policy(policy);
     }
 
+    /// 更新工作负载提示（软上限、暂停预算等），不改 GC 模式。
+    pub fn apply_workload_hints(&mut self, hints: nyar_gc::WorkloadHints) {
+        self.executor.heap_mut().policy_mut().apply_hints(hints);
+    }
+
     /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
     pub fn pin_root(&mut self, value: Value) -> nyar_gc::RootHandle {
         self.executor.heap_mut().pin_root(value)

@@ -92,6 +92,11 @@ impl ObjectHeap {
         &self.policy
     }
 
+    /// Mutably borrow GC policy（更新工作负载提示等）。
+    pub fn policy_mut(&mut self) -> &mut GcPolicy {
+        &mut self.policy
+    }
+
     /// Replace GC policy (does not migrate live objects between algorithms).
     pub fn set_policy(&mut self, policy: GcPolicy) {
         self.policy = policy;
