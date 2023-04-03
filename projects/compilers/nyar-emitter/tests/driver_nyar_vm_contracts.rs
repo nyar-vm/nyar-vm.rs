@@ -4,7 +4,7 @@ use nyar::{
     backends::CompilationOptions,
 };
 use nyar_emitter::{LoweredBackendInput, NyarVmBackendInput, testing::compile_lowered_backend_input};
-use nyar_format::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarModuleData};
+use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarModuleData};
 use tempfile::tempdir;
 
 fn vm_options() -> CompilationOptions {

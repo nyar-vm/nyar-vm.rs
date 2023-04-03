@@ -17,7 +17,7 @@ use nyar::NyarType;
 use nyar_types::{AggregateLayout, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME, SingletonInstancePlan};
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{FieldLayout, SINGLETON_UNLOAD_ACCESSOR};
-use nyar_format::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData};
+use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData};
 use std_data::binary::pe::NativeImageBuilder;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use std_data::{

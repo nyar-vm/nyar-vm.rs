@@ -1,6 +1,6 @@
 use nyar_vm::{jit::JitError, NyarVm};
 
-use nyar_format::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
+use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 fn empty_module() -> nyar_vm::module::LoadedModule {
     let code = vec![NyarHeadCode::Return as u8];

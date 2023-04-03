@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nyar::{Identifier, QualifiedName, RewriteTheory, TheoryBundle};
 use nyar_emitter::{FragmentSubmission, testing::lower_fragment_to_nyar_module};
-use nyar_format::encode_module;
+use nyar_bytecode::encode_module;
 
 #[test]
 fn emits_nyar_module_with_exports() {

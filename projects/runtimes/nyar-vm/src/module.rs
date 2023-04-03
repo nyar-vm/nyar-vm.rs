@@ -1,4 +1,4 @@
-use nyar_format::{
+use nyar_bytecode::{
     NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry,
     decode_module,
 };
@@ -109,7 +109,7 @@ impl LoadedModule {
     pub fn export_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == nyar_format::NyarExportKind::Function && export.symbol_name == name)
+            .find(|export| export.kind == nyar_bytecode::NyarExportKind::Function && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 
@@ -117,7 +117,7 @@ impl LoadedModule {
     pub fn export_global_index(&self, name: &str) -> Option<usize> {
         self.exports
             .iter()
-            .find(|export| export.kind == nyar_format::NyarExportKind::Global && export.symbol_name == name)
+            .find(|export| export.kind == nyar_bytecode::NyarExportKind::Global && export.symbol_name == name)
             .map(|export| export.function_index as usize)
     }
 }

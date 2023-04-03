@@ -1075,12 +1075,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nyar-bytecode"
+version = "0.1.0"
+
+[[package]]
 name = "nyar-emitter"
 version = "0.1.0"
 dependencies = [
  "miette",
  "nyar",
- "nyar-format",
+ "nyar-bytecode",
  "nyar-language",
  "nyar-types",
  "ordered-float",
@@ -1090,10 +1094,6 @@ dependencies = [
  "vcc-data",
  "zip",
 ]
-
-[[package]]
-name = "nyar-format"
-version = "0.1.0"
 
 [[package]]
 name = "nyar-gc"
@@ -1111,8 +1111,8 @@ dependencies = [
  "miette",
  "nyar",
  "nyar-analyzer",
+ "nyar-bytecode",
  "nyar-emitter",
- "nyar-format",
  "nyar-types",
  "ordered-float",
  "serde",
@@ -1197,7 +1197,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "miette",
- "nyar-format",
+ "nyar-bytecode",
  "nyar-gc",
  "nyar-jit",
  "serde_json",
@@ -1214,7 +1214,7 @@ dependencies = [
 name = "nyar-workspace"
 version = "0.1.0"
 dependencies = [
- "nyar-format",
+ "nyar-bytecode",
  "sha2",
  "tempfile",
  "thiserror",
@@ -2281,7 +2281,7 @@ version = "0.0.1"
 dependencies = [
  "miette",
  "nyar",
- "nyar-format",
+ "nyar-bytecode",
  "nyar-types",
  "serde",
  "zip",

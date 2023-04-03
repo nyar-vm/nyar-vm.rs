@@ -1,6 +1,6 @@
 //! 结构指令：`ObjectNew` / `FieldGet` / `FieldSet`（按 layout_id + field_slot）。
 
-use nyar_format::{NyarHeadCode, NyarInstruction};
+use nyar_bytecode::{NyarHeadCode, NyarInstruction};
 
 use nyar_gc::ObjectPayload;
 

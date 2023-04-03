@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
-use nyar_format::{NyarModuleData, encode_module};
+use nyar_bytecode::{NyarModuleData, encode_module};
 
 /// Encode [`NyarModuleData`] and write it to `output_path`.
 pub fn emit_nyar_module(module: &NyarModuleData, output_path: &Path) -> Result<()> {

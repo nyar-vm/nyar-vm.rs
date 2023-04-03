@@ -10,7 +10,7 @@ use std::sync::Arc;
 use emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, testing};
 use nyar::Identifier;
 use nyar_language::{MirLowerer, ValkyrieCompiler, mir_function_to_executable, types::SourceID};
-use nyar_format::{NyarHeadCode, NyarModuleData};
+use nyar_bytecode::{NyarHeadCode, NyarModuleData};
 
 /// 模块 imports 表是否声明指定宿主符号（`nyar.host`）。
 fn module_declares_host_import(module: &NyarModuleData, name: &str) -> bool {

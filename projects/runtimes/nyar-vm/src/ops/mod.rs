@@ -1,4 +1,4 @@
-use nyar_format::NyarHeadCode;
+use nyar_bytecode::NyarHeadCode;
 
 use crate::{
     error::NyarRuntimeError,
@@ -139,7 +139,7 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
 
             let effect_name_index = op.operand1;
             let effect_name = match ctx.module.constant_at(effect_name_index) {
-                Some(nyar_format::NyarConstant::String(name)) => name.as_str(),
+                Some(nyar_bytecode::NyarConstant::String(name)) => name.as_str(),
                 _ => "raise",
             };
 

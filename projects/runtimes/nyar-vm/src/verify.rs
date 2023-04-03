@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use nyar_format::{NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, decode_at};
+use nyar_bytecode::{NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, decode_at};
 
 use crate::{
     error::NyarRuntimeError,
@@ -108,7 +108,7 @@ fn verify_code_stream(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
 fn verify_function(
     data: &NyarModuleData,
     function_index: usize,
-    function: &nyar_format::NyarFunction,
+    function: &nyar_bytecode::NyarFunction,
 ) -> Result<(), NyarRuntimeError> {
     if function.code_offset < 0 || function.code_length < 0 {
         return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -370,7 +370,7 @@ fn stack_transfer(
 mod tests {
     use super::*;
     use crate::host::HOST_IMPORT_MODULE;
-    use nyar_format::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData};
+    use nyar_bytecode::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData};
 
     fn empty_module() -> NyarModuleData {
         NyarModuleData {
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn rejects_unknown_host_import() {
         let mut module = empty_module();
-        module.imports.push(nyar_format::NyarImport {
+        module.imports.push(nyar_bytecode::NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
             symbol_name: "not_a_real_host_op".into(),
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn accepts_in_range_call_import() {
         let mut module = empty_module();
-        module.imports.push(nyar_format::NyarImport {
+        module.imports.push(nyar_bytecode::NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
             symbol_name: "print".into(),
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn accepts_const_call_import_return() {
         let mut module = empty_module();
-        module.imports.push(nyar_format::NyarImport {
+        module.imports.push(nyar_bytecode::NyarImport {
             kind: NyarImportKind::Function,
             module_name: HOST_IMPORT_MODULE.into(),
             symbol_name: "print".into(),

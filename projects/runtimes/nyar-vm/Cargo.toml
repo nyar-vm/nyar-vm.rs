@@ -15,8 +15,8 @@ name = "nyar-vm"
 path = "src/main.rs"
 
 [dependencies]
-# 外码合同：`nyar-format`。不得依赖语言前端。
-nyar-format = { workspace = true }
+# 外码合同：`nyar-bytecode`。不得依赖语言前端。
+nyar-bytecode = { workspace = true }
 nyar-gc = { workspace = true }
 nyar-jit = { workspace = true }
 miette = { workspace = true }

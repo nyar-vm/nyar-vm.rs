@@ -78,7 +78,7 @@ pub mod testing {
     #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
     #[cfg(feature = "legacy-lanes")]
-    use nyar_format::NyarModuleData;
+    use nyar_bytecode::NyarModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -799,7 +799,7 @@ pub struct NyarVmBackendInput {
     /// State-machine suspend artifacts when `VmSuspendStrategy::StateMachine`.
     pub control_flow: Option<nyar::ControlFlowPayload>,
     /// Optional Nyar module payload to emit as `.nyar`.
-    pub nyar_module: Option<nyar_format::NyarModuleData>,
+    pub nyar_module: Option<nyar_bytecode::NyarModuleData>,
     /// Output directory.
     pub output_dir: PathBuf,
 }

@@ -1,4 +1,4 @@
-use nyar_format::{NyarHeadCode, NyarInstruction};
+use nyar_bytecode::{NyarHeadCode, NyarInstruction};
 
 use crate::{
     array_runtime::{array_get, array_len, array_set},

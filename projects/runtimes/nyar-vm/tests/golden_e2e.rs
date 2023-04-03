@@ -1,7 +1,7 @@
 //! End-to-end golden path: encode `.nyar` → load → execute.
 
 use nyar_vm::{NyarVm, Value};
-use nyar_format::{
+use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarLayout, NyarModuleData, NYAR_VERSION,
     encode_module,
 };

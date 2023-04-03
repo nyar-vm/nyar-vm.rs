@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "nyar-language"
 version.workspace = true
 edition.workspace = true
@@ -28,7 +28,7 @@ syntect = { workspace = true }
 katex-rs = { workspace = true }
 
 [dev-dependencies]
-nyar-format = { workspace = true }
+nyar-bytecode = { workspace = true }
 
 [[test]]
 name = "format_parity"

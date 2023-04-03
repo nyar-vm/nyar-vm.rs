@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use nyar_format::{NyarFunction, NyarHeadCode, NyarInstruction, decode_at};
+use nyar_bytecode::{NyarFunction, NyarHeadCode, NyarInstruction, decode_at};
 
 use crate::error::NyarRuntimeError;
 
@@ -167,7 +167,7 @@ pub fn build_executable_table(code_bytes: &[u8], functions: &[NyarFunction]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nyar_format::NyarHeadCode;
+    use nyar_bytecode::NyarHeadCode;
 
     fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
         code.push(opcode as u8);

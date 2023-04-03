@@ -1,4 +1,4 @@
-use nyar_format::{NyarConstant, NyarFunction, NyarModuleData};
+use nyar_bytecode::{NyarConstant, NyarFunction, NyarModuleData};
 use std_data::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},

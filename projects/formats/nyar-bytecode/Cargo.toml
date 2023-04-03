@@ -1,5 +1,5 @@
 [package]
-name = "nyar-format"
+name = "nyar-bytecode"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

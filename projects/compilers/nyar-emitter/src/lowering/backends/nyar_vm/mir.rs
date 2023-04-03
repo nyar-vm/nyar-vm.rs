@@ -12,7 +12,7 @@ use crate::{
 };
 use nyar::QualifiedName;
 use nyar_types::{AggregateLayout, IntrinsicId, LayoutId, builtin_operator};
-use nyar_format::{
+use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
     NYAR_VERSION,
 };
