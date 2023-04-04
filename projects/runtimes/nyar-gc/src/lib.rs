@@ -5,11 +5,14 @@
 //! 语言无关：不依赖 `nyar-language` 或外码前端。外码布局由加载器转换为
 //! [`LayoutDescriptor`]；策略提示见 [`GcPolicy`] / [`WorkloadHints`]。
 //! 宿主持久根见 [`HostRoots`] / [`RootHandle`]；分代标签见 [`Generation`]。
+//! 工作负载意图见 [`WorkloadIntent`] / [`StrategyController`]。
 
 mod barrier;
 mod collector;
+mod controller;
 mod generation;
 mod heap;
+mod intent;
 mod layout;
 mod policy;
 mod roots;
@@ -18,8 +21,10 @@ mod value;
 
 pub use barrier::{WriteBarrier, write_value_slot};
 pub use collector::{GcRoots, GarbageCollector};
+pub use controller::{StrategyController, StrategyDecision};
 pub use generation::Generation;
 pub use heap::{ObjectHeap, ObjectPayload};
+pub use intent::{IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
 pub use layout::{LayoutDescriptor, LayoutId};
 pub use policy::{GcMode, GcPolicy, WorkloadHints};
 pub use roots::{HostRoots, RootHandle};

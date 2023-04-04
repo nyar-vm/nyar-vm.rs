@@ -1,5 +1,7 @@
 use crate::barrier::WriteBarrier;
+use crate::controller::{StrategyController, StrategyDecision};
 use crate::generation::Generation;
+use crate::intent::{IntentError, WorkloadIntent};
 use crate::layout::{LayoutDescriptor, LayoutId};
 use crate::policy::GcPolicy;
 use crate::roots::{HostRoots, RootHandle};
@@ -52,6 +54,8 @@ pub struct ObjectHeap {
     barrier: WriteBarrier,
     policy: GcPolicy,
     host_roots: HostRoots,
+    /// 工作负载意图控制器。
+    strategy: StrategyController,
     /// 当前存活对象近似字节合计。
     live_bytes: u64,
     /// 进程内累计分配字节（含已回收）。
@@ -75,6 +79,7 @@ impl ObjectHeap {
             barrier: WriteBarrier::new(),
             policy: GcPolicy::mark_sweep_baseline(),
             host_roots: HostRoots::new(),
+            strategy: StrategyController::new(),
             live_bytes: 0,
             total_allocated_bytes: 0,
         }
@@ -100,6 +105,41 @@ impl ObjectHeap {
     /// Replace GC policy (does not migrate live objects between algorithms).
     pub fn set_policy(&mut self, policy: GcPolicy) {
         self.policy = policy;
+    }
+
+    /// 设置进程级工作负载意图并刷新 [`GcPolicy`]。
+    pub fn apply_intent(&mut self, intent: WorkloadIntent) -> Result<StrategyDecision, IntentError> {
+        self.strategy.set_process_intent(intent)?;
+        Ok(self.refresh_policy_from_strategy())
+    }
+
+    /// 进入业务阶段并刷新策略。
+    pub fn begin_phase(&mut self, intent: WorkloadIntent) -> Result<StrategyDecision, IntentError> {
+        self.strategy.begin_phase(intent)?;
+        Ok(self.refresh_policy_from_strategy())
+    }
+
+    /// 结束业务阶段并刷新策略。
+    pub fn end_phase(&mut self, phase: Option<&str>) -> Result<StrategyDecision, IntentError> {
+        self.strategy.end_phase(phase)?;
+        Ok(self.refresh_policy_from_strategy())
+    }
+
+    fn refresh_policy_from_strategy(&mut self) -> StrategyDecision {
+        let decision = self.strategy.decide();
+        self.policy.mode = decision.mode;
+        self.policy.hints = decision.hints.clone();
+        decision
+    }
+
+    /// 最近一次策略决策。
+    pub fn last_strategy_decision(&self) -> Option<&StrategyDecision> {
+        self.strategy.last_decision()
+    }
+
+    /// 策略控制器（诊断）。
+    pub fn strategy(&self) -> &StrategyController {
+        &self.strategy
     }
 
     /// Borrow the write barrier (for interpreter field / global stores).
