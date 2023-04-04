@@ -90,6 +90,35 @@ impl NyarVm {
         self.executor.heap_mut().policy_mut().apply_hints(hints);
     }
 
+    /// 应用进程级工作负载意图并刷新 GC 策略。
+    pub fn apply_workload_intent(
+        &mut self,
+        intent: nyar_gc::WorkloadIntent,
+    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+        self.executor.heap_mut().apply_intent(intent)
+    }
+
+    /// 进入业务阶段（嵌套）并刷新策略。
+    pub fn begin_workload_phase(
+        &mut self,
+        intent: nyar_gc::WorkloadIntent,
+    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+        self.executor.heap_mut().begin_phase(intent)
+    }
+
+    /// 结束业务阶段并刷新策略。
+    pub fn end_workload_phase(
+        &mut self,
+        phase: Option<&str>,
+    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+        self.executor.heap_mut().end_phase(phase)
+    }
+
+    /// 最近一次策略决策（若有）。
+    pub fn last_strategy_decision(&self) -> Option<&nyar_gc::StrategyDecision> {
+        self.executor.heap().last_strategy_decision()
+    }
+
     /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
     pub fn pin_root(&mut self, value: Value) -> nyar_gc::RootHandle {
         self.executor.heap_mut().pin_root(value)

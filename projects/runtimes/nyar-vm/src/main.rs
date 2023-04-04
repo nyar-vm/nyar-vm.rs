@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Result, WrapErr};
-use nyar_vm::{NyarVm, json_bridge};
+use nyar_vm::{NyarVm, json_bridge, workload_json};
 
 /// Nyar VM command-line runner.
 #[derive(Debug, Parser)]
@@ -27,6 +27,12 @@ enum Commands {
         /// JSON array of call arguments, e.g. `[1, 2]` or `[{"nums":[1,2],"target":3}]`.
         #[arg(long = "args-json")]
         args_json: Option<String>,
+        /// Process-level workload intent JSON (pause budget, soft heap limit, preferred GC mode).
+        #[arg(long = "workload-json")]
+        workload_json: Option<String>,
+        /// Path to a workload intent JSON file (alternative to `--workload-json`).
+        #[arg(long = "workload-file")]
+        workload_file: Option<PathBuf>,
     },
     /// List exported symbols in a `.nyar` module.
     List {
@@ -38,9 +44,34 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Run { module, entry, json, args_json } => {
+        Commands::Run {
+            module,
+            entry,
+            json,
+            args_json,
+            workload_json: workload_json_arg,
+            workload_file,
+        } => {
             let bytes = fs::read(&module).into_diagnostic().wrap_err_with(|| format!("failed to read module file: {}", module.display()))?;
             let mut vm = NyarVm::new();
+            if let Some(path) = workload_file {
+                let text = fs::read_to_string(&path)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("failed to read workload file: {}", path.display()))?;
+                let intent = workload_json::parse_workload_intent_json(&text)
+                    .map_err(|error| miette::miette!("failed to parse --workload-file: {error}"))?;
+                let decision = vm
+                    .apply_workload_intent(intent)
+                    .map_err(|error| miette::miette!("failed to apply workload intent: {error}"))?;
+                eprintln!("workload: {}", decision.reason);
+            } else if let Some(source) = workload_json_arg {
+                let intent = workload_json::parse_workload_intent_json(&source)
+                    .map_err(|error| miette::miette!("failed to parse --workload-json: {error}"))?;
+                let decision = vm
+                    .apply_workload_intent(intent)
+                    .map_err(|error| miette::miette!("failed to apply workload intent: {error}"))?;
+                eprintln!("workload: {}", decision.reason);
+            }
             let loaded = vm.load(&bytes).wrap_err_with(|| format!("failed to load module: {}", module.display()))?;
             let args = match args_json {
                 Some(source) => json_bridge::parse_call_args_json(&source).wrap_err("failed to parse --args-json")?,
