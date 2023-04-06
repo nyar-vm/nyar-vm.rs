@@ -134,7 +134,7 @@ impl Executor {
 
             let function_index = current.function_index;
             let ip_at_op = current.ip as u32;
-            let pressure_safepoint = self.heap.over_soft_limit()
+            let pressure_safepoint = (self.heap.over_soft_limit() || self.heap.nursery_pressure())
                 && module
                     .executable
                     .get(function_index)
@@ -175,7 +175,7 @@ impl Executor {
                     if let Some(coroutine_id) = finished.coroutine_origin {
                         frame_coroutines.push(coroutine_id);
                     }
-                    self.gc.collect_for_policy(
+                    let relocate = self.gc.collect_for_policy(
                         GcRoots {
                             stack: self.stack.values(),
                             frame_locals: &frame_locals,
@@ -184,6 +184,7 @@ impl Executor {
                         },
                         &mut self.heap,
                     );
+                    self.apply_relocate_map(&relocate, globals);
                     if self.frames.is_empty() {
                         return self.stack.pop().or(Ok(Value::Null));
                     }
@@ -271,7 +272,7 @@ impl Executor {
     fn collect_active_roots(&mut self, globals: &mut [Value]) {
         let frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
         let frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
-        self.gc.collect_for_policy(
+        let relocate = self.gc.collect_for_policy(
             GcRoots {
                 stack: self.stack.values(),
                 frame_locals: &frame_locals,
@@ -280,6 +281,22 @@ impl Executor {
             },
             &mut self.heap,
         );
+        self.apply_relocate_map(&relocate, globals);
+    }
+
+    /// 将 nursery 物理晋升后的转发图应用到解释器根。
+    fn apply_relocate_map(&mut self, map: &nyar_gc::RelocateMap, globals: &mut [Value]) {
+        if !map.has_moves() {
+            return;
+        }
+        map.rewrite_slice(self.stack.values_mut());
+        for frame in &mut self.frames {
+            map.rewrite_slice(&mut frame.locals);
+            if let Some(coroutine_id) = &mut frame.coroutine_origin {
+                *coroutine_id = map.map(*coroutine_id);
+            }
+        }
+        map.rewrite_slice(globals);
     }
 }
 

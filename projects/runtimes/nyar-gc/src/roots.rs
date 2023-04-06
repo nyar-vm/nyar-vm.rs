@@ -66,6 +66,11 @@ impl HostRoots {
         self.slots.iter().filter_map(|slot| slot.as_ref())
     }
 
+    /// 所有非空根值（可变，供晋升后改写引用）。
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        self.slots.iter_mut().filter_map(|slot| slot.as_mut())
+    }
+
     /// 当前固定根数量。
     pub fn live_count(&self) -> usize {
         self.slots.iter().filter(|slot| slot.is_some()).count()

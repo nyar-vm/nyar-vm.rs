@@ -49,6 +49,11 @@ impl ValueStack {
         &self.slots
     }
 
+    /// Mutably borrows stack values（晋升后改写引用）。
+    pub fn values_mut(&mut self) -> &mut [Value] {
+        &mut self.slots
+    }
+
     /// Splits off every value above `base`, leaving the stack truncated to `base`.
     ///
     /// Used when capturing a suspended frame so parent frames do not observe the

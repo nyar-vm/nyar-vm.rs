@@ -144,13 +144,15 @@ fn nursery_collect_reclaims_young_keeps_tenured_and_promotes_survivors() {
 
     let stack = [Value::Object(young_live)];
     let mut gc = GarbageCollector::new();
-    gc.collect_nursery(roots(&stack, &[], &[], &[]), &mut heap);
+    let map = gc.collect_nursery(roots(&stack, &[], &[], &[]), &mut heap);
+    let promoted = map.map(young_live);
 
     assert!(heap.get(tenured).is_some());
-    assert!(heap.get(young_live).is_some());
+    assert!(heap.get(young_live).is_none()); // 旧槽已腾空
+    assert!(heap.get(promoted).is_some());
     assert!(heap.get(young_dead).is_none());
-    // 存活年轻代晋升
-    assert_eq!(heap.generation(young_live), Some(Generation::Tenured));
+    assert_eq!(heap.generation(promoted), Some(Generation::Tenured));
+    assert_ne!(promoted, young_live);
     assert_eq!(heap.nursery_live_count(), 0);
 }
 
@@ -169,12 +171,21 @@ fn write_barrier_remembers_old_to_young_for_nursery_collect() {
 
     // 无解释器根：仅靠记忆集保住 young；orphan 应回收；old 保留
     let mut gc = GarbageCollector::new();
-    gc.collect_nursery(roots(&[], &[], &[], &[]), &mut heap);
+    let map = gc.collect_nursery(roots(&[], &[], &[], &[]), &mut heap);
+    let promoted = map.map(young);
 
     assert!(heap.get(old).is_some());
-    assert!(heap.get(young).is_some());
+    assert!(heap.get(young).is_none());
+    assert!(heap.get(promoted).is_some());
     assert!(heap.get(orphan_young).is_none());
-    assert_eq!(heap.generation(young), Some(Generation::Tenured));
+    assert_eq!(heap.generation(promoted), Some(Generation::Tenured));
+    // 堆内字段已按转发图改写
+    match heap.get(old) {
+        Some(ObjectPayload::LayoutObject { slots, .. }) => {
+            assert_eq!(slots[0], Value::Object(promoted));
+        }
+        other => panic!("expected layout object, got {other:?}"),
+    }
     assert!(heap.barrier().remembered_set().is_empty());
 }
 
@@ -188,7 +199,8 @@ fn collect_for_policy_uses_nursery_then_forces_full() {
     let stack = [Value::Object(keep)];
     let mut gc = GarbageCollector::new();
 
-    gc.collect_for_policy(roots(&stack, &[], &[], &[]), &mut heap);
+    let map = gc.collect_for_policy(roots(&stack, &[], &[], &[]), &mut heap);
+    let keep = map.map(keep);
     assert!(heap.get(keep).is_some());
     assert_eq!(heap.generation(keep), Some(Generation::Tenured));
 
@@ -205,6 +217,16 @@ fn collect_for_policy_uses_nursery_then_forces_full() {
     gc.collect_for_policy(roots(&[], &[], &[], &[]), &mut heap);
     assert!(heap.get(tenured_keep).is_none());
     assert!(heap.get(orphan2).is_none());
+}
+
+#[test]
+fn nursery_capacity_reports_pressure() {
+    let mut heap = ObjectHeap::new();
+    heap.set_nursery_capacity(2);
+    let _a = heap.alloc(empty_layout(0));
+    assert!(!heap.nursery_pressure());
+    let _b = heap.alloc(empty_layout(1));
+    assert!(heap.nursery_pressure());
 }
 
 #[test]

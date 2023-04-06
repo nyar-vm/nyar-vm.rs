@@ -4,8 +4,12 @@ use crate::generation::Generation;
 use crate::intent::{IntentError, WorkloadIntent};
 use crate::layout::{LayoutDescriptor, LayoutId};
 use crate::policy::GcPolicy;
+use crate::relocate::RelocateMap;
 use crate::roots::{HostRoots, RootHandle};
 use crate::value::{CoroutineState, ObjectId, Value};
+
+/// 默认 nursery 存活对象上限（超过则形成分配压力，促使 minor GC）。
+const DEFAULT_NURSERY_CAPACITY: usize = 1024;
 
 /// 单对象头部近似开销（诊断用，非物理分配器精确值）。
 const OBJECT_HEADER_BYTES: u64 = 16;
@@ -56,6 +60,8 @@ pub struct ObjectHeap {
     host_roots: HostRoots,
     /// 工作负载意图控制器。
     strategy: StrategyController,
+    /// nursery 存活对象软容量（超限视为分配压力）。
+    nursery_capacity: usize,
     /// 当前存活对象近似字节合计。
     live_bytes: u64,
     /// 进程内累计分配字节（含已回收）。
@@ -80,6 +86,7 @@ impl ObjectHeap {
             policy: GcPolicy::mark_sweep_baseline(),
             host_roots: HostRoots::new(),
             strategy: StrategyController::new(),
+            nursery_capacity: DEFAULT_NURSERY_CAPACITY,
             live_bytes: 0,
             total_allocated_bytes: 0,
         }
@@ -213,6 +220,21 @@ impl ObjectHeap {
             .enumerate()
             .filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Nursery))
             .count()
+    }
+
+    /// nursery 软容量。
+    pub fn nursery_capacity(&self) -> usize {
+        self.nursery_capacity
+    }
+
+    /// 设置 nursery 软容量（至少 1）。
+    pub fn set_nursery_capacity(&mut self, capacity: usize) {
+        self.nursery_capacity = capacity.max(1);
+    }
+
+    /// 年轻代是否达到软容量（应优先做 nursery 回收）。
+    pub fn nursery_pressure(&self) -> bool {
+        self.nursery_live_count() >= self.nursery_capacity
     }
 
     /// Allocates a new object in the nursery and returns its id.
@@ -377,16 +399,62 @@ impl ObjectHeap {
         }
     }
 
-    /// 将所有已标记的 nursery 对象晋升为老年代。
-    pub(crate) fn promote_marked_nursery(&mut self, marked: &[bool]) {
-        for (index, generation) in self.generations.iter_mut().enumerate() {
-            if *generation == Generation::Nursery
-                && self.objects.get(index).and_then(|s| s.as_ref()).is_some()
-                && index < marked.len()
-                && marked[index]
-            {
-                *generation = Generation::Tenured;
+    /// 将标记的 nursery 对象**物理搬迁**到新的老年代槽，返回转发图。
+    ///
+    /// 旧槽进入自由列表；堆内引用与宿主根就地改写。解释器栈/帧/全局须由调用方
+    /// 用同一张 [`RelocateMap`] 改写。
+    pub(crate) fn promote_marked_nursery_moving(&mut self, marked: &[bool]) -> RelocateMap {
+        let mut map = RelocateMap::with_capacity(self.objects.len());
+        let survivors: Vec<ObjectId> = (0..self.objects.len())
+            .filter(|&id| {
+                marked.get(id) == Some(&true)
+                    && self.generations.get(id) == Some(&Generation::Nursery)
+                    && self.objects[id].is_some()
+            })
+            .collect();
+
+        let mut vacated = Vec::with_capacity(survivors.len());
+        for old in survivors {
+            let payload = self.objects[old].take().expect("survivor present");
+            self.live_bytes = self.live_bytes.saturating_sub(payload.accounting_bytes());
+            vacated.push(old);
+            let new_id = self.alloc_tenured_fresh(payload);
+            map.record(old, new_id);
+        }
+        for id in vacated {
+            self.free_list.push(id);
+        }
+        self.rewrite_heap_references(&map);
+        map
+    }
+
+    /// 仅追加老年代槽（不复用 free_list），供物理晋升使用。
+    fn alloc_tenured_fresh(&mut self, payload: ObjectPayload) -> ObjectId {
+        let bytes = payload.accounting_bytes();
+        self.live_bytes = self.live_bytes.saturating_add(bytes);
+        self.total_allocated_bytes = self.total_allocated_bytes.saturating_add(bytes);
+        let id = self.objects.len();
+        self.objects.push(Some(payload));
+        self.generations.push(Generation::Tenured);
+        id
+    }
+
+    fn rewrite_heap_references(&mut self, map: &RelocateMap) {
+        if !map.has_moves() {
+            return;
+        }
+        for slot in self.objects.iter_mut().flatten() {
+            match slot {
+                ObjectPayload::LayoutObject { slots, .. } => map.rewrite_slice(slots),
+                ObjectPayload::Coroutine(state) => {
+                    map.rewrite_value(&mut state.yielded_value);
+                    map.rewrite_slice(&mut state.locals);
+                    map.rewrite_slice(&mut state.operand_stack);
+                }
             }
+        }
+        for value in self.host_roots.iter_mut() {
+            map.rewrite_value(value);
         }
     }
 

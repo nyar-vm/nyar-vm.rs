@@ -35,8 +35,8 @@ pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
 pub use module::ModuleGlobals;
 pub use nyar_gc::{
     GarbageCollector, GcMode, GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId,
-    ObjectHeap, ObjectPayload, ObjectLifetimeHint, RootHandle, StrategyController, StrategyDecision, WorkloadHints, WorkloadIntent,
-    WriteBarrier,
+    ObjectHeap, ObjectPayload, ObjectLifetimeHint, RelocateMap, RootHandle, StrategyController, StrategyDecision, WorkloadHints,
+    WorkloadIntent, WriteBarrier,
 };
 pub use value::{CoroutineState, ObjectId, Value};
 pub use vm::NyarVm;
