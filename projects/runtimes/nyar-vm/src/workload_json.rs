@@ -72,6 +72,22 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/workload").join(name)
+    }
+
+    #[test]
+    fn parses_bundled_scenario_fixtures() {
+        for name in ["online-request.json", "offline-batch.json", "resident-service.json"] {
+            let text = fs::read_to_string(fixture(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+            let intent = parse_workload_intent_json(&text).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+            assert!(intent.scenario_id.is_some(), "{name} missing scenario_id");
+            assert!(intent.pause_budget_ms.is_some(), "{name} missing pause_budget_ms");
+        }
+    }
 
     #[test]
     fn parses_online_request_shape() {

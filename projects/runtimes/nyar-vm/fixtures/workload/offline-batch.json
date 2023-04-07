@@ -1,0 +1,10 @@
+{
+  "scenario_id": "offline-batch",
+  "source": "project_config",
+  "phase": "batch",
+  "pause_budget_ms": 200,
+  "heap_soft_limit_bytes": 536870912,
+  "allow_heavy_collection": true,
+  "preferred_mode": "throughput_batch",
+  "lifetime_hint": "short_lived_batch"
+}

@@ -1,0 +1,10 @@
+{
+  "scenario_id": "online-request",
+  "source": "project_config",
+  "phase": "request",
+  "pause_budget_ms": 5,
+  "heap_soft_limit_bytes": 67108864,
+  "allow_heavy_collection": false,
+  "preferred_mode": "generational_low_latency",
+  "lifetime_hint": "short_lived_batch"
+}

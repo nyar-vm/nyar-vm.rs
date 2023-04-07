@@ -1,0 +1,10 @@
+{
+  "scenario_id": "resident-service",
+  "source": "deployment",
+  "phase": "steady",
+  "pause_budget_ms": 10,
+  "heap_soft_limit_bytes": 268435456,
+  "allow_heavy_collection": false,
+  "preferred_mode": "generational_low_latency",
+  "lifetime_hint": "cross_batch_cache"
+}
