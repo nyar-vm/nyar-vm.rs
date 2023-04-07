@@ -9,8 +9,10 @@ mod artifact;
 mod compiler;
 mod error;
 mod request;
+mod stack_map;
 
 pub use artifact::JitCompiledArtifact;
-pub use compiler::{DisabledJit, JitCompiler};
+pub use compiler::{DisabledJit, JitCompiler, StackMapJit};
 pub use error::JitError;
 pub use request::{JitCompileRequest, JitFunctionSpec};
+pub use stack_map::{FunctionStackMaps, StackMapEntry, build_conservative_stack_maps};

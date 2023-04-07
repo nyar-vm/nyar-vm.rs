@@ -61,6 +61,15 @@ impl NyarVm {
         self.executor.try_jit_compile(module, function_index)
     }
 
+    /// 构造函数的保守 GC stack map（不依赖 JIT 后端是否启用）。
+    pub fn stack_maps_for(
+        &self,
+        module: &LoadedModule,
+        function_index: usize,
+    ) -> Result<crate::jit::FunctionStackMaps, JitError> {
+        crate::jit::stack_maps_for(module, function_index)
+    }
+
     /// Replaces the JIT backend on the underlying executor.
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.executor.set_jit(jit);

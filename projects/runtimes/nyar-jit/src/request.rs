@@ -9,6 +9,8 @@ pub struct JitFunctionSpec {
     pub local_count: i32,
     /// Parameter arity.
     pub arity: i32,
+    /// 内码 safepoint 指令下标（与 `ExecutableFunction.safepoints` 对齐）。
+    pub safepoint_indices: Vec<u32>,
 }
 
 /// Language-agnostic JIT input: verified bytecode bytes plus one function slice.
