@@ -3,13 +3,22 @@ use std::fmt::{self, Debug, Formatter};
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, compile_request},
+    jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, StackMapEntry, compile_request},
     module::LoadedModule,
     ops::{ExecutionContext, StepResult, dispatch_exec},
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
 use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
+
+/// 按 stack map 条目抽取可能含引用的 local 槽（拷贝，供 `GcRoots` 借用）。
+fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
+    entry
+        .local_root_slots
+        .iter()
+        .filter_map(|&slot| locals.get(slot as usize).cloned())
+        .collect()
+}
 
 /// Bytecode interpreter loop.
 pub struct Executor {
@@ -149,9 +158,10 @@ impl Executor {
 
             match step {
                 StepResult::Continue => {
-                    // 软上限压力下，在分配/调用等 safepoint 触发策略回收，避免拖到 Return。
+                    // 软上限 / nursery 压力下，在分配/调用等 safepoint 触发策略回收。
+                    // 顶帧 local 根按保守 stack map 收窄；其余帧仍全量扫描。
                     if pressure_safepoint {
-                        self.collect_active_roots(globals);
+                        self.collect_active_roots_at_safepoint(module, function_index, ip_at_op, globals);
                     }
                 }
                 StepResult::Return => {
@@ -268,9 +278,30 @@ impl Executor {
         Ok(Value::Null)
     }
 
-    /// 以当前帧 / 栈 / 全局为根执行策略回收（压力 safepoint 与 Return 共用合同）。
-    fn collect_active_roots(&mut self, globals: &mut [Value]) {
-        let frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
+    /// 压力 safepoint：顶帧按 stack map 收窄 local 根后回收。
+    fn collect_active_roots_at_safepoint(
+        &mut self,
+        module: &LoadedModule,
+        function_index: usize,
+        ip: u32,
+        globals: &mut [Value],
+    ) {
+        let maps = crate::jit::stack_maps_for(module, function_index).ok();
+        let entry = maps.as_ref().and_then(|m| m.entry_at(ip));
+
+        let mut owned_precise: Vec<Vec<Value>> = Vec::new();
+        let frame_count = self.frames.len();
+        for (index, frame) in self.frames.iter().enumerate() {
+            let is_top = index + 1 == frame_count;
+            if is_top {
+                if let Some(entry) = entry {
+                    owned_precise.push(select_local_roots(&frame.locals, entry));
+                    continue;
+                }
+            }
+            owned_precise.push(frame.locals.clone());
+        }
+        let frame_locals: Vec<&[Value]> = owned_precise.iter().map(|locals| locals.as_slice()).collect();
         let frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
         let relocate = self.gc.collect_for_policy(
             GcRoots {
@@ -369,5 +400,17 @@ mod tests {
         let mut executor = Executor::new();
         let result = executor.run(&module, 0, Vec::new()).expect("execute");
         assert_eq!(result, Value::I32(1));
+    }
+
+    #[test]
+    fn select_local_roots_keeps_only_mapped_slots() {
+        let locals = vec![Value::I32(1), Value::I32(2), Value::I32(3)];
+        let entry = StackMapEntry {
+            instruction_index: 0,
+            local_root_slots: vec![0, 2],
+            operand_root_depth: None,
+        };
+        let selected = select_local_roots(&locals, &entry);
+        assert_eq!(selected, vec![Value::I32(1), Value::I32(3)]);
     }
 }
