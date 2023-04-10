@@ -1,4 +1,5 @@
 use crate::barrier::WriteBarrier;
+use crate::concurrent::ConcurrentMarkController;
 use crate::controller::{StrategyController, StrategyDecision};
 use crate::generation::Generation;
 use crate::intent::{IntentError, WorkloadIntent};
@@ -67,6 +68,8 @@ pub struct ObjectHeap {
     tenured_soft_capacity: Option<usize>,
     /// 最近一次晋升失败（若有）。
     last_promotion_failure: Option<PromotionFailure>,
+    /// 并发标记协议控制器（默认关闭）。
+    concurrent_mark: ConcurrentMarkController,
     /// 当前存活对象近似字节合计。
     live_bytes: u64,
     /// 进程内累计分配字节（含已回收）。
@@ -94,6 +97,7 @@ impl ObjectHeap {
             nursery_capacity: DEFAULT_NURSERY_CAPACITY,
             tenured_soft_capacity: None,
             last_promotion_failure: None,
+            concurrent_mark: ConcurrentMarkController::new(),
             live_bytes: 0,
             total_allocated_bytes: 0,
         }
@@ -154,6 +158,16 @@ impl ObjectHeap {
     /// 策略控制器（诊断）。
     pub fn strategy(&self) -> &StrategyController {
         &self.strategy
+    }
+
+    /// 并发标记协议控制器（默认关闭）。
+    pub fn concurrent_mark(&self) -> &ConcurrentMarkController {
+        &self.concurrent_mark
+    }
+
+    /// 并发标记协议控制器（可变）。
+    pub fn concurrent_mark_mut(&mut self) -> &mut ConcurrentMarkController {
+        &mut self.concurrent_mark
     }
 
     /// Borrow the write barrier (for interpreter field / global stores).

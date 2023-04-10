@@ -6,9 +6,11 @@
 //! [`LayoutDescriptor`]；策略提示见 [`GcPolicy`] / [`WorkloadHints`]。
 //! 宿主持久根见 [`HostRoots`] / [`RootHandle`]；分代标签见 [`Generation`]。
 //! 工作负载意图见 [`WorkloadIntent`] / [`StrategyController`]。
+//! 并发标记协议骨架见 [`ConcurrentMarkController`]。
 
 mod barrier;
 mod collector;
+mod concurrent;
 mod controller;
 mod generation;
 mod heap;
@@ -23,6 +25,7 @@ mod value;
 
 pub use barrier::{WriteBarrier, write_value_slot};
 pub use collector::{GcRoots, GarbageCollector};
+pub use concurrent::{ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState};
 pub use controller::{StrategyController, StrategyDecision};
 pub use generation::Generation;
 pub use heap::{ObjectHeap, ObjectPayload};

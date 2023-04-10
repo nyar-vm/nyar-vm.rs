@@ -13,6 +13,8 @@ pub enum GcMode {
     GenerationalLowLatency,
     /// 吞吐优先：当前仍走全堆回收（大批次语义占位）。
     ThroughputBatch,
+    /// 并发标记低延迟（协议骨架已有；运行时仍回退同步回收，直至写屏障合同闭合）。
+    ConcurrentMarkReserved,
 }
 
 /// 上游提供的工作负载提示（软约束；不得授权回收仍可达对象）。
