@@ -230,6 +230,28 @@ fn nursery_capacity_reports_pressure() {
 }
 
 #[test]
+fn promotion_failure_falls_back_to_full_collect() {
+    let mut heap = ObjectHeap::new();
+    heap.set_tenured_soft_capacity(Some(1));
+    // 填满老年代软容量
+    let tenured = heap.alloc_tenured(empty_layout(0));
+    let young_keep = heap.alloc(empty_layout(1));
+    let young_dead = heap.alloc(empty_layout(2));
+
+    let stack = [Value::Object(young_keep)];
+    let mut gc = GarbageCollector::new();
+    let map = gc.collect_nursery(roots(&stack, &[], &[], &[]), &mut heap);
+
+    assert!(heap.last_promotion_failure().is_some());
+    assert!(map.has_moves() == false);
+    // 全堆回退：无根的 tenured 与 young_dead 应回收；young_keep 仍存活（未搬迁）
+    assert!(heap.get(tenured).is_none());
+    assert!(heap.get(young_dead).is_none());
+    assert!(heap.get(young_keep).is_some());
+    assert_eq!(heap.generation(young_keep), Some(Generation::Nursery));
+}
+
+#[test]
 fn accounting_tracks_live_bytes_and_soft_limit_forces_full() {
     use nyar_gc::{GcPolicy, WorkloadHints};
 

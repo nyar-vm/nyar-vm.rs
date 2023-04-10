@@ -4,6 +4,7 @@ use crate::generation::Generation;
 use crate::intent::{IntentError, WorkloadIntent};
 use crate::layout::{LayoutDescriptor, LayoutId};
 use crate::policy::GcPolicy;
+use crate::promotion::PromotionFailure;
 use crate::relocate::RelocateMap;
 use crate::roots::{HostRoots, RootHandle};
 use crate::value::{CoroutineState, ObjectId, Value};
@@ -62,6 +63,10 @@ pub struct ObjectHeap {
     strategy: StrategyController,
     /// nursery 存活对象软容量（超限视为分配压力）。
     nursery_capacity: usize,
+    /// 老年代存活对象软容量；`None` 表示不限制（仍可物理增长）。
+    tenured_soft_capacity: Option<usize>,
+    /// 最近一次晋升失败（若有）。
+    last_promotion_failure: Option<PromotionFailure>,
     /// 当前存活对象近似字节合计。
     live_bytes: u64,
     /// 进程内累计分配字节（含已回收）。
@@ -87,6 +92,8 @@ impl ObjectHeap {
             host_roots: HostRoots::new(),
             strategy: StrategyController::new(),
             nursery_capacity: DEFAULT_NURSERY_CAPACITY,
+            tenured_soft_capacity: None,
+            last_promotion_failure: None,
             live_bytes: 0,
             total_allocated_bytes: 0,
         }
@@ -235,6 +242,65 @@ impl ObjectHeap {
     /// 年轻代是否达到软容量（应优先做 nursery 回收）。
     pub fn nursery_pressure(&self) -> bool {
         self.nursery_live_count() >= self.nursery_capacity
+    }
+
+    /// 设置老年代存活对象软容量（`None` 清除限制）。
+    pub fn set_tenured_soft_capacity(&mut self, capacity: Option<usize>) {
+        self.tenured_soft_capacity = capacity.map(|n| n.max(1));
+    }
+
+    /// 老年代软容量。
+    pub fn tenured_soft_capacity(&self) -> Option<usize> {
+        self.tenured_soft_capacity
+    }
+
+    /// 老年代存活对象数。
+    pub fn tenured_live_count(&self) -> usize {
+        self.objects
+            .iter()
+            .enumerate()
+            .filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Tenured))
+            .count()
+    }
+
+    /// 最近一次晋升失败。
+    pub fn last_promotion_failure(&self) -> Option<&PromotionFailure> {
+        self.last_promotion_failure.as_ref()
+    }
+
+    /// 清除晋升失败记录（诊断消费后）。
+    pub fn clear_promotion_failure(&mut self) {
+        self.last_promotion_failure = None;
+    }
+
+    pub(crate) fn record_promotion_failure(&mut self, failure: PromotionFailure) {
+        self.last_promotion_failure = Some(failure);
+    }
+
+    pub(crate) fn count_marked_nursery(&self, marked: &[bool]) -> usize {
+        (0..self.objects.len())
+            .filter(|&id| {
+                marked.get(id) == Some(&true)
+                    && self.generations.get(id) == Some(&Generation::Nursery)
+                    && self.objects[id].is_some()
+            })
+            .count()
+    }
+
+    /// 若晋升 `survivor_count` 个对象会突破老年代软容量则返回失败描述。
+    pub fn promotion_would_fail(&self, survivor_count: usize) -> Option<PromotionFailure> {
+        let capacity = self.tenured_soft_capacity?;
+        let tenured_live_before = self.tenured_live_count();
+        if tenured_live_before.saturating_add(survivor_count) > capacity {
+            Some(PromotionFailure {
+                survivor_count,
+                tenured_live_before,
+                tenured_soft_capacity: capacity,
+                reason: "tenured soft capacity exceeded",
+            })
+        } else {
+            None
+        }
     }
 
     /// Allocates a new object in the nursery and returns its id.

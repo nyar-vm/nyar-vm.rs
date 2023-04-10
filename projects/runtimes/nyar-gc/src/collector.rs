@@ -103,6 +103,17 @@ impl GarbageCollector {
             }
         }
 
+        let survivor_count = heap.count_marked_nursery(&self.marked);
+        if let Some(failure) = heap.promotion_would_fail(survivor_count) {
+            // 晋升会突破老年代软容量：记录事件并回退到全堆回收，不得丢弃可达对象。
+            heap.record_promotion_failure(failure);
+            heap.sweep(&self.marked);
+            heap.clear_remembered();
+            self.last_relocate = RelocateMap::new();
+            self.nursery_collects_since_full = 0;
+            return RelocateMap::new();
+        }
+
         heap.sweep_nursery(&self.marked);
         let map = heap.promote_marked_nursery_moving(&self.marked);
         heap.clear_remembered();
