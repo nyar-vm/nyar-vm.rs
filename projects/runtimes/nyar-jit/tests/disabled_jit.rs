@@ -41,4 +41,6 @@ fn stack_map_jit_emits_conservative_maps() {
     assert_eq!(artifact.function_index, 7);
     assert_eq!(artifact.stack_maps.entries.len(), 2);
     assert_eq!(artifact.stack_maps.entries[0].local_root_slots, vec![0, 1, 2]);
+    assert_eq!(artifact.deopt_map.entries.len(), 2);
+    assert_eq!(artifact.deopt_map.entries[0].frames[0].local_count, 3);
 }

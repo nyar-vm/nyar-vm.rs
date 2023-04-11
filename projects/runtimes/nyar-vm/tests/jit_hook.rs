@@ -82,4 +82,5 @@ fn stack_map_jit_backend_returns_artifact_maps() {
     let artifact = vm.try_jit_compile(&module, 0).expect("stack-map jit");
     assert_eq!(artifact.function_index, 0);
     assert!(!artifact.stack_maps.entries.is_empty());
+    assert!(!artifact.deopt_map.entries.is_empty());
 }

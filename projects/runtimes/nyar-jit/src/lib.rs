@@ -7,12 +7,14 @@
 
 mod artifact;
 mod compiler;
+mod deopt;
 mod error;
 mod request;
 mod stack_map;
 
 pub use artifact::JitCompiledArtifact;
 pub use compiler::{DisabledJit, JitCompiler, StackMapJit};
+pub use deopt::{DeoptFrame, DeoptMap, DeoptMapEntry, build_baseline_deopt_map};
 pub use error::JitError;
 pub use request::{JitCompileRequest, JitFunctionSpec};
 pub use stack_map::{FunctionStackMaps, StackMapEntry, build_conservative_stack_maps};

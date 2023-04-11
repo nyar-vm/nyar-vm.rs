@@ -1,5 +1,5 @@
 use crate::{
-    JitCompileRequest, JitCompiledArtifact, JitError, build_conservative_stack_maps,
+    JitCompileRequest, JitCompiledArtifact, JitError, build_baseline_deopt_map, build_conservative_stack_maps,
 };
 
 /// JIT compilation interface.
@@ -25,7 +25,7 @@ impl JitCompiler for DisabledJit {
     }
 }
 
-/// 仅产出保守 stack map、不生成机器码的分析后端（WP17 骨架 / 差分用）。
+/// 仅产出保守 stack map + 基线 deopt、不生成机器码的分析后端（WP17 骨架 / 差分用）。
 #[derive(Debug, Default)]
 pub struct StackMapJit;
 
@@ -41,6 +41,11 @@ impl JitCompiler for StackMapJit {
             request.function.local_count,
             &request.function.safepoint_indices,
         );
-        Ok(JitCompiledArtifact::stack_maps_only(maps))
+        let deopt = build_baseline_deopt_map(
+            request.function_index,
+            request.function.local_count,
+            &request.function.safepoint_indices,
+        );
+        Ok(JitCompiledArtifact::with_baseline_deopt(maps, deopt))
     }
 }
