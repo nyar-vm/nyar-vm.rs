@@ -1,5 +1,6 @@
 use nyar_gc::{
-    CoroutineState, GarbageCollector, GcRoots, Generation, ObjectHeap, ObjectPayload, Value,
+    ConcurrentMarkEvent, CoroutineState, GarbageCollector, GcRoots, Generation, ObjectHeap, ObjectPayload,
+    Value,
 };
 
 fn empty_layout(layout_id: u32) -> ObjectPayload {
@@ -277,4 +278,32 @@ fn accounting_tracks_live_bytes_and_soft_limit_forces_full() {
     assert!(heap.get(dead).is_none());
     assert!(heap.live_bytes() < before_total);
     assert_eq!(heap.total_allocated_bytes(), before_total);
+}
+
+#[test]
+fn satb_buffer_records_overwritten_refs_during_concurrent_trace() {
+    let mut heap = ObjectHeap::new();
+    let container = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Null],
+    });
+    let old_ref = heap.alloc(empty_layout(1));
+    let new_ref = heap.alloc(empty_layout(2));
+    heap.set_field(container, 0, Value::Object(old_ref)).unwrap();
+    assert!(heap.barrier().satb_buffer().is_empty());
+
+    {
+        let ctrl = heap.concurrent_mark_mut();
+        ctrl.set_enabled(true);
+        ctrl.transition(ConcurrentMarkEvent::BeginCycle).unwrap();
+        ctrl.transition(ConcurrentMarkEvent::RootsReady).unwrap();
+        ctrl.transition(ConcurrentMarkEvent::TraceSliceDone).unwrap();
+    }
+    assert!(heap.concurrent_mark().requires_satb());
+
+    heap.set_field(container, 0, Value::Object(new_ref)).unwrap();
+    assert_eq!(heap.barrier().satb_buffer(), &[old_ref]);
+    let drained = heap.drain_satb_buffer();
+    assert_eq!(drained, vec![old_ref]);
+    assert!(heap.barrier().satb_buffer().is_empty());
 }

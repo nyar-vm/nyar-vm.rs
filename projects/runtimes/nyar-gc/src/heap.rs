@@ -385,26 +385,41 @@ impl ObjectHeap {
         self.objects.get_mut(id).and_then(|slot| slot.as_mut())
     }
 
-    /// Write a field slot through the write barrier（含老→年轻记忆集）。
+    /// Write a field slot through the write barrier（含老→年轻记忆集与可选 SATB）。
     pub fn set_field(&mut self, id: ObjectId, field_slot: usize, value: Value) -> Result<(), &'static str> {
         let container_gen = self.generation(id).ok_or("object not found")?;
         let is_old_to_young = container_gen == Generation::Tenured
             && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
+        let satb = self.concurrent_mark.requires_satb();
+
+        let old = match self.objects.get(id).and_then(|slot| slot.as_ref()) {
+            Some(ObjectPayload::LayoutObject { slots, .. }) => {
+                slots.get(field_slot).cloned().ok_or("field slot out of range")?
+            }
+            _ => return Err("not a layout object"),
+        };
+        if satb {
+            self.barrier.record_satb_pre_write(&old);
+        }
+        if value.heap_ids().next().is_some() {
+            self.barrier.note_ref_write();
+        }
+        if is_old_to_young {
+            self.barrier.record_old_to_young(id);
+        }
 
         match self.objects.get_mut(id).and_then(|slot| slot.as_mut()) {
             Some(ObjectPayload::LayoutObject { slots, .. }) => {
-                let slot = slots.get_mut(field_slot).ok_or("field slot out of range")?;
-                if value.heap_ids().next().is_some() {
-                    self.barrier.note_ref_write();
-                }
-                if is_old_to_young {
-                    self.barrier.record_old_to_young(id);
-                }
-                *slot = value;
+                slots[field_slot] = value;
                 Ok(())
             }
             _ => Err("not a layout object"),
         }
+    }
+
+    /// 排空 SATB 缓冲（终止检测前由 collector 消费）。
+    pub fn drain_satb_buffer(&mut self) -> Vec<ObjectId> {
+        self.barrier.drain_satb()
     }
 
     /// Allocates a coroutine payload and returns its id.

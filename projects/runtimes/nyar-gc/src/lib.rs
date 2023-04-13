@@ -6,7 +6,7 @@
 //! [`LayoutDescriptor`]；策略提示见 [`GcPolicy`] / [`WorkloadHints`]。
 //! 宿主持久根见 [`HostRoots`] / [`RootHandle`]；分代标签见 [`Generation`]。
 //! 工作负载意图见 [`WorkloadIntent`] / [`StrategyController`]。
-//! 并发标记协议骨架见 [`ConcurrentMarkController`]。
+//! 并发标记协议骨架见 [`ConcurrentMarkController`]；SATB 缓冲挂在 [`WriteBarrier`]。
 
 mod barrier;
 mod collector;

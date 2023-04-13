@@ -94,6 +94,17 @@ impl ConcurrentMarkController {
         self.state
     }
 
+    /// mutator 写路径是否必须记录 SATB（仅在已启用且处于并发标记可见阶段）。
+    pub fn requires_satb(&self) -> bool {
+        self.enabled
+            && matches!(
+                self.state,
+                ConcurrentMarkState::ConcurrentTrace
+                    | ConcurrentMarkState::TerminationCheck
+                    | ConcurrentMarkState::Remark
+            )
+    }
+
     /// 已启动周期计数（含中止）。
     pub fn cycles_started(&self) -> u64 {
         self.cycles_started
@@ -159,5 +170,18 @@ mod tests {
         ctrl.transition(ConcurrentMarkEvent::BeginCycle).unwrap();
         ctrl.transition(ConcurrentMarkEvent::Abort).unwrap();
         assert_eq!(ctrl.state(), ConcurrentMarkState::Idle);
+    }
+
+    #[test]
+    fn satb_required_only_during_mutator_visible_mark() {
+        let mut ctrl = ConcurrentMarkController::new();
+        assert!(!ctrl.requires_satb());
+        ctrl.set_enabled(true);
+        ctrl.transition(ConcurrentMarkEvent::BeginCycle).unwrap();
+        assert!(!ctrl.requires_satb());
+        ctrl.transition(ConcurrentMarkEvent::RootsReady).unwrap();
+        ctrl.transition(ConcurrentMarkEvent::TraceSliceDone).unwrap();
+        assert!(ctrl.requires_satb());
+        assert_eq!(ctrl.state(), ConcurrentMarkState::ConcurrentTrace);
     }
 }
