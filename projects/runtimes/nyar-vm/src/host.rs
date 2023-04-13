@@ -35,6 +35,10 @@ pub enum HostOp {
     BoolNot,
     BoolAnd,
     BoolOr,
+    /// 进入业务阶段（参数：阶段名 `String`，可选 `i32` 暂停预算毫秒）。
+    BeginPhase,
+    /// 结束业务阶段（可选参数：阶段名 `String`；缺省弹出栈顶）。
+    EndPhase,
 }
 
 /// 加载期解析后的导入槽。
@@ -85,12 +89,14 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "bool_not" => HostOp::BoolNot,
         "bool_and" => HostOp::BoolAnd,
         "bool_or" => HostOp::BoolOr,
+        "begin_phase" => HostOp::BeginPhase,
+        "end_phase" => HostOp::EndPhase,
         _ => return None,
     })
 }
 
 /// 执行已解析的宿主操作（热路径无符号字符串）。
-pub fn execute_host_op(op: HostOp, args: &[Value], _heap: &mut ObjectHeap) -> Result<Value, NyarRuntimeError> {
+pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, NyarRuntimeError> {
     match op {
         HostOp::Print => {
             let text = args.iter().map(value_display).collect::<Vec<_>>().join("\t");
@@ -109,6 +115,52 @@ pub fn execute_host_op(op: HostOp, args: &[Value], _heap: &mut ObjectHeap) -> Re
             else {
                 println!();
             }
+            Ok(Value::Null)
+        }
+        HostOp::BeginPhase => {
+            let phase = match args.first() {
+                Some(Value::String(name)) if !name.is_empty() => name.clone(),
+                Some(other) => {
+                    return Err(NyarRuntimeError::TypeMismatch {
+                        expected: "non-empty string phase name",
+                        actual: other.type_name().to_string(),
+                    });
+                }
+                None => {
+                    return Err(NyarRuntimeError::UnsupportedFeature(
+                        "begin_phase requires a phase name string argument".into(),
+                    ));
+                }
+            };
+            let pause_budget_ms = match args.get(1) {
+                Some(Value::I32(value)) if *value >= 0 => Some(*value as u32),
+                Some(Value::I64(value)) if *value >= 0 && *value <= u32::MAX as i64 => Some(*value as u32),
+                Some(other) => {
+                    return Err(NyarRuntimeError::TypeMismatch {
+                        expected: "non-negative i32 pause_budget_ms",
+                        actual: other.type_name().to_string(),
+                    });
+                }
+                None => None,
+            };
+            let mut intent = nyar_gc::WorkloadIntent::empty(nyar_gc::IntentSource::PhaseEvent);
+            intent.phase = Some(phase);
+            intent.pause_budget_ms = pause_budget_ms;
+            heap.begin_phase(intent).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
+            Ok(Value::Null)
+        }
+        HostOp::EndPhase => {
+            let phase = match args.first() {
+                Some(Value::String(name)) => Some(name.as_str()),
+                Some(other) => {
+                    return Err(NyarRuntimeError::TypeMismatch {
+                        expected: "string phase name",
+                        actual: other.type_name().to_string(),
+                    });
+                }
+                None => None,
+            };
+            heap.end_phase(phase).map_err(|error| NyarRuntimeError::ModuleLoad(error.to_string()))?;
             Ok(Value::Null)
         }
         HostOp::I32ToI64 => match args.first() {
@@ -200,7 +252,20 @@ mod tests {
         assert!(parse_host_op("alloc_record").is_none(), "struct ops must not revive string host bridge");
         assert_eq!(parse_host_op("print"), Some(HostOp::Print));
         assert_eq!(parse_host_op("i64_add"), Some(HostOp::I64Add));
+        assert_eq!(parse_host_op("begin_phase"), Some(HostOp::BeginPhase));
+        assert_eq!(parse_host_op("end_phase"), Some(HostOp::EndPhase));
         assert!(parse_host_op("not_a_real_host_op").is_none());
+    }
+
+    #[test]
+    fn begin_and_end_phase_update_heap_strategy() {
+        let mut heap = ObjectHeap::new();
+        execute_host_op(HostOp::BeginPhase, &[Value::String("request".into()), Value::I32(5)], &mut heap).expect("begin");
+        assert_eq!(heap.strategy().phase_depth(), 1);
+        assert_eq!(heap.policy().hints.phase.as_deref(), Some("request"));
+        assert_eq!(heap.policy().hints.pause_budget_ms, Some(5));
+        execute_host_op(HostOp::EndPhase, &[Value::String("request".into())], &mut heap).expect("end");
+        assert_eq!(heap.strategy().phase_depth(), 0);
     }
 
     #[test]

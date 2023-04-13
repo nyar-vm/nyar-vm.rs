@@ -33,6 +33,9 @@ enum Commands {
         /// Path to a workload intent JSON file (alternative to `--workload-json`).
         #[arg(long = "workload-file")]
         workload_file: Option<PathBuf>,
+        /// Begin a nested phase intent JSON before run (source forced to phase_event).
+        #[arg(long = "phase-json")]
+        phase_json: Option<String>,
     },
     /// List exported symbols in a `.nyar` module.
     List {
@@ -51,6 +54,7 @@ fn main() -> Result<()> {
             args_json,
             workload_json: workload_json_arg,
             workload_file,
+            phase_json,
         } => {
             let bytes = fs::read(&module).into_diagnostic().wrap_err_with(|| format!("failed to read module file: {}", module.display()))?;
             let mut vm = NyarVm::new();
@@ -72,6 +76,20 @@ fn main() -> Result<()> {
                     .map_err(|error| miette::miette!("failed to apply workload intent: {error}"))?;
                 eprintln!("workload: {}", decision.reason);
             }
+            let mut active_phase: Option<String> = None;
+            if let Some(source) = phase_json {
+                let mut intent = workload_json::parse_workload_intent_json(&source)
+                    .map_err(|error| miette::miette!("failed to parse --phase-json: {error}"))?;
+                intent.source = nyar_vm::IntentSource::PhaseEvent;
+                if intent.phase.is_none() {
+                    return Err(miette::miette!("--phase-json requires a `phase` field"));
+                }
+                active_phase = intent.phase.clone();
+                let decision = vm
+                    .begin_workload_phase(intent)
+                    .map_err(|error| miette::miette!("failed to begin workload phase: {error}"))?;
+                eprintln!("phase begin: {}", decision.reason);
+            }
             let loaded = vm.load(&bytes).wrap_err_with(|| format!("failed to load module: {}", module.display()))?;
             let args = match args_json {
                 Some(source) => json_bridge::parse_call_args_json(&source).wrap_err("failed to parse --args-json")?,
@@ -80,6 +98,12 @@ fn main() -> Result<()> {
             let result = vm
                 .run(&loaded, &entry, args)
                 .map_err(|error| miette::miette!("failed to run entry `{entry}`: {error}"))?;
+            if let Some(phase) = active_phase {
+                let decision = vm
+                    .end_workload_phase(Some(phase.as_str()))
+                    .map_err(|error| miette::miette!("failed to end workload phase: {error}"))?;
+                eprintln!("phase end: {}", decision.reason);
+            }
             if json {
                 println!("{}", serde_json::to_string(&json_bridge::value_to_json(&result)).into_diagnostic()?);
             } else {

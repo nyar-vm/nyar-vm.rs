@@ -37,6 +37,7 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
         Some("mark_sweep") => Some(GcMode::MarkSweep),
         Some("generational_low_latency") => Some(GcMode::GenerationalLowLatency),
         Some("throughput_batch") => Some(GcMode::ThroughputBatch),
+        Some("concurrent_mark_reserved") => Some(GcMode::ConcurrentMarkReserved),
         Some(other) => return Err(WorkloadJsonError(format!("unknown preferred_mode `{other}`"))),
     };
 
