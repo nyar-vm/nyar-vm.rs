@@ -3,8 +3,9 @@
 use crate::module::LoadedModule;
 
 pub use nyar_jit::{
-    DeoptFrame, DeoptMap, DeoptMapEntry, DisabledJit, FunctionStackMaps, JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError,
-    JitFunctionSpec, StackMapEntry, StackMapJit, build_baseline_deopt_map, build_conservative_stack_maps,
+    DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, DisabledJit, FunctionStackMaps, JitCompileRequest, JitCompiledArtifact,
+    JitCompiler, JitError, JitFunctionSpec, RestoredInterpreterFrame, RestoredLocal, StackMapEntry, StackMapJit,
+    build_baseline_deopt_map, build_conservative_stack_maps, materialize_interpreter_frames,
 };
 
 /// Builds a language-agnostic JIT request from a loaded `.nyar` module.

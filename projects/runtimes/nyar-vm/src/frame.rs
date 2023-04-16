@@ -1,4 +1,6 @@
-use crate::value::{ObjectId, Value};
+use nyar_jit::{RestoredInterpreterFrame, RestoredLocal};
+
+use crate::{error::NyarRuntimeError, value::{ObjectId, Value}};
 
 /// Activation frame for one function invocation.
 #[derive(Debug, Clone)]
@@ -36,5 +38,44 @@ impl Frame {
                 self.locals[index] = value;
             }
         }
+    }
+
+    /// 由 deopt 物化帧构造解释器帧（`Absent` → `Null`；尚不解码 `Provided` 载荷）。
+    pub fn from_deopt_restore(restored: &RestoredInterpreterFrame, stack_base: usize) -> Result<Self, NyarRuntimeError> {
+        let mut locals = Vec::with_capacity(restored.locals.len());
+        for cell in &restored.locals {
+            match cell {
+                RestoredLocal::Absent => locals.push(Value::Null),
+                RestoredLocal::Provided(_) => {
+                    return Err(NyarRuntimeError::UnsupportedFeature(
+                        "deopt Provided local materialization requires a Value codec; use Absent slots for baseline restore",
+                    ));
+                }
+            }
+        }
+        Ok(Self {
+            locals,
+            ip: restored.instruction_index as usize,
+            function_index: restored.function_index,
+            stack_base,
+            coroutine_origin: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar_jit::{build_baseline_deopt_map, materialize_interpreter_frames};
+
+    #[test]
+    fn from_deopt_restore_maps_absent_to_null() {
+        let map = build_baseline_deopt_map(4, 2, &[7]);
+        let entry = map.entry_at(7).expect("entry");
+        let frames = materialize_interpreter_frames(entry, &[vec![]]).expect("materialize");
+        let frame = Frame::from_deopt_restore(&frames[0], 0).expect("restore");
+        assert_eq!(frame.function_index, 4);
+        assert_eq!(frame.ip, 8);
+        assert_eq!(frame.locals, vec![Value::Null, Value::Null]);
     }
 }
