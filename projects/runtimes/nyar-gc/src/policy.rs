@@ -13,7 +13,7 @@ pub enum GcMode {
     GenerationalLowLatency,
     /// 吞吐优先：当前仍走全堆回收（大批次语义占位）。
     ThroughputBatch,
-    /// 并发标记低延迟（协议骨架已有；运行时仍回退同步回收，直至写屏障合同闭合）。
+    /// 并发标记低延迟（单线程 `poll_concurrent_mark` + SATB；无后台线程，直至写屏障/别名合同闭合）。
     ConcurrentMarkReserved,
 }
 
@@ -61,6 +61,18 @@ impl GcPolicy {
     pub fn generational_low_latency() -> Self {
         Self {
             mode: GcMode::GenerationalLowLatency,
+            hints: WorkloadHints {
+                pause_budget_ms: Some(5),
+                ..WorkloadHints::default()
+            },
+            full_collect_every_n_nursery: 8,
+        }
+    }
+
+    /// 并发标记预留模式（单线程状态机 + SATB；无后台线程）。
+    pub fn concurrent_mark_reserved() -> Self {
+        Self {
+            mode: GcMode::ConcurrentMarkReserved,
             hints: WorkloadHints {
                 pause_budget_ms: Some(5),
                 ..WorkloadHints::default()

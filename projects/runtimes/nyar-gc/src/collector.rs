@@ -43,13 +43,20 @@ impl GarbageCollector {
         &self.last_relocate
     }
 
-    /// 按堆上 [`crate::GcPolicy`] 选择 nursery 或全堆回收。
+    /// 按堆上 [`crate::GcPolicy`] 选择 nursery、全堆或并发标记（单线程模拟）回收。
     ///
-    /// 若发生 nursery 物理晋升，返回转发图；全堆回收返回空图。
+    /// 若发生 nursery 物理晋升，返回转发图；全堆 / 并发标记路径返回空图。
     pub fn collect_for_policy(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) -> RelocateMap {
         use crate::policy::GcMode;
 
         let mode = heap.policy().mode;
+        if matches!(mode, GcMode::ConcurrentMarkReserved) {
+            // 压力 safepoint / Return：推进到 Idle（完整单线程周期），保证可达对象不丢失。
+            while !self.poll_concurrent_mark(roots, heap) {}
+            self.nursery_collects_since_full = 0;
+            return RelocateMap::new();
+        }
+
         let force_full = heap.policy().hints.allow_heavy_collection
             || heap.over_soft_limit()
             || self.nursery_collects_since_full >= heap.policy().full_collect_every_n_nursery;
@@ -64,6 +71,101 @@ impl GarbageCollector {
             self.collect(roots, heap);
             self.nursery_collects_since_full = 0;
             RelocateMap::new()
+        }
+    }
+
+    /// 在 safepoint 推进一步并发标记（单线程；无后台线程）。
+    ///
+    /// 返回 `true` 表示本步已完成清扫并回到 Idle。mutator 在 `ConcurrentTrace` /
+    /// `TerminationCheck` / `Remark` 期间的写会进入 SATB，本方法在相应阶段排空并标记。
+    pub fn poll_concurrent_mark(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) -> bool {
+        use crate::concurrent::{ConcurrentMarkEvent, ConcurrentMarkState};
+
+        heap.concurrent_mark_mut().set_enabled(true);
+        let state = heap.concurrent_mark().state();
+
+        match state {
+            ConcurrentMarkState::Idle => {
+                let slot_count = heap.slot_count();
+                if slot_count == 0 {
+                    return true;
+                }
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::BeginCycle)
+                    .expect("enabled BeginCycle");
+                self.marked.resize(slot_count, false);
+                self.marked.fill(false);
+                self.mark_interpreter_roots(roots, heap);
+                self.mark_host_roots(heap);
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::RootsReady)
+                    .expect("RootsReady");
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::TraceSliceDone)
+                    .expect("enter ConcurrentTrace");
+                false
+            }
+            ConcurrentMarkState::StartMark | ConcurrentMarkState::RootSnapshot => {
+                // 异常残留：中止后下一拍从 Idle 重开。
+                let _ = heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::Abort);
+                false
+            }
+            ConcurrentMarkState::ConcurrentTrace => {
+                self.drain_and_mark_satb(heap);
+                // 单线程：一拍排空后进入终止检测；后台线程版可在此继续 TraceSliceDone。
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::TerminationOk)
+                    .expect("to TerminationCheck");
+                false
+            }
+            ConcurrentMarkState::TerminationCheck => {
+                let pending = !heap.barrier().satb_buffer().is_empty();
+                self.drain_and_mark_satb(heap);
+                if pending {
+                    heap.concurrent_mark_mut()
+                        .transition(ConcurrentMarkEvent::TerminationRetry)
+                        .expect("back to ConcurrentTrace");
+                } else {
+                    heap.concurrent_mark_mut()
+                        .transition(ConcurrentMarkEvent::TerminationOk)
+                        .expect("to Remark");
+                }
+                false
+            }
+            ConcurrentMarkState::Remark => {
+                let slot_count = heap.slot_count();
+                if self.marked.len() < slot_count {
+                    self.marked.resize(slot_count, false);
+                }
+                self.drain_and_mark_satb(heap);
+                self.mark_interpreter_roots(roots, heap);
+                self.mark_host_roots(heap);
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::RemarkDone)
+                    .expect("to Sweep");
+                false
+            }
+            ConcurrentMarkState::Sweep => {
+                heap.sweep(&self.marked);
+                heap.clear_remembered();
+                heap.barrier_mut().clear_satb();
+                self.last_relocate = RelocateMap::new();
+                heap.concurrent_mark_mut()
+                    .transition(ConcurrentMarkEvent::SweepDone)
+                    .expect("to Idle");
+                true
+            }
+        }
+    }
+
+    fn drain_and_mark_satb(&mut self, heap: &mut ObjectHeap) {
+        let slot_count = heap.slot_count();
+        if self.marked.len() < slot_count {
+            self.marked.resize(slot_count, false);
+        }
+        let drained = heap.drain_satb_buffer();
+        for id in drained {
+            trace_value(&Value::Object(id), heap, &mut self.marked);
         }
     }
 

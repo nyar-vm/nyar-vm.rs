@@ -106,7 +106,7 @@ impl ObjectHeap {
     /// Creates a heap with an explicit GC policy.
     pub fn with_policy(policy: GcPolicy) -> Self {
         let mut heap = Self::new();
-        heap.policy = policy;
+        heap.set_policy(policy);
         heap
     }
 
@@ -122,7 +122,10 @@ impl ObjectHeap {
 
     /// Replace GC policy (does not migrate live objects between algorithms).
     pub fn set_policy(&mut self, policy: GcPolicy) {
+        use crate::policy::GcMode;
+        let enable_concurrent = matches!(policy.mode, GcMode::ConcurrentMarkReserved);
         self.policy = policy;
+        self.concurrent_mark.set_enabled(enable_concurrent);
     }
 
     /// 设置进程级工作负载意图并刷新 [`GcPolicy`]。

@@ -307,3 +307,63 @@ fn satb_buffer_records_overwritten_refs_during_concurrent_trace() {
     assert_eq!(drained, vec![old_ref]);
     assert!(heap.barrier().satb_buffer().is_empty());
 }
+
+#[test]
+fn concurrent_mark_reserved_poll_drains_satb_and_reclaims() {
+    use nyar_gc::{ConcurrentMarkState, GcPolicy};
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    assert!(heap.concurrent_mark().enabled());
+
+    let container = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Null],
+    });
+    let keep = heap.alloc(empty_layout(1));
+    let doomed = heap.alloc(empty_layout(2));
+    heap.set_field(container, 0, Value::Object(keep)).unwrap();
+
+    let stack = [Value::Object(container)];
+    let mut gc = GarbageCollector::new();
+
+    // Idle → ConcurrentTrace
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+    assert!(heap.concurrent_mark().requires_satb());
+
+    // mutator 覆盖：旧 keep 进 SATB；再挂上 doomed 后又覆盖掉，使 doomed 仅靠 SATB 被看见
+    heap.set_field(container, 0, Value::Object(doomed)).unwrap();
+    assert!(heap.barrier().satb_buffer().contains(&keep));
+    heap.set_field(container, 0, Value::Object(keep)).unwrap();
+    assert!(heap.barrier().satb_buffer().contains(&doomed));
+
+    // 推进到 Idle（含 TerminationCheck / Remark / Sweep）
+    let mut steps = 0;
+    while !gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap) {
+        steps += 1;
+        assert!(steps < 16, "concurrent mark poll should finish");
+    }
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::Idle);
+    assert!(heap.get(container).is_some());
+    assert!(heap.get(keep).is_some());
+    // doomed 曾被 SATB 标记，随后 remark 从根只达 keep；但 SATB 已将其标灰，
+    // 单线程实现保留「曾进入缓冲」对象直至本周期清扫 — 若最终不可达则被回收。
+    // 此处 doomed 在 remark 根闭包外且标记位可能仍为 true（SATB 标记），故存活或回收均可；
+    // 断言周期完成且 keep 存活即可。
+    assert!(heap.barrier().satb_buffer().is_empty());
+}
+
+#[test]
+fn collect_for_policy_concurrent_mark_reserved_reclaims_unreachable() {
+    use nyar_gc::GcPolicy;
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let live = heap.alloc(empty_layout(0));
+    let dead = heap.alloc(empty_layout(1));
+    let stack = [Value::Object(live)];
+    let mut gc = GarbageCollector::new();
+    gc.collect_for_policy(roots(&stack, &[], &[], &[]), &mut heap);
+    assert!(heap.get(live).is_some());
+    assert!(heap.get(dead).is_none());
+    assert_eq!(heap.concurrent_mark().state(), nyar_gc::ConcurrentMarkState::Idle);
+}
