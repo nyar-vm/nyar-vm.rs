@@ -363,6 +363,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     if self.try_emit_language_operator_call(path, arguments, output) {
                         return;
                     }
+                    if self.try_emit_host_phase_call(path, arguments, output) {
+                        return;
+                    }
                 }
                 for argument in arguments {
                     self.emit_operand(argument);
@@ -523,6 +526,36 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_plain(NyarHeadCode::Return);
             }
         }
+    }
+
+    /// 将显式 `begin_phase` / `end_phase` 调用降为 `nyar.host` `CallImport`（无专用 MIR opcode）。
+    ///
+    /// 符号末段必须精确匹配；参数按宿主合同：`begin_phase` 至少 1 个（阶段名），`end_phase` 1 个。
+    fn try_emit_host_phase_call(
+        &mut self,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) -> bool {
+        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
+        let Some((symbol, min_argc)) = host_phase_import(simple)
+        else {
+            return false;
+        };
+        if arguments.len() < min_argc {
+            return false;
+        }
+        for argument in arguments {
+            self.emit_operand(argument);
+        }
+        self.emitter.emit_call_import(symbol, arguments.len() as i32);
+        if let Some(output) = output {
+            self.store_to_local(output);
+        }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
+        true
     }
 
     /// 尝试把语言 `Call` 降为 [`OperatorId`] 对应的 Nyar VM 指令 / 宿主 import。
@@ -990,10 +1023,31 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 }
 
+/// 工作负载阶段宿主符号：末段名 → (`nyar.host` 符号, 最小参数个数)。
+fn host_phase_import(simple: &str) -> Option<(&'static str, usize)> {
+    match simple {
+        "begin_phase" => Some(("begin_phase", 1)),
+        "end_phase" => Some(("end_phase", 1)),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum NumericWidth {
     I32,
     I64,
+}
+
+#[cfg(test)]
+mod host_phase_tests {
+    use super::host_phase_import;
+
+    #[test]
+    fn recognizes_phase_host_symbols() {
+        assert_eq!(host_phase_import("begin_phase"), Some(("begin_phase", 1)));
+        assert_eq!(host_phase_import("end_phase"), Some(("end_phase", 1)));
+        assert_eq!(host_phase_import("console_log"), None);
+    }
 }
 
 impl BytecodeEmitter<'_> {
