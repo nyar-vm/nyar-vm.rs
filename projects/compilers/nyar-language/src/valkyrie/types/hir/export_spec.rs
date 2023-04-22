@@ -59,6 +59,41 @@ pub fn resolve_attribute_id(attribute: &HirAttribute) -> Option<AttributeId> {
     Some(registry.intern(name))
 }
 
+/// 解析 `[workload_phase("request")]` / `[workload_phase(name: "request")]` 的阶段名。
+///
+/// 空名或缺失字符串字面量时返回 `None`（失败闭合，不发明默认阶段）。
+pub fn parse_workload_phase_from_annotations(annotations: &[HirAttribute]) -> Option<String> {
+    let attribute =
+        annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::workload_phase()))?;
+
+    if attribute.arguments.is_empty() {
+        return None;
+    }
+
+    for argument in &attribute.arguments {
+        if let Some(key) = argument.key.as_ref() {
+            if key.as_str() == "name" {
+                let name = argument_string_literal(argument)?;
+                return non_empty_phase_name(name);
+            }
+            continue;
+        }
+        if let Some(name) = argument_string_literal(argument) {
+            return non_empty_phase_name(name);
+        }
+    }
+    None
+}
+
+fn non_empty_phase_name(name: String) -> Option<String> {
+    if name.is_empty() {
+        None
+    }
+    else {
+        Some(name)
+    }
+}
+
 /// 解析 `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`。
 pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Option<HirExportSpec> {
     let attribute = annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::export()))?;
@@ -183,6 +218,63 @@ mod tests {
         let custom_id = resolve_attribute_id(&custom).expect("user attribute interned");
         assert_ne!(custom_id, builtin_attribute::export());
         assert_eq!(resolve_attribute_id(&custom), Some(custom_id));
+    }
+
+    #[test]
+    fn workload_phase_parses_positional_and_named() {
+        let positional = HirArgument {
+            key: None,
+            value: Box::new(HirExpr {
+                kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
+                    prefix: None,
+                    quote_count: 1,
+                    segments: vec![HirStringSegment::Text("request".into())],
+                })),
+                span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
+            }),
+        };
+        let annotations = vec![HirAttribute::with_arguments(
+            NamePath::new(vec![Identifier::new("workload_phase")]),
+            vec![positional],
+        )];
+        assert_eq!(parse_workload_phase_from_annotations(&annotations).as_deref(), Some("request"));
+
+        let named = HirArgument {
+            key: Some(Identifier::new("name")),
+            value: Box::new(HirExpr {
+                kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
+                    prefix: None,
+                    quote_count: 1,
+                    segments: vec![HirStringSegment::Text("batch".into())],
+                })),
+                span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
+            }),
+        };
+        let annotations = vec![HirAttribute::with_arguments(
+            NamePath::new(vec![Identifier::new("workload_phase")]),
+            vec![named],
+        )];
+        assert_eq!(parse_workload_phase_from_annotations(&annotations).as_deref(), Some("batch"));
+    }
+
+    #[test]
+    fn workload_phase_rejects_empty_name() {
+        let empty = HirArgument {
+            key: None,
+            value: Box::new(HirExpr {
+                kind: HirExprKind::Literal(HirLiteral::String(HirStringLiteral {
+                    prefix: None,
+                    quote_count: 1,
+                    segments: vec![HirStringSegment::Text(String::new())],
+                })),
+                span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
+            }),
+        };
+        let annotations = vec![HirAttribute::with_arguments(
+            NamePath::new(vec![Identifier::new("workload_phase")]),
+            vec![empty],
+        )];
+        assert!(parse_workload_phase_from_annotations(&annotations).is_none());
     }
 
     #[test]

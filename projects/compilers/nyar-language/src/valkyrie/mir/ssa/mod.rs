@@ -6,7 +6,10 @@ use crate::{
     symbols::stable_hir_function_symbol,
     types::{
         Identifier, NamePath,
-        hir::{HirExpr, HirFunction, HirImpl, HirMatchArm, HirModule, HirPattern, HirStatement, HirStatementKind, ValkyrieType},
+        hir::{
+            HirExpr, HirFunction, HirImpl, HirMatchArm, HirModule, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
+            parse_workload_phase_from_annotations,
+        },
     },
 };
 
@@ -30,6 +33,8 @@ mod value_semantics;
 
 #[cfg(test)]
 mod singleton_tests;
+#[cfg(test)]
+mod workload_phase_tests;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
@@ -1096,6 +1101,12 @@ fn lower_function_semantic(
     // 对 CLR 等后端，可据此走 `collect_parameter_slots` 并生成 `ldarg`。
     builder.blocks[0].parameters = param_values.clone();
 
+    // `[workload_phase("…")]` → 入口 `begin_phase` + 各 `Return` 前 `end_phase`（普通 Call，无专用 opcode）。
+    if let Some(phase) = parse_workload_phase_from_annotations(&function.annotations) {
+        builder.emit_phase_host_call("begin_phase", &phase);
+        builder.workload_phase = Some(phase);
+    }
+
     // 按顺序 lowering 函数体语句。
     if builder.terminator.is_none() {
         for statement in &function.body.statements {
@@ -1215,6 +1226,8 @@ struct MirBuilder {
     /// 使 `field_type_for_object_operand` 能查到泛型结构体字段类型。
     /// 自由函数为 `None`。
     impl_owner_type: Option<ValkyrieType>,
+    /// `[workload_phase]` 解析出的阶段名；`Return` 前插入 `end_phase`。
+    workload_phase: Option<String>,
 }
 
 impl MirBuilder {
@@ -1268,6 +1281,7 @@ impl MirBuilder {
             effectful_resume_map,
             effectful_inline_targets,
             impl_owner_type,
+            workload_phase: None,
         }
     }
 
@@ -1301,7 +1315,29 @@ impl MirBuilder {
     }
 
     fn terminate(&mut self, terminator: MirTerminator) {
+        if matches!(terminator, MirTerminator::Return { .. }) {
+            if let Some(phase) = self.workload_phase.clone() {
+                self.emit_phase_host_call("end_phase", &phase);
+            }
+        }
         self.terminator = Some(terminator);
+    }
+
+    /// 发射 `begin_phase` / `end_phase` 宿主调用（符号末段供 nyar_vm emitter 识别）。
+    fn emit_phase_host_call(&mut self, host_symbol: &str, phase: &str) {
+        let constant = self.next_value(MirValueOrigin::Literal);
+        self.value_types.insert(constant, ValkyrieType::Utf8);
+        self.push_instruction(
+            MirOperation::LoadConstant {
+                constant: MirConstant::Utf8(phase.to_string()),
+                ty: Some(ValkyrieType::Utf8),
+            },
+            vec![constant],
+        );
+        let _ = self.push_call(
+            MirOperand::Symbol(NamePath::new(vec![Identifier::new(host_symbol)])),
+            vec![MirOperand::Value(constant)],
+        );
     }
 
     fn new_block(&mut self, label: &str) -> MirBlockRef {
