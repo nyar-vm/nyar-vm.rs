@@ -382,13 +382,19 @@ pub mod builtin_attribute {
         AttributeId::from_index(3).expect("benchmark attribute id")
     }
 
+    /// `[workload_phase]`：阶段事件语法糖前置（降低为 `begin_phase`/`end_phase` 调用，无专用 MIR opcode）。
+    pub fn workload_phase() -> AttributeId {
+        AttributeId::from_index(4).expect("workload_phase attribute id")
+    }
+
     /// 内建属性的初始注册行（供前端 `AttributeRegistry` 播种）。
-    pub fn seed_registrations() -> [AttributeRegistration; 4] {
+    pub fn seed_registrations() -> [AttributeRegistration; 5] {
         [
             AttributeRegistration { id: export(), name: "export".into() },
             AttributeRegistration { id: main(), name: "main".into() },
             AttributeRegistration { id: test(), name: "test".into() },
             AttributeRegistration { id: benchmark(), name: "benchmark".into() },
+            AttributeRegistration { id: workload_phase(), name: "workload_phase".into() },
         ]
     }
 
@@ -399,6 +405,7 @@ pub mod builtin_attribute {
             "main" => Some(main()),
             "test" => Some(test()),
             "benchmark" => Some(benchmark()),
+            "workload_phase" => Some(workload_phase()),
             _ => None,
         }
     }
@@ -691,7 +698,9 @@ mod tests {
         assert_eq!(builtin_attribute::main().index(), 1);
         let seeds = builtin_attribute::seed_registrations();
         assert_eq!(seeds[0].name, "export");
+        assert_eq!(seeds.len(), 5);
         assert_eq!(builtin_attribute::lookup_seed("export"), Some(builtin_attribute::export()));
+        assert_eq!(builtin_attribute::lookup_seed("workload_phase"), Some(builtin_attribute::workload_phase()));
         assert_eq!(builtin_attribute::lookup_seed("custom_attr"), None);
         let cap = ImportCapability::new("env", "console_log");
         assert_eq!(cap.to_string(), "env::console_log");

@@ -41,7 +41,7 @@ pub struct AttributeRegistry {
 }
 
 impl AttributeRegistry {
-    /// 播种内建 `export` / `main` / `test` / `benchmark`。
+    /// 播种内建 `export` / `main` / `test` / `benchmark` / `workload_phase`。
     pub fn with_builtins() -> Self {
         let mut registry = Self::default();
         for row in builtin_attribute::seed_registrations() {
@@ -384,6 +384,7 @@ mod tests {
     fn attribute_registry_interns_custom_names() {
         let mut registry = AttributeRegistry::with_builtins();
         assert_eq!(registry.lookup("export"), Some(builtin_attribute::export()));
+        assert_eq!(registry.lookup("workload_phase"), Some(builtin_attribute::workload_phase()));
         let custom = registry.intern("my_attr");
         assert_eq!(registry.lookup("my_attr"), Some(custom));
         assert_eq!(registry.intern("my_attr"), custom);
