@@ -40,16 +40,14 @@ impl Frame {
         }
     }
 
-    /// 由 deopt 物化帧构造解释器帧（`Absent` → `Null`；尚不解码 `Provided` 载荷）。
+    /// 由 deopt 物化帧构造解释器帧（`Absent` → `Null`；`Provided` 经 [`crate::deopt_value`] 解码）。
     pub fn from_deopt_restore(restored: &RestoredInterpreterFrame, stack_base: usize) -> Result<Self, NyarRuntimeError> {
         let mut locals = Vec::with_capacity(restored.locals.len());
         for cell in &restored.locals {
             match cell {
                 RestoredLocal::Absent => locals.push(Value::Null),
-                RestoredLocal::Provided(_) => {
-                    return Err(NyarRuntimeError::UnsupportedFeature(
-                        "deopt Provided local materialization requires a Value codec; use Absent slots for baseline restore",
-                    ));
+                RestoredLocal::Provided(bytes) => {
+                    locals.push(crate::deopt_value::decode_value_from_deopt(bytes)?);
                 }
             }
         }
@@ -77,5 +75,15 @@ mod tests {
         assert_eq!(frame.function_index, 4);
         assert_eq!(frame.ip, 8);
         assert_eq!(frame.locals, vec![Value::Null, Value::Null]);
+    }
+
+    #[test]
+    fn from_deopt_restore_decodes_provided_i32() {
+        let map = build_baseline_deopt_map(0, 1, &[0]);
+        let entry = map.entry_at(0).expect("entry");
+        let payload = crate::deopt_value::encode_value_for_deopt(&Value::I32(42)).expect("encode");
+        let frames = materialize_interpreter_frames(entry, &[vec![Some(payload)]]).expect("materialize");
+        let frame = Frame::from_deopt_restore(&frames[0], 0).expect("restore");
+        assert_eq!(frame.locals, vec![Value::I32(42)]);
     }
 }

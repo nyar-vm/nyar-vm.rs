@@ -15,6 +15,7 @@
 //! Crate package: `nyar-vm`. Rust import path: `nyar_vm`. CLI binary: `nyar-vm`.
 
 pub mod array_runtime;
+pub mod deopt_value;
 pub mod error;
 pub mod executable;
 pub mod executor;
@@ -30,6 +31,7 @@ pub mod verify;
 pub mod vm;
 pub mod workload_json;
 
+pub use deopt_value::{decode_value_from_deopt, encode_value_for_deopt};
 pub use error::NyarRuntimeError;
 pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
 pub use module::ModuleGlobals;
