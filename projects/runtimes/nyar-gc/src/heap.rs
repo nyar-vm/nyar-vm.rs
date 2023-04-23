@@ -1,5 +1,7 @@
 use crate::barrier::WriteBarrier;
 use crate::concurrent::ConcurrentMarkController;
+use crate::concurrent_ticker::ConcurrentMarkTicker;
+use std::time::Duration;
 use crate::controller::{StrategyController, StrategyDecision};
 use crate::generation::Generation;
 use crate::intent::{IntentError, WorkloadIntent};
@@ -70,6 +72,8 @@ pub struct ObjectHeap {
     last_promotion_failure: Option<PromotionFailure>,
     /// 并发标记协议控制器（默认关闭）。
     concurrent_mark: ConcurrentMarkController,
+    /// 后台节拍（不访问堆；仅 ConcurrentMarkReserved 可显式启动）。
+    concurrent_ticker: ConcurrentMarkTicker,
     /// 当前存活对象近似字节合计。
     live_bytes: u64,
     /// 进程内累计分配字节（含已回收）。
@@ -98,6 +102,7 @@ impl ObjectHeap {
             tenured_soft_capacity: None,
             last_promotion_failure: None,
             concurrent_mark: ConcurrentMarkController::new(),
+            concurrent_ticker: ConcurrentMarkTicker::new(),
             live_bytes: 0,
             total_allocated_bytes: 0,
         }
@@ -126,6 +131,35 @@ impl ObjectHeap {
         let enable_concurrent = matches!(policy.mode, GcMode::ConcurrentMarkReserved);
         self.policy = policy;
         self.concurrent_mark.set_enabled(enable_concurrent);
+        if !enable_concurrent {
+            self.concurrent_ticker.stop();
+        }
+    }
+
+    /// 启动并发标记后台节拍（不扫描堆；需已处于 `ConcurrentMarkReserved`）。
+    pub fn start_concurrent_mark_ticker(&mut self, interval: Duration) -> Result<(), &'static str> {
+        use crate::policy::GcMode;
+        if !matches!(self.policy.mode, GcMode::ConcurrentMarkReserved) {
+            return Err("concurrent mark ticker requires ConcurrentMarkReserved policy");
+        }
+        self.concurrent_mark.set_enabled(true);
+        self.concurrent_ticker.start(interval);
+        Ok(())
+    }
+
+    /// 停止后台节拍。
+    pub fn stop_concurrent_mark_ticker(&mut self) {
+        self.concurrent_ticker.stop();
+    }
+
+    /// 后台节拍计数（诊断）。
+    pub fn concurrent_mark_ticks(&self) -> u64 {
+        self.concurrent_ticker.ticks()
+    }
+
+    /// 后台节拍是否在跑。
+    pub fn concurrent_mark_ticker_running(&self) -> bool {
+        self.concurrent_ticker.running()
     }
 
     /// 设置进程级工作负载意图并刷新 [`GcPolicy`]。

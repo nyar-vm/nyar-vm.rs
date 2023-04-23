@@ -11,6 +11,7 @@
 mod barrier;
 mod collector;
 mod concurrent;
+mod concurrent_ticker;
 mod controller;
 mod generation;
 mod heap;
@@ -26,6 +27,7 @@ mod value;
 pub use barrier::{WriteBarrier, write_value_slot};
 pub use collector::{GcRoots, GarbageCollector};
 pub use concurrent::{ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState};
+pub use concurrent_ticker::ConcurrentMarkTicker;
 pub use controller::{StrategyController, StrategyDecision};
 pub use generation::Generation;
 pub use heap::{ObjectHeap, ObjectPayload};
