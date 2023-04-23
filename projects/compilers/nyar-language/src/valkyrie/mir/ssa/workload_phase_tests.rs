@@ -61,3 +61,26 @@ micro handle() -> i32 {
     }
     assert!(saw_end, "expected end_phase call before return");
 }
+
+#[test]
+fn workload_phase_keeps_open_across_yield_terminator_shape() {
+    use super::{MirEffectKind, MirTerminator};
+
+    // 纯合同：Yield 不得关闭阶段；Raise→runtime 必须关闭。
+    assert!(!matches!(
+        MirTerminator::YieldToRuntime {
+            effect: MirEffectKind::Yield,
+            payload: None,
+            resume_state: 0,
+        },
+        MirTerminator::Return { .. } | MirTerminator::Unreachable
+    ));
+    assert!(matches!(
+        MirTerminator::YieldToRuntime {
+            effect: MirEffectKind::Raise,
+            payload: None,
+            resume_state: 0,
+        },
+        MirTerminator::YieldToRuntime { effect: MirEffectKind::Raise, .. }
+    ));
+}

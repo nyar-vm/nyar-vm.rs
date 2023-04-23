@@ -1226,7 +1226,7 @@ struct MirBuilder {
     /// 使 `field_type_for_object_operand` 能查到泛型结构体字段类型。
     /// 自由函数为 `None`。
     impl_owner_type: Option<ValkyrieType>,
-    /// `[workload_phase]` 解析出的阶段名；`Return` 前插入 `end_phase`。
+    /// `[workload_phase]` 解析出的阶段名；函数离开路径插入 `end_phase`。
     workload_phase: Option<String>,
 }
 
@@ -1315,12 +1315,35 @@ impl MirBuilder {
     }
 
     fn terminate(&mut self, terminator: MirTerminator) {
-        if matches!(terminator, MirTerminator::Return { .. }) {
+        if self.should_end_workload_phase(&terminator) {
             if let Some(phase) = self.workload_phase.clone() {
                 self.emit_phase_host_call("end_phase", &phase);
             }
         }
         self.terminator = Some(terminator);
+    }
+
+    /// 哪些终结符表示离开本函数的阶段作用域。
+    ///
+    /// - `Return` / 不可恢复 `Raise`（`YieldToRuntime`）/ `Unreachable`：关闭阶段
+    /// - `Yield` / `DelegateYield`：可 resume，保持阶段
+    /// - `PerformEffect`：可能 resume，不在此关闭
+    fn should_end_workload_phase(&self, terminator: &MirTerminator) -> bool {
+        if self.workload_phase.is_none() {
+            return false;
+        }
+        match terminator {
+            MirTerminator::Return { .. } | MirTerminator::Unreachable => true,
+            MirTerminator::YieldToRuntime { effect: MirEffectKind::Raise, .. } => true,
+            MirTerminator::YieldToRuntime {
+                effect: MirEffectKind::Yield | MirEffectKind::DelegateYield | MirEffectKind::Await | MirEffectKind::AsyncSpawn | MirEffectKind::AsyncBlock,
+                ..
+            } => false,
+            MirTerminator::PerformEffect { .. }
+            | MirTerminator::Jump { .. }
+            | MirTerminator::Branch { .. }
+            | MirTerminator::StateDispatch { .. } => false,
+        }
     }
 
     /// 发射 `begin_phase` / `end_phase` 宿主调用（符号末段供 nyar_vm emitter 识别）。
