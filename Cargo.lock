@@ -1102,6 +1102,9 @@ version = "0.1.0"
 [[package]]
 name = "nyar-jit"
 version = "0.1.0"
+dependencies = [
+ "nyar-bytecode",
+]
 
 [[package]]
 name = "nyar-language"
