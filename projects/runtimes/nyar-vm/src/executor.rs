@@ -127,6 +127,16 @@ impl Executor {
         // 内码从指令下标 0 开始。
         frame.ip = 0;
         frame.set_arguments(args);
+
+        // JIT 快路径：若后端产出 NJ1 blob，则跳过解释循环（仅叶标量形态）。
+        if self.jit.enabled() {
+            if let Ok(artifact) = self.try_jit_compile(module, function_index) {
+                if let Some(blob) = artifact.machine_code.as_ref() {
+                    return crate::nj1_runtime::execute_nj1_blob(blob, &frame.locals);
+                }
+            }
+        }
+
         self.frames = vec![frame];
 
         while let Some(current) = self.frames.last_mut() {
