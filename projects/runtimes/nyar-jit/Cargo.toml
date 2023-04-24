@@ -10,4 +10,7 @@ description = "Optional JIT acceleration for the Nyar bytecode runtime"
 name = "nyar_jit"
 path = "src/lib.rs"
 
+[dependencies]
+nyar-bytecode = { workspace = true }
+
 [dev-dependencies]

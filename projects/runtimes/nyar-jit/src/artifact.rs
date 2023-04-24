@@ -12,6 +12,8 @@ pub struct JitCompiledArtifact {
     pub stack_maps: FunctionStackMaps,
     /// 去优化元数据（与 stack map 分离；可为空表）。
     pub deopt_map: DeoptMap,
+    /// 可选 NJ1（或后续版本）机器码 blob；`None` 表示仅分析产物。
+    pub machine_code: Option<Vec<u8>>,
 }
 
 impl JitCompiledArtifact {
@@ -22,6 +24,7 @@ impl JitCompiledArtifact {
             function_index: stack_maps.function_index,
             stack_maps,
             deopt_map,
+            machine_code: None,
         }
     }
 
@@ -31,6 +34,17 @@ impl JitCompiledArtifact {
             function_index: stack_maps.function_index,
             stack_maps,
             deopt_map,
+            machine_code: None,
+        }
+    }
+
+    /// 分析元数据 + NJ1 机器码 blob。
+    pub fn with_machine_code(stack_maps: FunctionStackMaps, deopt_map: DeoptMap, machine_code: Vec<u8>) -> Self {
+        Self {
+            function_index: stack_maps.function_index,
+            stack_maps,
+            deopt_map,
+            machine_code: Some(machine_code),
         }
     }
 }
