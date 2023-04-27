@@ -30,6 +30,8 @@ pub struct GarbageCollector {
     nursery_collects_since_full: u32,
     /// 最近一次 nursery 晋升转发图（供解释器改写根）。
     last_relocate: RelocateMap,
+    /// 进入 / 停留 ConcurrentTrace 时观察到的 ticker 计数。
+    last_concurrent_ticks: u64,
 }
 
 impl GarbageCollector {
@@ -51,8 +53,8 @@ impl GarbageCollector {
 
         let mode = heap.policy().mode;
         if matches!(mode, GcMode::ConcurrentMarkReserved) {
-            // 压力 safepoint / Return：推进到 Idle（完整单线程周期），保证可达对象不丢失。
-            while !self.poll_concurrent_mark(roots, heap) {}
+            // 完整周期：忽略 ticker 延长，避免后台节拍使 while 永续。
+            while !self.poll_concurrent_mark_ex(roots, heap, true) {}
             self.nursery_collects_since_full = 0;
             return RelocateMap::new();
         }
@@ -74,11 +76,20 @@ impl GarbageCollector {
         }
     }
 
-    /// 在 safepoint 推进一步并发标记（单线程；无后台线程）。
+    /// 在 safepoint 推进一步并发标记（可响应 ticker 延长 ConcurrentTrace）。
     ///
-    /// 返回 `true` 表示本步已完成清扫并回到 Idle。mutator 在 `ConcurrentTrace` /
-    /// `TerminationCheck` / `Remark` 期间的写会进入 SATB，本方法在相应阶段排空并标记。
+    /// 返回 `true` 表示本步已完成清扫并回到 Idle。
     pub fn poll_concurrent_mark(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap) -> bool {
+        self.poll_concurrent_mark_ex(roots, heap, false)
+    }
+
+    /// `force_complete` 为真时，`ConcurrentTrace` 忽略 ticker，直接进入终止（供整周期回收）。
+    pub fn poll_concurrent_mark_ex(
+        &mut self,
+        roots: GcRoots<'_>,
+        heap: &mut ObjectHeap,
+        force_complete: bool,
+    ) -> bool {
         use crate::concurrent::{ConcurrentMarkEvent, ConcurrentMarkState};
 
         heap.concurrent_mark_mut().set_enabled(true);
@@ -103,6 +114,7 @@ impl GarbageCollector {
                 heap.concurrent_mark_mut()
                     .transition(ConcurrentMarkEvent::TraceSliceDone)
                     .expect("enter ConcurrentTrace");
+                self.last_concurrent_ticks = heap.concurrent_mark_ticks();
                 false
             }
             ConcurrentMarkState::StartMark | ConcurrentMarkState::RootSnapshot => {
@@ -112,10 +124,19 @@ impl GarbageCollector {
             }
             ConcurrentMarkState::ConcurrentTrace => {
                 self.drain_and_mark_satb(heap);
-                // 单线程：一拍排空后进入终止检测；后台线程版可在此继续 TraceSliceDone。
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::TerminationOk)
-                    .expect("to TerminationCheck");
+                let ticks = heap.concurrent_mark_ticks();
+                if !force_complete && ticks > self.last_concurrent_ticks {
+                    // 后台节拍有进展：再做一轮 ConcurrentTrace（仍不在后台扫堆）。
+                    self.last_concurrent_ticks = ticks;
+                    heap.concurrent_mark_mut()
+                        .transition(ConcurrentMarkEvent::TraceSliceDone)
+                        .expect("stay ConcurrentTrace");
+                } else {
+                    // 无新节拍，或强制完成：进入终止检测。
+                    heap.concurrent_mark_mut()
+                        .transition(ConcurrentMarkEvent::TerminationOk)
+                        .expect("to TerminationCheck");
+                }
                 false
             }
             ConcurrentMarkState::TerminationCheck => {

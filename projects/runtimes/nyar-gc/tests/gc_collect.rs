@@ -367,3 +367,40 @@ fn collect_for_policy_concurrent_mark_reserved_reclaims_unreachable() {
     assert!(heap.get(dead).is_none());
     assert_eq!(heap.concurrent_mark().state(), nyar_gc::ConcurrentMarkState::Idle);
 }
+
+#[test]
+fn concurrent_trace_waits_for_ticker_before_termination() {
+    use std::thread;
+    use std::time::Duration;
+
+    use nyar_gc::{ConcurrentMarkState, GcPolicy};
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let live = heap.alloc(empty_layout(0));
+    heap.start_concurrent_mark_ticker(Duration::from_millis(5)).expect("ticker");
+    thread::sleep(Duration::from_millis(25));
+    assert!(heap.concurrent_mark_ticks() >= 1);
+
+    let stack = [Value::Object(live)];
+    let mut gc = GarbageCollector::new();
+    // Idle → ConcurrentTrace
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+
+    // 等待更多节拍后下一次 ConcurrentTrace 应因 ticks 进展而停留（TraceSliceDone）
+    let before = heap.concurrent_mark_ticks();
+    thread::sleep(Duration::from_millis(25));
+    assert!(heap.concurrent_mark_ticks() > before);
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+
+    // 停止 ticker 后再 poll：无新节拍 → TerminationCheck → … → Idle
+    heap.stop_concurrent_mark_ticker();
+    let mut steps = 0;
+    while !gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap) {
+        steps += 1;
+        assert!(steps < 16);
+    }
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::Idle);
+    assert!(heap.get(live).is_some());
+}
