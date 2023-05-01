@@ -41,13 +41,19 @@ impl Frame {
     }
 
     /// 由 deopt 物化帧构造解释器帧（`Absent` → `Null`；`Provided` 经 [`crate::deopt_value`] 解码）。
-    pub fn from_deopt_restore(restored: &RestoredInterpreterFrame, stack_base: usize) -> Result<Self, NyarRuntimeError> {
+    ///
+    /// 若 `Provided` 含 `RootHandle` 载荷，必须传入 [`nyar_gc::HostRoots`]。
+    pub fn from_deopt_restore(
+        restored: &RestoredInterpreterFrame,
+        stack_base: usize,
+        roots: Option<&nyar_gc::HostRoots>,
+    ) -> Result<Self, NyarRuntimeError> {
         let mut locals = Vec::with_capacity(restored.locals.len());
         for cell in &restored.locals {
             match cell {
                 RestoredLocal::Absent => locals.push(Value::Null),
                 RestoredLocal::Provided(bytes) => {
-                    locals.push(crate::deopt_value::decode_value_from_deopt(bytes)?);
+                    locals.push(crate::deopt_value::decode_value_from_deopt_with_roots(bytes, roots)?);
                 }
             }
         }
@@ -71,7 +77,7 @@ mod tests {
         let map = build_baseline_deopt_map(4, 2, &[7]);
         let entry = map.entry_at(7).expect("entry");
         let frames = materialize_interpreter_frames(entry, &[vec![]]).expect("materialize");
-        let frame = Frame::from_deopt_restore(&frames[0], 0).expect("restore");
+        let frame = Frame::from_deopt_restore(&frames[0], 0, None).expect("restore");
         assert_eq!(frame.function_index, 4);
         assert_eq!(frame.ip, 8);
         assert_eq!(frame.locals, vec![Value::Null, Value::Null]);
@@ -83,7 +89,7 @@ mod tests {
         let entry = map.entry_at(0).expect("entry");
         let payload = crate::deopt_value::encode_value_for_deopt(&Value::I32(42)).expect("encode");
         let frames = materialize_interpreter_frames(entry, &[vec![Some(payload)]]).expect("materialize");
-        let frame = Frame::from_deopt_restore(&frames[0], 0).expect("restore");
+        let frame = Frame::from_deopt_restore(&frames[0], 0, None).expect("restore");
         assert_eq!(frame.locals, vec![Value::I32(42)]);
     }
 }

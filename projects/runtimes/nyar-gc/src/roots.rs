@@ -10,6 +10,11 @@ use crate::value::Value;
 pub struct RootHandle(usize);
 
 impl RootHandle {
+    /// 由槽下标构造（deopt 解码 / 诊断）；不验证槽是否仍固定。
+    pub fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
     /// 槽下标（诊断 / 测试）。
     pub fn index(self) -> usize {
         self.0

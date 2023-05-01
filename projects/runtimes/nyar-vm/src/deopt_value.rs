@@ -9,7 +9,9 @@
 //! - `0x05` F64 + `u64` bits
 //! - `0x06` String + `u32` len + UTF-8
 //!
-//! 堆引用（Object / Coroutine）拒绝编解码：跨回收周期的裸 id 不稳定。
+//! 堆引用不得编码裸 `ObjectId`：须经 [`HostRoots`] 固定为 `RootHandle`（tag `0x07`）。
+
+use nyar_gc::{HostRoots, RootHandle};
 
 use crate::{error::NyarRuntimeError, value::Value};
 
@@ -20,6 +22,8 @@ const TAG_I64: u8 = 3;
 const TAG_F32: u8 = 4;
 const TAG_F64: u8 = 5;
 const TAG_STRING: u8 = 6;
+/// 宿主持久根句柄（`u32` 槽下标），解码时从 [`HostRoots`] 取回 Value。
+const TAG_ROOT_HANDLE: u8 = 0x07;
 
 /// 将标量 / 字符串 [`Value`] 编码为 deopt `Provided` 字节。
 pub fn encode_value_for_deopt(value: &Value) -> Result<Vec<u8>, NyarRuntimeError> {
@@ -57,13 +61,36 @@ pub fn encode_value_for_deopt(value: &Value) -> Result<Vec<u8>, NyarRuntimeError
             Ok(out)
         }
         Value::Object(_) | Value::Coroutine(_) => Err(NyarRuntimeError::UnsupportedFeature(
-            "deopt Provided codec refuses heap object/coroutine ids; keep them as roots or Absent",
+            "deopt Provided codec refuses bare heap ids; use encode_value_for_deopt_pinned",
         )),
     }
 }
 
-/// 解码 deopt `Provided` 字节为 [`Value`]。
+/// 编码值；堆引用先 [`HostRoots::pin`] 再写入 `RootHandle` 槽下标。
+pub fn encode_value_for_deopt_pinned(value: &Value, roots: &mut HostRoots) -> Result<Vec<u8>, NyarRuntimeError> {
+    match value {
+        Value::Object(_) | Value::Coroutine(_) => {
+            let handle = roots.pin(value.clone());
+            let mut out = vec![TAG_ROOT_HANDLE];
+            let index = u32::try_from(handle.index())
+                .map_err(|_| NyarRuntimeError::UnsupportedFeature("root handle index exceeds u32"))?;
+            out.extend_from_slice(&index.to_le_bytes());
+            Ok(out)
+        }
+        other => encode_value_for_deopt(other),
+    }
+}
+
+/// 解码 deopt `Provided` 字节为 [`Value`]（无根表；`RootHandle` 标签失败）。
 pub fn decode_value_from_deopt(bytes: &[u8]) -> Result<Value, NyarRuntimeError> {
+    decode_value_from_deopt_with_roots(bytes, None)
+}
+
+/// 解码；若载荷为 `RootHandle`，必须提供 [`HostRoots`]。
+pub fn decode_value_from_deopt_with_roots(
+    bytes: &[u8],
+    roots: Option<&HostRoots>,
+) -> Result<Value, NyarRuntimeError> {
     let Some((tag, rest)) = bytes.split_first()
     else {
         return Err(NyarRuntimeError::UnsupportedFeature("empty deopt Provided payload"));
@@ -132,6 +159,21 @@ pub fn decode_value_from_deopt(bytes: &[u8]) -> Result<Value, NyarRuntimeError> 
                 .map_err(|_| NyarRuntimeError::UnsupportedFeature("String payload is not UTF-8"))?;
             Ok(Value::String(s.to_string()))
         }
+        TAG_ROOT_HANDLE => {
+            if rest.len() != 4 {
+                return Err(NyarRuntimeError::UnsupportedFeature("RootHandle payload must be 4 bytes"));
+            }
+            let mut buf = [0u8; 4];
+            buf.copy_from_slice(rest);
+            let index = u32::from_le_bytes(buf) as usize;
+            let roots = roots.ok_or(NyarRuntimeError::UnsupportedFeature(
+                "RootHandle deopt payload requires HostRoots",
+            ))?;
+            roots
+                .get(RootHandle::from_index(index))
+                .cloned()
+                .ok_or(NyarRuntimeError::UnsupportedFeature("RootHandle slot is empty or invalid"))
+        }
         _ => Err(NyarRuntimeError::UnsupportedFeature("unknown deopt value tag")),
     }
 }
@@ -158,8 +200,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_heap_refs() {
+    fn rejects_bare_heap_refs_without_pin() {
         assert!(encode_value_for_deopt(&Value::Object(1)).is_err());
         assert!(encode_value_for_deopt(&Value::Coroutine(2)).is_err());
+    }
+
+    #[test]
+    fn roundtrips_object_via_root_handle() {
+        let mut roots = HostRoots::new();
+        let bytes = encode_value_for_deopt_pinned(&Value::Object(7), &mut roots).expect("encode");
+        let decoded = decode_value_from_deopt_with_roots(&bytes, Some(&roots)).expect("decode");
+        assert_eq!(decoded, Value::Object(7));
+        assert!(decode_value_from_deopt(&bytes).is_err());
     }
 }
