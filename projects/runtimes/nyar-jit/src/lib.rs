@@ -23,7 +23,8 @@ pub use deopt::{
 };
 pub use error::JitError;
 pub use machine_code::{
-    MACHINE_CODE_MAGIC, MachineCodeError, ScalarProgram, decode_scalar_program, encode_ret_i32_add_locals, encode_ret_local,
+    I32Binop, MACHINE_CODE_MAGIC, MachineCodeError, ScalarProgram, decode_scalar_program, encode_ret_i32_add_locals,
+    encode_ret_i32_binop_locals, encode_ret_local,
 };
 pub use request::{JitCompileRequest, JitFunctionSpec};
 pub use stack_map::{FunctionStackMaps, StackMapEntry, build_conservative_stack_maps};

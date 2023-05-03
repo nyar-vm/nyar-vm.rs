@@ -9,10 +9,25 @@ pub const MACHINE_CODE_MAGIC: &[u8; 4] = b"NJ1\0";
 
 /// 操作码。
 pub mod op {
-    /// `return locals[slot]`（i32 槽语义由调用约定解释）。
+    /// `return locals[slot]`。
     pub const RET_LOCAL: u8 = 0x01;
     /// `return (i32)locals[a] + (i32)locals[b]`。
     pub const RET_I32_ADD_LOCALS: u8 = 0x02;
+    /// `return (i32)locals[a] - (i32)locals[b]`。
+    pub const RET_I32_SUB_LOCALS: u8 = 0x03;
+    /// `return (i32)locals[a] * (i32)locals[b]`。
+    pub const RET_I32_MUL_LOCALS: u8 = 0x04;
+}
+
+/// i32 二元运算种类（两 local → 返回值）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum I32Binop {
+    /// 加法。
+    Add,
+    /// 减法。
+    Sub,
+    /// 乘法。
+    Mul,
 }
 
 /// 将 `RetLocal` 编码为 blob。
@@ -24,14 +39,24 @@ pub fn encode_ret_local(slot: u16) -> Vec<u8> {
     out
 }
 
-/// 将 `RetI32AddLocals` 编码为 blob。
-pub fn encode_ret_i32_add_locals(a: u16, b: u16) -> Vec<u8> {
+/// 将两 local 的 i32 二元运算编码为 blob。
+pub fn encode_ret_i32_binop_locals(binop: I32Binop, a: u16, b: u16) -> Vec<u8> {
+    let opcode = match binop {
+        I32Binop::Add => op::RET_I32_ADD_LOCALS,
+        I32Binop::Sub => op::RET_I32_SUB_LOCALS,
+        I32Binop::Mul => op::RET_I32_MUL_LOCALS,
+    };
     let mut out = Vec::with_capacity(9);
     out.extend_from_slice(MACHINE_CODE_MAGIC);
-    out.push(op::RET_I32_ADD_LOCALS);
+    out.push(opcode);
     out.extend_from_slice(&a.to_le_bytes());
     out.extend_from_slice(&b.to_le_bytes());
     out
+}
+
+/// 兼容旧名。
+pub fn encode_ret_i32_add_locals(a: u16, b: u16) -> Vec<u8> {
+    encode_ret_i32_binop_locals(I32Binop::Add, a, b)
 }
 
 /// 解码失败。
@@ -62,8 +87,10 @@ pub enum ScalarProgram {
         /// local 下标。
         slot: u16,
     },
-    /// 两 local 做 i32 加后返回。
-    RetI32AddLocals {
+    /// 两 local 做 i32 二元运算后返回。
+    RetI32BinopLocals {
+        /// 运算种类。
+        binop: I32Binop,
         /// 左操作数 local。
         a: u16,
         /// 右操作数 local。
@@ -84,13 +111,19 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let slot = u16::from_le_bytes([blob[5], blob[6]]);
             Ok(ScalarProgram::RetLocal { slot })
         }
-        op::RET_I32_ADD_LOCALS => {
+        op::RET_I32_ADD_LOCALS | op::RET_I32_SUB_LOCALS | op::RET_I32_MUL_LOCALS => {
             if blob.len() != 9 {
                 return Err(MachineCodeError::InvalidBlob);
             }
+            let binop = match blob[4] {
+                op::RET_I32_ADD_LOCALS => I32Binop::Add,
+                op::RET_I32_SUB_LOCALS => I32Binop::Sub,
+                op::RET_I32_MUL_LOCALS => I32Binop::Mul,
+                _ => unreachable!(),
+            };
             let a = u16::from_le_bytes([blob[5], blob[6]]);
             let b = u16::from_le_bytes([blob[7], blob[8]]);
-            Ok(ScalarProgram::RetI32AddLocals { a, b })
+            Ok(ScalarProgram::RetI32BinopLocals { binop, a, b })
         }
         other => Err(MachineCodeError::UnknownOpcode(other)),
     }
@@ -107,8 +140,13 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_ret_i32_add() {
-        let blob = encode_ret_i32_add_locals(0, 1);
-        assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetI32AddLocals { a: 0, b: 1 });
+    fn roundtrip_ret_i32_binops() {
+        for binop in [I32Binop::Add, I32Binop::Sub, I32Binop::Mul] {
+            let blob = encode_ret_i32_binop_locals(binop, 0, 1);
+            assert_eq!(
+                decode_scalar_program(&blob).unwrap(),
+                ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
+            );
+        }
     }
 }
