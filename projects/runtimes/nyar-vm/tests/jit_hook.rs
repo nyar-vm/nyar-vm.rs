@@ -123,4 +123,65 @@ fn baseline_scalar_jit_fast_path_adds_i32_args() {
     assert!(artifact.machine_code.is_some());
     let result = vm.run(&module, "add", vec![Value::I32(40), Value::I32(2)]).expect("run");
     assert_eq!(result, Value::I32(42));
+    assert_eq!(vm.nj1_cache_len(), 1);
+    // 第二次 run 应命中缓存
+    let again = vm.run(&module, "add", vec![Value::I32(1), Value::I32(2)]).expect("run cached");
+    assert_eq!(again, Value::I32(3));
+    assert_eq!(vm.nj1_cache_len(), 1);
+}
+
+fn load_i32_binop_module(name: &str, export: &str, op: NyarHeadCode) -> nyar_vm::module::LoadedModule {
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&1i32.to_le_bytes());
+    code.push(op as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let data = NyarModuleData {
+        version: NYAR_VERSION,
+        name: name.to_string(),
+        constants: Vec::new(),
+        functions: vec![NyarFunction {
+            name: export.to_string(),
+            arity: 2,
+            local_count: 2,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        }],
+        imports: Vec::new(),
+        exports: vec![NyarExport {
+            kind: NyarExportKind::Function,
+            symbol_name: export.to_string(),
+            function_index: 0,
+        }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    NyarVm::new().load(&encode_module(&data)).expect("load")
+}
+
+#[test]
+fn baseline_scalar_jit_fast_path_sub_and_mul() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+
+    let sub = load_i32_binop_module("nj1-sub", "sub", NyarHeadCode::I32Sub);
+    assert_eq!(
+        vm.run(&sub, "sub", vec![Value::I32(40), Value::I32(2)]).expect("sub"),
+        Value::I32(38)
+    );
+
+    let mul = load_i32_binop_module("nj1-mul", "mul", NyarHeadCode::I32Mul);
+    assert_eq!(
+        vm.run(&mul, "mul", vec![Value::I32(40), Value::I32(2)]).expect("mul"),
+        Value::I32(80)
+    );
+    assert_eq!(vm.nj1_cache_len(), 2);
 }

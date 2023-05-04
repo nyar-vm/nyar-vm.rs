@@ -75,6 +75,11 @@ impl NyarVm {
         self.executor.set_jit(jit);
     }
 
+    /// NJ1 编译缓存条目数（测试 / 诊断）。
+    pub fn nj1_cache_len(&self) -> usize {
+        self.executor.nj1_cache_len()
+    }
+
     /// Borrows the executor's object heap for inspection after a run.
     ///
     /// Tests use this to read the internal state of a coroutine returned by `run`, since

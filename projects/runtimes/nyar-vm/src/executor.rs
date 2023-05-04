@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 
 use crate::{
@@ -10,6 +11,9 @@ use crate::{
     value::{CoroutineState, Value},
 };
 use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
+
+/// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
+type Nj1CacheKey = (u32, String, usize);
 
 /// 按 stack map 条目抽取可能含引用的 local 槽（拷贝，供 `GcRoots` 借用）。
 fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
@@ -27,6 +31,8 @@ pub struct Executor {
     gc: GarbageCollector,
     frames: Vec<Frame>,
     jit: Box<dyn JitCompiler>,
+    /// 已成功编译的 NJ1 blob 缓存（避免每次 `run` 重编译）。
+    nj1_cache: HashMap<Nj1CacheKey, Vec<u8>>,
 }
 
 impl Executor {
@@ -38,6 +44,7 @@ impl Executor {
             gc: GarbageCollector::new(),
             frames: Vec::new(),
             jit: Box::new(DisabledJit),
+            nj1_cache: HashMap::new(),
         }
     }
 
@@ -53,6 +60,11 @@ impl Executor {
         self.jit.enabled()
     }
 
+    /// NJ1 缓存条目数（测试 / 诊断）。
+    pub fn nj1_cache_len(&self) -> usize {
+        self.nj1_cache.len()
+    }
+
     /// Attempts JIT compilation for one module function.
     ///
     /// Returns `JitError::Unsupported` when the installed backend is disabled.
@@ -61,9 +73,10 @@ impl Executor {
         self.jit.compile_function(&request)
     }
 
-    /// Replaces the JIT backend.
+    /// Replaces the JIT backend（并清空 NJ1 缓存）。
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.jit = jit;
+        self.nj1_cache.clear();
     }
 
     /// Borrows the object heap for inspection by callers (e.g. `NyarVm::heap`).
@@ -128,11 +141,16 @@ impl Executor {
         frame.ip = 0;
         frame.set_arguments(args);
 
-        // JIT 快路径：若后端产出 NJ1 blob，则跳过解释循环（仅叶标量形态）。
+        // JIT 快路径：缓存命中或新编译出 NJ1 blob 时跳过解释循环（仅叶标量形态）。
         if self.jit.enabled() {
+            let cache_key = (module.version, module.name.clone(), function_index);
+            if let Some(blob) = self.nj1_cache.get(&cache_key) {
+                return crate::nj1_runtime::execute_nj1_blob(blob, &frame.locals);
+            }
             if let Ok(artifact) = self.try_jit_compile(module, function_index) {
-                if let Some(blob) = artifact.machine_code.as_ref() {
-                    return crate::nj1_runtime::execute_nj1_blob(blob, &frame.locals);
+                if let Some(blob) = artifact.machine_code {
+                    self.nj1_cache.insert(cache_key, blob.clone());
+                    return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals);
                 }
             }
         }
@@ -355,6 +373,7 @@ impl Debug for Executor {
             .field("gc", &self.gc)
             .field("frames", &self.frames)
             .field("jit_enabled", &self.jit.enabled())
+            .field("nj1_cache_len", &self.nj1_cache.len())
             .finish()
     }
 }
