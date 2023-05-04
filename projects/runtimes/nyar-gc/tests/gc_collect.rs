@@ -369,6 +369,50 @@ fn collect_for_policy_concurrent_mark_reserved_reclaims_unreachable() {
 }
 
 #[test]
+fn concurrent_trace_gray_slices_reach_nested_refs() {
+    use nyar_gc::{ConcurrentMarkState, GcPolicy};
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    // 链：root → a → b → c（三层嵌套，预算 1 时需多拍 ConcurrentTrace）
+    let c = heap.alloc(empty_layout(3));
+    let b = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 2,
+        slots: vec![Value::Object(c)],
+    });
+    let a = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 1,
+        slots: vec![Value::Object(b)],
+    });
+    let root = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Object(a)],
+    });
+    let dead = heap.alloc(empty_layout(9));
+
+    let stack = [Value::Object(root)];
+    let mut gc = GarbageCollector::new();
+    gc.set_gray_budget_per_slice(1);
+
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+    // 根快照只入灰 root，尚未扫到 c
+    assert_eq!(gc.gray_queue_len(), 1);
+
+    let mut steps = 0;
+    while !gc.poll_concurrent_mark_ex(roots(&stack, &[], &[], &[]), &mut heap, true) {
+        steps += 1;
+        assert!(steps < 32, "gray-sliced concurrent mark should finish");
+    }
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::Idle);
+    assert!(heap.get(root).is_some());
+    assert!(heap.get(a).is_some());
+    assert!(heap.get(b).is_some());
+    assert!(heap.get(c).is_some());
+    assert!(heap.get(dead).is_none());
+    assert_eq!(gc.gray_queue_len(), 0);
+}
+
+#[test]
 fn concurrent_trace_waits_for_ticker_before_termination() {
     use std::thread;
     use std::time::Duration;

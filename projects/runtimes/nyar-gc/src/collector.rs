@@ -1,8 +1,11 @@
 use crate::generation::Generation;
 use crate::heap::ObjectHeap;
 use crate::relocate::RelocateMap;
-use crate::trace::trace_value;
+use crate::trace::{enqueue_object_gray, enqueue_value_gray, scan_gray_object, trace_value};
 use crate::value::{ObjectId, Value};
+
+/// ConcurrentTrace 每拍默认扫描的灰对象上限（mutator 侧有界切片）。
+const DEFAULT_GRAY_BUDGET_PER_SLICE: usize = 64;
 
 /// Root set for a mark-sweep collection（不含宿主根；宿主根始终从堆内读取）。
 #[derive(Debug, Clone, Copy)]
@@ -23,15 +26,32 @@ pub struct GcRoots<'a> {
 }
 
 /// Mark-sweep garbage collector（全堆 + nursery + 策略入口）。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GarbageCollector {
     marked: Vec<bool>,
+    /// 并发标记灰对象工作队列（已标记、待扫描子引用）。
+    gray: Vec<ObjectId>,
+    /// ConcurrentTrace 每拍灰扫描预算。
+    gray_budget_per_slice: usize,
     /// 自上次全堆回收以来已完成的 nursery 次数（分代模式）。
     nursery_collects_since_full: u32,
     /// 最近一次 nursery 晋升转发图（供解释器改写根）。
     last_relocate: RelocateMap,
     /// 进入 / 停留 ConcurrentTrace 时观察到的 ticker 计数。
     last_concurrent_ticks: u64,
+}
+
+impl Default for GarbageCollector {
+    fn default() -> Self {
+        Self {
+            marked: Vec::new(),
+            gray: Vec::new(),
+            gray_budget_per_slice: DEFAULT_GRAY_BUDGET_PER_SLICE,
+            nursery_collects_since_full: 0,
+            last_relocate: RelocateMap::new(),
+            last_concurrent_ticks: 0,
+        }
+    }
 }
 
 impl GarbageCollector {
@@ -43,6 +63,16 @@ impl GarbageCollector {
     /// 最近一次 nursery 晋升转发图。
     pub fn last_relocate_map(&self) -> &RelocateMap {
         &self.last_relocate
+    }
+
+    /// 设置 ConcurrentTrace 每拍灰对象扫描上限（至少为 1）。
+    pub fn set_gray_budget_per_slice(&mut self, budget: usize) {
+        self.gray_budget_per_slice = budget.max(1);
+    }
+
+    /// 当前灰队列长度（测试 / 诊断）。
+    pub fn gray_queue_len(&self) -> usize {
+        self.gray.len()
     }
 
     /// 按堆上 [`crate::GcPolicy`] 选择 nursery、全堆或并发标记（单线程模拟）回收。
@@ -106,8 +136,10 @@ impl GarbageCollector {
                     .expect("enabled BeginCycle");
                 self.marked.resize(slot_count, false);
                 self.marked.fill(false);
-                self.mark_interpreter_roots(roots, heap);
-                self.mark_host_roots(heap);
+                self.gray.clear();
+                // 根快照只入灰，不递归扫闭包；闭包由 ConcurrentTrace 有界切片完成。
+                self.enqueue_interpreter_roots(roots);
+                self.enqueue_host_roots(heap);
                 heap.concurrent_mark_mut()
                     .transition(ConcurrentMarkEvent::RootsReady)
                     .expect("RootsReady");
@@ -123,16 +155,24 @@ impl GarbageCollector {
                 false
             }
             ConcurrentMarkState::ConcurrentTrace => {
-                self.drain_and_mark_satb(heap);
+                self.ensure_marked_capacity(heap);
+                self.drain_satb_to_gray(heap);
+                let gray_done = self.process_gray_slice(heap);
                 let ticks = heap.concurrent_mark_ticks();
-                if !force_complete && ticks > self.last_concurrent_ticks {
-                    // 后台节拍有进展：再做一轮 ConcurrentTrace（仍不在后台扫堆）。
+                if !gray_done {
+                    // 灰队列未空：本拍有界切片结束，停留 ConcurrentTrace。
+                    self.last_concurrent_ticks = ticks;
+                    heap.concurrent_mark_mut()
+                        .transition(ConcurrentMarkEvent::TraceSliceDone)
+                        .expect("stay ConcurrentTrace for gray work");
+                } else if !force_complete && ticks > self.last_concurrent_ticks {
+                    // 灰已空但后台节拍有进展：再留一拍（仍不在后台扫堆）。
                     self.last_concurrent_ticks = ticks;
                     heap.concurrent_mark_mut()
                         .transition(ConcurrentMarkEvent::TraceSliceDone)
                         .expect("stay ConcurrentTrace");
                 } else {
-                    // 无新节拍，或强制完成：进入终止检测。
+                    // 灰空且（强制完成或无新节拍）：进入终止检测。
                     heap.concurrent_mark_mut()
                         .transition(ConcurrentMarkEvent::TerminationOk)
                         .expect("to TerminationCheck");
@@ -140,9 +180,11 @@ impl GarbageCollector {
                 false
             }
             ConcurrentMarkState::TerminationCheck => {
-                let pending = !heap.barrier().satb_buffer().is_empty();
-                self.drain_and_mark_satb(heap);
-                if pending {
+                self.ensure_marked_capacity(heap);
+                let pending_satb = !heap.barrier().satb_buffer().is_empty();
+                self.drain_satb_to_gray(heap);
+                let pending_gray = !self.gray.is_empty();
+                if pending_satb || pending_gray {
                     heap.concurrent_mark_mut()
                         .transition(ConcurrentMarkEvent::TerminationRetry)
                         .expect("back to ConcurrentTrace");
@@ -154,11 +196,12 @@ impl GarbageCollector {
                 false
             }
             ConcurrentMarkState::Remark => {
-                let slot_count = heap.slot_count();
-                if self.marked.len() < slot_count {
-                    self.marked.resize(slot_count, false);
+                self.ensure_marked_capacity(heap);
+                self.drain_satb_to_gray(heap);
+                // Remark：从根做同步全闭包，闭合并发窗口遗漏。
+                while let Some(id) = self.gray.pop() {
+                    scan_gray_object(id, heap, &mut self.marked, &mut self.gray);
                 }
-                self.drain_and_mark_satb(heap);
                 self.mark_interpreter_roots(roots, heap);
                 self.mark_host_roots(heap);
                 heap.concurrent_mark_mut()
@@ -170,6 +213,7 @@ impl GarbageCollector {
                 heap.sweep(&self.marked);
                 heap.clear_remembered();
                 heap.barrier_mut().clear_satb();
+                self.gray.clear();
                 self.last_relocate = RelocateMap::new();
                 heap.concurrent_mark_mut()
                     .transition(ConcurrentMarkEvent::SweepDone)
@@ -179,14 +223,53 @@ impl GarbageCollector {
         }
     }
 
-    fn drain_and_mark_satb(&mut self, heap: &mut ObjectHeap) {
+    fn ensure_marked_capacity(&mut self, heap: &ObjectHeap) {
         let slot_count = heap.slot_count();
         if self.marked.len() < slot_count {
             self.marked.resize(slot_count, false);
         }
+    }
+
+    fn drain_satb_to_gray(&mut self, heap: &mut ObjectHeap) {
         let drained = heap.drain_satb_buffer();
         for id in drained {
-            trace_value(&Value::Object(id), heap, &mut self.marked);
+            enqueue_object_gray(id, &mut self.marked, &mut self.gray);
+        }
+    }
+
+    /// 扫描最多 `gray_budget_per_slice` 个灰对象；返回灰队列是否已空。
+    fn process_gray_slice(&mut self, heap: &ObjectHeap) -> bool {
+        let budget = self.gray_budget_per_slice;
+        for _ in 0..budget {
+            let Some(id) = self.gray.pop() else {
+                return true;
+            };
+            scan_gray_object(id, heap, &mut self.marked, &mut self.gray);
+        }
+        self.gray.is_empty()
+    }
+
+    fn enqueue_interpreter_roots(&mut self, roots: GcRoots<'_>) {
+        for value in roots.stack {
+            enqueue_value_gray(value, &mut self.marked, &mut self.gray);
+        }
+        for locals in roots.frame_locals {
+            for value in *locals {
+                enqueue_value_gray(value, &mut self.marked, &mut self.gray);
+            }
+        }
+        for value in roots.globals {
+            enqueue_value_gray(value, &mut self.marked, &mut self.gray);
+        }
+        for &coroutine_id in roots.frame_coroutines {
+            enqueue_value_gray(&Value::Coroutine(coroutine_id), &mut self.marked, &mut self.gray);
+        }
+    }
+
+    fn enqueue_host_roots(&mut self, heap: &ObjectHeap) {
+        let pinned: Vec<Value> = heap.host_roots().iter().cloned().collect();
+        for value in &pinned {
+            enqueue_value_gray(value, &mut self.marked, &mut self.gray);
         }
     }
 
