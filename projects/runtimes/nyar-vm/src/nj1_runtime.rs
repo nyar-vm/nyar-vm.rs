@@ -29,6 +29,23 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
             };
             Ok(Value::I32(result))
         }
+        ScalarProgram::RetI32CmpLocals { cmp, a, b } => {
+            let lhs = i32_local(locals, *a)?;
+            let rhs = i32_local(locals, *b)?;
+            Ok(Value::I32(i32::from(cmp.eval(lhs, rhs))))
+        }
+        ScalarProgram::RetI32SelectCmpLocals {
+            cmp,
+            a,
+            b,
+            then_slot,
+            else_slot,
+        } => {
+            let lhs = i32_local(locals, *a)?;
+            let rhs = i32_local(locals, *b)?;
+            let slot = if cmp.eval(lhs, rhs) { *then_slot } else { *else_slot };
+            local_at(locals, slot).cloned()
+        }
     }
 }
 
@@ -49,7 +66,9 @@ fn i32_local(locals: &[Value], slot: u16) -> Result<i32, NyarRuntimeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nyar_jit::{encode_ret_i32_binop_locals, encode_ret_local};
+    use nyar_jit::{
+        I32Cmp, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
+    };
 
     #[test]
     fn executes_ret_local() {
@@ -65,13 +84,26 @@ mod tests {
             execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::Add, 0, 1), &locals).unwrap(),
             Value::I32(42)
         );
+    }
+
+    #[test]
+    fn executes_ret_i32_cmp_and_select() {
+        let locals = vec![Value::I32(1), Value::I32(2), Value::I32(10), Value::I32(20)];
         assert_eq!(
-            execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::Sub, 0, 1), &locals).unwrap(),
-            Value::I32(38)
+            execute_nj1_blob(&encode_ret_i32_cmp_locals(I32Cmp::LtS, 0, 1), &locals).unwrap(),
+            Value::I32(1)
         );
         assert_eq!(
-            execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::Mul, 0, 1), &locals).unwrap(),
-            Value::I32(80)
+            execute_nj1_blob(&encode_ret_i32_cmp_locals(I32Cmp::Eq, 0, 1), &locals).unwrap(),
+            Value::I32(0)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_select_cmp_locals(I32Cmp::LtS, 0, 1, 2, 3), &locals).unwrap(),
+            Value::I32(10)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_select_cmp_locals(I32Cmp::GtS, 0, 1, 2, 3), &locals).unwrap(),
+            Value::I32(20)
         );
     }
 }

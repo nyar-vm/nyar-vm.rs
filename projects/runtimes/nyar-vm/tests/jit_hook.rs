@@ -3,7 +3,10 @@ use nyar_vm::{jit::JitError, NyarVm};
 use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
 
 fn empty_module() -> nyar_vm::module::LoadedModule {
-    let code = vec![NyarHeadCode::Return as u8];
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::Const as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Return as u8);
     let data = NyarModuleData {
         version: NYAR_VERSION,
         name: "jit-hook".to_string(),
@@ -146,6 +149,96 @@ fn load_i32_binop_module(name: &str, export: &str, op: NyarHeadCode) -> nyar_vm:
             name: export.to_string(),
             arity: 2,
             local_count: 2,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        }],
+        imports: Vec::new(),
+        exports: vec![NyarExport {
+            kind: NyarExportKind::Function,
+            symbol_name: export.to_string(),
+            function_index: 0,
+        }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    NyarVm::new().load(&encode_module(&data)).expect("load")
+}
+
+#[test]
+fn baseline_scalar_jit_fast_path_cmp_and_select() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+
+    // LoadArg0; LoadArg1; I32LtS; Return
+    let mut cmp_code = Vec::new();
+    cmp_code.push(NyarHeadCode::LoadArg as u8);
+    cmp_code.extend_from_slice(&0i32.to_le_bytes());
+    cmp_code.push(NyarHeadCode::LoadArg as u8);
+    cmp_code.extend_from_slice(&1i32.to_le_bytes());
+    cmp_code.push(NyarHeadCode::I32LtS as u8);
+    cmp_code.push(NyarHeadCode::Return as u8);
+    let cmp = load_named_module("nj1-lt", "lt", 2, cmp_code);
+    assert_eq!(
+        vm.run(&cmp, "lt", vec![Value::I32(1), Value::I32(2)]).expect("lt"),
+        Value::I32(1)
+    );
+
+    // select: a==b ? c : d
+    let mut sel = Vec::new();
+    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.extend_from_slice(&0i32.to_le_bytes());
+    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.extend_from_slice(&1i32.to_le_bytes());
+    sel.push(NyarHeadCode::I32Eq as u8);
+    let br_pc = sel.len();
+    sel.push(NyarHeadCode::JumpIfFalse as u8);
+    let offset_pos = sel.len();
+    sel.extend_from_slice(&0i32.to_le_bytes());
+    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.extend_from_slice(&2i32.to_le_bytes());
+    sel.push(NyarHeadCode::Return as u8);
+    let else_pc = sel.len();
+    let rel = (else_pc as i32) - (br_pc as i32);
+    sel[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
+    sel.push(NyarHeadCode::LoadArg as u8);
+    sel.extend_from_slice(&3i32.to_le_bytes());
+    sel.push(NyarHeadCode::Return as u8);
+    let select = load_named_module("nj1-sel", "sel", 4, sel);
+    assert_eq!(
+        vm.run(
+            &select,
+            "sel",
+            vec![Value::I32(1), Value::I32(1), Value::I32(7), Value::I32(9)]
+        )
+        .expect("sel true"),
+        Value::I32(7)
+    );
+    assert_eq!(
+        vm.run(
+            &select,
+            "sel",
+            vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]
+        )
+        .expect("sel false"),
+        Value::I32(9)
+    );
+}
+
+fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nyar_vm::module::LoadedModule {
+    let data = NyarModuleData {
+        version: NYAR_VERSION,
+        name: name.to_string(),
+        constants: Vec::new(),
+        functions: vec![NyarFunction {
+            name: export.to_string(),
+            arity,
+            local_count: arity,
             code_offset: 0,
             code_length: code.len() as i32,
         }],

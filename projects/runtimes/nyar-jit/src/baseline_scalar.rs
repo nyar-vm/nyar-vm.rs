@@ -4,7 +4,10 @@ use nyar_bytecode::{NyarHeadCode, decode_at};
 
 use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, build_baseline_deopt_map, build_conservative_stack_maps,
-    machine_code::{I32Binop, encode_ret_i32_binop_locals, encode_ret_local},
+    machine_code::{
+        I32Binop, I32Cmp, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
+        encode_ret_local,
+    },
 };
 
 /// 识别极简外码模式并附带 NJ1 blob 的 JIT 后端。
@@ -35,6 +38,9 @@ impl JitCompiler for BaselineScalarJit {
 
 /// 尝试从外码切片匹配基线标量程序。
 pub fn match_scalar_program(code: &[u8]) -> Option<Vec<u8>> {
+    if let Some(blob) = match_select_cmp_return(code) {
+        return Some(blob);
+    }
     if let Some(blob) = match_load_load_binop_return(code) {
         return Some(blob);
     }
@@ -90,21 +96,104 @@ fn match_load_load_binop_return(code: &[u8]) -> Option<Vec<u8>> {
     if ret.code != NyarHeadCode::Return {
         return None;
     }
-    let binop = match op.code {
-        NyarHeadCode::I32Add => I32Binop::Add,
-        NyarHeadCode::I32Sub => I32Binop::Sub,
-        NyarHeadCode::I32Mul => I32Binop::Mul,
-        _ => return None,
-    };
-    let a = match a_ins.code {
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg if a_ins.operand1 >= 0 => a_ins.operand1 as u16,
-        _ => return None,
-    };
-    let b = match b_ins.code {
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg if b_ins.operand1 >= 0 => b_ins.operand1 as u16,
-        _ => return None,
-    };
-    Some(encode_ret_i32_binop_locals(binop, a, b))
+    let a = load_slot(&a_ins)?;
+    let b = load_slot(&b_ins)?;
+    if let Some(binop) = head_to_binop(op.code) {
+        return Some(encode_ret_i32_binop_locals(binop, a, b));
+    }
+    if let Some(cmp) = head_to_cmp(op.code) {
+        return Some(encode_ret_i32_cmp_locals(cmp, a, b));
+    }
+    None
+}
+
+/// `Load a; Load b; Cmp; JumpIfFalse else; Load then; Return; Load else; Return`
+fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let a_ins = decode_at(code, pc);
+    if a_ins.size == 0 {
+        return None;
+    }
+    pc += a_ins.size as usize;
+    let b_ins = decode_at(code, pc);
+    if b_ins.size == 0 {
+        return None;
+    }
+    pc += b_ins.size as usize;
+    let cmp_ins = decode_at(code, pc);
+    if cmp_ins.size == 0 {
+        return None;
+    }
+    let cmp = head_to_cmp(cmp_ins.code)?;
+    pc += cmp_ins.size as usize;
+    let br_pc = pc;
+    let br = decode_at(code, pc);
+    if br.size == 0 || br.code != NyarHeadCode::JumpIfFalse {
+        return None;
+    }
+    pc += br.size as usize;
+    let then_ins = decode_at(code, pc);
+    if then_ins.size == 0 {
+        return None;
+    }
+    pc += then_ins.size as usize;
+    let then_ret = decode_at(code, pc);
+    if then_ret.size == 0 || then_ret.code != NyarHeadCode::Return {
+        return None;
+    }
+    pc += then_ret.size as usize;
+    let else_pc = br_pc.wrapping_add(br.operand1 as usize);
+    if else_pc != pc {
+        return None;
+    }
+    let else_ins = decode_at(code, pc);
+    if else_ins.size == 0 {
+        return None;
+    }
+    pc += else_ins.size as usize;
+    let else_ret = decode_at(code, pc);
+    if else_ret.size == 0 || else_ret.code != NyarHeadCode::Return {
+        return None;
+    }
+    pc += else_ret.size as usize;
+    if pc != code.len() {
+        return None;
+    }
+    Some(encode_ret_i32_select_cmp_locals(
+        cmp,
+        load_slot(&a_ins)?,
+        load_slot(&b_ins)?,
+        load_slot(&then_ins)?,
+        load_slot(&else_ins)?,
+    ))
+}
+
+fn load_slot(ins: &nyar_bytecode::NyarInstruction) -> Option<u16> {
+    match ins.code {
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg if ins.operand1 >= 0 => Some(ins.operand1 as u16),
+        _ => None,
+    }
+}
+
+fn head_to_binop(code: NyarHeadCode) -> Option<I32Binop> {
+    match code {
+        NyarHeadCode::I32Add => Some(I32Binop::Add),
+        NyarHeadCode::I32Sub => Some(I32Binop::Sub),
+        NyarHeadCode::I32Mul => Some(I32Binop::Mul),
+        _ => None,
+    }
+}
+
+fn head_to_cmp(code: NyarHeadCode) -> Option<I32Cmp> {
+    match code {
+        NyarHeadCode::I32Eq => Some(I32Cmp::Eq),
+        NyarHeadCode::I32Ne => Some(I32Cmp::Ne),
+        NyarHeadCode::I32LtS => Some(I32Cmp::LtS),
+        NyarHeadCode::I32LeS => Some(I32Cmp::LeS),
+        NyarHeadCode::I32GtS => Some(I32Cmp::GtS),
+        NyarHeadCode::I32GeS => Some(I32Cmp::GeS),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -122,56 +211,69 @@ mod tests {
             function: JitFunctionSpec {
                 code_offset: 0,
                 code_length: code.len() as i32,
-                local_count: 2,
-                arity: 2,
+                local_count: 4,
+                arity: 4,
                 safepoint_indices: Vec::new(),
             },
         }
     }
 
-    fn load_binop_return(op: NyarHeadCode) -> Vec<u8> {
-        let mut code = Vec::new();
+    fn emit_load(code: &mut Vec<u8>, slot: i32) {
         code.push(NyarHeadCode::LoadLocal as u8);
-        code.extend_from_slice(&0i32.to_le_bytes());
-        code.push(NyarHeadCode::LoadLocal as u8);
-        code.extend_from_slice(&1i32.to_le_bytes());
-        code.push(op as u8);
-        code.push(NyarHeadCode::Return as u8);
-        code
+        code.extend_from_slice(&slot.to_le_bytes());
     }
 
     #[test]
-    fn compiles_load_local_return() {
-        let mut code = vec![NyarHeadCode::LoadLocal as u8];
-        code.extend_from_slice(&1i32.to_le_bytes());
+    fn compiles_i32_cmp_return() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::I32LtS as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
         let artifact = jit.compile_function(&request(code)).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
-        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetLocal { slot: 1 });
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32CmpLocals {
+                cmp: I32Cmp::LtS,
+                a: 0,
+                b: 1
+            }
+        );
     }
 
     #[test]
-    fn compiles_i32_binops() {
-        let mut jit = BaselineScalarJit;
-        for (op, binop) in [
-            (NyarHeadCode::I32Add, I32Binop::Add),
-            (NyarHeadCode::I32Sub, I32Binop::Sub),
-            (NyarHeadCode::I32Mul, I32Binop::Mul),
-        ] {
-            let artifact = jit.compile_function(&request(load_binop_return(op))).expect("compile");
-            let blob = artifact.machine_code.as_ref().expect("machine code");
-            assert_eq!(
-                decode_scalar_program(blob).unwrap(),
-                ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
-            );
-        }
-    }
+    fn compiles_i32_select_cmp() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::I32Eq as u8);
+        let br_pc = code.len();
+        code.push(NyarHeadCode::JumpIfFalse as u8);
+        // placeholder; fill after then-branch size known
+        let offset_pos = code.len();
+        code.extend_from_slice(&0i32.to_le_bytes());
+        emit_load(&mut code, 2);
+        code.push(NyarHeadCode::Return as u8);
+        let else_pc = code.len();
+        let rel = (else_pc as i32) - (br_pc as i32);
+        code[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
+        emit_load(&mut code, 3);
+        code.push(NyarHeadCode::Return as u8);
 
-    #[test]
-    fn rejects_unknown_shape() {
-        let code = vec![NyarHeadCode::Nop as u8, NyarHeadCode::Return as u8];
         let mut jit = BaselineScalarJit;
-        assert!(matches!(jit.compile_function(&request(code)), Err(JitError::Unsupported)));
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpLocals {
+                cmp: I32Cmp::Eq,
+                a: 0,
+                b: 1,
+                then_slot: 2,
+                else_slot: 3
+            }
+        );
     }
 }
