@@ -22,6 +22,8 @@ pub struct JitCompileRequest {
     pub module_name: String,
     /// Flat code section bytes.
     pub code_bytes: Vec<u8>,
+    /// 常量池中的 `Integer32`（其它种类为 `None`，下标与外码一致）。
+    pub constant_i32: Vec<Option<i32>>,
     /// Index into the module function table.
     pub function_index: usize,
     /// Selected function metadata.

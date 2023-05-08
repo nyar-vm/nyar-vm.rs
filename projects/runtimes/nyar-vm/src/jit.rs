@@ -7,8 +7,8 @@ pub use nyar_jit::{
     I32Cmp, JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, JitFunctionSpec, MACHINE_CODE_MAGIC,
     MachineCodeError, RestoredInterpreterFrame, RestoredLocal, ScalarProgram, StackMapEntry, StackMapJit,
     build_baseline_deopt_map, build_conservative_stack_maps, decode_scalar_program, encode_ret_i32_add_locals,
-    encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
-    match_scalar_program, materialize_interpreter_frames,
+    encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
+    encode_ret_local, match_scalar_program, materialize_interpreter_frames,
 };
 
 /// Builds a language-agnostic JIT request from a loaded `.nyar` module.
@@ -22,10 +22,19 @@ pub fn compile_request(module: &LoadedModule, function_index: usize) -> Result<J
         .get(function_index)
         .map(|exec| exec.safepoints.clone())
         .unwrap_or_default();
+    let constant_i32 = module
+        .constants
+        .iter()
+        .map(|constant| match constant {
+            nyar_bytecode::NyarConstant::Integer32(value) => Some(*value),
+            _ => None,
+        })
+        .collect();
     Ok(JitCompileRequest {
         module_version: module.version,
         module_name: module.name.clone(),
         code_bytes: module.code_bytes.clone(),
+        constant_i32,
         function_index,
         function: JitFunctionSpec {
             code_offset: function.code_offset,

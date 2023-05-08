@@ -8,6 +8,7 @@ fn disabled_jit_reports_unsupported() {
         module_version: 1,
         module_name: "test".to_string(),
         code_bytes: vec![0],
+        constant_i32: Vec::new(),
         function_index: 0,
         function: JitFunctionSpec {
             code_offset: 0,
@@ -28,6 +29,7 @@ fn stack_map_jit_emits_conservative_maps() {
         module_version: 1,
         module_name: "test".to_string(),
         code_bytes: vec![0],
+        constant_i32: Vec::new(),
         function_index: 7,
         function: JitFunctionSpec {
             code_offset: 0,

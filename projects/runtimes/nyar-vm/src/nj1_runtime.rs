@@ -26,9 +26,24 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                 I32Binop::Add => lhs.wrapping_add(rhs),
                 I32Binop::Sub => lhs.wrapping_sub(rhs),
                 I32Binop::Mul => lhs.wrapping_mul(rhs),
+                I32Binop::DivS => {
+                    if rhs == 0 {
+                        0
+                    } else {
+                        lhs.wrapping_div(rhs)
+                    }
+                }
+                I32Binop::RemS => {
+                    if rhs == 0 {
+                        0
+                    } else {
+                        lhs.wrapping_rem(rhs)
+                    }
+                }
             };
             Ok(Value::I32(result))
         }
+        ScalarProgram::RetConstI32 { value } => Ok(Value::I32(*value)),
         ScalarProgram::RetI32CmpLocals { cmp, a, b } => {
             let lhs = i32_local(locals, *a)?;
             let rhs = i32_local(locals, *b)?;
@@ -67,7 +82,8 @@ fn i32_local(locals: &[Value], slot: u16) -> Result<i32, NyarRuntimeError> {
 mod tests {
     use super::*;
     use nyar_jit::{
-        I32Cmp, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
+        I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
+        encode_ret_local,
     };
 
     #[test]
@@ -84,6 +100,23 @@ mod tests {
             execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::Add, 0, 1), &locals).unwrap(),
             Value::I32(42)
         );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::DivS, 0, 1), &locals).unwrap(),
+            Value::I32(20)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::RemS, 0, 1), &locals).unwrap(),
+            Value::I32(0)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_binop_locals(I32Binop::DivS, 0, 1), &[Value::I32(7), Value::I32(0)]).unwrap(),
+            Value::I32(0)
+        );
+    }
+
+    #[test]
+    fn executes_ret_const_i32() {
+        assert_eq!(execute_nj1_blob(&encode_ret_const_i32(99), &[]).unwrap(), Value::I32(99));
     }
 
     #[test]

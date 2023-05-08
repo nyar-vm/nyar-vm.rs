@@ -5,8 +5,8 @@ use nyar_bytecode::{NyarHeadCode, decode_at};
 use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, build_baseline_deopt_map, build_conservative_stack_maps,
     machine_code::{
-        I32Binop, I32Cmp, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
-        encode_ret_local,
+        I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals,
+        encode_ret_i32_select_cmp_locals, encode_ret_local,
     },
 };
 
@@ -21,7 +21,7 @@ impl JitCompiler for BaselineScalarJit {
 
     fn compile_function(&mut self, request: &JitCompileRequest) -> Result<JitCompiledArtifact, JitError> {
         let code = request.function_code()?;
-        let machine_code = match_scalar_program(code).ok_or(JitError::Unsupported)?;
+        let machine_code = match_scalar_program(code, &request.constant_i32).ok_or(JitError::Unsupported)?;
         let maps = build_conservative_stack_maps(
             request.function_index,
             request.function.local_count,
@@ -37,17 +37,39 @@ impl JitCompiler for BaselineScalarJit {
 }
 
 /// 尝试从外码切片匹配基线标量程序。
-pub fn match_scalar_program(code: &[u8]) -> Option<Vec<u8>> {
+pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
     if let Some(blob) = match_select_cmp_return(code) {
         return Some(blob);
     }
     if let Some(blob) = match_load_load_binop_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_const_return(code, constant_i32) {
+        return Some(blob);
+    }
     if let Some(blob) = match_load_return(code) {
         return Some(blob);
     }
     None
+}
+
+fn match_const_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
+    let first = decode_at(code, 0);
+    if first.size == 0 || first.code != NyarHeadCode::Const {
+        return None;
+    }
+    let second = decode_at(code, first.size as usize);
+    if second.size == 0 || second.code != NyarHeadCode::Return {
+        return None;
+    }
+    if first.size as usize + second.size as usize != code.len() {
+        return None;
+    }
+    if first.operand1 < 0 {
+        return None;
+    }
+    let value = constant_i32.get(first.operand1 as usize).copied().flatten()?;
+    Some(encode_ret_const_i32(value))
 }
 
 fn match_load_return(code: &[u8]) -> Option<Vec<u8>> {
@@ -180,6 +202,8 @@ fn head_to_binop(code: NyarHeadCode) -> Option<I32Binop> {
         NyarHeadCode::I32Add => Some(I32Binop::Add),
         NyarHeadCode::I32Sub => Some(I32Binop::Sub),
         NyarHeadCode::I32Mul => Some(I32Binop::Mul),
+        NyarHeadCode::I32DivS => Some(I32Binop::DivS),
+        NyarHeadCode::I32RemS => Some(I32Binop::RemS),
         _ => None,
     }
 }
@@ -203,10 +227,15 @@ mod tests {
     use crate::request::JitFunctionSpec;
 
     fn request(code: Vec<u8>) -> JitCompileRequest {
+        request_with_constants(code, Vec::new())
+    }
+
+    fn request_with_constants(code: Vec<u8>, constant_i32: Vec<Option<i32>>) -> JitCompileRequest {
         JitCompileRequest {
             module_version: 1,
             module_name: "t".into(),
             code_bytes: code.clone(),
+            constant_i32,
             function_index: 0,
             function: JitFunctionSpec {
                 code_offset: 0,
@@ -215,6 +244,38 @@ mod tests {
                 arity: 4,
                 safepoint_indices: Vec::new(),
             },
+        }
+    }
+
+    #[test]
+    fn compiles_const_i32_return() {
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(123)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 123 });
+    }
+
+    #[test]
+    fn compiles_i32_div_rem() {
+        let mut jit = BaselineScalarJit;
+        for (op, binop) in [(NyarHeadCode::I32DivS, I32Binop::DivS), (NyarHeadCode::I32RemS, I32Binop::RemS)] {
+            let mut code = Vec::new();
+            emit_load(&mut code, 0);
+            emit_load(&mut code, 1);
+            code.push(op as u8);
+            code.push(NyarHeadCode::Return as u8);
+            let artifact = jit.compile_function(&request(code)).expect("compile");
+            let blob = artifact.machine_code.as_ref().expect("machine code");
+            assert_eq!(
+                decode_scalar_program(blob).unwrap(),
+                ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
+            );
         }
     }
 

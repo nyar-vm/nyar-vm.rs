@@ -21,6 +21,12 @@ pub mod op {
     pub const RET_I32_CMP_LOCALS: u8 = 0x05;
     /// `return locals[then] if locals[a] cmp locals[b] else locals[else_slot]`。
     pub const RET_I32_SELECT_CMP_LOCALS: u8 = 0x06;
+    /// `return (i32)locals[a] / (i32)locals[b]`（rhs==0 → 0，与解释器一致）。
+    pub const RET_I32_DIV_LOCALS: u8 = 0x07;
+    /// `return (i32)locals[a] % (i32)locals[b]`（rhs==0 → 0，与解释器一致）。
+    pub const RET_I32_REM_LOCALS: u8 = 0x08;
+    /// `return imm_i32`。
+    pub const RET_CONST_I32: u8 = 0x09;
 }
 
 /// i32 二元运算种类（两 local → 返回值）。
@@ -32,6 +38,10 @@ pub enum I32Binop {
     Sub,
     /// 乘法。
     Mul,
+    /// 有符号除法。
+    DivS,
+    /// 有符号取余。
+    RemS,
 }
 
 /// i32 比较种类（两 local → `0`/`1`，或条件选择）。
@@ -105,12 +115,23 @@ pub fn encode_ret_i32_binop_locals(binop: I32Binop, a: u16, b: u16) -> Vec<u8> {
         I32Binop::Add => op::RET_I32_ADD_LOCALS,
         I32Binop::Sub => op::RET_I32_SUB_LOCALS,
         I32Binop::Mul => op::RET_I32_MUL_LOCALS,
+        I32Binop::DivS => op::RET_I32_DIV_LOCALS,
+        I32Binop::RemS => op::RET_I32_REM_LOCALS,
     };
     let mut out = Vec::with_capacity(9);
     out.extend_from_slice(MACHINE_CODE_MAGIC);
     out.push(opcode);
     out.extend_from_slice(&a.to_le_bytes());
     out.extend_from_slice(&b.to_le_bytes());
+    out
+}
+
+/// 将立即 i32 返回编码为 blob。
+pub fn encode_ret_const_i32(value: i32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(9);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_CONST_I32);
+    out.extend_from_slice(&value.to_le_bytes());
     out
 }
 
@@ -202,6 +223,11 @@ pub enum ScalarProgram {
         /// 假分支 local。
         else_slot: u16,
     },
+    /// 返回立即 i32。
+    RetConstI32 {
+        /// 常量值。
+        value: i32,
+    },
 }
 
 /// 解码 NJ1 blob。
@@ -217,7 +243,11 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let slot = u16::from_le_bytes([blob[5], blob[6]]);
             Ok(ScalarProgram::RetLocal { slot })
         }
-        op::RET_I32_ADD_LOCALS | op::RET_I32_SUB_LOCALS | op::RET_I32_MUL_LOCALS => {
+        op::RET_I32_ADD_LOCALS
+        | op::RET_I32_SUB_LOCALS
+        | op::RET_I32_MUL_LOCALS
+        | op::RET_I32_DIV_LOCALS
+        | op::RET_I32_REM_LOCALS => {
             if blob.len() != 9 {
                 return Err(MachineCodeError::InvalidBlob);
             }
@@ -225,11 +255,20 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
                 op::RET_I32_ADD_LOCALS => I32Binop::Add,
                 op::RET_I32_SUB_LOCALS => I32Binop::Sub,
                 op::RET_I32_MUL_LOCALS => I32Binop::Mul,
+                op::RET_I32_DIV_LOCALS => I32Binop::DivS,
+                op::RET_I32_REM_LOCALS => I32Binop::RemS,
                 _ => unreachable!(),
             };
             let a = u16::from_le_bytes([blob[5], blob[6]]);
             let b = u16::from_le_bytes([blob[7], blob[8]]);
             Ok(ScalarProgram::RetI32BinopLocals { binop, a, b })
+        }
+        op::RET_CONST_I32 => {
+            if blob.len() != 9 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let value = i32::from_le_bytes([blob[5], blob[6], blob[7], blob[8]]);
+            Ok(ScalarProgram::RetConstI32 { value })
         }
         op::RET_I32_CMP_LOCALS => {
             if blob.len() != 10 {
@@ -273,13 +312,19 @@ mod tests {
 
     #[test]
     fn roundtrip_ret_i32_binops() {
-        for binop in [I32Binop::Add, I32Binop::Sub, I32Binop::Mul] {
+        for binop in [I32Binop::Add, I32Binop::Sub, I32Binop::Mul, I32Binop::DivS, I32Binop::RemS] {
             let blob = encode_ret_i32_binop_locals(binop, 0, 1);
             assert_eq!(
                 decode_scalar_program(&blob).unwrap(),
                 ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
             );
         }
+    }
+
+    #[test]
+    fn roundtrip_ret_const_i32() {
+        let blob = encode_ret_const_i32(-42);
+        assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetConstI32 { value: -42 });
     }
 
     #[test]
