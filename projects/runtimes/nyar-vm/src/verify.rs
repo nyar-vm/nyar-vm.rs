@@ -1,4 +1,4 @@
-//! 加载期模块校验：结构边界、函数控制流、栈高度汇合，以及导入 / layout 下标。
+//! 加载期模块校验：结构边界、函数控制流、栈高度汇合与栈深上限，以及导入 / layout 下标。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -12,7 +12,10 @@ use crate::{
 /// 已删除的 `CallNative` 操作码（v1）；v2 模块不得再出现。
 const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 
-/// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界与栈高度。
+/// 单函数操作数栈高度上限（加载期拒绝病理模块）。
+const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
+
+/// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
 pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     if data.version != NYAR_VERSION {
         return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -151,6 +154,11 @@ fn verify_function(
 
     while let Some(pc) = queue.pop_front() {
         let height = heights[&pc];
+        if height > MAX_OPERAND_STACK_HEIGHT {
+            return Err(NyarRuntimeError::ModuleLoad(format!(
+                "function[{function_index}] operand stack height {height} exceeds limit {MAX_OPERAND_STACK_HEIGHT} at pc {pc}"
+            )));
+        }
         let instruction = instructions.get(&pc).copied().ok_or_else(|| {
             NyarRuntimeError::ModuleLoad(format!(
                 "function[{function_index}] control reaches non-instruction pc {pc}"
@@ -304,7 +312,7 @@ fn stack_transfer(
             Ok((after, vec![(fallthrough, after), (target, after)]))
         }
         NyarHeadCode::Return => {
-            // Return 结束本帧，返回值留在调用方可见的操作数栈上。
+            // Return 结束本帧。允许空栈（void / init）；有值则留给调用方。
             Ok((height, Vec::new()))
         }
         NyarHeadCode::Yield | NyarHeadCode::PerformEffect => {
@@ -582,6 +590,28 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("height mismatch");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack height mismatch")));
+    }
+
+    #[test]
+    fn rejects_operand_stack_deeper_than_limit() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(0));
+        let mut code = Vec::new();
+        // 超过 MAX_OPERAND_STACK_HEIGHT 次 Const 压栈。
+        for _ in 0..=(MAX_OPERAND_STACK_HEIGHT as usize) {
+            emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        }
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("stack too deep");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("exceeds limit")));
     }
 
     #[test]
