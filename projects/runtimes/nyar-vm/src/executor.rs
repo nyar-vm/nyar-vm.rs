@@ -144,14 +144,35 @@ impl Executor {
         // JIT 快路径：缓存命中或新编译出 NJ1 blob 时跳过解释循环（仅叶标量形态）。
         if self.jit.enabled() {
             let cache_key = (module.version, module.name.clone(), function_index);
-            if let Some(blob) = self.nj1_cache.get(&cache_key) {
-                return crate::nj1_runtime::execute_nj1_blob(blob, &frame.locals);
-            }
-            if let Ok(artifact) = self.try_jit_compile(module, function_index) {
-                if let Some(blob) = artifact.machine_code {
+            let blob = if let Some(cached) = self.nj1_cache.get(&cache_key) {
+                Some(cached.clone())
+            } else if let Ok(artifact) = self.try_jit_compile(module, function_index) {
+                artifact.machine_code.map(|blob| {
                     self.nj1_cache.insert(cache_key, blob.clone());
-                    return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals);
+                    blob
+                })
+            } else {
+                None
+            };
+            if let Some(blob) = blob {
+                // 机器码叶路径仍遵守堆压力：进入前强制策略回收，并改写帧 locals / globals。
+                if self.heap.over_soft_limit() || self.heap.nursery_pressure() {
+                    let frame_locals = [frame.locals.as_slice()];
+                    let relocate = self.gc.collect_for_policy(
+                        GcRoots {
+                            stack: &[],
+                            frame_locals: &frame_locals,
+                            globals,
+                            frame_coroutines: &[],
+                        },
+                        &mut self.heap,
+                    );
+                    if relocate.has_moves() {
+                        relocate.rewrite_slice(&mut frame.locals);
+                        relocate.rewrite_slice(globals);
+                    }
                 }
+                return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals);
             }
         }
 
