@@ -1,4 +1,4 @@
-//! 加载期模块校验：结构边界、函数控制流、栈高度汇合与栈深上限，以及导入 / layout 下标。
+//! 加载期模块校验：结构边界、函数控制流、栈高度/粗类型汇合与栈深上限，以及导入 / layout 下标。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -14,6 +14,33 @@ const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
+
+/// 粗类型栈槽（无完整局部变量类型时，`Load*` 记为 `Any`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StackKind {
+    I32,
+    Ref,
+    Any,
+}
+
+fn merge_stack_kind(left: StackKind, right: StackKind) -> Option<StackKind> {
+    match (left, right) {
+        (a, b) if a == b => Some(a),
+        (StackKind::Any, other) | (other, StackKind::Any) => Some(other),
+        _ => None,
+    }
+}
+
+fn merge_type_stacks(left: &[StackKind], right: &[StackKind]) -> Option<Vec<StackKind>> {
+    if left.len() != right.len() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(left.len());
+    for (a, b) in left.iter().zip(right.iter()) {
+        out.push(merge_stack_kind(*a, *b)?);
+    }
+    Some(out)
+}
 
 /// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
 pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
@@ -147,9 +174,12 @@ fn verify_function(
         0
     };
 
+    let entry_types = vec![StackKind::Any; entry_height.max(0) as usize];
     let mut heights: BTreeMap<usize, i32> = BTreeMap::new();
+    let mut type_stacks: BTreeMap<usize, Vec<StackKind>> = BTreeMap::new();
     let mut queue = VecDeque::new();
     heights.insert(start, entry_height);
+    type_stacks.insert(start, entry_types);
     queue.push_back(start);
 
     while let Some(pc) = queue.pop_front() {
@@ -159,6 +189,7 @@ fn verify_function(
                 "function[{function_index}] operand stack height {height} exceeds limit {MAX_OPERAND_STACK_HEIGHT} at pc {pc}"
             )));
         }
+        let mut types = type_stacks[&pc].clone();
         let instruction = instructions.get(&pc).copied().ok_or_else(|| {
             NyarRuntimeError::ModuleLoad(format!(
                 "function[{function_index}] control reaches non-instruction pc {pc}"
@@ -167,7 +198,7 @@ fn verify_function(
 
         verify_instruction_operands(data, function_index, pc, instruction, local_slots)?;
 
-        let (next_height, edges) = stack_transfer(data, function_index, pc, instruction, height)?;
+        let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types)?;
         for (target, edge_height) in edges {
             if !boundaries.contains(&target) {
                 return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -179,6 +210,11 @@ fn verify_function(
                     "function[{function_index}] jump from pc {pc} escapes function range to {target}"
                 )));
             }
+            if types.len() as i32 != edge_height {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] internal type-stack length mismatch at pc {pc}"
+                )));
+            }
             match heights.get(&target) {
                 Some(existing) if *existing != edge_height => {
                     return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -188,13 +224,31 @@ fn verify_function(
                 Some(_) => {}
                 None => {
                     heights.insert(target, edge_height);
-                    queue.push_back(target);
                 }
             }
+            let changed = match type_stacks.get(&target) {
+                Some(existing) => {
+                    let Some(merged) = merge_type_stacks(existing, &types) else {
+                        return Err(NyarRuntimeError::ModuleLoad(format!(
+                            "function[{function_index}] stack type mismatch at pc {target}"
+                        )));
+                    };
+                    if merged != *existing {
+                        type_stacks.insert(target, merged);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => {
+                    type_stacks.insert(target, types.clone());
+                    true
+                }
+            };
+            if changed {
+                queue.push_back(target);
+            }
         }
-
-        // 不可达指令不强制覆盖；可达路径上的高度必须自洽。
-        let _ = next_height;
     }
 
     Ok(())
@@ -278,63 +332,110 @@ fn verify_instruction_operands(
     Ok(())
 }
 
-/// 返回「本指令相对高度变化后的参考高度」以及后继边 `(目标 pc, 到达时栈高度)`。
+fn require_height(function_index: usize, pc: usize, height: i32, needed: i32) -> Result<(), NyarRuntimeError> {
+    if height < needed {
+        Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_kind(
+    function_index: usize,
+    pc: usize,
+    kinds: &mut Vec<StackKind>,
+    expected: StackKind,
+) -> Result<(), NyarRuntimeError> {
+    let Some(actual) = kinds.pop() else {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] stack underflow at pc {pc}"
+        )));
+    };
+    match (actual, expected) {
+        (_, StackKind::Any) | (StackKind::Any, _) => Ok(()),
+        (a, e) if a == e => Ok(()),
+        _ => Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] stack type mismatch at pc {pc}: expected {expected:?}, got {actual:?}"
+        ))),
+    }
+}
+
+fn push_const_kind(data: &NyarModuleData, instruction: NyarInstruction) -> StackKind {
+    if instruction.operand1 >= 0 {
+        if let Some(nyar_bytecode::NyarConstant::Integer32(_)) = data.constants.get(instruction.operand1 as usize) {
+            return StackKind::I32;
+        }
+    }
+    StackKind::Any
+}
+
+/// 就地更新 `types`，返回后继边 `(目标 pc, 到达时栈高度)`。
 fn stack_transfer(
     data: &NyarModuleData,
     function_index: usize,
     pc: usize,
     instruction: NyarInstruction,
     height: i32,
-) -> Result<(i32, Vec<(usize, i32)>), NyarRuntimeError> {
+    types: &mut Vec<StackKind>,
+) -> Result<Vec<(usize, i32)>, NyarRuntimeError> {
     let fallthrough = pc + instruction.size as usize;
 
-    let require = |needed: i32| -> Result<(), NyarRuntimeError> {
-        if height < needed {
-            Err(NyarRuntimeError::ModuleLoad(format!(
-                "function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}"
-            )))
-        }
-        else {
-            Ok(())
-        }
-    };
-
     match instruction.code {
-        NyarHeadCode::Nop => Ok((height, vec![(fallthrough, height)])),
+        NyarHeadCode::Nop => Ok(vec![(fallthrough, height)]),
         NyarHeadCode::Jump => {
             let target = pc.wrapping_add(instruction.operand1 as usize);
-            Ok((height, vec![(target, height)]))
+            Ok(vec![(target, height)])
         }
         NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
-            require(1)?;
+            require_height(function_index, pc, height, 1)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
             let after = height - 1;
             let target = pc.wrapping_add(instruction.operand1 as usize);
-            Ok((after, vec![(fallthrough, after), (target, after)]))
+            Ok(vec![(fallthrough, after), (target, after)])
         }
         NyarHeadCode::Return => {
             // Return 结束本帧。允许空栈（void / init）；有值则留给调用方。
-            Ok((height, Vec::new()))
+            Ok(Vec::new())
         }
         NyarHeadCode::Yield | NyarHeadCode::PerformEffect => {
-            // 弹出 yielded / effect payload 后挂起；若日后 Resume，则恢复操作数片段并压入
-            // resume 值，净效果使 fallthrough 处高度回到本指令执行前的高度。
-            require(1)?;
-            Ok((height, vec![(fallthrough, height)]))
+            require_height(function_index, pc, height, 1)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height)])
         }
         NyarHeadCode::Resume => {
-            require(2)?;
-            Ok((height - 1, vec![(fallthrough, height - 1)]))
+            require_height(function_index, pc, height, 2)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height - 1)])
         }
-        NyarHeadCode::Const | NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::LoadGlobal | NyarHeadCode::ObjectNew => {
-            Ok((height + 1, vec![(fallthrough, height + 1)]))
+        NyarHeadCode::Const => {
+            types.push(push_const_kind(data, instruction));
+            Ok(vec![(fallthrough, height + 1)])
+        }
+        NyarHeadCode::ObjectNew => {
+            types.push(StackKind::Ref);
+            Ok(vec![(fallthrough, height + 1)])
+        }
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::LoadGlobal => {
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height + 1)])
         }
         NyarHeadCode::Pop | NyarHeadCode::StoreLocal | NyarHeadCode::StoreGlobal => {
-            require(1)?;
-            Ok((height - 1, vec![(fallthrough, height - 1)]))
+            require_height(function_index, pc, height, 1)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
+            Ok(vec![(fallthrough, height - 1)])
         }
         NyarHeadCode::Dup => {
-            require(1)?;
-            Ok((height + 1, vec![(fallthrough, height + 1)]))
+            require_height(function_index, pc, height, 1)?;
+            let top = *types.last().ok_or_else(|| {
+                NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}"))
+            })?;
+            types.push(top);
+            Ok(vec![(fallthrough, height + 1)])
         }
         NyarHeadCode::I32Add
         | NyarHeadCode::I32Sub
@@ -347,29 +448,43 @@ fn stack_transfer(
         | NyarHeadCode::I32LeS
         | NyarHeadCode::I32GtS
         | NyarHeadCode::I32GeS => {
-            require(2)?;
-            Ok((height - 1, vec![(fallthrough, height - 1)]))
+            require_height(function_index, pc, height, 2)?;
+            require_kind(function_index, pc, types, StackKind::I32)?;
+            require_kind(function_index, pc, types, StackKind::I32)?;
+            types.push(StackKind::I32);
+            Ok(vec![(fallthrough, height - 1)])
         }
         NyarHeadCode::FieldGet => {
-            require(1)?;
-            Ok((height, vec![(fallthrough, height)]))
+            require_height(function_index, pc, height, 1)?;
+            require_kind(function_index, pc, types, StackKind::Ref)?;
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height)])
         }
         NyarHeadCode::FieldSet => {
-            require(2)?;
-            Ok((height - 1, vec![(fallthrough, height - 1)]))
+            require_height(function_index, pc, height, 2)?;
+            require_kind(function_index, pc, types, StackKind::Any)?;
+            require_kind(function_index, pc, types, StackKind::Ref)?;
+            types.push(StackKind::Ref);
+            Ok(vec![(fallthrough, height - 1)])
         }
         NyarHeadCode::Call | NyarHeadCode::CallStatic => {
             let callee = &data.functions[instruction.operand1 as usize];
             let arity = callee.arity.max(0);
-            require(arity)?;
-            let after = height - arity + 1;
-            Ok((after, vec![(fallthrough, after)]))
+            require_height(function_index, pc, height, arity)?;
+            for _ in 0..arity {
+                require_kind(function_index, pc, types, StackKind::Any)?;
+            }
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height - arity + 1)])
         }
         NyarHeadCode::CallImport | NyarHeadCode::CallIntrinsic => {
             let argc = instruction.operand2.max(0);
-            require(argc)?;
-            let after = height - argc + 1;
-            Ok((after, vec![(fallthrough, after)]))
+            require_height(function_index, pc, height, argc)?;
+            for _ in 0..argc {
+                require_kind(function_index, pc, types, StackKind::Any)?;
+            }
+            types.push(StackKind::Any);
+            Ok(vec![(fallthrough, height - argc + 1)])
         }
     }
 }
@@ -590,6 +705,28 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("height mismatch");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack height mismatch")));
+    }
+
+    #[test]
+    fn rejects_i32_binop_on_object_ref() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(1));
+        module.layouts.push(NyarLayout { field_count: 0 });
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+        emit_plain(&mut code, NyarHeadCode::I32Add);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("type mismatch");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
     }
 
     #[test]
