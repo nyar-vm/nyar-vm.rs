@@ -5,8 +5,8 @@ use nyar_bytecode::{NyarHeadCode, decode_at};
 use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, build_baseline_deopt_map, build_conservative_stack_maps,
     machine_code::{
-        I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals,
-        encode_ret_i32_select_cmp_locals, encode_ret_local,
+        I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
+        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
     },
 };
 
@@ -41,6 +41,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_select_cmp_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_const_load_op_return(code, constant_i32) {
+        return Some(blob);
+    }
     if let Some(blob) = match_load_load_binop_return(code) {
         return Some(blob);
     }
@@ -49,6 +52,58 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     }
     if let Some(blob) = match_load_return(code) {
         return Some(blob);
+    }
+    None
+}
+
+/// `Const; Load; Op; Return` 或 `Load; Const; Op; Return`。
+fn match_const_load_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let first = decode_at(code, pc);
+    if first.size == 0 {
+        return None;
+    }
+    pc += first.size as usize;
+    let second = decode_at(code, pc);
+    if second.size == 0 {
+        return None;
+    }
+    pc += second.size as usize;
+    let op = decode_at(code, pc);
+    if op.size == 0 {
+        return None;
+    }
+    pc += op.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || pc + ret.size as usize != code.len() || ret.code != NyarHeadCode::Return {
+        return None;
+    }
+
+    let (imm, local, imm_on_left) = match (first.code, second.code) {
+        (NyarHeadCode::Const, _) => {
+            if first.operand1 < 0 {
+                return None;
+            }
+            let imm = constant_i32.get(first.operand1 as usize).copied().flatten()?;
+            let local = load_slot(&second)?;
+            (imm, local, true)
+        }
+        (_, NyarHeadCode::Const) => {
+            if second.operand1 < 0 {
+                return None;
+            }
+            let imm = constant_i32.get(second.operand1 as usize).copied().flatten()?;
+            let local = load_slot(&first)?;
+            (imm, local, false)
+        }
+        _ => return None,
+    };
+
+    if let Some(binop) = head_to_binop(op.code) {
+        return Some(encode_ret_i32_binop_imm_local(binop, imm, local, imm_on_left));
+    }
+    if let Some(cmp) = head_to_cmp(op.code) {
+        return Some(encode_ret_i32_cmp_imm_local(cmp, imm, local, imm_on_left));
     }
     None
 }
@@ -129,7 +184,7 @@ fn match_load_load_binop_return(code: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-/// `Load a; Load b; Cmp; JumpIfFalse else; Load then; Return; Load else; Return`
+/// `Load a; Load b; Cmp; JumpIfFalse|JumpIfTrue else; Load then; Return; Load else; Return`
 fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
     let mut pc = 0usize;
     let a_ins = decode_at(code, pc);
@@ -150,9 +205,10 @@ fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
     pc += cmp_ins.size as usize;
     let br_pc = pc;
     let br = decode_at(code, pc);
-    if br.size == 0 || br.code != NyarHeadCode::JumpIfFalse {
+    if br.size == 0 || (br.code != NyarHeadCode::JumpIfFalse && br.code != NyarHeadCode::JumpIfTrue) {
         return None;
     }
+    let invert = br.code == NyarHeadCode::JumpIfTrue;
     pc += br.size as usize;
     let then_ins = decode_at(code, pc);
     if then_ins.size == 0 {
@@ -181,12 +237,20 @@ fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
     if pc != code.len() {
         return None;
     }
+    let then_slot = load_slot(&then_ins)?;
+    let else_slot = load_slot(&else_ins)?;
+    // JumpIfTrue 跳走「真」分支：落空路径是假 → 交换 then/else。
+    let (then_slot, else_slot) = if invert {
+        (else_slot, then_slot)
+    } else {
+        (then_slot, else_slot)
+    };
     Some(encode_ret_i32_select_cmp_locals(
         cmp,
         load_slot(&a_ins)?,
         load_slot(&b_ins)?,
-        load_slot(&then_ins)?,
-        load_slot(&else_ins)?,
+        then_slot,
+        else_slot,
     ))
 }
 
@@ -300,6 +364,50 @@ mod tests {
                 cmp: I32Cmp::LtS,
                 a: 0,
                 b: 1
+            }
+        );
+    }
+
+    #[test]
+    fn compiles_const_local_binop_and_cmp() {
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        emit_load(&mut code, 0);
+        code.push(NyarHeadCode::I32Add as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(10)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32BinopImmLocal {
+                binop: I32Binop::Add,
+                imm: 10,
+                local: 0,
+                imm_on_left: true
+            }
+        );
+
+        let mut code = Vec::new();
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::I32LtS as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(5)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32CmpImmLocal {
+                cmp: I32Cmp::LtS,
+                imm: 5,
+                local: 1,
+                imm_on_left: false
             }
         );
     }

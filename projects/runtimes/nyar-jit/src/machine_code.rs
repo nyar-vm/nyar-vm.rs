@@ -27,7 +27,16 @@ pub mod op {
     pub const RET_I32_REM_LOCALS: u8 = 0x08;
     /// `return imm_i32`。
     pub const RET_CONST_I32: u8 = 0x09;
+    /// `return imm_i32 binop locals[slot]` 或 `locals[slot] binop imm`（见 flags）。
+    pub const RET_I32_BINOP_IMM_LOCAL: u8 = 0x0A;
+    /// `return imm_i32 cmp locals[slot]` 或反向（见 flags）→ `0`/`1`。
+    pub const RET_I32_CMP_IMM_LOCAL: u8 = 0x0B;
 }
+
+/// `RET_I32_*_IMM_LOCAL`：立即数在二元运算左侧。
+pub const IMM_ON_LEFT: u8 = 0;
+/// `RET_I32_*_IMM_LOCAL`：立即数在二元运算右侧。
+pub const IMM_ON_RIGHT: u8 = 1;
 
 /// i32 二元运算种类（两 local → 返回值）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +51,31 @@ pub enum I32Binop {
     DivS,
     /// 有符号取余。
     RemS,
+}
+
+impl I32Binop {
+    /// 编码为单字节。
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Self::Add => 0,
+            Self::Sub => 1,
+            Self::Mul => 2,
+            Self::DivS => 3,
+            Self::RemS => 4,
+        }
+    }
+
+    /// 从单字节解码。
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Add),
+            1 => Some(Self::Sub),
+            2 => Some(Self::Mul),
+            3 => Some(Self::DivS),
+            4 => Some(Self::RemS),
+            _ => None,
+        }
+    }
 }
 
 /// i32 比较种类（两 local → `0`/`1`，或条件选择）。
@@ -132,6 +166,30 @@ pub fn encode_ret_const_i32(value: i32) -> Vec<u8> {
     out.extend_from_slice(MACHINE_CODE_MAGIC);
     out.push(op::RET_CONST_I32);
     out.extend_from_slice(&value.to_le_bytes());
+    out
+}
+
+/// 立即数与单 local 的 i32 二元运算。
+pub fn encode_ret_i32_binop_imm_local(binop: I32Binop, imm: i32, local: u16, imm_on_left: bool) -> Vec<u8> {
+    let mut out = Vec::with_capacity(13);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_I32_BINOP_IMM_LOCAL);
+    out.push(binop.to_u8());
+    out.push(if imm_on_left { IMM_ON_LEFT } else { IMM_ON_RIGHT });
+    out.extend_from_slice(&imm.to_le_bytes());
+    out.extend_from_slice(&local.to_le_bytes());
+    out
+}
+
+/// 立即数与单 local 的 i32 比较（结果 `0`/`1`）。
+pub fn encode_ret_i32_cmp_imm_local(cmp: I32Cmp, imm: i32, local: u16, imm_on_left: bool) -> Vec<u8> {
+    let mut out = Vec::with_capacity(13);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_I32_CMP_IMM_LOCAL);
+    out.push(cmp.to_u8());
+    out.push(if imm_on_left { IMM_ON_LEFT } else { IMM_ON_RIGHT });
+    out.extend_from_slice(&imm.to_le_bytes());
+    out.extend_from_slice(&local.to_le_bytes());
     out
 }
 
@@ -228,6 +286,28 @@ pub enum ScalarProgram {
         /// 常量值。
         value: i32,
     },
+    /// 立即数与单 local 做 i32 二元运算后返回。
+    RetI32BinopImmLocal {
+        /// 运算种类。
+        binop: I32Binop,
+        /// 立即数。
+        imm: i32,
+        /// local 下标。
+        local: u16,
+        /// 立即数是否为左操作数。
+        imm_on_left: bool,
+    },
+    /// 立即数与单 local 做 i32 比较，返回 `0`/`1`。
+    RetI32CmpImmLocal {
+        /// 比较种类。
+        cmp: I32Cmp,
+        /// 立即数。
+        imm: i32,
+        /// local 下标。
+        local: u16,
+        /// 立即数是否为左操作数。
+        imm_on_left: bool,
+    },
 }
 
 /// 解码 NJ1 blob。
@@ -296,6 +376,44 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
                 else_slot,
             })
         }
+        op::RET_I32_BINOP_IMM_LOCAL => {
+            if blob.len() != 13 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let binop = I32Binop::from_u8(blob[5]).ok_or(MachineCodeError::InvalidBlob)?;
+            let imm_on_left = match blob[6] {
+                IMM_ON_LEFT => true,
+                IMM_ON_RIGHT => false,
+                _ => return Err(MachineCodeError::InvalidBlob),
+            };
+            let imm = i32::from_le_bytes([blob[7], blob[8], blob[9], blob[10]]);
+            let local = u16::from_le_bytes([blob[11], blob[12]]);
+            Ok(ScalarProgram::RetI32BinopImmLocal {
+                binop,
+                imm,
+                local,
+                imm_on_left,
+            })
+        }
+        op::RET_I32_CMP_IMM_LOCAL => {
+            if blob.len() != 13 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let cmp = I32Cmp::from_u8(blob[5]).ok_or(MachineCodeError::InvalidBlob)?;
+            let imm_on_left = match blob[6] {
+                IMM_ON_LEFT => true,
+                IMM_ON_RIGHT => false,
+                _ => return Err(MachineCodeError::InvalidBlob),
+            };
+            let imm = i32::from_le_bytes([blob[7], blob[8], blob[9], blob[10]]);
+            let local = u16::from_le_bytes([blob[11], blob[12]]);
+            Ok(ScalarProgram::RetI32CmpImmLocal {
+                cmp,
+                imm,
+                local,
+                imm_on_left,
+            })
+        }
         other => Err(MachineCodeError::UnknownOpcode(other)),
     }
 }
@@ -347,6 +465,30 @@ mod tests {
                 b: 1,
                 then_slot: 2,
                 else_slot: 3
+            }
+        );
+    }
+
+    #[test]
+    fn roundtrip_ret_i32_imm_local() {
+        let blob = encode_ret_i32_binop_imm_local(I32Binop::Add, 10, 0, true);
+        assert_eq!(
+            decode_scalar_program(&blob).unwrap(),
+            ScalarProgram::RetI32BinopImmLocal {
+                binop: I32Binop::Add,
+                imm: 10,
+                local: 0,
+                imm_on_left: true
+            }
+        );
+        let blob = encode_ret_i32_cmp_imm_local(I32Cmp::LtS, 5, 1, false);
+        assert_eq!(
+            decode_scalar_program(&blob).unwrap(),
+            ScalarProgram::RetI32CmpImmLocal {
+                cmp: I32Cmp::LtS,
+                imm: 5,
+                local: 1,
+                imm_on_left: false
             }
         );
     }

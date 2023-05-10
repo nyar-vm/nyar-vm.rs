@@ -44,6 +44,53 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
             Ok(Value::I32(result))
         }
         ScalarProgram::RetConstI32 { value } => Ok(Value::I32(*value)),
+        ScalarProgram::RetI32BinopImmLocal {
+            binop,
+            imm,
+            local,
+            imm_on_left,
+        } => {
+            let slot = i32_local(locals, *local)?;
+            let (lhs, rhs) = if *imm_on_left {
+                (*imm, slot)
+            } else {
+                (slot, *imm)
+            };
+            let result = match binop {
+                I32Binop::Add => lhs.wrapping_add(rhs),
+                I32Binop::Sub => lhs.wrapping_sub(rhs),
+                I32Binop::Mul => lhs.wrapping_mul(rhs),
+                I32Binop::DivS => {
+                    if rhs == 0 {
+                        0
+                    } else {
+                        lhs.wrapping_div(rhs)
+                    }
+                }
+                I32Binop::RemS => {
+                    if rhs == 0 {
+                        0
+                    } else {
+                        lhs.wrapping_rem(rhs)
+                    }
+                }
+            };
+            Ok(Value::I32(result))
+        }
+        ScalarProgram::RetI32CmpImmLocal {
+            cmp,
+            imm,
+            local,
+            imm_on_left,
+        } => {
+            let slot = i32_local(locals, *local)?;
+            let (lhs, rhs) = if *imm_on_left {
+                (*imm, slot)
+            } else {
+                (slot, *imm)
+            };
+            Ok(Value::I32(i32::from(cmp.eval(lhs, rhs))))
+        }
         ScalarProgram::RetI32CmpLocals { cmp, a, b } => {
             let lhs = i32_local(locals, *a)?;
             let rhs = i32_local(locals, *b)?;
@@ -82,8 +129,8 @@ fn i32_local(locals: &[Value], slot: u16) -> Result<i32, NyarRuntimeError> {
 mod tests {
     use super::*;
     use nyar_jit::{
-        I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
-        encode_ret_local,
+        I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
+        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
     };
 
     #[test]
@@ -117,6 +164,27 @@ mod tests {
     #[test]
     fn executes_ret_const_i32() {
         assert_eq!(execute_nj1_blob(&encode_ret_const_i32(99), &[]).unwrap(), Value::I32(99));
+    }
+
+    #[test]
+    fn executes_ret_i32_imm_local() {
+        let locals = vec![Value::I32(7)];
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_binop_imm_local(I32Binop::Add, 10, 0, true), &locals).unwrap(),
+            Value::I32(17)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_binop_imm_local(I32Binop::Sub, 3, 0, false), &locals).unwrap(),
+            Value::I32(4)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_cmp_imm_local(I32Cmp::LtS, 10, 0, false), &locals).unwrap(),
+            Value::I32(1)
+        );
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_cmp_imm_local(I32Cmp::Eq, 7, 0, true), &locals).unwrap(),
+            Value::I32(1)
+        );
     }
 
     #[test]

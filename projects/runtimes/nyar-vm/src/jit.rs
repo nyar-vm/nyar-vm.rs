@@ -7,8 +7,9 @@ pub use nyar_jit::{
     I32Cmp, JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, JitFunctionSpec, MACHINE_CODE_MAGIC,
     MachineCodeError, RestoredInterpreterFrame, RestoredLocal, ScalarProgram, StackMapEntry, StackMapJit,
     build_baseline_deopt_map, build_conservative_stack_maps, decode_scalar_program, encode_ret_i32_add_locals,
-    encode_ret_const_i32, encode_ret_i32_binop_locals, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals,
-    encode_ret_local, match_scalar_program, materialize_interpreter_frames,
+    encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local,
+    encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local, match_scalar_program,
+    materialize_interpreter_frames,
 };
 
 /// Builds a language-agnostic JIT request from a loaded `.nyar` module.

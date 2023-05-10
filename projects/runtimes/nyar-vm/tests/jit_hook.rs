@@ -258,6 +258,48 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
 }
 
 #[test]
+fn baseline_scalar_jit_fast_path_const_local_binop() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::Const as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::I32Add as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let data = NyarModuleData {
+        version: NYAR_VERSION,
+        name: "nj1-imm-add".to_string(),
+        constants: vec![NyarConstant::Integer32(10)],
+        functions: vec![NyarFunction {
+            name: "add10".to_string(),
+            arity: 1,
+            local_count: 1,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        }],
+        imports: Vec::new(),
+        exports: vec![NyarExport {
+            kind: NyarExportKind::Function,
+            symbol_name: "add10".to_string(),
+            function_index: 0,
+        }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let module = NyarVm::new().load(&encode_module(&data)).expect("load");
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+    assert_eq!(vm.run(&module, "add10", vec![Value::I32(7)]).expect("run"), Value::I32(17));
+    assert_eq!(vm.nj1_cache_len(), 1);
+}
+
+#[test]
 fn baseline_scalar_jit_fast_path_sub_and_mul() {
     use nyar_vm::jit::BaselineScalarJit;
     use nyar_vm::Value;
