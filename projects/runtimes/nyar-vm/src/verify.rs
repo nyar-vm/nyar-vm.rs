@@ -1,4 +1,4 @@
-//! 加载期模块校验：结构边界、函数控制流、栈高度/粗类型汇合与栈深上限，以及导入 / layout 下标。
+//! 加载期模块校验：结构边界、函数控制流、栈高度/粗类型与局部槽粗类型汇合、栈深上限，以及导入 / layout 下标。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -15,7 +15,7 @@ const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
 
-/// 粗类型栈槽（无完整局部变量类型时，`Load*` 记为 `Any`）。
+/// 粗类型栈槽 / 局部槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StackKind {
     I32,
@@ -23,6 +23,7 @@ enum StackKind {
     Any,
 }
 
+/// 操作数栈汇合：`Any` 向具体侧收窄（与既有栈类型合同一致）。
 fn merge_stack_kind(left: StackKind, right: StackKind) -> Option<StackKind> {
     match (left, right) {
         (a, b) if a == b => Some(a),
@@ -31,15 +32,46 @@ fn merge_stack_kind(left: StackKind, right: StackKind) -> Option<StackKind> {
     }
 }
 
-fn merge_type_stacks(left: &[StackKind], right: &[StackKind]) -> Option<Vec<StackKind>> {
+/// 局部槽汇合：一侧未知则放宽为 `Any`（避免把未初始化 `Null` 误收成 `I32`）。
+fn merge_local_kind(left: StackKind, right: StackKind) -> Option<StackKind> {
+    match (left, right) {
+        (a, b) if a == b => Some(a),
+        (StackKind::Any, _) | (_, StackKind::Any) => Some(StackKind::Any),
+        _ => None,
+    }
+}
+
+/// `StoreLocal`：从 `Any` 可细化；写入 `Any` 则放宽；`I32`/`Ref` 冲突失败。
+fn assign_local_kind(old: StackKind, new: StackKind) -> Option<StackKind> {
+    match (old, new) {
+        (a, b) if a == b => Some(a),
+        (StackKind::Any, refined) => Some(refined),
+        (_, StackKind::Any) => Some(StackKind::Any),
+        _ => None,
+    }
+}
+
+fn merge_kind_vecs(
+    left: &[StackKind],
+    right: &[StackKind],
+    merge: fn(StackKind, StackKind) -> Option<StackKind>,
+) -> Option<Vec<StackKind>> {
     if left.len() != right.len() {
         return None;
     }
     let mut out = Vec::with_capacity(left.len());
     for (a, b) in left.iter().zip(right.iter()) {
-        out.push(merge_stack_kind(*a, *b)?);
+        out.push(merge(*a, *b)?);
     }
     Some(out)
+}
+
+fn merge_type_stacks(left: &[StackKind], right: &[StackKind]) -> Option<Vec<StackKind>> {
+    merge_kind_vecs(left, right, merge_stack_kind)
+}
+
+fn merge_local_kinds(left: &[StackKind], right: &[StackKind]) -> Option<Vec<StackKind>> {
+    merge_kind_vecs(left, right, merge_local_kind)
 }
 
 /// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
@@ -175,11 +207,15 @@ fn verify_function(
     };
 
     let entry_types = vec![StackKind::Any; entry_height.max(0) as usize];
+    // 入口局部均为 `Any`（帧以 `Null` 填充；参数类型由调用约定另行约束）。
+    let entry_locals = vec![StackKind::Any; local_slots];
     let mut heights: BTreeMap<usize, i32> = BTreeMap::new();
     let mut type_stacks: BTreeMap<usize, Vec<StackKind>> = BTreeMap::new();
+    let mut local_kinds: BTreeMap<usize, Vec<StackKind>> = BTreeMap::new();
     let mut queue = VecDeque::new();
     heights.insert(start, entry_height);
     type_stacks.insert(start, entry_types);
+    local_kinds.insert(start, entry_locals);
     queue.push_back(start);
 
     while let Some(pc) = queue.pop_front() {
@@ -190,6 +226,7 @@ fn verify_function(
             )));
         }
         let mut types = type_stacks[&pc].clone();
+        let mut locals = local_kinds[&pc].clone();
         let instruction = instructions.get(&pc).copied().ok_or_else(|| {
             NyarRuntimeError::ModuleLoad(format!(
                 "function[{function_index}] control reaches non-instruction pc {pc}"
@@ -198,7 +235,7 @@ fn verify_function(
 
         verify_instruction_operands(data, function_index, pc, instruction, local_slots)?;
 
-        let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types)?;
+        let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types, &mut locals)?;
         for (target, edge_height) in edges {
             if !boundaries.contains(&target) {
                 return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -226,7 +263,7 @@ fn verify_function(
                     heights.insert(target, edge_height);
                 }
             }
-            let changed = match type_stacks.get(&target) {
+            let stack_changed = match type_stacks.get(&target) {
                 Some(existing) => {
                     let Some(merged) = merge_type_stacks(existing, &types) else {
                         return Err(NyarRuntimeError::ModuleLoad(format!(
@@ -245,7 +282,26 @@ fn verify_function(
                     true
                 }
             };
-            if changed {
+            let locals_changed = match local_kinds.get(&target) {
+                Some(existing) => {
+                    let Some(merged) = merge_local_kinds(existing, &locals) else {
+                        return Err(NyarRuntimeError::ModuleLoad(format!(
+                            "function[{function_index}] local type mismatch at pc {target}"
+                        )));
+                    };
+                    if merged != *existing {
+                        local_kinds.insert(target, merged);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => {
+                    local_kinds.insert(target, locals.clone());
+                    true
+                }
+            };
+            if stack_changed || locals_changed {
                 queue.push_back(target);
             }
         }
@@ -371,7 +427,7 @@ fn push_const_kind(data: &NyarModuleData, instruction: NyarInstruction) -> Stack
     StackKind::Any
 }
 
-/// 就地更新 `types`，返回后继边 `(目标 pc, 到达时栈高度)`。
+/// 就地更新 `types` / `locals`，返回后继边 `(目标 pc, 到达时栈高度)`。
 fn stack_transfer(
     data: &NyarModuleData,
     function_index: usize,
@@ -379,6 +435,7 @@ fn stack_transfer(
     instruction: NyarInstruction,
     height: i32,
     types: &mut Vec<StackKind>,
+    locals: &mut Vec<StackKind>,
 ) -> Result<Vec<(usize, i32)>, NyarRuntimeError> {
     let fallthrough = pc + instruction.size as usize;
 
@@ -420,11 +477,36 @@ fn stack_transfer(
             types.push(StackKind::Ref);
             Ok(vec![(fallthrough, height + 1)])
         }
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::LoadGlobal => {
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg => {
+            let slot = instruction.operand1 as usize;
+            let kind = locals.get(slot).copied().unwrap_or(StackKind::Any);
+            types.push(kind);
+            Ok(vec![(fallthrough, height + 1)])
+        }
+        NyarHeadCode::LoadGlobal => {
             types.push(StackKind::Any);
             Ok(vec![(fallthrough, height + 1)])
         }
-        NyarHeadCode::Pop | NyarHeadCode::StoreLocal | NyarHeadCode::StoreGlobal => {
+        NyarHeadCode::StoreLocal => {
+            require_height(function_index, pc, height, 1)?;
+            let Some(stored) = types.pop() else {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] stack underflow at pc {pc}"
+                )));
+            };
+            let slot = instruction.operand1 as usize;
+            let old = locals.get(slot).copied().unwrap_or(StackKind::Any);
+            let Some(next) = assign_local_kind(old, stored) else {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] local type conflict at pc {pc}: slot {slot} was {old:?}, store {stored:?}"
+                )));
+            };
+            if slot < locals.len() {
+                locals[slot] = next;
+            }
+            Ok(vec![(fallthrough, height - 1)])
+        }
+        NyarHeadCode::Pop | NyarHeadCode::StoreGlobal => {
             require_height(function_index, pc, height, 1)?;
             require_kind(function_index, pc, types, StackKind::Any)?;
             Ok(vec![(fallthrough, height - 1)])
@@ -785,5 +867,76 @@ mod tests {
         });
         module.code_bytes = code;
         verify_module(&module).expect("balanced join");
+    }
+
+    #[test]
+    fn accepts_store_local_i32_then_binop() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(1));
+        module.constants.push(NyarConstant::Integer32(2));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 1);
+        emit_imm1(&mut code, NyarHeadCode::StoreLocal, 1);
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 1);
+        emit_plain(&mut code, NyarHeadCode::I32Add);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 2,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("local i32 store/load");
+    }
+
+    #[test]
+    fn rejects_store_ref_then_i32_into_same_local() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(0));
+        module.layouts.push(NyarLayout { field_count: 0 });
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+        emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 1,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("local conflict");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("local type conflict")));
+    }
+
+    #[test]
+    fn rejects_load_ref_local_into_i32_binop() {
+        let mut module = empty_module();
+        module.layouts.push(NyarLayout { field_count: 0 });
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+        emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
+        emit_plain(&mut code, NyarHeadCode::I32Add);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 1,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("ref as i32");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
     }
 }
