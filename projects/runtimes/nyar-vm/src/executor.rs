@@ -65,6 +65,17 @@ impl Executor {
         self.nj1_cache.len()
     }
 
+    /// 清空全部 NJ1 编译缓存（代码失效 / deopt 假设变化后调用）。
+    pub fn invalidate_nj1_cache(&mut self) {
+        self.nj1_cache.clear();
+    }
+
+    /// 按模块版本与名称失效该模块下全部函数的 NJ1 缓存。
+    pub fn invalidate_nj1_module(&mut self, module_version: u32, module_name: &str) {
+        self.nj1_cache
+            .retain(|(version, name, _), _| *version != module_version || name != module_name);
+    }
+
     /// Attempts JIT compilation for one module function.
     ///
     /// Returns `JitError::Unsupported` when the installed backend is disabled.
@@ -76,7 +87,7 @@ impl Executor {
     /// Replaces the JIT backend（并清空 NJ1 缓存）。
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.jit = jit;
-        self.nj1_cache.clear();
+        self.invalidate_nj1_cache();
     }
 
     /// Borrows the object heap for inspection by callers (e.g. `NyarVm::heap`).

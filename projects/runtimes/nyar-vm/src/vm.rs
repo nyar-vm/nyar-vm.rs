@@ -80,6 +80,16 @@ impl NyarVm {
         self.executor.nj1_cache_len()
     }
 
+    /// 清空全部 NJ1 编译缓存。
+    pub fn invalidate_nj1_cache(&mut self) {
+        self.executor.invalidate_nj1_cache();
+    }
+
+    /// 失效指定模块的 NJ1 缓存条目。
+    pub fn invalidate_nj1_module(&mut self, module: &LoadedModule) {
+        self.executor.invalidate_nj1_module(module.version, &module.name);
+    }
+
     /// Borrows the executor's object heap for inspection after a run.
     ///
     /// Tests use this to read the internal state of a coroutine returned by `run`, since

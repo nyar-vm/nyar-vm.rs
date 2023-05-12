@@ -258,6 +258,28 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
 }
 
 #[test]
+fn invalidate_nj1_cache_clears_compiled_blobs() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Return as u8);
+    let module = load_named_module("nj1-inv", "id", 1, code);
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+    assert_eq!(vm.run(&module, "id", vec![Value::I32(3)]).expect("run"), Value::I32(3));
+    assert_eq!(vm.nj1_cache_len(), 1);
+    vm.invalidate_nj1_module(&module);
+    assert_eq!(vm.nj1_cache_len(), 0);
+    assert_eq!(vm.run(&module, "id", vec![Value::I32(4)]).expect("rerun"), Value::I32(4));
+    assert_eq!(vm.nj1_cache_len(), 1);
+    vm.invalidate_nj1_cache();
+    assert_eq!(vm.nj1_cache_len(), 0);
+}
+
+#[test]
 fn baseline_scalar_jit_fast_path_const_local_binop() {
     use nyar_vm::jit::BaselineScalarJit;
     use nyar_vm::Value;
