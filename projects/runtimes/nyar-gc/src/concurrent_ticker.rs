@@ -1,8 +1,9 @@
-//! 并发标记后台节拍线程（WP13）。
+//! 并发标记后台节拍线程。
 //!
 //! **不访问堆**：只递增原子计数，供 mutator 在 safepoint 读取后推进
-//! [`crate::ConcurrentMarkController`]。真实对象扫描仍在 mutator 协作点完成，
-//! 避免与 `ObjectHeap` 可变借用并发。
+//! [`crate::ConcurrentMarkController`]。`ConcurrentTrace` 会按节拍增量在 mutator
+//! 侧多跑有界灰切片；真实对象扫描仍只在协作点完成，避免与 `ObjectHeap`
+//! 可变借用并发。
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;

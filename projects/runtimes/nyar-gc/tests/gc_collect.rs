@@ -413,6 +413,47 @@ fn concurrent_trace_gray_slices_reach_nested_refs() {
 }
 
 #[test]
+fn concurrent_trace_tick_boost_drains_extra_gray_slices() {
+    use std::thread;
+    use std::time::Duration;
+
+    use nyar_gc::{ConcurrentMarkState, GcPolicy};
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let c = heap.alloc(empty_layout(3));
+    let b = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 2,
+        slots: vec![Value::Object(c)],
+    });
+    let a = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 1,
+        slots: vec![Value::Object(b)],
+    });
+    let root = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Object(a)],
+    });
+
+    let stack = [Value::Object(root)];
+    let mut gc = GarbageCollector::new();
+    gc.set_gray_budget_per_slice(1);
+
+    // Idle → ConcurrentTrace，灰队列仅 root
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+    assert_eq!(gc.gray_queue_len(), 1);
+
+    heap.start_concurrent_mark_ticker(Duration::from_millis(5)).expect("ticker");
+    thread::sleep(Duration::from_millis(40));
+    assert!(heap.concurrent_mark_ticks() >= 2);
+
+    // 链长 4、预算 1、boost≤4：一拍应扫完灰队列（仍在 mutator 侧）。
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(gc.gray_queue_len(), 0);
+    heap.stop_concurrent_mark_ticker();
+}
+
+#[test]
 fn concurrent_trace_waits_for_ticker_before_termination() {
     use std::thread;
     use std::time::Duration;

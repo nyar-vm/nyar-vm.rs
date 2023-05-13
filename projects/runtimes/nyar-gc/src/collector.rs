@@ -157,8 +157,16 @@ impl GarbageCollector {
             ConcurrentMarkState::ConcurrentTrace => {
                 self.ensure_marked_capacity(heap);
                 self.drain_satb_to_gray(heap);
-                let gray_done = self.process_gray_slice(heap);
                 let ticks = heap.concurrent_mark_ticks();
+                // 后台 ticker 节拍只驱动 mutator 侧多扫几片灰；线程本身仍不碰堆。
+                let tick_boost = ticks.saturating_sub(self.last_concurrent_ticks).min(4) as usize;
+                let mut gray_done = self.process_gray_slice(heap);
+                for _ in 0..tick_boost {
+                    if gray_done {
+                        break;
+                    }
+                    gray_done = self.process_gray_slice(heap);
+                }
                 if !gray_done {
                     // 灰队列未空：本拍有界切片结束，停留 ConcurrentTrace。
                     self.last_concurrent_ticks = ticks;
