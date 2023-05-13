@@ -4,7 +4,10 @@ use std::fmt::{self, Debug, Formatter};
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    jit::{DisabledJit, JitCompiledArtifact, JitCompiler, JitError, StackMapEntry, compile_request},
+    jit::{
+        DisabledJit, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry,
+        compile_request,
+    },
     module::LoadedModule,
     ops::{ExecutionContext, StepResult, dispatch_exec},
     stack::ValueStack,
@@ -88,6 +91,29 @@ impl Executor {
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.jit = jit;
         self.invalidate_nj1_cache();
+    }
+
+    /// 安装 deopt 物化帧链并失效 NJ1 缓存。
+    ///
+    /// `restored[0]` 为最内层（当前执行函数）；写入解释器栈时外层在前、内层在顶。
+    pub fn install_deopt_frames(
+        &mut self,
+        restored: &[RestoredInterpreterFrame],
+        stack_base: usize,
+        roots: Option<&nyar_gc::HostRoots>,
+    ) -> Result<(), NyarRuntimeError> {
+        self.invalidate_nj1_cache();
+        let mut frames = Vec::with_capacity(restored.len());
+        for frame in restored.iter().rev() {
+            frames.push(Frame::from_deopt_restore(frame, stack_base, roots)?);
+        }
+        self.frames = frames;
+        Ok(())
+    }
+
+    /// 当前解释器帧数量（测试 / 诊断）。
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
     }
 
     /// Borrows the object heap for inspection by callers (e.g. `NyarVm::heap`).

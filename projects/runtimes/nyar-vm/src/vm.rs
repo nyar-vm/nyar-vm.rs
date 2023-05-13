@@ -90,6 +90,21 @@ impl NyarVm {
         self.executor.invalidate_nj1_module(module.version, &module.name);
     }
 
+    /// 安装 deopt 物化帧并失效 NJ1（见 [`crate::executor::Executor::install_deopt_frames`]）。
+    pub fn install_deopt_frames(
+        &mut self,
+        restored: &[crate::jit::RestoredInterpreterFrame],
+        stack_base: usize,
+        roots: Option<&nyar_gc::HostRoots>,
+    ) -> Result<(), NyarRuntimeError> {
+        self.executor.install_deopt_frames(restored, stack_base, roots)
+    }
+
+    /// 当前解释器帧数量（测试 / 诊断）。
+    pub fn frame_count(&self) -> usize {
+        self.executor.frame_count()
+    }
+
     /// Borrows the executor's object heap for inspection after a run.
     ///
     /// Tests use this to read the internal state of a coroutine returned by `run`, since
