@@ -41,6 +41,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_select_cmp_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_const_const_op_return(code, constant_i32) {
+        return Some(blob);
+    }
     if let Some(blob) = match_const_load_op_return(code, constant_i32) {
         return Some(blob);
     }
@@ -54,6 +57,62 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
         return Some(blob);
     }
     None
+}
+
+/// `Const; Const; Op; Return` → 编译期折叠为 `RetConstI32`。
+fn match_const_const_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let a_ins = decode_at(code, pc);
+    if a_ins.size == 0 || a_ins.code != NyarHeadCode::Const || a_ins.operand1 < 0 {
+        return None;
+    }
+    pc += a_ins.size as usize;
+    let b_ins = decode_at(code, pc);
+    if b_ins.size == 0 || b_ins.code != NyarHeadCode::Const || b_ins.operand1 < 0 {
+        return None;
+    }
+    pc += b_ins.size as usize;
+    let op = decode_at(code, pc);
+    if op.size == 0 {
+        return None;
+    }
+    pc += op.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || pc + ret.size as usize != code.len() || ret.code != NyarHeadCode::Return {
+        return None;
+    }
+    let lhs = constant_i32.get(a_ins.operand1 as usize).copied().flatten()?;
+    let rhs = constant_i32.get(b_ins.operand1 as usize).copied().flatten()?;
+    if let Some(binop) = head_to_binop(op.code) {
+        let value = eval_i32_binop(binop, lhs, rhs);
+        return Some(encode_ret_const_i32(value));
+    }
+    if let Some(cmp) = head_to_cmp(op.code) {
+        return Some(encode_ret_const_i32(i32::from(cmp.eval(lhs, rhs))));
+    }
+    None
+}
+
+fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> i32 {
+    match binop {
+        I32Binop::Add => lhs.wrapping_add(rhs),
+        I32Binop::Sub => lhs.wrapping_sub(rhs),
+        I32Binop::Mul => lhs.wrapping_mul(rhs),
+        I32Binop::DivS => {
+            if rhs == 0 {
+                0
+            } else {
+                lhs.wrapping_div(rhs)
+            }
+        }
+        I32Binop::RemS => {
+            if rhs == 0 {
+                0
+            } else {
+                lhs.wrapping_rem(rhs)
+            }
+        }
+    }
 }
 
 /// `Const; Load; Op; Return` 或 `Load; Const; Op; Return`。
@@ -366,6 +425,23 @@ mod tests {
                 b: 1
             }
         );
+    }
+
+    #[test]
+    fn folds_const_const_binop_to_ret_const() {
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&1i32.to_le_bytes());
+        code.push(NyarHeadCode::I32Mul as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(6), Some(7)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 42 });
     }
 
     #[test]

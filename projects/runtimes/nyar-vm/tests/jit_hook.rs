@@ -258,6 +258,87 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
 }
 
 #[test]
+fn baseline_scalar_jit_folds_const_const_binop() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::Const as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Const as u8);
+    code.extend_from_slice(&1i32.to_le_bytes());
+    code.push(NyarHeadCode::I32Add as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let data = NyarModuleData {
+        version: NYAR_VERSION,
+        name: "nj1-fold".to_string(),
+        constants: vec![NyarConstant::Integer32(20), NyarConstant::Integer32(22)],
+        functions: vec![NyarFunction {
+            name: "forty_two".to_string(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        }],
+        imports: Vec::new(),
+        exports: vec![NyarExport {
+            kind: NyarExportKind::Function,
+            symbol_name: "forty_two".to_string(),
+            function_index: 0,
+        }],
+        witness_entries: Vec::new(),
+        code_bytes: code,
+        globals: Vec::new(),
+        init_function_indices: Vec::new(),
+        layouts: Vec::new(),
+    };
+    let module = NyarVm::new().load(&encode_module(&data)).expect("load");
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+    assert_eq!(vm.run(&module, "forty_two", vec![]).expect("run"), Value::I32(42));
+}
+
+#[test]
+fn workload_hints_tighten_gray_budget_on_vm() {
+    use nyar_gc::WorkloadHints;
+
+    let mut vm = NyarVm::new();
+    assert_eq!(vm.gray_budget_per_slice(), 64);
+    vm.apply_workload_hints(WorkloadHints {
+        pause_budget_ms: Some(1),
+        ..WorkloadHints::default()
+    });
+    assert_eq!(vm.gray_budget_per_slice(), 8);
+}
+
+#[test]
+fn install_inline_deopt_chain_orders_outer_then_inner() {
+    use nyar_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
+
+    let map = build_inline_deopt_map(
+        1,
+        &[
+            InlineFrameSpec {
+                function_index: 1,
+                local_count: 1,
+                resume_instruction: None,
+            },
+            InlineFrameSpec {
+                function_index: 0,
+                local_count: 2,
+                resume_instruction: Some(40),
+            },
+        ],
+        &[7],
+    );
+    let entry = map.entry_at(7).expect("entry");
+    let restored = materialize_interpreter_frames(entry, &[vec![], vec![]]).expect("materialize");
+    let mut vm = NyarVm::new();
+    vm.install_deopt_frames(&restored, 0, None).expect("install");
+    assert_eq!(vm.frame_count(), 2);
+}
+
+#[test]
 fn install_deopt_frames_invalidates_nj1_and_restores_locals() {
     use nyar_vm::jit::{BaselineScalarJit, build_baseline_deopt_map, materialize_interpreter_frames};
     use nyar_vm::Value;
