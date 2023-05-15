@@ -18,8 +18,8 @@ pub use artifact::JitCompiledArtifact;
 pub use baseline_scalar::{BaselineScalarJit, match_scalar_program};
 pub use compiler::{DisabledJit, JitCompiler, StackMapJit};
 pub use deopt::{
-    DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, RestoredInterpreterFrame, RestoredLocal,
-    build_baseline_deopt_map, materialize_interpreter_frames,
+    DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, InlineFrameSpec, RestoredInterpreterFrame, RestoredLocal,
+    build_baseline_deopt_map, build_inline_deopt_map, materialize_interpreter_frames,
 };
 pub use error::JitError;
 pub use machine_code::{

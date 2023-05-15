@@ -107,28 +107,84 @@ impl DeoptMap {
     }
 }
 
+/// 内联帧链中的一层规格（索引 0 为最内层）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineFrameSpec {
+    /// 模块函数下标。
+    pub function_index: usize,
+    /// local 槽数量。
+    pub local_count: u16,
+    /// 恢复后的内码下标。
+    ///
+    /// 最内层可填 `None`：表示对该 safepoint 使用 `safepoint + 1`。
+    /// 外层必须给出调用返回点（或其它约定恢复点）。
+    pub resume_instruction: Option<u32>,
+}
+
 /// 由 safepoint 列表构造最小 deopt 表（每点一帧，无内联）。
 pub fn build_baseline_deopt_map(
     function_index: usize,
     local_count: i32,
     safepoint_indices: &[u32],
 ) -> DeoptMap {
-    let local_count = local_count.max(0) as u16;
+    build_inline_deopt_map(
+        function_index,
+        &[InlineFrameSpec {
+            function_index,
+            local_count: local_count.max(0) as u16,
+            resume_instruction: None,
+        }],
+        safepoint_indices,
+    )
+}
+
+/// 由内联帧链规格构造 deopt 表（每 safepoint 共享同一逻辑帧链形状）。
+///
+/// `frame_chain[0]` 为最内层。空链得到空 `entries` 的表（仍记录 `owning_function_index`）。
+pub fn build_inline_deopt_map(
+    owning_function_index: usize,
+    frame_chain: &[InlineFrameSpec],
+    safepoint_indices: &[u32],
+) -> DeoptMap {
     let mut indices = safepoint_indices.to_vec();
     indices.sort_unstable();
     indices.dedup();
+    if frame_chain.is_empty() {
+        return DeoptMap {
+            function_index: owning_function_index,
+            entries: Vec::new(),
+        };
+    }
     let entries = indices
         .into_iter()
-        .map(|instruction_index| DeoptMapEntry {
-            instruction_index,
-            frames: vec![DeoptFrame {
-                function_index,
-                instruction_index: instruction_index.saturating_add(1),
-                local_count,
-            }],
+        .map(|safepoint| {
+            let frames = frame_chain
+                .iter()
+                .enumerate()
+                .map(|(depth, spec)| {
+                    let instruction_index = if depth == 0 {
+                        spec.resume_instruction
+                            .unwrap_or_else(|| safepoint.saturating_add(1))
+                    } else {
+                        spec.resume_instruction.unwrap_or(0)
+                    };
+                    DeoptFrame {
+                        function_index: spec.function_index,
+                        instruction_index,
+                        local_count: spec.local_count,
+                    }
+                })
+                .collect();
+            DeoptMapEntry {
+                instruction_index: safepoint,
+                frames,
+            }
         })
         .collect();
-    DeoptMap { function_index, entries }
+    DeoptMap {
+        function_index: owning_function_index,
+        entries,
+    }
 }
 
 /// 将 deopt 条目物化为解释器帧链（无机器码、无寄存器分配）。
@@ -208,5 +264,33 @@ mod tests {
         let entry = map.entry_at(0).expect("entry");
         let err = materialize_interpreter_frames(entry, &[vec![None, None]]).expect_err("overflow");
         assert!(matches!(err, DeoptRestoreError::LocalOverflow { .. }));
+    }
+
+    #[test]
+    fn inline_deopt_map_preserves_outer_resume_pcs() {
+        let map = build_inline_deopt_map(
+            1,
+            &[
+                InlineFrameSpec {
+                    function_index: 1,
+                    local_count: 2,
+                    resume_instruction: None,
+                },
+                InlineFrameSpec {
+                    function_index: 0,
+                    local_count: 3,
+                    resume_instruction: Some(99),
+                },
+            ],
+            &[10],
+        );
+        let entry = map.entry_at(10).expect("entry");
+        assert_eq!(entry.frames.len(), 2);
+        assert_eq!(entry.frames[0].function_index, 1);
+        assert_eq!(entry.frames[0].instruction_index, 11);
+        assert_eq!(entry.frames[0].local_count, 2);
+        assert_eq!(entry.frames[1].function_index, 0);
+        assert_eq!(entry.frames[1].instruction_index, 99);
+        assert_eq!(entry.frames[1].local_count, 3);
     }
 }
