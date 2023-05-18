@@ -209,6 +209,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
             pause_budget_ms,
             heap_soft_limit_bytes,
             allow_heavy_collection,
+            ..WorkloadHints::default()
         },
         reason,
         sources_considered: sources,

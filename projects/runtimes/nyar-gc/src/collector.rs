@@ -6,6 +6,8 @@ use crate::value::{ObjectId, Value};
 
 /// ConcurrentTrace 每拍默认扫描的灰对象上限（mutator 侧有界切片）。
 const DEFAULT_GRAY_BUDGET_PER_SLICE: usize = 64;
+/// ConcurrentTrace 单次 poll 默认最多灰切片数（1 次基线 + ticker boost）。
+const DEFAULT_TRACE_SLICES_PER_POLL: usize = 5;
 
 /// Root set for a mark-sweep collection（不含宿主根；宿主根始终从堆内读取）。
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +35,8 @@ pub struct GarbageCollector {
     gray: Vec<ObjectId>,
     /// ConcurrentTrace 每拍灰扫描预算。
     gray_budget_per_slice: usize,
+    /// ConcurrentTrace 单次 poll 最多灰切片数。
+    max_trace_slices_per_poll: usize,
     /// 自上次全堆回收以来已完成的 nursery 次数（分代模式）。
     nursery_collects_since_full: u32,
     /// 最近一次 nursery 晋升转发图（供解释器改写根）。
@@ -47,6 +51,7 @@ impl Default for GarbageCollector {
             marked: Vec::new(),
             gray: Vec::new(),
             gray_budget_per_slice: DEFAULT_GRAY_BUDGET_PER_SLICE,
+            max_trace_slices_per_poll: DEFAULT_TRACE_SLICES_PER_POLL,
             nursery_collects_since_full: 0,
             last_relocate: RelocateMap::new(),
             last_concurrent_ticks: 0,
@@ -68,6 +73,31 @@ impl GarbageCollector {
     /// 设置 ConcurrentTrace 每拍灰对象扫描上限（至少为 1）。
     pub fn set_gray_budget_per_slice(&mut self, budget: usize) {
         self.gray_budget_per_slice = budget.max(1);
+    }
+
+    /// 设置 ConcurrentTrace 单次 poll 最多灰切片数（至少为 1）。
+    pub fn set_max_trace_slices_per_poll(&mut self, slices: usize) {
+        self.max_trace_slices_per_poll = slices.max(1);
+    }
+
+    /// 当前每拍灰预算（测试 / 诊断）。
+    pub fn gray_budget_per_slice(&self) -> usize {
+        self.gray_budget_per_slice
+    }
+
+    /// 当前单次 poll 切片上限（测试 / 诊断）。
+    pub fn max_trace_slices_per_poll(&self) -> usize {
+        self.max_trace_slices_per_poll
+    }
+
+    /// 按工作负载提示同步 ConcurrentTrace 有界预算（软约束）。
+    pub fn apply_workload_hints(&mut self, hints: &crate::policy::WorkloadHints) {
+        if let Some(budget) = hints.derived_gray_budget() {
+            self.set_gray_budget_per_slice(budget);
+        }
+        if let Some(slices) = hints.derived_trace_slices_per_poll() {
+            self.set_max_trace_slices_per_poll(slices);
+        }
     }
 
     /// 当前灰队列长度（测试 / 诊断）。
@@ -159,9 +189,11 @@ impl GarbageCollector {
                 self.drain_satb_to_gray(heap);
                 let ticks = heap.concurrent_mark_ticks();
                 // 后台 ticker 节拍只驱动 mutator 侧多扫几片灰；线程本身仍不碰堆。
-                let tick_boost = ticks.saturating_sub(self.last_concurrent_ticks).min(4) as usize;
+                // 总切片数受 `max_trace_slices_per_poll` 约束（可由 WorkloadHints 收紧）。
+                let tick_boost = ticks.saturating_sub(self.last_concurrent_ticks) as usize;
+                let extra = tick_boost.min(self.max_trace_slices_per_poll.saturating_sub(1));
                 let mut gray_done = self.process_gray_slice(heap);
-                for _ in 0..tick_boost {
+                for _ in 0..extra {
                     if gray_done {
                         break;
                     }

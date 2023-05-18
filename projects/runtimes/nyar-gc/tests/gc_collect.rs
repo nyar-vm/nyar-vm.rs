@@ -413,6 +413,27 @@ fn concurrent_trace_gray_slices_reach_nested_refs() {
 }
 
 #[test]
+fn workload_hints_sync_gray_budget_on_collector() {
+    use nyar_gc::WorkloadHints;
+
+    let mut gc = GarbageCollector::new();
+    assert_eq!(gc.gray_budget_per_slice(), 64);
+    gc.apply_workload_hints(&WorkloadHints {
+        pause_budget_ms: Some(1),
+        ..WorkloadHints::default()
+    });
+    assert_eq!(gc.gray_budget_per_slice(), 8);
+    assert_eq!(gc.max_trace_slices_per_poll(), 2);
+    gc.apply_workload_hints(&WorkloadHints {
+        concurrent_gray_budget: Some(11),
+        concurrent_trace_slices_per_poll: Some(3),
+        ..WorkloadHints::default()
+    });
+    assert_eq!(gc.gray_budget_per_slice(), 11);
+    assert_eq!(gc.max_trace_slices_per_poll(), 3);
+}
+
+#[test]
 fn concurrent_trace_tick_boost_drains_extra_gray_slices() {
     use std::thread;
     use std::time::Duration;

@@ -28,6 +28,39 @@ pub struct WorkloadHints {
     pub heap_soft_limit_bytes: Option<u64>,
     /// 是否允许在维护窗口做较重整理（分代模式下强制全堆）。
     pub allow_heavy_collection: bool,
+    /// ConcurrentTrace 每拍灰对象扫描上限；`None` 表示沿用收集器当前值。
+    pub concurrent_gray_budget: Option<u32>,
+    /// ConcurrentTrace 单次 poll 最多灰切片数（含 ticker boost）；`None` 表示默认上限。
+    pub concurrent_trace_slices_per_poll: Option<u32>,
+}
+
+impl WorkloadHints {
+    /// 由暂停预算推导 ConcurrentTrace 灰扫描默认值（未显式声明预算时使用）。
+    pub fn derived_gray_budget(&self) -> Option<usize> {
+        if let Some(budget) = self.concurrent_gray_budget {
+            return Some(budget.max(1) as usize);
+        }
+        match self.pause_budget_ms {
+            Some(ms) if ms <= 1 => Some(8),
+            Some(ms) if ms <= 5 => Some(32),
+            Some(ms) if ms <= 20 => Some(64),
+            Some(_) => Some(128),
+            None => None,
+        }
+    }
+
+    /// 由暂停预算推导单次 poll 灰切片上限。
+    pub fn derived_trace_slices_per_poll(&self) -> Option<usize> {
+        if let Some(slices) = self.concurrent_trace_slices_per_poll {
+            return Some(slices.max(1) as usize);
+        }
+        match self.pause_budget_ms {
+            Some(ms) if ms <= 1 => Some(2),
+            Some(ms) if ms <= 5 => Some(4),
+            Some(_) => Some(8),
+            None => None,
+        }
+    }
 }
 
 /// 堆级策略配置。
@@ -96,5 +129,29 @@ impl GcPolicy {
     pub fn with_full_collect_every(mut self, n: u32) -> Self {
         self.full_collect_every_n_nursery = n.max(1);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derived_budgets_tighten_with_pause_hint() {
+        let tight = WorkloadHints {
+            pause_budget_ms: Some(1),
+            ..WorkloadHints::default()
+        };
+        assert_eq!(tight.derived_gray_budget(), Some(8));
+        assert_eq!(tight.derived_trace_slices_per_poll(), Some(2));
+
+        let explicit = WorkloadHints {
+            concurrent_gray_budget: Some(3),
+            concurrent_trace_slices_per_poll: Some(1),
+            pause_budget_ms: Some(1),
+            ..WorkloadHints::default()
+        };
+        assert_eq!(explicit.derived_gray_budget(), Some(3));
+        assert_eq!(explicit.derived_trace_slices_per_poll(), Some(1));
     }
 }

@@ -126,6 +126,17 @@ impl Executor {
         &mut self.heap
     }
 
+    /// 按工作负载提示同步堆策略与 ConcurrentTrace 有界预算。
+    pub fn apply_workload_hints(&mut self, hints: nyar_gc::WorkloadHints) {
+        self.gc.apply_workload_hints(&hints);
+        self.heap.policy_mut().apply_hints(hints);
+    }
+
+    /// ConcurrentTrace 当前灰预算（测试 / 诊断）。
+    pub fn gray_budget_per_slice(&self) -> usize {
+        self.gc.gray_budget_per_slice()
+    }
+
     /// Executes a function in `module` and returns its result value.
     pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])

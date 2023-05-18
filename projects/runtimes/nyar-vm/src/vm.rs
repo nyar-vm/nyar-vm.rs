@@ -124,9 +124,14 @@ impl NyarVm {
         self.executor.heap_mut().set_policy(policy);
     }
 
-    /// 更新工作负载提示（软上限、暂停预算等），不改 GC 模式。
+    /// 更新工作负载提示（软上限、暂停预算、ConcurrentTrace 灰预算等），不改 GC 模式。
     pub fn apply_workload_hints(&mut self, hints: nyar_gc::WorkloadHints) {
-        self.executor.heap_mut().policy_mut().apply_hints(hints);
+        self.executor.apply_workload_hints(hints);
+    }
+
+    /// ConcurrentTrace 当前灰预算（测试 / 诊断）。
+    pub fn gray_budget_per_slice(&self) -> usize {
+        self.executor.gray_budget_per_slice()
     }
 
     /// 应用进程级工作负载意图并刷新 GC 策略。
