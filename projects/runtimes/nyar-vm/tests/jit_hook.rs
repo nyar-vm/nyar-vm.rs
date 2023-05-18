@@ -258,6 +258,23 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
 }
 
 #[test]
+fn baseline_scalar_jit_fast_path_load_dup_mul() {
+    use nyar_vm::jit::BaselineScalarJit;
+    use nyar_vm::Value;
+
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Dup as u8);
+    code.push(NyarHeadCode::I32Mul as u8);
+    code.push(NyarHeadCode::Return as u8);
+    let module = load_named_module("nj1-sq", "sq", 1, code);
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+    assert_eq!(vm.run(&module, "sq", vec![Value::I32(7)]).expect("run"), Value::I32(49));
+}
+
+#[test]
 fn baseline_scalar_jit_folds_const_const_binop() {
     use nyar_vm::jit::BaselineScalarJit;
     use nyar_vm::Value;

@@ -44,6 +44,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_const_const_op_return(code, constant_i32) {
         return Some(blob);
     }
+    if let Some(blob) = match_load_dup_op_return(code) {
+        return Some(blob);
+    }
     if let Some(blob) = match_const_load_op_return(code, constant_i32) {
         return Some(blob);
     }
@@ -113,6 +116,38 @@ fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> i32 {
             }
         }
     }
+}
+
+/// `Load; Dup; Op; Return` → 同槽二元运算（如 `x*x`）。
+fn match_load_dup_op_return(code: &[u8]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let load = decode_at(code, pc);
+    if load.size == 0 {
+        return None;
+    }
+    let slot = load_slot(&load)?;
+    pc += load.size as usize;
+    let dup = decode_at(code, pc);
+    if dup.size == 0 || dup.code != NyarHeadCode::Dup {
+        return None;
+    }
+    pc += dup.size as usize;
+    let op = decode_at(code, pc);
+    if op.size == 0 {
+        return None;
+    }
+    pc += op.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || pc + ret.size as usize != code.len() || ret.code != NyarHeadCode::Return {
+        return None;
+    }
+    if let Some(binop) = head_to_binop(op.code) {
+        return Some(encode_ret_i32_binop_locals(binop, slot, slot));
+    }
+    if let Some(cmp) = head_to_cmp(op.code) {
+        return Some(encode_ret_i32_cmp_locals(cmp, slot, slot));
+    }
+    None
 }
 
 /// `Const; Load; Op; Return` 或 `Load; Const; Op; Return`。
@@ -423,6 +458,26 @@ mod tests {
                 cmp: I32Cmp::LtS,
                 a: 0,
                 b: 1
+            }
+        );
+    }
+
+    #[test]
+    fn compiles_load_dup_binop() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        code.push(NyarHeadCode::Dup as u8);
+        code.push(NyarHeadCode::I32Mul as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32BinopLocals {
+                binop: I32Binop::Mul,
+                a: 0,
+                b: 0
             }
         );
     }
