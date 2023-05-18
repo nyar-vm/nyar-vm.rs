@@ -233,7 +233,8 @@ fn verify_function(
             ))
         })?;
 
-        verify_instruction_operands(data, function_index, pc, instruction, local_slots)?;
+        let arity = function.arity.max(0) as usize;
+        verify_instruction_operands(data, function_index, pc, instruction, local_slots, arity)?;
 
         let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types, &mut locals)?;
         for (target, edge_height) in edges {
@@ -350,6 +351,7 @@ fn verify_instruction_operands(
     pc: usize,
     instruction: NyarInstruction,
     local_slots: usize,
+    arity: usize,
 ) -> Result<(), NyarRuntimeError> {
     match instruction.code {
         NyarHeadCode::Const => {
@@ -360,7 +362,16 @@ fn verify_instruction_operands(
                 )));
             }
         }
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::StoreLocal => {
+        NyarHeadCode::LoadArg => {
+            // 调用约定：`LoadArg` 只能读 `[0, arity)`，不得越界到普通局部槽。
+            if instruction.operand1 < 0 || (instruction.operand1 as usize) >= arity {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] LoadArg at pc {pc} index {} out of arity {arity}",
+                    instruction.operand1
+                )));
+            }
+        }
+        NyarHeadCode::LoadLocal | NyarHeadCode::StoreLocal => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= local_slots {
                 return Err(NyarRuntimeError::LocalIndexOutOfRange(instruction.operand1));
             }
@@ -915,6 +926,25 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("local conflict");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("local type conflict")));
+    }
+
+    #[test]
+    fn rejects_load_arg_beyond_arity() {
+        let mut module = empty_module();
+        let mut code = Vec::new();
+        // arity=1 却 LoadArg 1（仅 local_count 允许该槽）。
+        emit_imm1(&mut code, NyarHeadCode::LoadArg, 1);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 1,
+            local_count: 2,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("LoadArg arity");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("out of arity")));
     }
 
     #[test]
