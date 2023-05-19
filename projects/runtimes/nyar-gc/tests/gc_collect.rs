@@ -413,6 +413,37 @@ fn concurrent_trace_gray_slices_reach_nested_refs() {
 }
 
 #[test]
+fn concurrent_trace_poll_records_work_units() {
+    use nyar_gc::{ConcurrentMarkState, GcPolicy};
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let b = heap.alloc(empty_layout(2));
+    let a = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 1,
+        slots: vec![Value::Object(b)],
+    });
+    let root = heap.alloc(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Object(a)],
+    });
+    let stack = [Value::Object(root)];
+    let mut gc = GarbageCollector::new();
+    gc.set_gray_budget_per_slice(1);
+
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert_eq!(heap.concurrent_mark().state(), ConcurrentMarkState::ConcurrentTrace);
+    // Idle→Trace 不扫灰，记账仍为默认。
+    assert_eq!(gc.last_trace_poll().slices_run, 0);
+
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    let report = gc.last_trace_poll();
+    assert_eq!(report.slices_run, 1);
+    assert_eq!(report.gray_scanned, 1);
+    assert!(report.budget_exhausted);
+    assert_eq!(report.gray_pending_before, 1);
+}
+
+#[test]
 fn workload_hints_sync_gray_budget_on_collector() {
     use nyar_gc::WorkloadHints;
 

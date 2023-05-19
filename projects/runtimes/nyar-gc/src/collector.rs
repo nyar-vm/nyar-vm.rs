@@ -9,6 +9,19 @@ const DEFAULT_GRAY_BUDGET_PER_SLICE: usize = 64;
 /// ConcurrentTrace 单次 poll 默认最多灰切片数（1 次基线 + ticker boost）。
 const DEFAULT_TRACE_SLICES_PER_POLL: usize = 5;
 
+/// 一次 ConcurrentTrace poll 的有界工作量记账（暂停预算证据，非墙钟）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TracePollReport {
+    /// 本拍执行的灰切片次数。
+    pub slices_run: u32,
+    /// 本拍扫描的灰对象个数。
+    pub gray_scanned: u32,
+    /// 本拍结束时灰队列是否仍非空（触及切片/预算上限）。
+    pub budget_exhausted: bool,
+    /// 本拍开始前的灰队列长度。
+    pub gray_pending_before: u32,
+}
+
 /// Root set for a mark-sweep collection（不含宿主根；宿主根始终从堆内读取）。
 #[derive(Debug, Clone, Copy)]
 pub struct GcRoots<'a> {
@@ -43,6 +56,8 @@ pub struct GarbageCollector {
     last_relocate: RelocateMap,
     /// 进入 / 停留 ConcurrentTrace 时观察到的 ticker 计数。
     last_concurrent_ticks: u64,
+    /// 最近一次 ConcurrentTrace poll 的工作量。
+    last_trace_poll: TracePollReport,
 }
 
 impl Default for GarbageCollector {
@@ -55,6 +70,7 @@ impl Default for GarbageCollector {
             nursery_collects_since_full: 0,
             last_relocate: RelocateMap::new(),
             last_concurrent_ticks: 0,
+            last_trace_poll: TracePollReport::default(),
         }
     }
 }
@@ -103,6 +119,11 @@ impl GarbageCollector {
     /// 当前灰队列长度（测试 / 诊断）。
     pub fn gray_queue_len(&self) -> usize {
         self.gray.len()
+    }
+
+    /// 最近一次 ConcurrentTrace poll 的工作量记账。
+    pub fn last_trace_poll(&self) -> TracePollReport {
+        self.last_trace_poll
     }
 
     /// 按堆上 [`crate::GcPolicy`] 选择 nursery、全堆或并发标记（单线程模拟）回收。
@@ -188,17 +209,31 @@ impl GarbageCollector {
                 self.ensure_marked_capacity(heap);
                 self.drain_satb_to_gray(heap);
                 let ticks = heap.concurrent_mark_ticks();
+                let gray_pending_before = self.gray.len() as u32;
                 // 后台 ticker 节拍只驱动 mutator 侧多扫几片灰；线程本身仍不碰堆。
                 // 总切片数受 `max_trace_slices_per_poll` 约束（可由 WorkloadHints 收紧）。
                 let tick_boost = ticks.saturating_sub(self.last_concurrent_ticks) as usize;
                 let extra = tick_boost.min(self.max_trace_slices_per_poll.saturating_sub(1));
-                let mut gray_done = self.process_gray_slice(heap);
+                let mut slices_run = 0u32;
+                let mut gray_scanned = 0u32;
+                let (scanned, mut gray_done) = self.process_gray_slice(heap);
+                slices_run += 1;
+                gray_scanned += scanned as u32;
                 for _ in 0..extra {
                     if gray_done {
                         break;
                     }
-                    gray_done = self.process_gray_slice(heap);
+                    let (scanned, done) = self.process_gray_slice(heap);
+                    slices_run += 1;
+                    gray_scanned += scanned as u32;
+                    gray_done = done;
                 }
+                self.last_trace_poll = TracePollReport {
+                    slices_run,
+                    gray_scanned,
+                    budget_exhausted: !gray_done,
+                    gray_pending_before,
+                };
                 if !gray_done {
                     // 灰队列未空：本拍有界切片结束，停留 ConcurrentTrace。
                     self.last_concurrent_ticks = ticks;
@@ -277,16 +312,18 @@ impl GarbageCollector {
         }
     }
 
-    /// 扫描最多 `gray_budget_per_slice` 个灰对象；返回灰队列是否已空。
-    fn process_gray_slice(&mut self, heap: &ObjectHeap) -> bool {
+    /// 扫描最多 `gray_budget_per_slice` 个灰对象；返回 `(扫描数, 灰队列是否已空)`。
+    fn process_gray_slice(&mut self, heap: &ObjectHeap) -> (usize, bool) {
         let budget = self.gray_budget_per_slice;
+        let mut scanned = 0usize;
         for _ in 0..budget {
             let Some(id) = self.gray.pop() else {
-                return true;
+                return (scanned, true);
             };
             scan_gray_object(id, heap, &mut self.marked, &mut self.gray);
+            scanned += 1;
         }
-        self.gray.is_empty()
+        (scanned, self.gray.is_empty())
     }
 
     fn enqueue_interpreter_roots(&mut self, roots: GcRoots<'_>) {
