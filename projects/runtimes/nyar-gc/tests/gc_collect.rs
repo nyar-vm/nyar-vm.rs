@@ -158,6 +158,51 @@ fn nursery_collect_reclaims_young_keeps_tenured_and_promotes_survivors() {
 }
 
 #[test]
+fn write_barrier_satb_and_remembered_set_both_fire_on_old_slot() {
+    use nyar_gc::GcPolicy;
+
+    // 合同：并发标记期覆盖旧引用 → SATB；老→年轻 → 记忆集。二者义务独立、可同一次写入同时成立。
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let old_holder = heap.alloc_tenured(ObjectPayload::LayoutObject {
+        layout_id: 0,
+        slots: vec![Value::Null],
+    });
+    let keep = heap.alloc(empty_layout(1));
+    let doomed = heap.alloc(empty_layout(2));
+    let young = heap.alloc(empty_layout(3));
+
+    // 先挂上 keep，再开并发标记，使后续覆写触发 SATB。
+    heap.set_field(old_holder, 0, Value::Object(keep)).unwrap();
+    let stack = [Value::Object(old_holder)];
+    let mut gc = GarbageCollector::new();
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[], &[], &[]), &mut heap));
+    assert!(heap.concurrent_mark().requires_satb());
+
+    heap.barrier_mut().clear_remembered();
+    heap.set_field(old_holder, 0, Value::Object(young)).unwrap();
+    assert!(
+        heap.barrier().satb_buffer().contains(&keep),
+        "SATB must snapshot overwritten ref"
+    );
+    assert!(
+        !heap.barrier().remembered_set().is_empty(),
+        "remembered set must record old→young"
+    );
+
+    // doomed 仅曾存在、无根无屏障义务 → 周期结束后应消失；keep 经 SATB、young 经记忆集/根侧字段可达。
+    let _ = doomed;
+    let mut steps = 0;
+    while !gc.poll_concurrent_mark_ex(roots(&stack, &[], &[], &[]), &mut heap, true) {
+        steps += 1;
+        assert!(steps < 64);
+    }
+    assert!(heap.get(old_holder).is_some());
+    assert!(heap.get(keep).is_some());
+    assert!(heap.get(young).is_some());
+    assert!(heap.get(doomed).is_none());
+}
+
+#[test]
 fn write_barrier_remembers_old_to_young_for_nursery_collect() {
     let mut heap = ObjectHeap::new();
     let old = heap.alloc_tenured(ObjectPayload::LayoutObject {
