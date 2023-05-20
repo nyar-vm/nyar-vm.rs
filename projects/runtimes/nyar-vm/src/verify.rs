@@ -41,6 +41,21 @@ fn merge_local_kind(left: StackKind, right: StackKind) -> Option<StackKind> {
     }
 }
 
+/// 函数返回形状（多出口须可汇合）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReturnShape {
+    Void,
+    Value(StackKind),
+}
+
+fn merge_return_shape(left: ReturnShape, right: ReturnShape) -> Option<ReturnShape> {
+    match (left, right) {
+        (ReturnShape::Void, ReturnShape::Void) => Some(ReturnShape::Void),
+        (ReturnShape::Value(a), ReturnShape::Value(b)) => merge_stack_kind(a, b).map(ReturnShape::Value),
+        _ => None,
+    }
+}
+
 /// `StoreLocal`：从 `Any` 可细化；写入 `Any` 则放宽；`I32`/`Ref` 冲突失败。
 fn assign_local_kind(old: StackKind, new: StackKind) -> Option<StackKind> {
     match (old, new) {
@@ -212,6 +227,7 @@ fn verify_function(
     let mut heights: BTreeMap<usize, i32> = BTreeMap::new();
     let mut type_stacks: BTreeMap<usize, Vec<StackKind>> = BTreeMap::new();
     let mut local_kinds: BTreeMap<usize, Vec<StackKind>> = BTreeMap::new();
+    let mut return_shape: Option<ReturnShape> = None;
     let mut queue = VecDeque::new();
     heights.insert(start, entry_height);
     type_stacks.insert(start, entry_types);
@@ -235,6 +251,23 @@ fn verify_function(
 
         let arity = function.arity.max(0) as usize;
         verify_instruction_operands(data, function_index, pc, instruction, local_slots, arity)?;
+
+        if instruction.code == NyarHeadCode::Return {
+            let shape = if height <= 0 {
+                ReturnShape::Void
+            } else {
+                let top = types.last().copied().unwrap_or(StackKind::Any);
+                ReturnShape::Value(top)
+            };
+            return_shape = Some(match return_shape {
+                None => shape,
+                Some(existing) => merge_return_shape(existing, shape).ok_or_else(|| {
+                    NyarRuntimeError::ModuleLoad(format!(
+                        "function[{function_index}] return type mismatch at pc {pc}: {existing:?} vs {shape:?}"
+                    ))
+                })?,
+            });
+        }
 
         let edges = stack_transfer(data, function_index, pc, instruction, height, &mut types, &mut locals)?;
         for (target, edge_height) in edges {
@@ -926,6 +959,58 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("local conflict");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("local type conflict")));
+    }
+
+    #[test]
+    fn rejects_mixed_void_and_value_returns() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(1));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jif_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
+        emit_plain(&mut code, NyarHeadCode::Return); // void
+        let value_ret = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_plain(&mut code, NyarHeadCode::Return); // i32
+        let to_value = (value_ret as i32) - (jif_at as i32);
+        code[jif_at + 1..jif_at + 5].copy_from_slice(&to_value.to_le_bytes());
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("return mismatch");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("return type mismatch")));
+    }
+
+    #[test]
+    fn accepts_consistent_i32_returns() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(1));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let jif_at = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        let other = code.len();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        let to_other = (other as i32) - (jif_at as i32);
+        code[jif_at + 1..jif_at + 5].copy_from_slice(&to_other.to_le_bytes());
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("consistent i32 returns");
     }
 
     #[test]
