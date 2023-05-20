@@ -1,0 +1,9 @@
+{
+  "scenario_id": "hard-conflict-throughput-tight-pause",
+  "source": "project_config",
+  "phase": "invalid",
+  "pause_budget_ms": 5,
+  "allow_heavy_collection": true,
+  "preferred_mode": "throughput_batch",
+  "lifetime_hint": "unspecified"
+}

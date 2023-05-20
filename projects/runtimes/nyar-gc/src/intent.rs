@@ -122,6 +122,48 @@ impl WorkloadIntent {
             lifetime_hint: ObjectLifetimeHint::CrossBatchCache,
         }
     }
+
+    /// 交互式并发标记样本：紧暂停、禁止重整理。
+    pub fn sample_concurrent_interactive() -> Self {
+        Self {
+            scenario_id: Some("concurrent-interactive".into()),
+            source: IntentSource::PhaseEvent,
+            phase: Some("interactive".into()),
+            pause_budget_ms: Some(5),
+            heap_soft_limit_bytes: Some(128 * 1024 * 1024),
+            allow_heavy_collection: Some(false),
+            preferred_mode: Some(GcMode::ConcurrentMarkReserved),
+            lifetime_hint: ObjectLifetimeHint::ShortLivedBatch,
+        }
+    }
+
+    /// 故意硬冲突样本：吞吐模式 + 紧暂停（仅供合同测试，不得用于部署）。
+    pub fn sample_hard_conflict_throughput_tight_pause() -> Self {
+        Self {
+            scenario_id: Some("hard-conflict-throughput-tight-pause".into()),
+            source: IntentSource::ProjectConfig,
+            phase: Some("invalid".into()),
+            pause_budget_ms: Some(5),
+            heap_soft_limit_bytes: None,
+            allow_heavy_collection: Some(true),
+            preferred_mode: Some(GcMode::ThroughputBatch),
+            lifetime_hint: ObjectLifetimeHint::Unspecified,
+        }
+    }
+
+    /// 故意硬冲突样本：并发标记 + 重整理。
+    pub fn sample_hard_conflict_concurrent_heavy() -> Self {
+        Self {
+            scenario_id: Some("hard-conflict-concurrent-heavy".into()),
+            source: IntentSource::Deployment,
+            phase: Some("invalid".into()),
+            pause_budget_ms: Some(5),
+            heap_soft_limit_bytes: None,
+            allow_heavy_collection: Some(true),
+            preferred_mode: Some(GcMode::ConcurrentMarkReserved),
+            lifetime_hint: ObjectLifetimeHint::Unspecified,
+        }
+    }
 }
 
 /// 意图冲突或非法阶段操作。

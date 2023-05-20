@@ -109,6 +109,13 @@ fn validate_single(intent: &WorkloadIntent) -> Result<(), IntentError> {
             });
         }
     }
+    if let (Some(GcMode::ConcurrentMarkReserved), Some(true)) =
+        (intent.preferred_mode, intent.allow_heavy_collection)
+    {
+        return Err(IntentError::HardConflict {
+            message: "preferred ConcurrentMarkReserved conflicts with allow_heavy_collection=true".into(),
+        });
+    }
     Ok(())
 }
 
@@ -254,13 +261,28 @@ mod tests {
 
     #[test]
     fn hard_conflict_rejects_throughput_with_tight_pause() {
-        let intent = WorkloadIntent {
-            preferred_mode: Some(GcMode::ThroughputBatch),
-            pause_budget_ms: Some(5),
-            ..WorkloadIntent::empty(IntentSource::ProjectConfig)
-        };
-        let err = StrategyController::new().set_process_intent(intent).unwrap_err();
+        let err = StrategyController::new()
+            .set_process_intent(WorkloadIntent::sample_hard_conflict_throughput_tight_pause())
+            .unwrap_err();
         assert!(matches!(err, IntentError::HardConflict { .. }));
+    }
+
+    #[test]
+    fn hard_conflict_rejects_concurrent_with_heavy() {
+        let err = StrategyController::new()
+            .set_process_intent(WorkloadIntent::sample_hard_conflict_concurrent_heavy())
+            .unwrap_err();
+        assert!(matches!(err, IntentError::HardConflict { .. }));
+    }
+
+    #[test]
+    fn concurrent_interactive_sample_applies() {
+        let mut ctrl = StrategyController::new();
+        ctrl.set_process_intent(WorkloadIntent::sample_concurrent_interactive()).unwrap();
+        let decision = ctrl.decide();
+        assert_eq!(decision.mode, GcMode::ConcurrentMarkReserved);
+        assert_eq!(decision.hints.pause_budget_ms, Some(5));
+        assert!(!decision.hints.allow_heavy_collection);
     }
 
     #[test]

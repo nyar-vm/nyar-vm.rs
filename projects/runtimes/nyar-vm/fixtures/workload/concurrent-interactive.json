@@ -1,0 +1,10 @@
+{
+  "scenario_id": "concurrent-interactive",
+  "source": "phase_event",
+  "phase": "interactive",
+  "pause_budget_ms": 5,
+  "heap_soft_limit_bytes": 134217728,
+  "allow_heavy_collection": false,
+  "preferred_mode": "concurrent_mark_reserved",
+  "lifetime_hint": "short_lived_batch"
+}
