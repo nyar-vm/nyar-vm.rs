@@ -6,6 +6,7 @@
 //! `nyar-language`, `nyar-vm`, or concrete language frontends.
 
 mod artifact;
+mod assumption;
 mod baseline_scalar;
 mod compiler;
 mod deopt;
@@ -15,6 +16,7 @@ mod request;
 mod stack_map;
 
 pub use artifact::JitCompiledArtifact;
+pub use assumption::{JitAssumption, baseline_scalar_assumptions};
 pub use baseline_scalar::{BaselineScalarJit, match_scalar_program};
 pub use compiler::{DisabledJit, JitCompiler, StackMapJit};
 pub use deopt::{

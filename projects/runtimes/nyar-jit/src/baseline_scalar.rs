@@ -3,7 +3,8 @@
 use nyar_bytecode::{NyarHeadCode, decode_at};
 
 use crate::{
-    JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, build_baseline_deopt_map, build_conservative_stack_maps,
+    JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, baseline_scalar_assumptions, build_baseline_deopt_map,
+    build_conservative_stack_maps,
     machine_code::{
         I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
         encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
@@ -32,7 +33,8 @@ impl JitCompiler for BaselineScalarJit {
             request.function.local_count,
             &request.function.safepoint_indices,
         );
-        Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code))
+        Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code)
+            .with_assumptions(baseline_scalar_assumptions(request.module_version)))
     }
 }
 

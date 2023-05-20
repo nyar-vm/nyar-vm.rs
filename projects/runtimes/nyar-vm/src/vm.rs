@@ -90,6 +90,11 @@ impl NyarVm {
         self.executor.invalidate_nj1_module(module.version, &module.name);
     }
 
+    /// 失效依赖给定 JIT 假设的 NJ1 缓存。
+    pub fn invalidate_assumption(&mut self, assumption: crate::jit::JitAssumption) {
+        self.executor.invalidate_assumption(assumption);
+    }
+
     /// 安装 deopt 物化帧并失效 NJ1（见 [`crate::executor::Executor::install_deopt_frames`]）。
     pub fn install_deopt_frames(
         &mut self,

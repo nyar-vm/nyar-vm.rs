@@ -379,6 +379,24 @@ fn install_deopt_frames_invalidates_nj1_and_restores_locals() {
 }
 
 #[test]
+fn invalidate_assumption_drops_scalar_leaf_cache() {
+    use nyar_vm::jit::{BaselineScalarJit, JitAssumption};
+    use nyar_vm::Value;
+
+    let mut code = Vec::new();
+    code.push(NyarHeadCode::LoadArg as u8);
+    code.extend_from_slice(&0i32.to_le_bytes());
+    code.push(NyarHeadCode::Return as u8);
+    let module = load_named_module("nj1-assume", "id", 1, code);
+    let mut vm = NyarVm::new();
+    vm.set_jit(Box::new(BaselineScalarJit));
+    assert_eq!(vm.run(&module, "id", vec![Value::I32(9)]).expect("run"), Value::I32(9));
+    assert_eq!(vm.nj1_cache_len(), 1);
+    vm.invalidate_assumption(JitAssumption::ScalarLeafShape);
+    assert_eq!(vm.nj1_cache_len(), 0);
+}
+
+#[test]
 fn invalidate_nj1_cache_clears_compiled_blobs() {
     use nyar_vm::jit::BaselineScalarJit;
     use nyar_vm::Value;

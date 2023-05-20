@@ -1,3 +1,4 @@
+use crate::assumption::JitAssumption;
 use crate::stack_map::FunctionStackMaps;
 use crate::deopt::DeoptMap;
 
@@ -14,6 +15,8 @@ pub struct JitCompiledArtifact {
     pub deopt_map: DeoptMap,
     /// 可选 NJ1（或后续版本）机器码 blob；`None` 表示仅分析产物。
     pub machine_code: Option<Vec<u8>>,
+    /// 本产物依赖的假设；任一失效则宿主须丢弃对应缓存。
+    pub assumptions: Vec<JitAssumption>,
 }
 
 impl JitCompiledArtifact {
@@ -25,6 +28,7 @@ impl JitCompiledArtifact {
             stack_maps,
             deopt_map,
             machine_code: None,
+            assumptions: Vec::new(),
         }
     }
 
@@ -35,6 +39,7 @@ impl JitCompiledArtifact {
             stack_maps,
             deopt_map,
             machine_code: None,
+            assumptions: Vec::new(),
         }
     }
 
@@ -45,6 +50,13 @@ impl JitCompiledArtifact {
             stack_maps,
             deopt_map,
             machine_code: Some(machine_code),
+            assumptions: Vec::new(),
         }
+    }
+
+    /// 附带假设列表。
+    pub fn with_assumptions(mut self, assumptions: Vec<JitAssumption>) -> Self {
+        self.assumptions = assumptions;
+        self
     }
 }

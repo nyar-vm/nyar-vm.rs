@@ -5,7 +5,7 @@ use crate::{
     error::NyarRuntimeError,
     frame::Frame,
     jit::{
-        DisabledJit, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry,
+        DisabledJit, JitAssumption, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry,
         compile_request,
     },
     module::LoadedModule,
@@ -17,6 +17,12 @@ use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
 
 /// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
 type Nj1CacheKey = (u32, String, usize);
+
+#[derive(Clone)]
+struct Nj1CacheEntry {
+    blob: Vec<u8>,
+    assumptions: Vec<JitAssumption>,
+}
 
 /// 按 stack map 条目抽取可能含引用的 local 槽（拷贝，供 `GcRoots` 借用）。
 fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
@@ -35,7 +41,7 @@ pub struct Executor {
     frames: Vec<Frame>,
     jit: Box<dyn JitCompiler>,
     /// 已成功编译的 NJ1 blob 缓存（避免每次 `run` 重编译）。
-    nj1_cache: HashMap<Nj1CacheKey, Vec<u8>>,
+    nj1_cache: HashMap<Nj1CacheKey, Nj1CacheEntry>,
 }
 
 impl Executor {
@@ -77,6 +83,12 @@ impl Executor {
     pub fn invalidate_nj1_module(&mut self, module_version: u32, module_name: &str) {
         self.nj1_cache
             .retain(|(version, name, _), _| *version != module_version || name != module_name);
+    }
+
+    /// 失效依赖给定假设的全部 NJ1 缓存条目。
+    pub fn invalidate_assumption(&mut self, assumption: JitAssumption) {
+        self.nj1_cache
+            .retain(|_, entry| !entry.assumptions.iter().any(|item| *item == assumption));
     }
 
     /// Attempts JIT compilation for one module function.
@@ -193,10 +205,17 @@ impl Executor {
         if self.jit.enabled() {
             let cache_key = (module.version, module.name.clone(), function_index);
             let blob = if let Some(cached) = self.nj1_cache.get(&cache_key) {
-                Some(cached.clone())
+                Some(cached.blob.clone())
             } else if let Ok(artifact) = self.try_jit_compile(module, function_index) {
+                let assumptions = artifact.assumptions.clone();
                 artifact.machine_code.map(|blob| {
-                    self.nj1_cache.insert(cache_key, blob.clone());
+                    self.nj1_cache.insert(
+                        cache_key,
+                        Nj1CacheEntry {
+                            blob: blob.clone(),
+                            assumptions,
+                        },
+                    );
                     blob
                 })
             } else {
