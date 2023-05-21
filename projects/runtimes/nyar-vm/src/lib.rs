@@ -43,6 +43,7 @@ pub use nyar_gc::{
     ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector,
     GcMode, GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap,
     ObjectPayload, ObjectLifetimeHint, PromotionFailure, RelocateMap, RootHandle, StrategyController, StrategyDecision,
+    StrategyTransition,
     WorkloadHints, WorkloadIntent, WriteBarrier,
 };
 pub use value::{CoroutineState, ObjectId, Value};

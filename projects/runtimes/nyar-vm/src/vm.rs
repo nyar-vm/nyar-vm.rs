@@ -168,6 +168,11 @@ impl NyarVm {
         self.executor.heap().last_strategy_decision()
     }
 
+    /// 策略模式切换证据（同模式重复刷新不追加）。
+    pub fn strategy_transition_history(&self) -> &[nyar_gc::StrategyTransition] {
+        self.executor.heap().strategy_transition_history()
+    }
+
     /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
     pub fn pin_root(&mut self, value: Value) -> nyar_gc::RootHandle {
         self.executor.heap_mut().pin_root(value)

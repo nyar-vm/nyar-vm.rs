@@ -192,6 +192,11 @@ impl ObjectHeap {
         self.strategy.last_decision()
     }
 
+    /// 策略切换证据历史。
+    pub fn strategy_transition_history(&self) -> &[crate::controller::StrategyTransition] {
+        self.strategy.transition_history()
+    }
+
     /// 策略控制器（诊断）。
     pub fn strategy(&self) -> &StrategyController {
         &self.strategy

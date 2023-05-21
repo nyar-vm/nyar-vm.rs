@@ -3,6 +3,9 @@
 use crate::intent::{IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
 use crate::policy::{GcMode, GcPolicy, WorkloadHints};
 
+/// 保留的策略切换证据条数上限。
+const MAX_STRATEGY_TRANSITIONS: usize = 32;
+
 /// 一次策略决策记录（供诊断与证据）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct StrategyDecision {
@@ -18,12 +21,25 @@ pub struct StrategyDecision {
     pub unknown_dimensions: Vec<&'static str>,
 }
 
+/// 一次可观察的策略切换（模式变化时写入；同模式刷新不记）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StrategyTransition {
+    /// 单调序号。
+    pub sequence: u64,
+    /// 切换前模式（首次决策为 `None`）。
+    pub from_mode: Option<GcMode>,
+    /// 本次决策。
+    pub decision: StrategyDecision,
+}
+
 /// 合并进程级意图与嵌套阶段，驱动 [`GcPolicy`]。
 #[derive(Debug, Default)]
 pub struct StrategyController {
     process: Option<WorkloadIntent>,
     phases: Vec<WorkloadIntent>,
     last_decision: Option<StrategyDecision>,
+    transitions: Vec<StrategyTransition>,
+    next_sequence: u64,
 }
 
 impl StrategyController {
@@ -84,10 +100,30 @@ impl StrategyController {
         self.last_decision.as_ref()
     }
 
+    /// 策略切换证据（旧→新；同模式重复 `decide` 不追加）。
+    pub fn transition_history(&self) -> &[StrategyTransition] {
+        &self.transitions
+    }
+
     /// 根据当前意图栈计算决策（不写 policy）。
     pub fn decide(&mut self) -> StrategyDecision {
         let layers: Vec<&WorkloadIntent> = self.process.iter().chain(self.phases.iter()).collect();
         let decision = merge_layers(&layers);
+        let from_mode = self.last_decision.as_ref().map(|d| d.mode);
+        let mode_changed = from_mode != Some(decision.mode);
+        if mode_changed {
+            let sequence = self.next_sequence;
+            self.next_sequence = self.next_sequence.saturating_add(1);
+            self.transitions.push(StrategyTransition {
+                sequence,
+                from_mode,
+                decision: decision.clone(),
+            });
+            if self.transitions.len() > MAX_STRATEGY_TRANSITIONS {
+                let drop = self.transitions.len() - MAX_STRATEGY_TRANSITIONS;
+                self.transitions.drain(0..drop);
+            }
+        }
         self.last_decision = Some(decision.clone());
         decision
     }
@@ -283,6 +319,26 @@ mod tests {
         assert_eq!(decision.mode, GcMode::ConcurrentMarkReserved);
         assert_eq!(decision.hints.pause_budget_ms, Some(5));
         assert!(!decision.hints.allow_heavy_collection);
+    }
+
+    #[test]
+    fn transition_history_records_mode_changes_only() {
+        let mut ctrl = StrategyController::new();
+        let first = ctrl.decide();
+        assert_eq!(first.mode, GcMode::MarkSweep);
+        assert_eq!(ctrl.transition_history().len(), 1);
+        assert_eq!(ctrl.transition_history()[0].from_mode, None);
+
+        ctrl.decide();
+        assert_eq!(ctrl.transition_history().len(), 1, "same mode must not append");
+
+        ctrl.set_process_intent(WorkloadIntent::sample_online_request()).unwrap();
+        let second = ctrl.decide();
+        assert_eq!(second.mode, GcMode::GenerationalLowLatency);
+        assert_eq!(ctrl.transition_history().len(), 2);
+        assert_eq!(ctrl.transition_history()[1].from_mode, Some(GcMode::MarkSweep));
+        assert_eq!(ctrl.transition_history()[1].decision.mode, GcMode::GenerationalLowLatency);
+        assert!(ctrl.transition_history()[1].decision.reason.contains("merged"));
     }
 
     #[test]

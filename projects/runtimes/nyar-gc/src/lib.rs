@@ -28,7 +28,7 @@ pub use barrier::{WriteBarrier, write_value_slot};
 pub use collector::{GcRoots, GarbageCollector, TracePollReport};
 pub use concurrent::{ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState};
 pub use concurrent_ticker::ConcurrentMarkTicker;
-pub use controller::{StrategyController, StrategyDecision};
+pub use controller::{StrategyController, StrategyDecision, StrategyTransition};
 pub use generation::Generation;
 pub use heap::{ObjectHeap, ObjectPayload};
 pub use intent::{IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
