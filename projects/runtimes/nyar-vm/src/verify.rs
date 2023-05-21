@@ -15,6 +15,12 @@ const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
 
+/// 单函数外码字节上限（体积预算；超限 fail-closed）。
+const MAX_FUNCTION_CODE_BYTES: usize = 64 * 1024;
+
+/// 整模块外码字节上限。
+const MAX_MODULE_CODE_BYTES: usize = 4 * 1024 * 1024;
+
 /// 粗类型栈槽 / 局部槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StackKind {
@@ -95,6 +101,13 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
         return Err(NyarRuntimeError::ModuleLoad(format!(
             "unsupported module version {}; expected {NYAR_VERSION}",
             data.version
+        )));
+    }
+
+    if data.code_bytes.len() > MAX_MODULE_CODE_BYTES {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "module code section length {} exceeds limit {MAX_MODULE_CODE_BYTES}",
+            data.code_bytes.len()
         )));
     }
 
@@ -202,6 +215,11 @@ fn verify_function(
         return Err(NyarRuntimeError::ModuleLoad(format!(
             "function[{function_index}] code range [{start}, {end}) exceeds code section length {}",
             data.code_bytes.len()
+        )));
+    }
+    if length > MAX_FUNCTION_CODE_BYTES {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function[{function_index}] code length {length} exceeds limit {MAX_FUNCTION_CODE_BYTES}"
         )));
     }
 
@@ -959,6 +977,23 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("local conflict");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("local type conflict")));
+    }
+
+    #[test]
+    fn rejects_function_code_over_size_budget() {
+        let mut module = empty_module();
+        let mut code = vec![NyarHeadCode::Nop as u8; MAX_FUNCTION_CODE_BYTES + 1];
+        code.push(NyarHeadCode::Return as u8);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("size budget");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("exceeds limit")));
     }
 
     #[test]
