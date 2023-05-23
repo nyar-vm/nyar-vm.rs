@@ -28,7 +28,7 @@ pub use machine_code::{
     I32Binop, I32Cmp, IMM_ON_LEFT, IMM_ON_RIGHT, MACHINE_CODE_MAGIC, MachineCodeError, ScalarProgram,
     decode_scalar_program, encode_ret_const_i32, encode_ret_i32_add_locals, encode_ret_i32_binop_imm_local,
     encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals,
-    encode_ret_i32_select_cmp_locals, encode_ret_local,
+    encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_local,
 };
 pub use request::{JitCompileRequest, JitFunctionSpec};
 pub use stack_map::{FunctionStackMaps, StackMapEntry, build_conservative_stack_maps};

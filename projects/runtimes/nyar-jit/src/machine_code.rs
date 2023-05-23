@@ -31,6 +31,8 @@ pub mod op {
     pub const RET_I32_BINOP_IMM_LOCAL: u8 = 0x0A;
     /// `return imm_i32 cmp locals[slot]` 或反向（见 flags）→ `0`/`1`。
     pub const RET_I32_CMP_IMM_LOCAL: u8 = 0x0B;
+    /// `return then_imm if locals[a] cmp locals[b] else else_imm`。
+    pub const RET_I32_SELECT_CMP_CONSTS: u8 = 0x0C;
 }
 
 /// `RET_I32_*_IMM_LOCAL`：立即数在二元运算左侧。
@@ -222,6 +224,19 @@ pub fn encode_ret_i32_select_cmp_locals(cmp: I32Cmp, a: u16, b: u16, then_slot: 
     out
 }
 
+/// 条件选择：比较成立返回 `then_imm`，否则返回 `else_imm`。
+pub fn encode_ret_i32_select_cmp_consts(cmp: I32Cmp, a: u16, b: u16, then_imm: i32, else_imm: i32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(18);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_I32_SELECT_CMP_CONSTS);
+    out.push(cmp.to_u8());
+    out.extend_from_slice(&a.to_le_bytes());
+    out.extend_from_slice(&b.to_le_bytes());
+    out.extend_from_slice(&then_imm.to_le_bytes());
+    out.extend_from_slice(&else_imm.to_le_bytes());
+    out
+}
+
 /// 解码失败。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MachineCodeError {
@@ -307,6 +322,19 @@ pub enum ScalarProgram {
         local: u16,
         /// 立即数是否为左操作数。
         imm_on_left: bool,
+    },
+    /// 比较成立返回 `then_imm`，否则返回 `else_imm`。
+    RetI32SelectCmpConsts {
+        /// 比较种类。
+        cmp: I32Cmp,
+        /// 左操作数 local。
+        a: u16,
+        /// 右操作数 local。
+        b: u16,
+        /// 真分支立即数。
+        then_imm: i32,
+        /// 假分支立即数。
+        else_imm: i32,
     },
 }
 
@@ -414,6 +442,23 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
                 imm_on_left,
             })
         }
+        op::RET_I32_SELECT_CMP_CONSTS => {
+            if blob.len() != 18 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let cmp = I32Cmp::from_u8(blob[5]).ok_or(MachineCodeError::InvalidBlob)?;
+            let a = u16::from_le_bytes([blob[6], blob[7]]);
+            let b = u16::from_le_bytes([blob[8], blob[9]]);
+            let then_imm = i32::from_le_bytes([blob[10], blob[11], blob[12], blob[13]]);
+            let else_imm = i32::from_le_bytes([blob[14], blob[15], blob[16], blob[17]]);
+            Ok(ScalarProgram::RetI32SelectCmpConsts {
+                cmp,
+                a,
+                b,
+                then_imm,
+                else_imm,
+            })
+        }
         other => Err(MachineCodeError::UnknownOpcode(other)),
     }
 }
@@ -465,6 +510,21 @@ mod tests {
                 b: 1,
                 then_slot: 2,
                 else_slot: 3
+            }
+        );
+    }
+
+    #[test]
+    fn roundtrip_ret_i32_select_cmp_consts() {
+        let blob = encode_ret_i32_select_cmp_consts(I32Cmp::Eq, 0, 1, 7, 9);
+        assert_eq!(
+            decode_scalar_program(&blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpConsts {
+                cmp: I32Cmp::Eq,
+                a: 0,
+                b: 1,
+                then_imm: 7,
+                else_imm: 9
             }
         );
     }

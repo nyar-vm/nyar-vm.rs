@@ -108,6 +108,17 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
             let slot = if cmp.eval(lhs, rhs) { *then_slot } else { *else_slot };
             local_at(locals, slot).cloned()
         }
+        ScalarProgram::RetI32SelectCmpConsts {
+            cmp,
+            a,
+            b,
+            then_imm,
+            else_imm,
+        } => {
+            let lhs = i32_local(locals, *a)?;
+            let rhs = i32_local(locals, *b)?;
+            Ok(Value::I32(if cmp.eval(lhs, rhs) { *then_imm } else { *else_imm }))
+        }
     }
 }
 
@@ -130,7 +141,8 @@ mod tests {
     use super::*;
     use nyar_jit::{
         I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
-        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
+        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
+        encode_ret_i32_select_cmp_locals, encode_ret_local,
     };
 
     #[test]
@@ -184,6 +196,20 @@ mod tests {
         assert_eq!(
             execute_nj1_blob(&encode_ret_i32_cmp_imm_local(I32Cmp::Eq, 7, 0, true), &locals).unwrap(),
             Value::I32(1)
+        );
+    }
+
+    #[test]
+    fn executes_ret_i32_select_cmp_consts() {
+        let locals = vec![Value::I32(1), Value::I32(1)];
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_select_cmp_consts(I32Cmp::Eq, 0, 1, 7, 9), &locals).unwrap(),
+            Value::I32(7)
+        );
+        let locals = vec![Value::I32(1), Value::I32(0)];
+        assert_eq!(
+            execute_nj1_blob(&encode_ret_i32_select_cmp_consts(I32Cmp::Eq, 0, 1, 7, 9), &locals).unwrap(),
+            Value::I32(9)
         );
     }
 

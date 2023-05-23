@@ -7,7 +7,8 @@ use crate::{
     build_conservative_stack_maps,
     machine_code::{
         I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
-        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_locals, encode_ret_local,
+        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
+        encode_ret_i32_select_cmp_locals, encode_ret_local,
     },
 };
 
@@ -40,7 +41,7 @@ impl JitCompiler for BaselineScalarJit {
 
 /// 尝试从外码切片匹配基线标量程序。
 pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
-    if let Some(blob) = match_select_cmp_return(code) {
+    if let Some(blob) = match_select_cmp_return(code, constant_i32) {
         return Some(blob);
     }
     if let Some(blob) = match_const_const_op_return(code, constant_i32) {
@@ -280,8 +281,8 @@ fn match_load_load_binop_return(code: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-/// `Load a; Load b; Cmp; JumpIfFalse|JumpIfTrue else; Load then; Return; Load else; Return`
-fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
+/// `Load a; Load b; Cmp; JumpIfFalse|JumpIfTrue else; (Load|Const) then; Return; (Load|Const) else; Return`
+fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
     let mut pc = 0usize;
     let a_ins = decode_at(code, pc);
     if a_ins.size == 0 {
@@ -333,21 +334,33 @@ fn match_select_cmp_return(code: &[u8]) -> Option<Vec<u8>> {
     if pc != code.len() {
         return None;
     }
-    let then_slot = load_slot(&then_ins)?;
-    let else_slot = load_slot(&else_ins)?;
-    // JumpIfTrue 跳走「真」分支：落空路径是假 → 交换 then/else。
-    let (then_slot, else_slot) = if invert {
-        (else_slot, then_slot)
+    let a = load_slot(&a_ins)?;
+    let b = load_slot(&b_ins)?;
+
+    if let (Some(then_slot), Some(else_slot)) = (load_slot(&then_ins), load_slot(&else_ins)) {
+        let (then_slot, else_slot) = if invert {
+            (else_slot, then_slot)
+        } else {
+            (then_slot, else_slot)
+        };
+        return Some(encode_ret_i32_select_cmp_locals(cmp, a, b, then_slot, else_slot));
+    }
+
+    let then_imm = const_i32(&then_ins, constant_i32)?;
+    let else_imm = const_i32(&else_ins, constant_i32)?;
+    let (then_imm, else_imm) = if invert {
+        (else_imm, then_imm)
     } else {
-        (then_slot, else_slot)
+        (then_imm, else_imm)
     };
-    Some(encode_ret_i32_select_cmp_locals(
-        cmp,
-        load_slot(&a_ins)?,
-        load_slot(&b_ins)?,
-        then_slot,
-        else_slot,
-    ))
+    Some(encode_ret_i32_select_cmp_consts(cmp, a, b, then_imm, else_imm))
+}
+
+fn const_i32(ins: &nyar_bytecode::NyarInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
+    if ins.code != NyarHeadCode::Const || ins.operand1 < 0 {
+        return None;
+    }
+    constant_i32.get(ins.operand1 as usize).copied().flatten()
 }
 
 fn load_slot(ins: &nyar_bytecode::NyarInstruction) -> Option<u16> {
@@ -541,6 +554,43 @@ mod tests {
                 imm: 5,
                 local: 1,
                 imm_on_left: false
+            }
+        );
+    }
+
+    #[test]
+    fn compiles_i32_select_cmp_consts() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::I32Eq as u8);
+        let br_pc = code.len();
+        code.push(NyarHeadCode::JumpIfFalse as u8);
+        let offset_pos = code.len();
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Return as u8);
+        let else_pc = code.len();
+        let rel = (else_pc as i32) - (br_pc as i32);
+        code[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&1i32.to_le_bytes());
+        code.push(NyarHeadCode::Return as u8);
+
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(7), Some(9)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpConsts {
+                cmp: I32Cmp::Eq,
+                a: 0,
+                b: 1,
+                then_imm: 7,
+                else_imm: 9
             }
         );
     }
