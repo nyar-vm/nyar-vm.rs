@@ -458,6 +458,29 @@ fn concurrent_trace_gray_slices_reach_nested_refs() {
 }
 
 #[test]
+fn concurrent_trace_records_root_handshake_before_gray_scan() {
+    use nyar_gc::GcPolicy;
+
+    let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
+    let live = heap.alloc(empty_layout(0));
+    let pinned = heap.alloc(empty_layout(1));
+    let handle = heap.pin_root(Value::Object(pinned));
+    let stack = [Value::Object(live)];
+    let locals = [Value::Null, Value::Object(live)];
+    let globals = [Value::Null];
+    let mut gc = GarbageCollector::new();
+
+    assert!(!gc.poll_concurrent_mark(roots(&stack, &[&locals], &globals, &[]), &mut heap));
+    let hs = gc.last_root_handshake();
+    assert_eq!(hs.stack_slots, 1);
+    assert_eq!(hs.frame_local_slots, 2);
+    assert_eq!(hs.global_slots, 1);
+    assert_eq!(hs.host_roots, 1);
+    assert!(hs.gray_after_roots >= 1);
+    heap.unpin_root(handle);
+}
+
+#[test]
 fn concurrent_trace_poll_records_work_units() {
     use nyar_gc::{ConcurrentMarkState, GcPolicy};
 

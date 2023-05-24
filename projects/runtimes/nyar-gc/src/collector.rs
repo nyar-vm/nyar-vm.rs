@@ -22,6 +22,23 @@ pub struct TracePollReport {
     pub gray_pending_before: u32,
 }
 
+/// ConcurrentTrace 周期开始时的根握手证据（根发布后、灰扫描前）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RootHandshakeReport {
+    /// 操作数栈槽数。
+    pub stack_slots: u32,
+    /// 帧 local 槽总数。
+    pub frame_local_slots: u32,
+    /// 模块全局槽数。
+    pub global_slots: u32,
+    /// 帧关联 coroutine 根数。
+    pub frame_coroutines: u32,
+    /// 宿主钉住根数。
+    pub host_roots: u32,
+    /// 入灰后灰队列长度（根闭包尚未展开）。
+    pub gray_after_roots: u32,
+}
+
 /// Root set for a mark-sweep collection（不含宿主根；宿主根始终从堆内读取）。
 #[derive(Debug, Clone, Copy)]
 pub struct GcRoots<'a> {
@@ -58,6 +75,8 @@ pub struct GarbageCollector {
     last_concurrent_ticks: u64,
     /// 最近一次 ConcurrentTrace poll 的工作量。
     last_trace_poll: TracePollReport,
+    /// 最近一次周期开始时的根握手。
+    last_root_handshake: RootHandshakeReport,
 }
 
 impl Default for GarbageCollector {
@@ -71,6 +90,7 @@ impl Default for GarbageCollector {
             last_relocate: RelocateMap::new(),
             last_concurrent_ticks: 0,
             last_trace_poll: TracePollReport::default(),
+            last_root_handshake: RootHandshakeReport::default(),
         }
     }
 }
@@ -124,6 +144,11 @@ impl GarbageCollector {
     /// 最近一次 ConcurrentTrace poll 的工作量记账。
     pub fn last_trace_poll(&self) -> TracePollReport {
         self.last_trace_poll
+    }
+
+    /// 最近一次 ConcurrentTrace 周期的根握手证据。
+    pub fn last_root_handshake(&self) -> RootHandshakeReport {
+        self.last_root_handshake
     }
 
     /// 按堆上 [`crate::GcPolicy`] 选择 nursery、全堆或并发标记（单线程模拟）回收。
@@ -189,8 +214,18 @@ impl GarbageCollector {
                 self.marked.fill(false);
                 self.gray.clear();
                 // 根快照只入灰，不递归扫闭包；闭包由 ConcurrentTrace 有界切片完成。
+                let frame_local_slots = roots.frame_locals.iter().map(|locals| locals.len() as u32).sum();
+                let host_roots = heap.host_roots().live_count() as u32;
                 self.enqueue_interpreter_roots(roots);
                 self.enqueue_host_roots(heap);
+                self.last_root_handshake = RootHandshakeReport {
+                    stack_slots: roots.stack.len() as u32,
+                    frame_local_slots,
+                    global_slots: roots.globals.len() as u32,
+                    frame_coroutines: roots.frame_coroutines.len() as u32,
+                    host_roots,
+                    gray_after_roots: self.gray.len() as u32,
+                };
                 heap.concurrent_mark_mut()
                     .transition(ConcurrentMarkEvent::RootsReady)
                     .expect("RootsReady");
