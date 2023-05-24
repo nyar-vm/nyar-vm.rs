@@ -15,6 +15,11 @@ pub const NYAR_VERSION: u32 = 2;
 /// 与 [`NYAR_VERSION`] 同步；格式破坏时两者一并递增。
 pub const BYTECODE_FORMAT_VERSION: u32 = NYAR_VERSION;
 
+/// 已删除的 v1 `CallNative` 头码（`0xD1`）。
+///
+/// 不得再进入 [`NyarHeadCode`]；加载期验证器须拒绝含此字节的 v2 模块，改用 [`NyarHeadCode::CallImport`]。
+pub const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
+
 /// File header size in bytes.
 pub const HEADER_SIZE: usize = 16;
 
@@ -948,6 +953,13 @@ mod tests {
     fn bytecode_format_version_tracks_nyar_version() {
         assert_eq!(BYTECODE_FORMAT_VERSION, NYAR_VERSION);
         assert_eq!(BYTECODE_FORMAT_VERSION, 2);
+    }
+
+    #[test]
+    fn obsolete_call_native_is_not_a_live_head_code() {
+        assert_eq!(OBSOLETE_CALL_NATIVE, 0xD1);
+        assert_eq!(NyarHeadCode::from_u8(OBSOLETE_CALL_NATIVE), None);
+        assert_ne!(NyarHeadCode::CallImport as u8, OBSOLETE_CALL_NATIVE);
     }
 
     #[test]

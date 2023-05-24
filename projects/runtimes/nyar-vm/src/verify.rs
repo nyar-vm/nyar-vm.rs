@@ -2,15 +2,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use nyar_bytecode::{NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, decode_at};
+use nyar_bytecode::{
+    NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, OBSOLETE_CALL_NATIVE, decode_at,
+};
 
 use crate::{
     error::NyarRuntimeError,
     host::resolve_import,
 };
-
-/// 已删除的 `CallNative` 操作码（v1）；v2 模块不得再出现。
-const OBSOLETE_CALL_NATIVE: u8 = 0xD1;
 
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
