@@ -119,6 +119,22 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
             let rhs = i32_local(locals, *b)?;
             Ok(Value::I32(if cmp.eval(lhs, rhs) { *then_imm } else { *else_imm }))
         }
+        ScalarProgram::RetI32SelectCmpMixed {
+            cmp,
+            a,
+            b,
+            then_arm,
+            else_arm,
+        } => {
+            let lhs = i32_local(locals, *a)?;
+            let rhs = i32_local(locals, *b)?;
+            let arm = if cmp.eval(lhs, rhs) { then_arm } else { else_arm };
+            match arm {
+                nyar_jit::SelectArm::Local(slot) => local_at(locals, *slot).cloned(),
+                nyar_jit::SelectArm::Imm(value) => Ok(Value::I32(*value)),
+            }
+        }
+        ScalarProgram::RetVoid => Ok(Value::Null),
     }
 }
 
@@ -140,9 +156,9 @@ fn i32_local(locals: &[Value], slot: u16) -> Result<i32, NyarRuntimeError> {
 mod tests {
     use super::*;
     use nyar_jit::{
-        I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
+        I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
         encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
-        encode_ret_i32_select_cmp_locals, encode_ret_local,
+        encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
     };
 
     #[test]
@@ -232,5 +248,28 @@ mod tests {
             execute_nj1_blob(&encode_ret_i32_select_cmp_locals(I32Cmp::GtS, 0, 1, 2, 3), &locals).unwrap(),
             Value::I32(20)
         );
+    }
+
+    #[test]
+    fn executes_ret_i32_select_cmp_mixed_and_void() {
+        let locals = vec![Value::I32(1), Value::I32(1), Value::I32(42)];
+        assert_eq!(
+            execute_nj1_blob(
+                &encode_ret_i32_select_cmp_mixed(I32Cmp::Eq, 0, 1, SelectArm::Imm(7), SelectArm::Local(2)),
+                &locals
+            )
+            .unwrap(),
+            Value::I32(7)
+        );
+        let locals = vec![Value::I32(1), Value::I32(0), Value::I32(42)];
+        assert_eq!(
+            execute_nj1_blob(
+                &encode_ret_i32_select_cmp_mixed(I32Cmp::Eq, 0, 1, SelectArm::Imm(7), SelectArm::Local(2)),
+                &locals
+            )
+            .unwrap(),
+            Value::I32(42)
+        );
+        assert_eq!(execute_nj1_blob(&encode_ret_void(), &[]).unwrap(), Value::Null);
     }
 }

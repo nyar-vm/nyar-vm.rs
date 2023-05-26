@@ -6,9 +6,10 @@ use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, baseline_scalar_assumptions, build_baseline_deopt_map,
     build_conservative_stack_maps,
     machine_code::{
-        I32Binop, I32Cmp, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
-        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
-        encode_ret_i32_select_cmp_locals, encode_ret_local,
+        I32Binop, I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local,
+        encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals,
+        encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed,
+        encode_ret_local, encode_ret_void,
     },
 };
 
@@ -62,7 +63,19 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_load_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_void_return(code) {
+        return Some(blob);
+    }
     None
+}
+
+/// 仅 `Return` → void 叶。
+fn match_void_return(code: &[u8]) -> Option<Vec<u8>> {
+    let ret = decode_at(code, 0);
+    if ret.size == 0 || ret.code != NyarHeadCode::Return || ret.size as usize != code.len() {
+        return None;
+    }
+    Some(encode_ret_void())
 }
 
 /// `Const; Const; Op; Return` → 编译期折叠为 `RetConstI32`。
@@ -346,14 +359,38 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
         return Some(encode_ret_i32_select_cmp_locals(cmp, a, b, then_slot, else_slot));
     }
 
-    let then_imm = const_i32(&then_ins, constant_i32)?;
-    let else_imm = const_i32(&else_ins, constant_i32)?;
-    let (then_imm, else_imm) = if invert {
-        (else_imm, then_imm)
-    } else {
-        (then_imm, else_imm)
-    };
-    Some(encode_ret_i32_select_cmp_consts(cmp, a, b, then_imm, else_imm))
+    let then_imm = const_i32(&then_ins, constant_i32);
+    let else_imm = const_i32(&else_ins, constant_i32);
+    let then_slot = load_slot(&then_ins);
+    let else_slot = load_slot(&else_ins);
+
+    match (then_imm, else_imm, then_slot, else_slot) {
+        (Some(then_imm), Some(else_imm), _, _) => {
+            let (then_imm, else_imm) = if invert {
+                (else_imm, then_imm)
+            } else {
+                (then_imm, else_imm)
+            };
+            Some(encode_ret_i32_select_cmp_consts(cmp, a, b, then_imm, else_imm))
+        }
+        (Some(then_imm), None, _, Some(else_slot)) => {
+            let (then_arm, else_arm) = if invert {
+                (SelectArm::Local(else_slot), SelectArm::Imm(then_imm))
+            } else {
+                (SelectArm::Imm(then_imm), SelectArm::Local(else_slot))
+            };
+            Some(encode_ret_i32_select_cmp_mixed(cmp, a, b, then_arm, else_arm))
+        }
+        (None, Some(else_imm), Some(then_slot), _) => {
+            let (then_arm, else_arm) = if invert {
+                (SelectArm::Imm(else_imm), SelectArm::Local(then_slot))
+            } else {
+                (SelectArm::Local(then_slot), SelectArm::Imm(else_imm))
+            };
+            Some(encode_ret_i32_select_cmp_mixed(cmp, a, b, then_arm, else_arm))
+        }
+        _ => None,
+    }
 }
 
 fn const_i32(ins: &nyar_bytecode::NyarInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
@@ -627,5 +664,50 @@ mod tests {
                 else_slot: 3
             }
         );
+    }
+
+    #[test]
+    fn compiles_i32_select_cmp_mixed() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::I32Eq as u8);
+        let br_pc = code.len();
+        code.push(NyarHeadCode::JumpIfFalse as u8);
+        let offset_pos = code.len();
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Return as u8);
+        let else_pc = code.len();
+        let rel = (else_pc as i32) - (br_pc as i32);
+        code[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
+        emit_load(&mut code, 2);
+        code.push(NyarHeadCode::Return as u8);
+
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(7)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpMixed {
+                cmp: I32Cmp::Eq,
+                a: 0,
+                b: 1,
+                then_arm: SelectArm::Imm(7),
+                else_arm: SelectArm::Local(2),
+            }
+        );
+    }
+
+    #[test]
+    fn compiles_void_return() {
+        let code = vec![NyarHeadCode::Return as u8];
+        let mut jit = BaselineScalarJit;
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
 }

@@ -33,6 +33,24 @@ pub mod op {
     pub const RET_I32_CMP_IMM_LOCAL: u8 = 0x0B;
     /// `return then_imm if locals[a] cmp locals[b] else else_imm`。
     pub const RET_I32_SELECT_CMP_CONSTS: u8 = 0x0C;
+    /// `return then/else` 混合 local 与立即数（见 [`SELECT_THEN_IMM`] / [`SELECT_ELSE_IMM`]）。
+    pub const RET_I32_SELECT_CMP_MIXED: u8 = 0x0D;
+    /// `return` 无值（void 叶）。
+    pub const RET_VOID: u8 = 0x0E;
+}
+
+/// 混合 select：真分支为立即数（假分支为 local）。
+pub const SELECT_THEN_IMM: u8 = 0x01;
+/// 混合 select：假分支为立即数（真分支为 local）。
+pub const SELECT_ELSE_IMM: u8 = 0x02;
+
+/// select 臂：local 槽或立即 i32。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectArm {
+    /// 拷贝 `locals[slot]`。
+    Local(u16),
+    /// 立即 i32。
+    Imm(i32),
 }
 
 /// `RET_I32_*_IMM_LOCAL`：立即数在二元运算左侧。
@@ -237,6 +255,47 @@ pub fn encode_ret_i32_select_cmp_consts(cmp: I32Cmp, a: u16, b: u16, then_imm: i
     out
 }
 
+/// 条件选择：一臂 local、一臂立即数（`flags` 恰有一位）。
+pub fn encode_ret_i32_select_cmp_mixed(
+    cmp: I32Cmp,
+    a: u16,
+    b: u16,
+    then_arm: SelectArm,
+    else_arm: SelectArm,
+) -> Vec<u8> {
+    let (flags, then_bytes, else_bytes) = match (then_arm, else_arm) {
+        (SelectArm::Imm(then_imm), SelectArm::Local(else_slot)) => {
+            let mut else_pad = [0u8; 4];
+            else_pad[..2].copy_from_slice(&else_slot.to_le_bytes());
+            (SELECT_THEN_IMM, then_imm.to_le_bytes(), else_pad)
+        }
+        (SelectArm::Local(then_slot), SelectArm::Imm(else_imm)) => {
+            let mut then_pad = [0u8; 4];
+            then_pad[..2].copy_from_slice(&then_slot.to_le_bytes());
+            (SELECT_ELSE_IMM, then_pad, else_imm.to_le_bytes())
+        }
+        _ => panic!("encode_ret_i32_select_cmp_mixed requires exactly one Imm arm"),
+    };
+    let mut out = Vec::with_capacity(19);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_I32_SELECT_CMP_MIXED);
+    out.push(cmp.to_u8());
+    out.extend_from_slice(&a.to_le_bytes());
+    out.extend_from_slice(&b.to_le_bytes());
+    out.push(flags);
+    out.extend_from_slice(&then_bytes);
+    out.extend_from_slice(&else_bytes);
+    out
+}
+
+/// void 返回叶。
+pub fn encode_ret_void() -> Vec<u8> {
+    let mut out = Vec::with_capacity(5);
+    out.extend_from_slice(MACHINE_CODE_MAGIC);
+    out.push(op::RET_VOID);
+    out
+}
+
 /// 解码失败。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MachineCodeError {
@@ -336,6 +395,21 @@ pub enum ScalarProgram {
         /// 假分支立即数。
         else_imm: i32,
     },
+    /// 比较成立返回真臂，否则假臂（一臂 local、一臂立即数）。
+    RetI32SelectCmpMixed {
+        /// 比较种类。
+        cmp: I32Cmp,
+        /// 左操作数 local。
+        a: u16,
+        /// 右操作数 local。
+        b: u16,
+        /// 真分支。
+        then_arm: SelectArm,
+        /// 假分支。
+        else_arm: SelectArm,
+    },
+    /// 无返回值。
+    RetVoid,
 }
 
 /// 解码 NJ1 blob。
@@ -459,6 +533,41 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
                 else_imm,
             })
         }
+        op::RET_I32_SELECT_CMP_MIXED => {
+            if blob.len() != 19 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            let cmp = I32Cmp::from_u8(blob[5]).ok_or(MachineCodeError::InvalidBlob)?;
+            let a = u16::from_le_bytes([blob[6], blob[7]]);
+            let b = u16::from_le_bytes([blob[8], blob[9]]);
+            let flags = blob[10];
+            let then_raw = i32::from_le_bytes([blob[11], blob[12], blob[13], blob[14]]);
+            let else_raw = i32::from_le_bytes([blob[15], blob[16], blob[17], blob[18]]);
+            let (then_arm, else_arm) = match flags {
+                SELECT_THEN_IMM => (
+                    SelectArm::Imm(then_raw),
+                    SelectArm::Local(u16::from_le_bytes([blob[15], blob[16]])),
+                ),
+                SELECT_ELSE_IMM => (
+                    SelectArm::Local(u16::from_le_bytes([blob[11], blob[12]])),
+                    SelectArm::Imm(else_raw),
+                ),
+                _ => return Err(MachineCodeError::InvalidBlob),
+            };
+            Ok(ScalarProgram::RetI32SelectCmpMixed {
+                cmp,
+                a,
+                b,
+                then_arm,
+                else_arm,
+            })
+        }
+        op::RET_VOID => {
+            if blob.len() != 5 {
+                return Err(MachineCodeError::InvalidBlob);
+            }
+            Ok(ScalarProgram::RetVoid)
+        }
         other => Err(MachineCodeError::UnknownOpcode(other)),
     }
 }
@@ -551,5 +660,44 @@ mod tests {
                 imm_on_left: false
             }
         );
+    }
+
+    #[test]
+    fn roundtrip_ret_i32_select_cmp_mixed_and_void() {
+        let blob = encode_ret_i32_select_cmp_mixed(
+            I32Cmp::Eq,
+            0,
+            1,
+            SelectArm::Imm(7),
+            SelectArm::Local(2),
+        );
+        assert_eq!(
+            decode_scalar_program(&blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpMixed {
+                cmp: I32Cmp::Eq,
+                a: 0,
+                b: 1,
+                then_arm: SelectArm::Imm(7),
+                else_arm: SelectArm::Local(2),
+            }
+        );
+        let blob = encode_ret_i32_select_cmp_mixed(
+            I32Cmp::Ne,
+            0,
+            1,
+            SelectArm::Local(3),
+            SelectArm::Imm(9),
+        );
+        assert_eq!(
+            decode_scalar_program(&blob).unwrap(),
+            ScalarProgram::RetI32SelectCmpMixed {
+                cmp: I32Cmp::Ne,
+                a: 0,
+                b: 1,
+                then_arm: SelectArm::Local(3),
+                else_arm: SelectArm::Imm(9),
+            }
+        );
+        assert_eq!(decode_scalar_program(&encode_ret_void()).unwrap(), ScalarProgram::RetVoid);
     }
 }
