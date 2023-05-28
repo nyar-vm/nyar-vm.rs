@@ -149,6 +149,16 @@ impl Executor {
         self.gc.gray_budget_per_slice()
     }
 
+    /// 最近一次 ConcurrentTrace poll 的工作量记账。
+    pub fn last_trace_poll(&self) -> nyar_gc::TracePollReport {
+        self.gc.last_trace_poll()
+    }
+
+    /// 最近一次 ConcurrentTrace 周期的根握手证据。
+    pub fn last_root_handshake(&self) -> nyar_gc::RootHandshakeReport {
+        self.gc.last_root_handshake()
+    }
+
     /// Executes a function in `module` and returns its result value.
     pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])
@@ -529,5 +539,31 @@ mod tests {
         };
         let selected = select_local_roots(&locals, &entry);
         assert_eq!(selected, vec![Value::I32(1), Value::I32(3)]);
+    }
+
+    #[test]
+    fn concurrent_collect_exposes_root_handshake_on_executor() {
+        use nyar_gc::{GcPolicy, ObjectPayload};
+
+        let mut executor = Executor::new();
+        *executor.heap_mut().policy_mut() = GcPolicy::concurrent_mark_reserved();
+        let live = executor.heap_mut().alloc(ObjectPayload::LayoutObject {
+            layout_id: 0,
+            slots: vec![],
+        });
+        let stack = [Value::Object(live)];
+        let _ = executor.gc.collect_for_policy(
+            GcRoots {
+                stack: &stack,
+                frame_locals: &[],
+                globals: &[],
+                frame_coroutines: &[],
+            },
+            &mut executor.heap,
+        );
+        let hs = executor.last_root_handshake();
+        assert_eq!(hs.stack_slots, 1);
+        assert!(hs.gray_after_roots >= 1);
+        let _ = executor.last_trace_poll();
     }
 }

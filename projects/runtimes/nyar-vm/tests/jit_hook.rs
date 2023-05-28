@@ -329,6 +329,21 @@ fn workload_hints_tighten_gray_budget_on_vm() {
 }
 
 #[test]
+fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
+    use nyar_gc::GcMode;
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let text = include_str!("../fixtures/workload/concurrent-interactive.json");
+    let intent = parse_workload_intent_json(text).expect("parse");
+    let mut vm = NyarVm::new();
+    let decision = vm.apply_workload_intent(intent).expect("apply");
+    assert_eq!(decision.mode, GcMode::ConcurrentMarkReserved);
+    assert!(vm.strategy_transition_history().len() >= 1);
+    let _ = vm.last_trace_poll();
+    let _ = vm.last_root_handshake();
+}
+
+#[test]
 fn install_inline_deopt_chain_orders_outer_then_inner() {
     use nyar_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
 

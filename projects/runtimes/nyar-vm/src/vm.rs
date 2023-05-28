@@ -139,6 +139,16 @@ impl NyarVm {
         self.executor.gray_budget_per_slice()
     }
 
+    /// 最近一次 ConcurrentTrace poll 的工作量记账。
+    pub fn last_trace_poll(&self) -> nyar_gc::TracePollReport {
+        self.executor.last_trace_poll()
+    }
+
+    /// 最近一次 ConcurrentTrace 周期的根握手证据。
+    pub fn last_root_handshake(&self) -> nyar_gc::RootHandshakeReport {
+        self.executor.last_root_handshake()
+    }
+
     /// 应用进程级工作负载意图并刷新 GC 策略。
     pub fn apply_workload_intent(
         &mut self,
