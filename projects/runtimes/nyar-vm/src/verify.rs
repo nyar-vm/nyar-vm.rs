@@ -636,7 +636,7 @@ fn stack_transfer(
 mod tests {
     use super::*;
     use crate::host::HOST_IMPORT_MODULE;
-    use nyar_bytecode::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData};
+    use nyar_bytecode::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData, emit_imm1, emit_plain};
 
     fn empty_module() -> NyarModuleData {
         NyarModuleData {
@@ -652,15 +652,6 @@ mod tests {
             init_function_indices: Vec::new(),
             layouts: Vec::new(),
         }
-    }
-
-    fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-        code.push(opcode as u8);
-        code.extend_from_slice(&operand.to_le_bytes());
-    }
-
-    fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
-        code.push(opcode as u8);
     }
 
     #[test]

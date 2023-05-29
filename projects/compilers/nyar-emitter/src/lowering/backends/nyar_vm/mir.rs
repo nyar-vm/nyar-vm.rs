@@ -55,12 +55,11 @@ impl<'a> BytecodeEmitter<'a> {
     }
 
     fn emit_plain(&mut self, opcode: NyarHeadCode) {
-        self.code_bytes.push(opcode as u8);
+        nyar_bytecode::emit_plain(&mut self.code_bytes, opcode);
     }
 
     fn emit_imm1(&mut self, opcode: NyarHeadCode, operand: i32) {
-        self.code_bytes.push(opcode as u8);
-        self.code_bytes.extend_from_slice(&operand.to_le_bytes());
+        nyar_bytecode::emit_imm1(&mut self.code_bytes, opcode, operand);
     }
 
     fn ensure_host_import(&mut self, symbol: &str) -> i32 {
@@ -84,16 +83,17 @@ impl<'a> BytecodeEmitter<'a> {
     /// 按 imports 表下标调用宿主能力；operand1 = import index，operand2 = argc。
     fn emit_call_import(&mut self, symbol: &str, arg_count: i32) {
         let import_index = self.ensure_host_import(symbol);
-        self.code_bytes.push(NyarHeadCode::CallImport as u8);
-        self.code_bytes.extend_from_slice(&import_index.to_le_bytes());
-        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+        nyar_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallImport, import_index, arg_count);
     }
 
     /// 按 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
-        self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
-        self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
-        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+        nyar_bytecode::emit_imm2(
+            &mut self.code_bytes,
+            NyarHeadCode::CallIntrinsic,
+            intrinsic.bytecode_index() as i32,
+            arg_count,
+        );
     }
 
     fn emit_jump_placeholder(&mut self, opcode: NyarHeadCode, target: MirBlockRef) -> usize {

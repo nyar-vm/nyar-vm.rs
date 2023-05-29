@@ -5,18 +5,10 @@
 //! independent of any emitter-side lowering path.
 
 use nyar_vm::{NyarVm, Value};
-use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
-
-/// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
-fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-    code.push(opcode as u8);
-    code.extend_from_slice(&operand.to_le_bytes());
-}
-
-/// Encodes a 1-byte `Plain` instruction.
-fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
-    code.push(opcode as u8);
-}
+use nyar_bytecode::{
+    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, emit_imm1, emit_plain,
+    encode_module,
+};
 
 /// Builds a module with two functions: a generator `gen` that yields once then returns the
 /// resumed value, and `main` that calls `gen`, stores the resulting coroutine, then resumes

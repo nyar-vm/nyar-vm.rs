@@ -167,12 +167,7 @@ pub fn build_executable_table(code_bytes: &[u8], functions: &[NyarFunction]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nyar_bytecode::NyarHeadCode;
-
-    fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-        code.push(opcode as u8);
-        code.extend_from_slice(&operand.to_le_bytes());
-    }
+    use nyar_bytecode::{NyarHeadCode, emit_imm1};
 
     #[test]
     fn resolves_jump_to_instruction_index() {

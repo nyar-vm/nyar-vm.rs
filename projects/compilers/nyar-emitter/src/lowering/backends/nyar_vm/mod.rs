@@ -30,12 +30,11 @@ impl BytecodeEmitter {
     }
 
     fn emit_plain(&mut self, opcode: NyarHeadCode) {
-        self.code_bytes.push(opcode as u8);
+        nyar_bytecode::emit_plain(&mut self.code_bytes, opcode);
     }
 
     fn emit_imm1(&mut self, opcode: NyarHeadCode, operand: i32) {
-        self.code_bytes.push(opcode as u8);
-        self.code_bytes.extend_from_slice(&operand.to_le_bytes());
+        nyar_bytecode::emit_imm1(&mut self.code_bytes, opcode, operand);
     }
 
     fn emit_return_void(&mut self) {
@@ -115,15 +114,16 @@ impl BytecodeEmitter {
             });
             index
         };
-        self.code_bytes.push(NyarHeadCode::CallImport as u8);
-        self.code_bytes.extend_from_slice(&import_index.to_le_bytes());
-        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+        nyar_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallImport, import_index, arg_count);
     }
 
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
-        self.code_bytes.push(NyarHeadCode::CallIntrinsic as u8);
-        self.code_bytes.extend_from_slice(&(intrinsic.bytecode_index() as i32).to_le_bytes());
-        self.code_bytes.extend_from_slice(&arg_count.to_le_bytes());
+        nyar_bytecode::emit_imm2(
+            &mut self.code_bytes,
+            NyarHeadCode::CallIntrinsic,
+            intrinsic.bytecode_index() as i32,
+            arg_count,
+        );
     }
 }
 

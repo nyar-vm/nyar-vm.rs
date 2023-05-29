@@ -6,13 +6,8 @@
 use nyar_vm::{ModuleGlobals, NyarVm, Value};
 use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData, NYAR_VERSION,
-    encode_module,
+    emit_imm1, encode_module,
 };
-
-fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-    code.push(opcode as u8);
-    code.extend_from_slice(&operand.to_le_bytes());
-}
 
 #[test]
 fn eager_singleton_init_and_accessor_roundtrip() {

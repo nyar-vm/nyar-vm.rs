@@ -9,19 +9,8 @@
 use nyar_vm::{NyarVm, Value};
 use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, NYAR_VERSION,
-    encode_module,
+    emit_imm1, emit_plain, encode_module,
 };
-
-/// Encodes a 5-byte `Imm1` instruction (opcode + i32 operand).
-fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
-    code.push(opcode as u8);
-    code.extend_from_slice(&operand.to_le_bytes());
-}
-
-/// Encodes a 1-byte `Plain` instruction.
-fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
-    code.push(opcode as u8);
-}
 
 /// Builds a module with:
 ///   function 0 "raiser": Const effect_payload, PerformEffect(method_name="raise"), Const 999, Return

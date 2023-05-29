@@ -276,12 +276,11 @@ impl<'a> NyarSingletonEmitter<'a> {
     }
 
     fn emit_plain(&mut self, opcode: NyarHeadCode) {
-        self.module.code_bytes.push(opcode as u8);
+        nyar_bytecode::emit_plain(&mut self.module.code_bytes, opcode);
     }
 
     fn emit_imm1(&mut self, opcode: NyarHeadCode, operand: i32) {
-        self.module.code_bytes.push(opcode as u8);
-        self.module.code_bytes.extend_from_slice(&operand.to_le_bytes());
+        nyar_bytecode::emit_imm1(&mut self.module.code_bytes, opcode, operand);
     }
 
     /// 按 layouts 表下标分配 singleton 实例（不再经字符串 `alloc_record`）。

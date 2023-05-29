@@ -242,6 +242,27 @@ pub fn decode_at(bytecode: &[u8], pc: usize) -> NyarInstruction {
     NyarInstruction { code, size, operand1, operand2, operand3 }
 }
 
+/// 写入无操作数指令（`Plain` 形）。
+pub fn emit_plain(code: &mut Vec<u8>, opcode: NyarHeadCode) {
+    debug_assert_eq!(opcode.form(), NyarInstructionForm::Plain);
+    code.push(opcode as u8);
+}
+
+/// 写入单立即数指令（`Imm1` 形，小端 `i32`）。
+pub fn emit_imm1(code: &mut Vec<u8>, opcode: NyarHeadCode, operand: i32) {
+    debug_assert_eq!(opcode.form(), NyarInstructionForm::Imm1);
+    code.push(opcode as u8);
+    code.extend_from_slice(&operand.to_le_bytes());
+}
+
+/// 写入双立即数指令（`Imm2` 形，两个小端 `i32`）。
+pub fn emit_imm2(code: &mut Vec<u8>, opcode: NyarHeadCode, operand1: i32, operand2: i32) {
+    debug_assert_eq!(opcode.form(), NyarInstructionForm::Imm2);
+    code.push(opcode as u8);
+    code.extend_from_slice(&operand1.to_le_bytes());
+    code.extend_from_slice(&operand2.to_le_bytes());
+}
+
 fn try_instruction_size(bytecode: &[u8], pc: usize, code: NyarHeadCode) -> u8 {
     match code.form() {
         NyarInstructionForm::Plain => 1,
@@ -960,6 +981,26 @@ mod tests {
         assert_eq!(OBSOLETE_CALL_NATIVE, 0xD1);
         assert_eq!(NyarHeadCode::from_u8(OBSOLETE_CALL_NATIVE), None);
         assert_ne!(NyarHeadCode::CallImport as u8, OBSOLETE_CALL_NATIVE);
+    }
+
+    #[test]
+    fn emit_helpers_round_trip_with_decode_at() {
+        let mut code = Vec::new();
+        emit_plain(&mut code, NyarHeadCode::Return);
+        emit_imm1(&mut code, NyarHeadCode::Const, 7);
+        emit_imm2(&mut code, NyarHeadCode::CallImport, 1, 2);
+        let ret = decode_at(&code, 0);
+        assert_eq!(ret.code, NyarHeadCode::Return);
+        assert_eq!(ret.size, 1);
+        let c = decode_at(&code, 1);
+        assert_eq!(c.code, NyarHeadCode::Const);
+        assert_eq!(c.operand1, 7);
+        assert_eq!(c.size, 5);
+        let call = decode_at(&code, 6);
+        assert_eq!(call.code, NyarHeadCode::CallImport);
+        assert_eq!(call.operand1, 1);
+        assert_eq!(call.operand2, 2);
+        assert_eq!(call.size, 9);
     }
 
     #[test]
