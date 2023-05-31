@@ -232,22 +232,24 @@ impl Executor {
                 None
             };
             if let Some(blob) = blob {
-                // 机器码叶路径仍遵守堆压力：进入前强制策略回收，并改写帧 locals / globals。
+                // 机器码叶路径仍遵守堆压力：进入前强制策略回收，并经统一转发图改写帧 / 栈 / 全局。
                 if self.heap.over_soft_limit() || self.heap.nursery_pressure() {
-                    let frame_locals = [frame.locals.as_slice()];
+                    self.frames = vec![frame];
+                    let owned_locals = self.frames[0].locals.clone();
+                    let frame_locals = [owned_locals.as_slice()];
+                    let frame_coroutines: Vec<_> =
+                        self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
                     let relocate = self.gc.collect_for_policy(
                         GcRoots {
-                            stack: &[],
+                            stack: self.stack.values(),
                             frame_locals: &frame_locals,
                             globals,
-                            frame_coroutines: &[],
+                            frame_coroutines: &frame_coroutines,
                         },
                         &mut self.heap,
                     );
-                    if relocate.has_moves() {
-                        relocate.rewrite_slice(&mut frame.locals);
-                        relocate.rewrite_slice(globals);
-                    }
+                    self.apply_relocate_map(&relocate, globals);
+                    frame = self.frames.pop().expect("nj1 pressure frame");
                 }
                 return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals);
             }
