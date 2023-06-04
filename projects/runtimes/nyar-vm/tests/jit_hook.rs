@@ -338,9 +338,12 @@ fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
     let mut vm = NyarVm::new();
     let decision = vm.apply_workload_intent(intent).expect("apply");
     assert_eq!(decision.mode, GcMode::ConcurrentMarkReserved);
+    assert_eq!(decision.scenario_id.as_deref(), Some("concurrent-interactive"));
     assert!(vm.strategy_transition_history().len() >= 1);
     let _ = vm.last_trace_poll();
     let _ = vm.last_root_handshake();
+    let _ = vm.last_relocate_map();
+    assert!(vm.last_promotion_failure().is_none());
 }
 
 #[test]
