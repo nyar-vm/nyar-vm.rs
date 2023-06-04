@@ -103,4 +103,26 @@ mod tests {
         write_value_slot(&mut barrier, &mut slot, Value::Null, false);
         assert!(barrier.satb_buffer().is_empty());
     }
+
+    #[test]
+    fn satb_records_overwrites_in_order_on_same_slot() {
+        // 单线程协议：同槽连续覆盖时，SATB 按覆盖前序追加旧引用。
+        let mut barrier = WriteBarrier::new();
+        let mut slot = Value::Object(1);
+        write_value_slot(&mut barrier, &mut slot, Value::Object(2), true);
+        write_value_slot(&mut barrier, &mut slot, Value::Null, true);
+        assert_eq!(barrier.satb_buffer(), &[1, 2]);
+        assert_eq!(slot, Value::Null);
+    }
+
+    #[test]
+    fn satb_interleaved_two_slots_preserves_fifo() {
+        let mut barrier = WriteBarrier::new();
+        let mut a = Value::Object(10);
+        let mut b = Value::Object(20);
+        write_value_slot(&mut barrier, &mut a, Value::Object(11), true);
+        write_value_slot(&mut barrier, &mut b, Value::Object(21), true);
+        write_value_slot(&mut barrier, &mut a, Value::Null, true);
+        assert_eq!(barrier.satb_buffer(), &[10, 20, 11]);
+    }
 }
