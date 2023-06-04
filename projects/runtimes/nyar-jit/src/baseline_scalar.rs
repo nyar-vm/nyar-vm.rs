@@ -737,4 +737,29 @@ mod tests {
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
+
+    #[test]
+    fn compiles_i32_neg_via_const0_sub() {
+        // 发射器把 `-x` 降为 `Const(0); Load; I32Sub; Return`。
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        emit_load(&mut code, 0);
+        code.push(NyarHeadCode::I32Sub as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(0)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(
+            decode_scalar_program(blob).unwrap(),
+            ScalarProgram::RetI32BinopImmLocal {
+                binop: I32Binop::Sub,
+                imm: 0,
+                local: 0,
+                imm_on_left: true,
+            }
+        );
+    }
 }
