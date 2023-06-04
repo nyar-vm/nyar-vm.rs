@@ -19,6 +19,8 @@ pub struct StrategyDecision {
     pub sources_considered: Vec<IntentSource>,
     /// 仍未知的业务维度（缺省基线时列出）。
     pub unknown_dimensions: Vec<&'static str>,
+    /// 合并后的场景标识（上层覆盖下层；缺省为 `None`）。
+    pub scenario_id: Option<String>,
 }
 
 /// 一次可观察的策略切换（模式变化时写入；同模式刷新不记）。
@@ -163,6 +165,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
             reason: "no workload intent; conservative mark-sweep baseline".into(),
             sources_considered: Vec::new(),
             unknown_dimensions: vec!["scenario", "pause_budget_ms", "heap_soft_limit_bytes", "phase"],
+            scenario_id: None,
         };
     }
 
@@ -194,6 +197,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
     let allow_heavy_collection = !heavy_votes.is_empty() && heavy_votes.iter().all(|v| *v);
 
     let phase = layers.iter().rev().find_map(|l| l.phase.clone());
+    let scenario_id = layers.iter().rev().find_map(|l| l.scenario_id.clone());
 
     let mut preferred: Option<(u8, GcMode)> = None;
     for layer in layers {
@@ -230,6 +234,9 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
     }
 
     let mut unknown = Vec::new();
+    if scenario_id.is_none() {
+        unknown.push("scenario");
+    }
     if phase.is_none() {
         unknown.push("phase");
     }
@@ -241,7 +248,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
     }
 
     let reason = format!(
-        "merged {} layer(s); mode={mode:?}; pause_budget_ms={pause_budget_ms:?}; heavy={allow_heavy_collection}",
+        "merged {} layer(s); scenario={scenario_id:?}; mode={mode:?}; pause_budget_ms={pause_budget_ms:?}; heavy={allow_heavy_collection}",
         layers.len()
     );
 
@@ -257,6 +264,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
         reason,
         sources_considered: sources,
         unknown_dimensions: unknown,
+        scenario_id,
     }
 }
 
@@ -280,6 +288,7 @@ mod tests {
         assert_eq!(decision.mode, GcMode::GenerationalLowLatency);
         assert_eq!(decision.hints.pause_budget_ms, Some(5));
         assert!(!decision.hints.allow_heavy_collection);
+        assert_eq!(decision.scenario_id.as_deref(), Some("online-request"));
     }
 
     #[test]
@@ -319,6 +328,19 @@ mod tests {
         assert_eq!(decision.mode, GcMode::ConcurrentMarkReserved);
         assert_eq!(decision.hints.pause_budget_ms, Some(5));
         assert!(!decision.hints.allow_heavy_collection);
+        assert_eq!(decision.scenario_id.as_deref(), Some("concurrent-interactive"));
+        assert!(!decision.unknown_dimensions.contains(&"scenario"));
+    }
+
+    #[test]
+    fn nested_phase_scenario_overrides_process() {
+        let mut ctrl = StrategyController::new();
+        ctrl.set_process_intent(WorkloadIntent::sample_offline_batch()).unwrap();
+        let mut request = WorkloadIntent::sample_online_request();
+        request.source = IntentSource::PhaseEvent;
+        ctrl.begin_phase(request).unwrap();
+        let decision = ctrl.decide();
+        assert_eq!(decision.scenario_id.as_deref(), Some("online-request"));
     }
 
     #[test]

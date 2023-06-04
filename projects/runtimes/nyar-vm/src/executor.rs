@@ -159,6 +159,16 @@ impl Executor {
         self.gc.last_root_handshake()
     }
 
+    /// 最近一次 nursery 物理晋升转发图。
+    pub fn last_relocate_map(&self) -> &nyar_gc::RelocateMap {
+        self.gc.last_relocate_map()
+    }
+
+    /// 最近一次晋升失败原因（若有）。
+    pub fn last_promotion_failure(&self) -> Option<&nyar_gc::PromotionFailure> {
+        self.heap.last_promotion_failure()
+    }
+
     /// Executes a function in `module` and returns its result value.
     pub fn run(&mut self, module: &LoadedModule, function_index: usize, args: Vec<Value>) -> Result<Value, NyarRuntimeError> {
         self.run_with_globals(module, function_index, args, &mut vec![Value::Null; module.globals.len()])

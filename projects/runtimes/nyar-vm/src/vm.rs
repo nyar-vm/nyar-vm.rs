@@ -149,6 +149,16 @@ impl NyarVm {
         self.executor.last_root_handshake()
     }
 
+    /// 最近一次 nursery 物理晋升转发图。
+    pub fn last_relocate_map(&self) -> &nyar_gc::RelocateMap {
+        self.executor.last_relocate_map()
+    }
+
+    /// 最近一次晋升失败原因（若有）。
+    pub fn last_promotion_failure(&self) -> Option<&nyar_gc::PromotionFailure> {
+        self.executor.last_promotion_failure()
+    }
+
     /// 应用进程级工作负载意图并刷新 GC 策略。
     pub fn apply_workload_intent(
         &mut self,
