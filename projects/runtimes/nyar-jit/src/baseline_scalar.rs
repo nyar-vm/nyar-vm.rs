@@ -63,6 +63,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_load_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_discard_pop_void_return(code) {
+        return Some(blob);
+    }
     if let Some(blob) = match_pop_void_return(code) {
         return Some(blob);
     }
@@ -84,6 +87,30 @@ fn match_void_return(code: &[u8]) -> Option<Vec<u8>> {
 /// `Pop; Return` → void 叶（丢弃栈顶后无返回值）。
 fn match_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
     let mut pc = 0usize;
+    let pop = decode_at(code, pc);
+    if pop.size == 0 || pop.code != NyarHeadCode::Pop {
+        return None;
+    }
+    pc += pop.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || ret.code != NyarHeadCode::Return || pc + ret.size as usize != code.len() {
+        return None;
+    }
+    Some(encode_ret_void())
+}
+
+/// `Load*|Const; Pop; Return` → void 叶（算完结果后丢弃）。
+fn match_discard_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let first = decode_at(code, pc);
+    if first.size == 0 {
+        return None;
+    }
+    match first.code {
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::Const => {}
+        _ => return None,
+    }
+    pc += first.size as usize;
     let pop = decode_at(code, pc);
     if pop.size == 0 || pop.code != NyarHeadCode::Pop {
         return None;
@@ -734,6 +761,33 @@ mod tests {
         let code = vec![NyarHeadCode::Pop as u8, NyarHeadCode::Return as u8];
         let mut jit = BaselineScalarJit;
         let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
+    }
+
+    #[test]
+    fn compiles_load_pop_void_return() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        code.push(NyarHeadCode::Pop as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
+    }
+
+    #[test]
+    fn compiles_const_pop_void_return() {
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.push(NyarHeadCode::Pop as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(1)]))
+            .expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
