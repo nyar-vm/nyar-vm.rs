@@ -508,7 +508,8 @@ fn stack_transfer(
         }
         NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse => {
             require_height(function_index, pc, height, 1)?;
-            require_kind(function_index, pc, types, StackKind::Any)?;
+            // 条件槽必须是 i32（0/非 0）；拒绝 Ref/Any 冒充布尔条件。
+            require_kind(function_index, pc, types, StackKind::I32)?;
             let after = height - 1;
             let target = pc.wrapping_add(instruction.operand1 as usize);
             Ok(vec![(fallthrough, after), (target, after)])
@@ -1078,5 +1079,50 @@ mod tests {
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("ref as i32");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
+    }
+
+    #[test]
+    fn rejects_jump_if_false_with_ref_condition() {
+        let mut module = empty_module();
+        module.layouts.push(NyarLayout { field_count: 0 });
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
+        let br_pc = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        let else_pc = code.len();
+        let rel = (else_pc as i32) - (br_pc as i32);
+        code[br_pc + 1..br_pc + 5].copy_from_slice(&rel.to_le_bytes());
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("ref JumpIfFalse");
+        assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
+    }
+
+    #[test]
+    fn accepts_i32_binop_discard_pop_void_return() {
+        let mut module = empty_module();
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
+        emit_imm1(&mut code, NyarHeadCode::LoadLocal, 1);
+        emit_plain(&mut code, NyarHeadCode::I32Add);
+        emit_plain(&mut code, NyarHeadCode::Pop);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 2,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("i32 Pop void");
     }
 }
