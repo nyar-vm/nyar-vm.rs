@@ -347,6 +347,56 @@ fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
 }
 
 #[test]
+fn online_request_fixture_applies_generational_strategy_on_vm() {
+    use nyar_gc::GcMode;
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let text = include_str!("../fixtures/workload/online-request.json");
+    let intent = parse_workload_intent_json(text).expect("parse");
+    let mut vm = NyarVm::new();
+    let decision = vm.apply_workload_intent(intent).expect("apply");
+    assert_eq!(decision.mode, GcMode::GenerationalLowLatency);
+    assert_eq!(decision.scenario_id.as_deref(), Some("online-request"));
+    assert_eq!(decision.hints.pause_budget_ms, Some(5));
+    assert!(!decision.hints.allow_heavy_collection);
+    assert!(vm.strategy_transition_history().len() >= 1);
+}
+
+#[test]
+fn resident_service_fixture_applies_generational_strategy_on_vm() {
+    use nyar_gc::GcMode;
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let text = include_str!("../fixtures/workload/resident-service.json");
+    let intent = parse_workload_intent_json(text).expect("parse");
+    let mut vm = NyarVm::new();
+    let decision = vm.apply_workload_intent(intent).expect("apply");
+    assert_eq!(decision.mode, GcMode::GenerationalLowLatency);
+    assert_eq!(decision.scenario_id.as_deref(), Some("resident-service"));
+    assert_eq!(decision.hints.pause_budget_ms, Some(10));
+    assert_eq!(decision.hints.heap_soft_limit_bytes, Some(268435456));
+    assert!(!decision.hints.allow_heavy_collection);
+    assert!(vm.strategy_transition_history().len() >= 1);
+}
+
+#[test]
+fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
+    use nyar_gc::GcMode;
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let text = include_str!("../fixtures/workload/offline-batch.json");
+    let intent = parse_workload_intent_json(text).expect("parse");
+    let mut vm = NyarVm::new();
+    let decision = vm.apply_workload_intent(intent).expect("apply");
+    assert_eq!(decision.mode, GcMode::ThroughputBatch);
+    assert_eq!(decision.scenario_id.as_deref(), Some("offline-batch"));
+    assert_eq!(decision.hints.pause_budget_ms, Some(200));
+    assert_eq!(decision.hints.heap_soft_limit_bytes, Some(536870912));
+    assert!(decision.hints.allow_heavy_collection);
+    assert!(vm.strategy_transition_history().len() >= 1);
+}
+
+#[test]
 fn install_inline_deopt_chain_orders_outer_then_inner() {
     use nyar_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
 
