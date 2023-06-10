@@ -63,6 +63,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_load_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_binop_pop_void_return(code) {
+        return Some(blob);
+    }
     if let Some(blob) = match_discard_pop_void_return(code) {
         return Some(blob);
     }
@@ -111,6 +114,36 @@ fn match_discard_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
         _ => return None,
     }
     pc += first.size as usize;
+    let pop = decode_at(code, pc);
+    if pop.size == 0 || pop.code != NyarHeadCode::Pop {
+        return None;
+    }
+    pc += pop.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || ret.code != NyarHeadCode::Return || pc + ret.size as usize != code.len() {
+        return None;
+    }
+    Some(encode_ret_void())
+}
+
+/// `Load; Load; Binop|Cmp; Pop; Return` → void 叶（副作用仅为消费两 local）。
+fn match_binop_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let a_ins = decode_at(code, pc);
+    if a_ins.size == 0 || load_slot(&a_ins).is_none() {
+        return None;
+    }
+    pc += a_ins.size as usize;
+    let b_ins = decode_at(code, pc);
+    if b_ins.size == 0 || load_slot(&b_ins).is_none() {
+        return None;
+    }
+    pc += b_ins.size as usize;
+    let op = decode_at(code, pc);
+    if op.size == 0 || (head_to_binop(op.code).is_none() && head_to_cmp(op.code).is_none()) {
+        return None;
+    }
+    pc += op.size as usize;
     let pop = decode_at(code, pc);
     if pop.size == 0 || pop.code != NyarHeadCode::Pop {
         return None;
@@ -769,6 +802,20 @@ mod tests {
     fn compiles_load_pop_void_return() {
         let mut code = Vec::new();
         emit_load(&mut code, 0);
+        code.push(NyarHeadCode::Pop as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit.compile_function(&request(code)).expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
+    }
+
+    #[test]
+    fn compiles_binop_pop_void_return() {
+        let mut code = Vec::new();
+        emit_load(&mut code, 0);
+        emit_load(&mut code, 1);
+        code.push(NyarHeadCode::I32Add as u8);
         code.push(NyarHeadCode::Pop as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
