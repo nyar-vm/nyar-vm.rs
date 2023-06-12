@@ -125,4 +125,47 @@ mod tests {
         write_value_slot(&mut barrier, &mut a, Value::Null, true);
         assert_eq!(barrier.satb_buffer(), &[10, 20, 11]);
     }
+
+    #[test]
+    fn remembered_set_records_containers_in_call_order() {
+        // 单线程协议：老→年轻边按 record 调用序进入记忆集（可含重复）。
+        let mut barrier = WriteBarrier::new();
+        barrier.record_old_to_young(1);
+        barrier.record_old_to_young(2);
+        barrier.record_old_to_young(1);
+        assert_eq!(barrier.remembered_set(), &[1, 2, 1]);
+    }
+
+    #[test]
+    fn remembered_set_interleaved_with_satb_keeps_independent_fifos() {
+        let mut barrier = WriteBarrier::new();
+        let mut slot = Value::Object(7);
+        barrier.record_old_to_young(100);
+        write_value_slot(&mut barrier, &mut slot, Value::Object(8), true);
+        barrier.record_old_to_young(200);
+        write_value_slot(&mut barrier, &mut slot, Value::Null, true);
+        assert_eq!(barrier.remembered_set(), &[100, 200]);
+        assert_eq!(barrier.satb_buffer(), &[7, 8]);
+    }
+
+    #[test]
+    fn satb_records_overwritten_coroutine_id() {
+        let mut barrier = WriteBarrier::new();
+        let mut slot = Value::Coroutine(42);
+        write_value_slot(&mut barrier, &mut slot, Value::Null, true);
+        assert_eq!(barrier.satb_buffer(), &[42]);
+        assert_eq!(slot, Value::Null);
+    }
+
+    #[test]
+    fn drain_satb_returns_fifo_and_clears_buffer() {
+        let mut barrier = WriteBarrier::new();
+        let mut a = Value::Object(1);
+        let mut b = Value::Coroutine(2);
+        write_value_slot(&mut barrier, &mut a, Value::Object(3), true);
+        write_value_slot(&mut barrier, &mut b, Value::Null, true);
+        assert_eq!(barrier.drain_satb(), vec![1, 2]);
+        assert!(barrier.satb_buffer().is_empty());
+        assert!(barrier.drain_satb().is_empty());
+    }
 }
