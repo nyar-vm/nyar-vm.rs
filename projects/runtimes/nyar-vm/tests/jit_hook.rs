@@ -397,6 +397,35 @@ fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
 }
 
 #[test]
+fn nested_workload_phase_overrides_scenario_then_restores() {
+    use nyar_gc::{GcMode, IntentSource};
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let batch = parse_workload_intent_json(include_str!("../fixtures/workload/offline-batch.json")).expect("batch");
+    let mut request = parse_workload_intent_json(include_str!("../fixtures/workload/online-request.json")).expect("request");
+    request.source = IntentSource::PhaseEvent;
+
+    let mut vm = NyarVm::new();
+    let outer = vm.apply_workload_intent(batch).expect("apply batch");
+    assert_eq!(outer.mode, GcMode::ThroughputBatch);
+    assert_eq!(outer.scenario_id.as_deref(), Some("offline-batch"));
+
+    let nested = vm.begin_workload_phase(request).expect("begin request");
+    assert_eq!(nested.mode, GcMode::GenerationalLowLatency);
+    assert_eq!(nested.scenario_id.as_deref(), Some("online-request"));
+    assert_eq!(nested.hints.pause_budget_ms, Some(5));
+    assert!(vm.strategy_transition_history().len() >= 2);
+
+    let restored = vm.end_workload_phase(Some("request")).expect("end request");
+    assert_eq!(restored.mode, GcMode::ThroughputBatch);
+    assert_eq!(restored.scenario_id.as_deref(), Some("offline-batch"));
+    assert_eq!(
+        vm.last_strategy_decision().map(|d| d.scenario_id.as_deref()),
+        Some(Some("offline-batch"))
+    );
+}
+
+#[test]
 fn install_inline_deopt_chain_orders_outer_then_inner() {
     use nyar_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
 
