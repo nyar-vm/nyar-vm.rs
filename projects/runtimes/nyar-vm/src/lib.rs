@@ -47,3 +47,4 @@ pub use nyar_gc::{
 };
 pub use value::{CoroutineState, ObjectId, Value};
 pub use vm::NyarVm;
+pub use workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence};

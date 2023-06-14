@@ -207,4 +207,9 @@ impl NyarVm {
     pub fn get_root(&self, handle: nyar_gc::RootHandle) -> Option<&Value> {
         self.executor.heap().get_root(handle)
     }
+
+    /// 当前策略与 GC 证据的 JSON 快照（宿主诊断 / 夹具）。
+    pub fn gc_evidence_snapshot(&self) -> serde_json::Value {
+        crate::workload_json::snapshot_gc_evidence(self)
+    }
 }

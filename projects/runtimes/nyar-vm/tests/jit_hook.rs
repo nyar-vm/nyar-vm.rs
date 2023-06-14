@@ -347,6 +347,24 @@ fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
 }
 
 #[test]
+fn gc_evidence_snapshot_includes_scenario_and_trace_fields() {
+    use nyar_vm::workload_json::parse_workload_intent_json;
+
+    let text = include_str!("../fixtures/workload/concurrent-interactive.json");
+    let intent = parse_workload_intent_json(text).expect("parse");
+    let mut vm = NyarVm::new();
+    vm.apply_workload_intent(intent).expect("apply");
+    let snap = vm.gc_evidence_snapshot();
+    assert_eq!(snap["decision"]["scenario_id"], "concurrent-interactive");
+    assert_eq!(snap["decision"]["mode"], "concurrent_mark_reserved");
+    assert!(snap["transitions"].as_array().expect("transitions").len() >= 1);
+    assert!(snap["trace_poll"]["slices_run"].is_number());
+    assert!(snap["root_handshake"]["stack_slots"].is_number());
+    assert_eq!(snap["relocate_has_moves"], false);
+    assert!(snap["promotion_failure"].is_null());
+}
+
+#[test]
 fn online_request_fixture_applies_generational_strategy_on_vm() {
     use nyar_gc::GcMode;
     use nyar_vm::workload_json::parse_workload_intent_json;

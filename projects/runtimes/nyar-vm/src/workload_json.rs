@@ -70,6 +70,81 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
     Ok(intent)
 }
 
+fn gc_mode_label(mode: GcMode) -> &'static str {
+    match mode {
+        GcMode::MarkSweep => "mark_sweep",
+        GcMode::GenerationalLowLatency => "generational_low_latency",
+        GcMode::ThroughputBatch => "throughput_batch",
+        GcMode::ConcurrentMarkReserved => "concurrent_mark_reserved",
+    }
+}
+
+/// 将当前策略与 ConcurrentTrace / 晋升证据合成可序列化 JSON 包络。
+pub fn snapshot_gc_evidence(vm: &crate::NyarVm) -> serde_json::Value {
+    use serde_json::{Value, json};
+
+    let decision = vm.last_strategy_decision().map(|d| {
+        json!({
+            "mode": gc_mode_label(d.mode),
+            "scenario_id": d.scenario_id,
+            "reason": d.reason,
+            "unknown_dimensions": d.unknown_dimensions,
+            "hints": {
+                "phase": d.hints.phase,
+                "pause_budget_ms": d.hints.pause_budget_ms,
+                "heap_soft_limit_bytes": d.hints.heap_soft_limit_bytes,
+                "allow_heavy_collection": d.hints.allow_heavy_collection,
+            }
+        })
+    });
+
+    let transitions: Vec<Value> = vm
+        .strategy_transition_history()
+        .iter()
+        .map(|t| {
+            json!({
+                "sequence": t.sequence,
+                "from_mode": t.from_mode.map(gc_mode_label),
+                "to_mode": gc_mode_label(t.decision.mode),
+                "scenario_id": t.decision.scenario_id,
+            })
+        })
+        .collect();
+
+    let poll = vm.last_trace_poll();
+    let hs = vm.last_root_handshake();
+    let promo = vm.last_promotion_failure().map(|f| {
+        json!({
+            "survivor_count": f.survivor_count,
+            "tenured_live_before": f.tenured_live_before,
+            "tenured_soft_capacity": f.tenured_soft_capacity,
+            "reason": f.reason,
+        })
+    });
+
+    json!({
+        "decision": decision,
+        "transitions": transitions,
+        "gray_budget_per_slice": vm.gray_budget_per_slice(),
+        "trace_poll": {
+            "slices_run": poll.slices_run,
+            "gray_scanned": poll.gray_scanned,
+            "budget_exhausted": poll.budget_exhausted,
+            "gray_pending_before": poll.gray_pending_before,
+        },
+        "root_handshake": {
+            "stack_slots": hs.stack_slots,
+            "frame_local_slots": hs.frame_local_slots,
+            "global_slots": hs.global_slots,
+            "frame_coroutines": hs.frame_coroutines,
+            "host_roots": hs.host_roots,
+            "gray_after_roots": hs.gray_after_roots,
+        },
+        "relocate_has_moves": vm.last_relocate_map().has_moves(),
+        "promotion_failure": promo,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
