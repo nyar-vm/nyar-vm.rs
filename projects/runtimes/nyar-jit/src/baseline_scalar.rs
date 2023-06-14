@@ -57,6 +57,9 @@ pub fn match_scalar_program(code: &[u8], constant_i32: &[Option<i32>]) -> Option
     if let Some(blob) = match_load_dup_op_return(code) {
         return Some(blob);
     }
+    if let Some(blob) = match_const_load_op_pop_void(code, constant_i32) {
+        return Some(blob);
+    }
     if let Some(blob) = match_const_load_op_return(code, constant_i32) {
         return Some(blob);
     }
@@ -311,6 +314,53 @@ fn match_load_dup_op_return(code: &[u8]) -> Option<Vec<u8>> {
         return Some(encode_ret_i32_cmp_locals(cmp, slot, slot));
     }
     None
+}
+
+/// `Const; Load; Op; Pop; Return` 或 `Load; Const; Op; Pop; Return` → void 叶。
+fn match_const_load_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
+    let mut pc = 0usize;
+    let first = decode_at(code, pc);
+    if first.size == 0 {
+        return None;
+    }
+    pc += first.size as usize;
+    let second = decode_at(code, pc);
+    if second.size == 0 {
+        return None;
+    }
+    pc += second.size as usize;
+    let op = decode_at(code, pc);
+    if op.size == 0 || (head_to_binop(op.code).is_none() && head_to_cmp(op.code).is_none()) {
+        return None;
+    }
+    match (first.code, second.code) {
+        (NyarHeadCode::Const, _) => {
+            if first.operand1 < 0 {
+                return None;
+            }
+            let _ = constant_i32.get(first.operand1 as usize).copied().flatten()?;
+            let _ = load_slot(&second)?;
+        }
+        (_, NyarHeadCode::Const) => {
+            if second.operand1 < 0 {
+                return None;
+            }
+            let _ = constant_i32.get(second.operand1 as usize).copied().flatten()?;
+            let _ = load_slot(&first)?;
+        }
+        _ => return None,
+    }
+    pc += op.size as usize;
+    let pop = decode_at(code, pc);
+    if pop.size == 0 || pop.code != NyarHeadCode::Pop {
+        return None;
+    }
+    pc += pop.size as usize;
+    let ret = decode_at(code, pc);
+    if ret.size == 0 || ret.code != NyarHeadCode::Return || pc + ret.size as usize != code.len() {
+        return None;
+    }
+    Some(encode_ret_void())
 }
 
 /// `Const; Load; Op; Return` 或 `Load; Const; Op; Return`。
@@ -772,6 +822,23 @@ mod tests {
                 imm_on_left: false
             }
         );
+    }
+
+    #[test]
+    fn compiles_const_load_op_pop_void() {
+        let mut code = Vec::new();
+        code.push(NyarHeadCode::Const as u8);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        emit_load(&mut code, 0);
+        code.push(NyarHeadCode::I32Add as u8);
+        code.push(NyarHeadCode::Pop as u8);
+        code.push(NyarHeadCode::Return as u8);
+        let mut jit = BaselineScalarJit;
+        let artifact = jit
+            .compile_function(&request_with_constants(code, vec![Some(3)]))
+            .expect("compile");
+        let blob = artifact.machine_code.as_ref().expect("machine code");
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
 
     #[test]
