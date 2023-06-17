@@ -270,6 +270,11 @@ fn verify_function(
         verify_instruction_operands(data, function_index, pc, instruction, local_slots, arity)?;
 
         if instruction.code == NyarHeadCode::Return {
+            if height > 1 {
+                return Err(NyarRuntimeError::ModuleLoad(format!(
+                    "function[{function_index}] return at pc {pc} leaves {height} values on stack; at most one allowed"
+                )));
+            }
             let shape = if height <= 0 {
                 ReturnShape::Void
             } else {
@@ -1127,6 +1132,30 @@ mod tests {
         });
         module.code_bytes = code;
         verify_module(&module).expect("i32 Pop void");
+    }
+
+    #[test]
+    fn rejects_return_with_extra_stack_slots() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Integer32(1));
+        module.constants.push(NyarConstant::Integer32(2));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::Const, 1);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        let err = verify_module(&module).expect_err("extra stack on return");
+        assert!(matches!(
+            err,
+            NyarRuntimeError::ModuleLoad(message) if message.contains("leaves 2 values on stack")
+        ));
     }
 
     #[test]
