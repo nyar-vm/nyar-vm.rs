@@ -373,6 +373,48 @@ impl MirBuilder {
         self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type, wraps_option)
     }
 
+    /// 仅当 callee 已由 overload 绑定为 [`IntrinsicId::ArrayPush`] 时降低。
+    /// 禁止按表面名 `push` 字符串特判（ADR 0013）。
+    fn try_lower_array_push_intrinsic(
+        &mut self,
+        resolved: Option<&HirResolvedCall>,
+        callee: &MirOperand,
+        arguments: &[MirOperand],
+        expected_type: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayPush) || arguments.len() != 2 {
+            return None;
+        }
+        let array = arguments[0].clone();
+        let array_ty = infer_builder_operand_type(&array, &self.value_types)
+            .or_else(|| expected_type.filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())?;
+        if !is_array_shaped_valkyrie_type(&array_ty) {
+            return None;
+        }
+        let value = self.next_value(MirValueOrigin::CallResult);
+        // 使用已解析合同上的符号（IntrinsicId 路径），不得再拼写表面名。
+        let callee_symbol = resolved
+            .map(|call| call.symbol.clone())
+            .or_else(|| match callee {
+                MirOperand::Symbol(path) => Some(path.clone()),
+                _ => None,
+            })?;
+        self.push_instruction(
+            MirOperation::Call {
+                callee: MirOperand::Symbol(callee_symbol),
+                arguments: arguments.to_vec(),
+            },
+            vec![value],
+        );
+        let return_type = resolved
+            .map(|call| call.return_type.clone())
+            .filter(|ty| is_array_shaped_valkyrie_type(ty))
+            .or_else(|| expected_type.filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())
+            .unwrap_or(array_ty);
+        self.value_types.insert(value, return_type);
+        Some(MirOperand::Value(value))
+    }
+
     fn field_type_for_semantic_type(&self, ty: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
         match ty {
             ValkyrieType::Named(name) => self
@@ -825,6 +867,9 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
+                    if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
                     let value = self.push_call(callee, arguments);
                     let return_type = return_type
                         .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
@@ -908,6 +953,9 @@ impl MirBuilder {
                         return operand;
                     }
                     if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
                     let value = self.push_call(callee, arguments);
@@ -1000,6 +1048,9 @@ impl MirBuilder {
                     return operand;
                 }
                 if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
+                    return operand;
+                }
+                if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                     return operand;
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。

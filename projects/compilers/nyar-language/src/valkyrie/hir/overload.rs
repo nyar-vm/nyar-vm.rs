@@ -24,7 +24,7 @@ use crate::{
     },
     valkyrie::{hir::PatternRefutability, mir::collect_aggregate_field_map},
 };
-use nyar_types::builtin_operator;
+use nyar_types::{IntrinsicId, builtin_operator};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadDomain {
@@ -267,7 +267,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let element = Identifier::new("T");
     let element_type = ValkyrieType::Named(element.clone());
     let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
-    let mut candidates = vec![
+    vec![
         OverloadCandidate::new(
             NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
             OverloadDomain::Function,
@@ -276,8 +276,62 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
             OverloadMatchKind::NominalExact,
         )
         .with_generic_binder(element),
-    ];
-    candidates
+    ]
+}
+
+/// 按候选符号的 [`IntrinsicId`] 做形实参合同（非调用点拼写）。
+fn match_intrinsic_builtin_candidate(
+    candidate: &OverloadCandidate,
+    args: &[HirCallArgument],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
+    singleton_names: &BTreeSet<Identifier>,
+) -> Option<OverloadCandidate> {
+    let parts = candidate.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+    match IntrinsicId::resolve_from_segments(&parts)? {
+        IntrinsicId::ArrayPush => {
+            if args.len() != 2 {
+                return None;
+            }
+            let array_ty = infer_scrutinee_type(&args[0].value, &[], locals, struct_fields, singleton_names)?;
+            let ValkyrieType::Array(element) = &array_ty
+            else {
+                return None;
+            };
+            let element = element.as_ref().clone();
+            // `self` 在 imply 内常仍是 `SelfType`；元素合同由数组注解与宿主 imply 目标共同约束，
+            // 不得再按调用点拼写补洞。`SelfType` / `AutoType` 与元素对齐延后到已替换后的形参检查。
+            let value_ty = infer_scrutinee_type(&args[1].value, &[], locals, struct_fields, singleton_names)
+                .unwrap_or(ValkyrieType::AutoType);
+            let value_ty = match value_ty {
+                ValkyrieType::r#SelfType => ValkyrieType::AutoType,
+                other => other,
+            };
+            if !matches!(value_ty, ValkyrieType::AutoType)
+                && matches!(
+                    type_relations.match_parameter(&value_ty, &element),
+                    ParameterMatchResult::NoMatch { .. }
+                )
+            {
+                return None;
+            }
+            Some(OverloadCandidate {
+                symbol: candidate.symbol.clone(),
+                owner: None,
+                domain: OverloadDomain::Function,
+                signature: OverloadSignature {
+                    params: vec![array_ty.clone(), element],
+                    return_type: array_ty,
+                },
+                match_kind: OverloadMatchKind::NominalExact,
+                param_specs: Vec::new(),
+                generic_binders: candidate.generic_binders.clone(),
+            })
+        }
+        // 其它 Intrinsic 仍走通用形实参路径，直至各自合同闭合。
+        _ => None,
+    }
 }
 
 fn enum_apply_type(enum_def: &HirEnum) -> ValkyrieType {
@@ -774,6 +828,12 @@ fn match_call_candidate(
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<OverloadCandidate> {
+    // 语言 builtin：以候选符号的 IntrinsicId 为准（ADR 0013），不得按调用点表面名特判。
+    if let Some(matched) =
+        match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names)
+    {
+        return Some(matched);
+    }
     // 运算符重载：禁止在实参类型推断失败时回退到形参类型。
     // 否则 `u16 + u16` 在 match 臂内推断失败时会“假装”匹配
     // `Utf8Text::infix +(Utf8Text, utf8)`，JVM 侧对 int local 发
@@ -3242,5 +3302,110 @@ micro negate_flag(flag: bool) -> bool {
             panic!("expected resolved boolean not: {expression:?}")
         };
         assert_eq!(resolved.parameter_types, vec![ValkyrieType::Boolean]);
+    }
+
+    #[test]
+    fn array_push_resolves_to_intrinsic_builtin_symbol() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4210 });
+        let hir = compiler
+            .compile_source(
+                r#"
+namespace test;
+
+micro grow(text: utf8) -> [utf8] {
+    let mut result: [utf8] = []
+    push(result, text)
+    return result
+}
+"#,
+            )
+            .expect("array push must compile");
+        let function = hir.functions.iter().find(|function| function.name.as_str() == "grow").expect("grow");
+        let HirStatementKind::Expr(statement) = &function.body.statements[1].kind
+        else {
+            panic!("expected push statement")
+        };
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &statement.kind
+        else {
+            panic!("push must resolve via IntrinsicId builtin candidate: {statement:?}")
+        };
+        let parts = resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+        assert_eq!(IntrinsicId::resolve_from_segments(&parts), Some(IntrinsicId::ArrayPush));
+    }
+
+    #[test]
+    fn array_push_resolves_inside_imply_like_utf8_split() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4211 });
+        let hir = compiler
+            .compile_source(
+                r#"
+namespace test;
+
+class Utf8Text {}
+
+imply Utf8Text {
+    micro split(self, separator: utf8) -> [utf8] {
+        let mut result: [utf8] = []
+        if separator.length() <= 0 {
+            push(result, self)
+            return result
+        }
+        push(result, "")
+        return result
+    }
+}
+"#,
+            )
+            .expect("imply array push must compile");
+        let method = hir
+            .impls
+            .iter()
+            .flat_map(|item| item.methods.iter())
+            .find(|method| method.name.as_str() == "split")
+            .expect("split");
+        let mut push_calls = 0usize;
+        for statement in &method.body.statements {
+            fn walk(expr: &HirExpr, push_calls: &mut usize) {
+                match &expr.kind {
+                    HirExprKind::Call { resolved, args, .. } => {
+                        if let Some(resolved) = resolved {
+                            let parts = resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+                            if IntrinsicId::resolve_from_segments(&parts) == Some(IntrinsicId::ArrayPush) {
+                                *push_calls += 1;
+                            }
+                        }
+                        for arg in args {
+                            walk(&arg.value, push_calls);
+                        }
+                    }
+                    HirExprKind::If { then_branch, else_branch, condition, .. } => {
+                        walk(condition, push_calls);
+                        for statement in &then_branch.statements {
+                            if let HirStatementKind::Expr(inner) = &statement.kind {
+                                walk(inner, push_calls);
+                            }
+                        }
+                        if let Some(else_branch) = else_branch {
+                            for statement in &else_branch.statements {
+                                if let HirStatementKind::Expr(inner) = &statement.kind {
+                                    walk(inner, push_calls);
+                                }
+                            }
+                        }
+                    }
+                    HirExprKind::Return(Some(inner)) => walk(inner, push_calls),
+                    HirExprKind::Block(block) => {
+                        if let Some(inner) = &block.expr {
+                            walk(inner, push_calls);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let HirStatementKind::Expr(expr) = &statement.kind {
+                walk(expr, &mut push_calls);
+            }
+        }
+        assert!(push_calls >= 1, "expected ArrayPush IntrinsicId binding inside imply split");
     }
 }
