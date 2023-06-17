@@ -481,8 +481,11 @@ fn require_kind(
 
 fn push_const_kind(data: &NyarModuleData, instruction: NyarInstruction) -> StackKind {
     if instruction.operand1 >= 0 {
-        if let Some(nyar_bytecode::NyarConstant::Integer32(_)) = data.constants.get(instruction.operand1 as usize) {
-            return StackKind::I32;
+        match data.constants.get(instruction.operand1 as usize) {
+            Some(nyar_bytecode::NyarConstant::Integer32(_)) | Some(nyar_bytecode::NyarConstant::Boolean(_)) => {
+                return StackKind::I32;
+            }
+            _ => {}
         }
     }
     StackKind::Any
@@ -1124,5 +1127,29 @@ mod tests {
         });
         module.code_bytes = code;
         verify_module(&module).expect("i32 Pop void");
+    }
+
+    #[test]
+    fn accepts_boolean_const_as_i32_jump_condition() {
+        let mut module = empty_module();
+        module.constants.push(NyarConstant::Boolean(true));
+        let mut code = Vec::new();
+        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        let br_pc = code.len();
+        emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
+        emit_plain(&mut code, NyarHeadCode::Return);
+        let else_pc = code.len();
+        let rel = (else_pc as i32) - (br_pc as i32);
+        code[br_pc + 1..br_pc + 5].copy_from_slice(&rel.to_le_bytes());
+        emit_plain(&mut code, NyarHeadCode::Return);
+        module.functions.push(NyarFunction {
+            name: "main".into(),
+            arity: 0,
+            local_count: 0,
+            code_offset: 0,
+            code_length: code.len() as i32,
+        });
+        module.code_bytes = code;
+        verify_module(&module).expect("boolean JumpIfFalse");
     }
 }
