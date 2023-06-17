@@ -710,17 +710,20 @@ impl MirBuilder {
                         .as_ref()
                         .map(|call| call.return_type.clone())
                         .or_else(|| expected_type.cloned());
-                    let hint = infer_builder_operand_type(&receiver_operand, &self.value_types).or_else(|| {
-                        payload_hint.as_ref().map(|payload| {
-                            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
-                        })
-                    });
-                    if Self::option_shaped_type(&receiver_operand, &self.value_types, hint.as_ref(), payload_hint.as_ref()).is_some() {
-                        if let Some(operand) =
-                            self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
-                        {
-                            return operand;
-                        }
+                    let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
+                        .filter(|ty| Self::option_sum_name(ty).is_some())
+                        .or_else(|| {
+                            payload_hint.as_ref().map(|payload| {
+                                ValkyrieType::Apply(
+                                    Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                                    vec![payload.clone()],
+                                )
+                            })
+                        });
+                    if let Some(operand) =
+                        self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
+                    {
+                        return operand;
                     }
                 }
                 if callee_name_matches(&callee.kind, "Some") && args.len() == 1 {
@@ -782,17 +785,21 @@ impl MirBuilder {
                             .as_ref()
                             .map(|call| call.return_type.clone())
                             .or_else(|| expected_type.cloned());
-                        let hint = infer_builder_operand_type(&receiver_operand, &self.value_types).or_else(|| {
-                            payload_hint.as_ref().map(|payload| {
-                                ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
-                            })
-                        });
-                        if Self::option_shaped_type(&receiver_operand, &self.value_types, hint.as_ref(), payload_hint.as_ref()).is_some() {
-                            if let Some(operand) =
-                                self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
-                            {
-                                return operand;
-                            }
+                        // 仅采纳已是 Option 形的接收者类型；非 Option 推断不得挡住 payload 回退。
+                        let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
+                            .filter(|ty| Self::option_sum_name(ty).is_some())
+                            .or_else(|| {
+                                payload_hint.as_ref().map(|payload| {
+                                    ValkyrieType::Apply(
+                                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                                        vec![payload.clone()],
+                                    )
+                                })
+                            });
+                        if let Some(operand) =
+                            self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
+                        {
+                            return operand;
                         }
                     }
                     // Call 不得携带 dispatch / witness / evidence / intrinsic / parameter_types。
