@@ -149,6 +149,11 @@ impl Executor {
         self.gc.gray_budget_per_slice()
     }
 
+    /// ConcurrentTrace 单次 poll 的最大切片数（测试 / 诊断）。
+    pub fn max_trace_slices_per_poll(&self) -> usize {
+        self.gc.max_trace_slices_per_poll()
+    }
+
     /// 最近一次 ConcurrentTrace poll 的工作量记账。
     pub fn last_trace_poll(&self) -> nyar_gc::TracePollReport {
         self.gc.last_trace_poll()

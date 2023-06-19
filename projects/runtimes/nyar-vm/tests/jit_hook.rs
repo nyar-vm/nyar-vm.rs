@@ -321,11 +321,13 @@ fn workload_hints_tighten_gray_budget_on_vm() {
 
     let mut vm = NyarVm::new();
     assert_eq!(vm.gray_budget_per_slice(), 64);
+    assert_eq!(vm.max_trace_slices_per_poll(), 8);
     vm.apply_workload_hints(WorkloadHints {
         pause_budget_ms: Some(1),
         ..WorkloadHints::default()
     });
     assert_eq!(vm.gray_budget_per_slice(), 8);
+    assert_eq!(vm.max_trace_slices_per_poll(), 2);
 }
 
 #[test]
@@ -360,6 +362,7 @@ fn gc_evidence_snapshot_includes_scenario_and_trace_fields() {
     assert!(snap["transitions"].as_array().expect("transitions").len() >= 1);
     assert!(snap["trace_poll"]["slices_run"].is_number());
     assert!(snap["root_handshake"]["stack_slots"].is_number());
+    assert!(snap["max_trace_slices_per_poll"].is_number());
     assert_eq!(snap["relocate_has_moves"], false);
     assert!(snap["promotion_failure"].is_null());
 }

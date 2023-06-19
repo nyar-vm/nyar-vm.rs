@@ -126,6 +126,7 @@ pub fn snapshot_gc_evidence(vm: &crate::NyarVm) -> serde_json::Value {
         "decision": decision,
         "transitions": transitions,
         "gray_budget_per_slice": vm.gray_budget_per_slice(),
+        "max_trace_slices_per_poll": vm.max_trace_slices_per_poll(),
         "trace_poll": {
             "slices_run": poll.slices_run,
             "gray_scanned": poll.gray_scanned,
