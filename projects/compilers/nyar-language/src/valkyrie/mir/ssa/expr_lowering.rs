@@ -870,15 +870,12 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    let value = self.push_call(callee, arguments);
                     let return_type = return_type
                         .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                         .or_else(|| expected_type.cloned())
-                        .or(known_return_type);
-                    if let Some(return_type) = return_type {
-                        self.value_types.insert(value, return_type);
-                    }
-                    return MirOperand::Value(value);
+                        .or(known_return_type)
+                        .unwrap_or(ValkyrieType::Unit);
+                    return self.push_call_returning(callee, arguments, return_type);
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -910,16 +907,14 @@ impl MirBuilder {
                                 self.lower_expr_to_operand_with_hint(&arg.value, hint)
                             })
                             .collect::<Vec<_>>();
-                        let return_type =
-                            resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| self.return_types.get(field.as_str()).cloned());
-                        let value = self.push_call(MirOperand::Value(callee_value), arguments);
-                        if let Some(return_type) = return_type {
-                            self.value_types.insert(value, return_type);
-                        }
-                        else if let Some(expected_type) = expected_type.cloned() {
-                            self.value_types.insert(value, expected_type);
-                        }
-                        return MirOperand::Value(value);
+                        let return_type = resolved
+                            .as_ref()
+                            .map(|call| call.return_type.clone())
+                            .or_else(|| self.return_types.get(field.as_str()).cloned())
+                            .or_else(|| expected_type.cloned())
+                            .unwrap_or(ValkyrieType::Unit);
+                        // `unit` 不得占用物理 value 槽（BPHYS001）。
+                        return self.push_call_returning(MirOperand::Value(callee_value), arguments, return_type);
                     }
 
                     // `obj.field.method()` where `obj` is not yet in bindings (e.g. nested
@@ -958,16 +953,14 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    let value = self.push_call(callee, arguments);
-                    if let Some(return_type) = resolved
+                    let return_type = resolved
                         .as_ref()
                         .map(|call| call.return_type.clone())
                         .or_else(|| self.return_types.get(field.as_str()).cloned())
                         .or_else(|| expected_type.cloned())
-                    {
-                        self.value_types.insert(value, return_type);
-                    }
-                    return MirOperand::Value(value);
+                        .unwrap_or(ValkyrieType::Unit);
+                    // `unit` 不得占用物理 value 槽（BPHYS001）。
+                    return self.push_call_returning(callee, arguments, return_type);
                 }
                 let is_prefix_not = callee_name_matches(&callee.kind, "prefix !");
                 let callee = lower_callee_operand(callee, resolved.as_ref(), self);
@@ -1054,8 +1047,8 @@ impl MirBuilder {
                     return operand;
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
-                let value = self.push_call(callee.clone(), arguments.clone());
-                if let Some(ty) = array_index_call_output_type(&arguments, &self.value_types)
+                // `unit` 不得占用物理 value 槽（BPHYS001）——一律经 `push_call_returning`。
+                let return_type = array_index_call_output_type(&arguments, &self.value_types)
                     .or_else(|| function_ty.map(|func| func.return_type))
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                     .or_else(|| match &callee {
@@ -1069,10 +1062,8 @@ impl MirBuilder {
                         _ => None,
                     })
                     .or_else(|| expected_type.cloned())
-                {
-                    self.value_types.insert(value, ty);
-                }
-                MirOperand::Value(value)
+                    .unwrap_or(ValkyrieType::Unit);
+                self.push_call_returning(callee, arguments, return_type)
             }
             HirExprKind::ArrayNew { element_type, length } => {
                 let length_operand = self.lower_expr_to_operand(length);

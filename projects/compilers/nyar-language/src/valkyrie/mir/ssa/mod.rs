@@ -1308,6 +1308,17 @@ impl MirBuilder {
         value
     }
 
+    /// Emit a call with known return type. `unit` 不得占用物理 value 槽（BPHYS001）。
+    pub(super) fn push_call_returning(&mut self, callee: MirOperand, arguments: Vec<MirOperand>, return_type: ValkyrieType) -> MirOperand {
+        if matches!(return_type, ValkyrieType::Unit) {
+            self.push_instruction(MirOperation::Call { callee, arguments }, Vec::new());
+            return MirOperand::Constant(MirConstant::Unit);
+        }
+        let value = self.push_call(callee, arguments);
+        self.value_types.insert(value, return_type);
+        MirOperand::Value(value)
+    }
+
     fn next_state_id(&mut self) -> u32 {
         let id = self.state_seed;
         self.state_seed += 1;
