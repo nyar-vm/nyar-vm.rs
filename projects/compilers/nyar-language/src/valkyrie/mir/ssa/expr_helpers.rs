@@ -277,6 +277,23 @@ pub(super) fn known_instance_method_return_type(owner: &str, method: &str) -> Op
             Box::new(ValkyrieType::Named(Identifier::new("Option"))),
             vec![ValkyrieType::Character],
         )),
+        // 集合表面：HIR 跨包合同未解析时，避免 Call 结果缺类型触发 SMIR001。
+        // ArrayList.push 是 mutator → unit；Array 上的 functional `push` 返回 Array（见 std Array.v）。
+        ("ArrayList", "push") => Some(ValkyrieType::Unit),
+        ("ArrayList", "length") | ("Array", "length") | ("HashMap", "length") => {
+            Some(ValkyrieType::Named(Identifier::new("usize")))
+        }
+        ("HashMap", "contains_key") | ("ArrayList", "contains") => Some(ValkyrieType::Boolean),
+        ("HashMap", "get") | ("ArrayList", "get") | ("Array", "get") => Some(ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+            vec![ValkyrieType::AutoType],
+        )),
+        ("HashMap", "insert") | ("HashMap", "remove") => Some(ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+            vec![ValkyrieType::AutoType],
+        )),
+        // unwrap 绝不能落到 Unit Call（空 results → SumPayloadGet SMIR006）。
+        ("Option", "unwrap") | ("Nullable", "unwrap") => Some(ValkyrieType::AutoType),
         _ => None,
     }
 }
