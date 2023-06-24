@@ -224,15 +224,22 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     ExecutableOperand::Value(value) => function.value_types.get(value),
                     _ => None,
                 };
-                if (!aggregate_field_types_compatible(payload_type, declared) && !is_type_parameter(declared))
-                    || output_type != Some(payload_type)
-                    || receiver_type.is_none_or(|ty| !type_matches_sum_owner_nyar(ty, sum_type))
-                {
+                let primary = crate::contracts::instruction_primary_result(instruction);
+                let payload_ok = aggregate_field_types_compatible(payload_type, declared) || is_type_parameter(declared);
+                let output_ok = output_type == Some(payload_type);
+                let receiver_ok = receiver_type.is_some_and(|ty| type_matches_sum_owner_nyar(ty, sum_type));
+                if !payload_ok || !output_ok || !receiver_ok {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: "sum payload extraction contract disagrees with declared sum metadata".to_string(),
+                        detail: format!(
+                            "sum payload extraction contract disagrees with declared sum metadata \
+                             (payload_ok={payload_ok} output_ok={output_ok} receiver_ok={receiver_ok}; \
+                             payload={payload_type:?} declared={declared:?} output={output_type:?} \
+                             primary={primary:?} results={:?} receiver={receiver_type:?})",
+                            instruction.results
+                        ),
                     });
                 }
                 continue;
