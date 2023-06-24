@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
     types::{Identifier, NamePath, hir::ValkyrieType},
-    valkyrie::mir::{LayoutId, MirFunction, MirModule, MirOperand, MirOperation, merge_aggregate_layout_plan},
+    valkyrie::mir::{LayoutId, MirFunction, MirModule, MirOperand, MirOperation, MirValue, MirValueOrigin, MirValueRef, merge_aggregate_layout_plan},
 };
 
 /// Merge reachable dependency MIR functions (and supporting layouts/sums) into `consumer`.
@@ -256,9 +256,40 @@ fn rewrite_bare_unwrap_calls_to_sum_payload_once(function: &mut MirFunction, cha
                     )
                 })
             });
-            let Some(receiver_ty) = receiver_ty else { continue };
-            let Some(payload_type) = option_payload_type(&receiver_ty).or(result_ty) else { continue };
+            // HIR 未解析 unwrap 合同时，接收者与结果 SSA 都可能缺类型；
+            // 仍必须消掉裸 `Call unwrap`，否则 emitter SMIR003 直接失败。
+            // payload 优先：Option 元数据 → 结果类型 → 接收者原样（非 Option）→ Auto。
+            let payload_type = receiver_ty
+                .as_ref()
+                .and_then(option_payload_type)
+                .or(result_ty.clone())
+                .or_else(|| match &receiver {
+                    MirOperand::Value(value) => function.value_types.get(value).cloned(),
+                    _ => None,
+                })
+                .unwrap_or(ValkyrieType::AutoType);
+            let receiver_ty = receiver_ty.unwrap_or_else(|| {
+                ValkyrieType::Apply(
+                    Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                    vec![payload_type.clone()],
+                )
+            });
             let type_args = option_apply_args(&receiver_ty).unwrap_or_else(|| vec![payload_type.clone()]);
+            if let MirOperand::Value(value) = &receiver {
+                if function.value_types.get(value).is_none_or(|ty| option_payload_type(ty).is_none()) {
+                    function.value_types.insert(*value, receiver_ty.clone());
+                }
+            }
+            // `push_call_returning(Unit)` 会留下无 results 的 Call；SumPayloadGet 必须有 SSA 结果槽（SMIR006）。
+            if instruction.results.is_empty() {
+                let next_id = function.values.iter().map(|value| value.id.0).max().map(|id| id.saturating_add(1)).unwrap_or(0);
+                let result = MirValueRef(next_id);
+                function.values.push(MirValue {
+                    id: result,
+                    origin: MirValueOrigin::CallResult,
+                });
+                instruction.results.push(result);
+            }
             if let Some(result) = instruction.results.first() {
                 function.value_types.insert(*result, payload_type.clone());
             }
@@ -484,6 +515,100 @@ mod tests {
         assert!(
             consumer.aggregate_layouts.layouts.iter().any(|layout| layout.name == "FunctionAnalysis" && layout.id == 3),
             "consumer FunctionAnalysis keeps unique id 3"
+        );
+    }
+
+    #[test]
+    fn rewrites_unit_result_bare_unwrap_allocates_payload_slot() {
+        // push_call_returning(Unit) 留下空 results 的 Call unwrap；必须补 SSA 结果槽。
+        let mut consumer_fn = empty_fn("leetcode::two_sum::two_sum");
+        let option_value = MirValueRef(0);
+        consumer_fn.values.push(MirValue {
+            id: option_value,
+            origin: MirValueOrigin::Temporary,
+        });
+        consumer_fn.value_types.insert(
+            option_value,
+            ValkyrieType::Apply(
+                Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                vec![ValkyrieType::Integer64 { signed: true }],
+            ),
+        );
+        consumer_fn.blocks[0]
+            .instructions
+            .push(MirInstruction::from_operation_with_results(
+                MirOperation::Call {
+                    callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("unwrap")])),
+                    arguments: vec![MirOperand::Value(option_value)],
+                },
+                vec![],
+            ));
+
+        let mut consumer = bare_module("leetcode.two_sum", vec![consumer_fn]);
+        link_reachable_dependency_mir(&mut consumer, &[]);
+        let function = &consumer.functions[0];
+        let instruction = &function.blocks[0].instructions[0];
+        assert!(
+            matches!(
+                &instruction.kind,
+                MirOperation::SumPayloadGet {
+                    sum_type,
+                    variant,
+                    ..
+                } if sum_type == "Option" && variant == "Some"
+            ),
+            "expected SumPayloadGet, got {:?}",
+            instruction.kind
+        );
+        assert_eq!(instruction.results.len(), 1, "SumPayloadGet must expose a result slot");
+        let result = instruction.results[0];
+        assert!(
+            matches!(
+                function.value_types.get(&result),
+                Some(ValkyrieType::Integer64 { signed: true })
+            ),
+            "payload type should follow Option<i64>, got {:?}",
+            function.value_types.get(&result)
+        );
+    }
+
+    #[test]
+    fn rewrites_untyped_bare_unwrap_without_option_metadata() {
+        // HIR 未解析时常见：Call unwrap 的接收者/结果都没有 value_types。
+        let mut consumer_fn = empty_fn("leetcode::two_sum::two_sum");
+        let option_value = MirValueRef(0);
+        let payload_value = MirValueRef(1);
+        consumer_fn.values.push(MirValue {
+            id: option_value,
+            origin: MirValueOrigin::Temporary,
+        });
+        consumer_fn.values.push(MirValue {
+            id: payload_value,
+            origin: MirValueOrigin::CallResult,
+        });
+        consumer_fn.blocks[0]
+            .instructions
+            .push(MirInstruction::from_operation_with_results(
+                MirOperation::Call {
+                    callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("unwrap")])),
+                    arguments: vec![MirOperand::Value(option_value)],
+                },
+                vec![payload_value],
+            ));
+
+        let mut consumer = bare_module("leetcode.two_sum", vec![consumer_fn]);
+        link_reachable_dependency_mir(&mut consumer, &[]);
+        let rewritten = &consumer.functions[0].blocks[0].instructions[0].kind;
+        assert!(
+            matches!(
+                rewritten,
+                MirOperation::SumPayloadGet {
+                    sum_type,
+                    variant,
+                    ..
+                } if sum_type == "Option" && variant == "Some"
+            ),
+            "expected SumPayloadGet even without typed Option metadata, got {rewritten:?}"
         );
     }
 
