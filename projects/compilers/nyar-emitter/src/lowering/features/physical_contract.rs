@@ -215,21 +215,40 @@ fn build_function_plan(
             })?;
             let parameters = arguments
                 .iter()
-                .map(|arg| match arg {
-                    ExecutableOperand::Value(v) => function
-                        .value_types
-                        .get(v)
-                        .ok_or_else(|| PhysicalPlanError::new("BPHYS004", function, location.clone(), "call argument missing semantic type")),
-                    _ => Ok(&NyarType::Unit),
+                .map(|arg| {
+                    let owned = match arg {
+                        ExecutableOperand::Value(v) => function.value_types.get(v).cloned().ok_or_else(|| {
+                            PhysicalPlanError::new("BPHYS004", function, location.clone(), "call argument missing semantic type")
+                        })?,
+                        ExecutableOperand::Constant(constant) => constant_nyar_type(constant),
+                        ExecutableOperand::Symbol(_) => {
+                            return Err(PhysicalPlanError::new(
+                                "BPHYS004",
+                                function,
+                                location.clone(),
+                                "call argument cannot be a bare symbol",
+                            ));
+                        }
+                    };
+                    physical_category(backend, &owned, false, false, function, "call parameter")
                 })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .map(|ty| physical_category(backend, ty, false, false, function, "call parameter"))
                 .collect::<Result<Vec<_>, _>>()?;
             calls.insert((block.id.0, instruction_index), PhysicalCallContract { callee, parameters });
         }
     }
     Ok(PhysicalFunctionPlan { symbol: function.symbol.clone(), parameters, result, values, calls, text_projections })
+}
+
+/// Map an executable immediate to its Semantic MIR type for physical planning.
+fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
+    match constant {
+        crate::contracts::Constant::Int(_) => NyarType::Integer64 { signed: true },
+        crate::contracts::Constant::Float64(_) => NyarType::Float64,
+        crate::contracts::Constant::Bool(_) => NyarType::Boolean,
+        crate::contracts::Constant::Utf8(_) => NyarType::Utf8,
+        crate::contracts::Constant::Utf16(_) => NyarType::Utf16,
+        crate::contracts::Constant::Unit => NyarType::Unit,
+    }
 }
 
 /// Keep aligned with `semantic_mir_contract::is_language_operator_symbol`.
@@ -341,6 +360,34 @@ mod tests {
             executable: Some(Arc::new(MirFunctionMapProvider::new(functions.into_iter().collect()))),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn constant_int_call_argument_is_not_unit() {
+        let target = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("SwissTable"), Identifier::new("new")]);
+        let caller = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("HashMap"), Identifier::new("new")]);
+        let mut caller_function = function("std.HashMap.new", NyarType::Named(Identifier::new("HashMap")), vec![]);
+        caller_function.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
+                callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
+                arguments: vec![Operand::Constant(nyar_types::Constant::Int(0))],
+            },
+            Vec::new(),
+        ));
+        let submission = submission(vec![
+            (
+                target.clone(),
+                function("std.SwissTable.new", NyarType::Named(Identifier::new("SwissTable")), vec![NyarType::Integer64 { signed: true }]),
+            ),
+            (caller, caller_function),
+        ]);
+        let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("Int(0) capacity must not be planned as Unit");
+        let caller_plan = plans.iter().find(|plan| plan.symbol == "std.HashMap.new").expect("caller plan");
+        assert_eq!(caller_plan.calls.len(), 1);
+        assert_eq!(
+            caller_plan.calls.values().next().expect("call").parameters,
+            vec![PhysicalValueCategory::I64]
+        );
     }
 
     #[test]
