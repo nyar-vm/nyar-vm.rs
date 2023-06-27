@@ -213,22 +213,29 @@ fn build_function_plan(
                     "static call target is not an exact local semantic function",
                 )
             })?;
+            let callee_param_types = executable
+                .get_function(&callee)
+                .map(|view| view.function.param_types.clone())
+                .unwrap_or_default();
             let parameters = arguments
                 .iter()
-                .map(|arg| {
+                .enumerate()
+                .map(|(arg_index, arg)| {
                     let owned = match arg {
                         ExecutableOperand::Value(v) => function.value_types.get(v).cloned().ok_or_else(|| {
                             PhysicalPlanError::new("BPHYS004", function, location.clone(), "call argument missing semantic type")
                         })?,
                         ExecutableOperand::Constant(constant) => constant_nyar_type(constant),
-                        ExecutableOperand::Symbol(_) => {
-                            return Err(PhysicalPlanError::new(
+                        // 调用点残留的裸 Symbol（如未类型化的 `None`）不得再当成 Unit；
+                        // 物理类别以 callee 精确形参合同为准，不向上猜语义。
+                        ExecutableOperand::Symbol(_) => callee_param_types.get(arg_index).cloned().ok_or_else(|| {
+                            PhysicalPlanError::new(
                                 "BPHYS004",
                                 function,
                                 location.clone(),
-                                "call argument cannot be a bare symbol",
-                            ));
-                        }
+                                format!("bare symbol argument has no callee parameter type at index {arg_index}"),
+                            )
+                        })?,
                     };
                     physical_category(backend, &owned, false, false, function, "call parameter")
                 })
@@ -387,6 +394,51 @@ mod tests {
         assert_eq!(
             caller_plan.calls.values().next().expect("call").parameters,
             vec![PhysicalValueCategory::I64]
+        );
+    }
+
+    #[test]
+    fn bare_symbol_call_argument_uses_callee_parameter_type() {
+        let target = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("ArrayList"), Identifier::new("push")]);
+        let caller = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("SwissTable"), Identifier::new("new")]);
+        let mut caller_function = function(
+            "std.SwissTable.new",
+            NyarType::Named(Identifier::new("SwissTable")),
+            vec![NyarType::Integer64 { signed: true }],
+        );
+        let list = ValueRef(1);
+        caller_function.value_types.insert(list, NyarType::Named(Identifier::new("ArrayList")));
+        caller_function.blocks[0].instructions.push(instr(
+            InstructionKind::Call {
+                callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
+                arguments: vec![
+                    Operand::Value(list),
+                    Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("None")])),
+                ],
+            },
+            Vec::new(),
+        ));
+        let option_ty = NyarType::Apply(
+            Box::new(NyarType::Named(Identifier::new("Option"))),
+            vec![NyarType::Named(Identifier::new("Entry"))],
+        );
+        let submission = submission(vec![
+            (
+                target.clone(),
+                function(
+                    "std.ArrayList.push",
+                    NyarType::Unit,
+                    vec![NyarType::Named(Identifier::new("ArrayList")), option_ty],
+                ),
+            ),
+            (caller, caller_function),
+        ]);
+        let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue)
+            .expect("bare Symbol None must take ArrayList.push value parameter category");
+        let caller_plan = plans.iter().find(|plan| plan.symbol == "std.SwissTable.new").expect("caller plan");
+        assert_eq!(
+            caller_plan.calls.values().next().expect("call").parameters,
+            vec![PhysicalValueCategory::Reference, PhysicalValueCategory::Reference]
         );
     }
 
