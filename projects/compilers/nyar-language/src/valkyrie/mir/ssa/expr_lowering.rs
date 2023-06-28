@@ -1383,26 +1383,30 @@ impl MirBuilder {
 
     /// Lower an unbound nullary unite arm (`None`) to typed `SumNew`.
     ///
-    /// Requires a contextual Option/Result-shaped type (return hint or
-    /// `current_return_type`) and a registered sum layout whose matching
-    /// variant has no payload. Bound locals still win over this path.
+    /// Prefer contextual Option/Result-shaped type（形参 hint / 当前返回类型）。
+    /// 无 hint 时，若全仓仅有一个匹配的无载荷变体所有者（典型：`None`→`Option`），
+    /// 仍发出 `SumNew`，避免调用点留下裸 `Symbol("None")` 触发 BPHYS004。
+    /// Bound locals still win over this path.
     fn try_lower_nullary_sum_variant(&mut self, variant_name: &str, expected_type: Option<&ValkyrieType>) -> Option<MirOperand> {
         let contextual = expected_type.cloned().or_else(|| {
             (is_option_shaped(&self.current_return_type) || is_result_shaped(&self.current_return_type))
                 .then(|| self.current_return_type.clone())
-        })?;
-        if !(is_option_shaped(&contextual) || is_result_shaped(&contextual)) {
-            return None;
-        }
-        let preferred_owner = sum_owner_name(&contextual);
-        let sum_type = self
-            .sum_types
-            .iter()
-            .find(|sum| {
-                preferred_owner.is_some_and(|owner| sum.name.as_str() == owner)
-                    && sum.variants.iter().any(|variant| variant.name == variant_name && variant.payload_type.is_none())
+        });
+        let preferred_owner = contextual.as_ref().and_then(sum_owner_name);
+        let sum_type = contextual
+            .as_ref()
+            .and_then(|contextual| {
+                if !(is_option_shaped(contextual) || is_result_shaped(contextual)) {
+                    return None;
+                }
+                self.sum_types
+                    .iter()
+                    .find(|sum| {
+                        preferred_owner.is_some_and(|owner| sum.name.as_str() == owner)
+                            && sum.variants.iter().any(|variant| variant.name == variant_name && variant.payload_type.is_none())
+                    })
+                    .map(|sum| preferred_owner.map(str::to_string).unwrap_or_else(|| sum.name.clone()))
             })
-            .map(|sum| preferred_owner.map(str::to_string).unwrap_or_else(|| sum.name.clone()))
             .or_else(|| {
                 let matches: Vec<String> = self
                     .sum_types
@@ -1412,6 +1416,13 @@ impl MirBuilder {
                     .collect();
                 (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
             })?;
+        let contextual = contextual.unwrap_or_else(|| {
+            // 无 hint：用唯一所有者构造最小 Apply（`Option`/`Result`），payload 槽留 Auto。
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(sum_type.as_str()))), vec![ValkyrieType::AutoType])
+        });
+        if !(is_option_shaped(&contextual) || is_result_shaped(&contextual)) {
+            return None;
+        }
         let value = self.next_value(MirValueOrigin::CallResult);
         let (return_type, payload_type) =
             concretize_variant_constructor_types(&contextual, None, variant_name, Some(&contextual), &[], &self.value_types);
