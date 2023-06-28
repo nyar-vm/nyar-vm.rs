@@ -237,7 +237,14 @@ fn build_function_plan(
                             )
                         })?,
                     };
-                    physical_category(backend, &owned, false, false, function, "call parameter")
+                    physical_category(
+                        backend,
+                        &owned,
+                        false,
+                        false,
+                        function,
+                        format!("call parameter[{arg_index}] callee={callee} ty={owned:?}"),
+                    )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             calls.insert((block.id.0, instruction_index), PhysicalCallContract { callee, parameters });
