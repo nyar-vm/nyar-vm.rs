@@ -292,8 +292,9 @@ pub(super) fn known_instance_method_return_type(owner: &str, method: &str) -> Op
             Box::new(ValkyrieType::Named(Identifier::new("Option"))),
             vec![ValkyrieType::AutoType],
         )),
-        // unwrap 绝不能落到 Unit Call（空 results → SumPayloadGet SMIR006）。
-        ("Option", "unwrap") | ("Nullable", "unwrap") => Some(ValkyrieType::AutoType),
+        // unwrap 绝不能落到 Unit Call（空 results → SumPayloadGet SMIR006；
+        // 且 `push(x.unwrap())` 会把 Constant::Unit 推进 ArrayList → BPHYS001）。
+        ("Option", "unwrap") | ("Nullable", "unwrap") | ("", "unwrap") => Some(ValkyrieType::AutoType),
         _ => None,
     }
 }

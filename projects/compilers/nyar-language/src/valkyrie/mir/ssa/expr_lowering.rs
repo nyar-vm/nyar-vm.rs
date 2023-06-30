@@ -855,7 +855,13 @@ impl MirBuilder {
                     let known_return_type = if callee_symbol.parts().len() == 2 {
                         known_instance_method_return_type(callee_symbol.parts()[0].as_str(), callee_symbol.parts()[1].as_str())
                     } else {
-                        None
+                        known_instance_method_return_type("", method_name.as_str())
+                            .or_else(|| match method_name.as_str() {
+                                // 未限定 `unwrap` 绝不能默认 Unit，否则 `list.push(x.unwrap())` 会推入 Constant::Unit（BPHYS001）。
+                                "unwrap" => Some(ValkyrieType::AutoType),
+                                "is_some" | "is_none" => Some(ValkyrieType::Boolean),
+                                _ => None,
+                            })
                     };
                     let callee = MirOperand::Symbol(callee_symbol);
                     if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
@@ -874,6 +880,7 @@ impl MirBuilder {
                         .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                         .or_else(|| expected_type.cloned())
                         .or(known_return_type)
+                        .or_else(|| (method_name.as_str() == "unwrap").then_some(ValkyrieType::AutoType))
                         .unwrap_or(ValkyrieType::Unit);
                     return self.push_call_returning(callee, arguments, return_type);
                 }
