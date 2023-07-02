@@ -18,7 +18,7 @@ use super::{
     callee_name_matches,
     expr_helpers::{
         is_array_shaped_valkyrie_type, known_instance_method_return_type, named_type_name, peel_generic_apply, qualify_instance_method_symbol,
-        reject_text_operator_for_numeric_args,
+        receiver_method_owner_name, reject_text_operator_for_numeric_args,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -751,7 +751,8 @@ impl MirBuilder {
                     let payload_hint = resolved
                         .as_ref()
                         .map(|call| call.return_type.clone())
-                        .or_else(|| expected_type.cloned());
+                        .or_else(|| expected_type.cloned())
+                        .or_else(|| Some(ValkyrieType::AutoType));
                     let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                         .filter(|ty| Self::option_sum_name(ty).is_some())
                         .or_else(|| {
@@ -763,7 +764,17 @@ impl MirBuilder {
                             })
                         });
                     if let Some(operand) =
-                        self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
+                        self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
+                    {
+                        return operand;
+                    }
+                    // 合同未解析时仍不得发出 Unit Call；强制 Option<Auto> 走 SumPayloadGet。
+                    let forced = ValkyrieType::Apply(
+                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                        vec![ValkyrieType::AutoType],
+                    );
+                    if let Some(operand) =
+                        self.try_lower_option_unwrap(receiver_operand, Some(&forced), Some(&ValkyrieType::AutoType))
                     {
                         return operand;
                     }
@@ -826,7 +837,8 @@ impl MirBuilder {
                         let payload_hint = resolved
                             .as_ref()
                             .map(|call| call.return_type.clone())
-                            .or_else(|| expected_type.cloned());
+                            .or_else(|| expected_type.cloned())
+                            .or_else(|| Some(ValkyrieType::AutoType));
                         // 仅采纳已是 Option 形的接收者类型；非 Option 推断不得挡住 payload 回退。
                         let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                             .filter(|ty| Self::option_sum_name(ty).is_some())
@@ -843,6 +855,17 @@ impl MirBuilder {
                         {
                             return operand;
                         }
+                        let forced = ValkyrieType::Apply(
+                            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                            vec![ValkyrieType::AutoType],
+                        );
+                        if let Some(operand) = self.try_lower_option_unwrap(
+                            receiver_operand.clone(),
+                            Some(&forced),
+                            Some(&ValkyrieType::AutoType),
+                        ) {
+                            return operand;
+                        }
                     }
                     // Call 不得携带 dispatch / witness / evidence / intrinsic / parameter_types。
                     let (callee_symbol, return_type) = qualify_instance_method_symbol(
@@ -852,14 +875,28 @@ impl MirBuilder {
                         &self.value_types,
                         &self.return_types,
                     );
-                    let known_return_type = if callee_symbol.parts().len() == 2 {
-                        known_instance_method_return_type(callee_symbol.parts()[0].as_str(), callee_symbol.parts()[1].as_str())
-                    } else {
-                        known_instance_method_return_type("", method_name.as_str())
-                            .or_else(|| match method_name.as_str() {
-                                // 未限定 `unwrap` 绝不能默认 Unit，否则 `list.push(x.unwrap())` 会推入 Constant::Unit（BPHYS001）。
+                    let known_return_type = {
+                        let method = if callee_symbol.parts().len() >= 2 {
+                            callee_symbol.parts()[1].as_str()
+                        } else {
+                            method_name.as_str()
+                        };
+                        let owner = if callee_symbol.parts().len() >= 2 {
+                            Some(callee_symbol.parts()[0].as_str().to_string())
+                        } else {
+                            receiver_method_owner_name(&receiver_operand, &self.value_types)
+                        };
+                        owner
+                            .as_deref()
+                            .and_then(|owner| known_instance_method_return_type(owner, method))
+                            .or_else(|| known_instance_method_return_type("", method))
+                            .or_else(|| match method {
                                 "unwrap" => Some(ValkyrieType::AutoType),
                                 "is_some" | "is_none" => Some(ValkyrieType::Boolean),
+                                "get" => Some(ValkyrieType::Apply(
+                                    Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                                    vec![ValkyrieType::AutoType],
+                                )),
                                 _ => None,
                             })
                     };
