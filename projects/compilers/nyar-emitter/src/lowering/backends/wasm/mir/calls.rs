@@ -459,22 +459,8 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Vec::new();
         };
-        let dotted = path.to_string();
-        if let Some(params) = self.param_types_by_name.get(&dotted) {
-            return params.clone();
-        }
-        let parts = path.parts();
-        if parts.is_empty() {
-            return Vec::new();
-        }
-        // ?`resolve_callee_function_index` 保持对称：仅单段路径?simple name?
-        if parts.len() == 1 {
-            if let Some(params) = self.param_types_by_name.get(parts[0].as_str()) {
-                return params.clone();
-            }
-        }
-        let simple = parts[parts.len() - 1].as_str();
-        unique_simple_name_match(&self.param_types_by_name, simple).cloned().unwrap_or_default()
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        lookup_by_path_parts(&self.param_types_by_name, &parts).cloned().unwrap_or_default()
     }
 
     pub(super) fn resolve_callee_return_type(&self, callee: &MirOperand, import_index: Option<u32>) -> Option<u8> {
@@ -485,24 +471,8 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return None;
         };
-        let dotted = path.to_string();
-        if let Some(return_type) = self.return_types_by_name.get(&dotted) {
-            return *return_type;
-        }
-        let parts = path.parts();
-        if parts.is_empty() {
-            return None;
-        }
-        // ?`resolve_callee_function_index` 保持对称：仅单段路径?simple name?
-        // 多段路径的歧义简单名不得用「字典序第一?ends_with」冒充，否则
-        // `ArrayList::get` 会命?`std::net::get` 等错?callee?
-        if parts.len() == 1 {
-            if let Some(return_type) = self.return_types_by_name.get(parts[0].as_str()) {
-                return *return_type;
-            }
-        }
-        let simple = parts[parts.len() - 1].as_str();
-        unique_simple_name_match(&self.return_types_by_name, simple).copied().flatten()
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        lookup_by_path_parts(&self.return_types_by_name, &parts).copied().flatten()
     }
 
     pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {
@@ -624,19 +594,8 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Symbol(path) => path,
             _ => return None,
         };
-        let dotted = path.to_string();
-        if let Some(index) = self.callee_import_index.get(&dotted).copied() {
-            return Some(index);
-        }
-        let parts = path.parts();
-        if parts.is_empty() {
-            return None;
-        }
-        let simple = parts[parts.len() - 1].as_str();
-        if let Some(index) = self.callee_import_index.get(simple).copied() {
-            return Some(index);
-        }
-        None
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        lookup_by_path_parts(&self.callee_import_index, &parts).copied()
     }
 
     /// 判定 callee 是否为 i32 原语运算（经 [`OperatorId`]，非 `infix ==` 字符串表）。

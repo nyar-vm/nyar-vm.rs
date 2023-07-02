@@ -471,6 +471,19 @@ fn unique_simple_name_match<'a, V>(map: &'a BTreeMap<String, V>, simple: &str) -
     found
 }
 
+/// Lookup registry keys for a MIR [`NamePath`]（`.`）against [`QualifiedName`]（`::`）maps.
+fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> Option<&'a V> {
+    if parts.is_empty() {
+        return None;
+    }
+    let colon = parts.join("::");
+    let dotted = parts.join(".");
+    map.get(&colon)
+        .or_else(|| map.get(&dotted))
+        .or_else(|| (parts.len() == 1).then(|| map.get(parts[0])).flatten())
+        .or_else(|| unique_simple_name_match(map, parts[parts.len() - 1]))
+}
+
 fn build_param_types_by_name(
     ctx: &ExecutableLoweringContext,
     submission: &FragmentSubmission,
@@ -486,7 +499,11 @@ fn build_param_types_by_name(
             continue;
         };
         let params = wasm_param_types(&ctx, &mir_fn, gc_struct_type_indices, js_glue_utf8_as_anyref);
-        map.insert(operation.to_string(), params.clone());
+        let full = operation.to_string();
+        map.insert(full.clone(), params.clone());
+        if full.contains("::") {
+            map.entry(full.replace("::", ".")).or_insert_with(|| params.clone());
+        }
         if let Some(last) = operation.parts().last() {
             let simple = last.as_str();
             if ambiguous.contains(simple) {
@@ -660,6 +677,12 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_name.insert(full.clone(), wasm_idx);
         type_index_by_name.insert(full.clone(), type_idx);
+        // MIR callee 多为 NamePath（`.`）；同步注册点号拼写，避免 `ArrayList.push` 查不到 `ArrayList::push`。
+        if full.contains("::") {
+            let dotted_alias = full.replace("::", ".");
+            function_index_by_name.entry(dotted_alias.clone()).or_insert(wasm_idx);
+            type_index_by_name.entry(dotted_alias).or_insert(type_idx);
+        }
         if let Some(last) = operation.parts().last() {
             let simple = last.as_str();
             if ambiguous_simple.contains(simple) {
@@ -2892,29 +2915,15 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// Resolves a callee operand to its WASM function index.
     ///
-    /// Matches by full qualified-name string first, then falls back to the last path part.
+    /// 注册表键来自 [`QualifiedName`]（`::` 连接）；MIR callee 多为 [`NamePath`]（`.` 连接）。
+    /// 两种拼写都查；再回退到唯一简单名 / `::简单名` 后缀（碰撞则 fail-closed）。
     fn resolve_callee_function_index(&self, callee: &MirOperand) -> Option<u32> {
         let path = match callee {
             MirOperand::Symbol(path) => path,
             _ => return None,
         };
-        let dotted = path.to_string();
-        if let Some(index) = self.function_index_by_name.get(&dotted).copied() {
-            return Some(index);
-        }
-        let parts = path.parts();
-        if parts.is_empty() {
-            return None;
-        }
-        if parts.len() == 1 {
-            if let Some(index) = self.function_index_by_name.get(parts[0].as_str()).copied() {
-                return Some(index);
-            }
-        }
-        let simple = parts[parts.len() - 1].as_str();
-        // 多名 `::get` / `::length` 碰撞?fail-closed（返?None →?unresolved placeholder），
-        // 禁止 `ends_with` 命中字典序最小者（曾把 ArrayList::get 编成 std::net::get）?
-        unique_simple_name_match(&self.function_index_by_name, simple).copied()
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        lookup_by_path_parts(&self.function_index_by_name, &parts).copied()
     }
 
     /// Resolve the WASM type section index for a callee operand.
@@ -2932,24 +2941,8 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Symbol(path) => path,
             _ => return first_fn_type,
         };
-        let dotted = path.to_string();
-        if let Some(index) = self.type_index_by_name.get(&dotted).copied() {
-            return index;
-        }
-        let parts = path.parts();
-        if parts.is_empty() {
-            return first_fn_type;
-        }
-        if parts.len() == 1 {
-            if let Some(index) = self.type_index_by_name.get(parts[0].as_str()).copied() {
-                return index;
-            }
-        }
-        let simple = parts[parts.len() - 1].as_str();
-        if let Some(index) = unique_simple_name_match(&self.type_index_by_name, simple) {
-            return *index;
-        }
-        first_fn_type
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        lookup_by_path_parts(&self.type_index_by_name, &parts).copied().unwrap_or(first_fn_type)
     }
 
     /// Returns the smallest function type index in the type section.
