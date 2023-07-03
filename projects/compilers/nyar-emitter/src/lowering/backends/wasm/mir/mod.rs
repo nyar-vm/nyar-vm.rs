@@ -481,6 +481,18 @@ fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> 
     map.get(&colon)
         .or_else(|| map.get(&dotted))
         .or_else(|| (parts.len() == 1).then(|| map.get(parts[0])).flatten())
+        .or_else(|| {
+            // MIR 常带命名空间前缀（`std.collection.SwissTable.new`），注册表键多为 `SwissTable::new`。
+            if parts.len() >= 2 {
+                let owner = parts[parts.len() - 2];
+                let method = parts[parts.len() - 1];
+                let suffix_colon = format!("{owner}::{method}");
+                let suffix_dot = format!("{owner}.{method}");
+                map.get(&suffix_colon).or_else(|| map.get(&suffix_dot))
+            } else {
+                None
+            }
+        })
         .or_else(|| unique_simple_name_match(map, parts[parts.len() - 1]))
 }
 
@@ -539,7 +551,11 @@ fn build_return_types_by_name(
             continue;
         };
         let return_type = wasm_return_value_type(ctx, &mir_fn, gc_struct_type_indices, js_glue_utf8_as_anyref);
-        map.insert(operation.to_string(), return_type);
+        let full = operation.to_string();
+        map.insert(full.clone(), return_type);
+        if full.contains("::") {
+            map.entry(full.replace("::", ".")).or_insert(return_type);
+        }
         if let Some(last) = operation.parts().last() {
             let simple = last.as_str();
             if ambiguous.contains(simple) {

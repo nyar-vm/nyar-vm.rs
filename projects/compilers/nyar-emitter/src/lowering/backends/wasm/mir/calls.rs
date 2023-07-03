@@ -415,10 +415,10 @@ impl<'a> WasmMirLowerer<'a> {
     /// 替代方案:弹出已压入的参数(`drop` × N),再压入与 output local 类型匹配?
     /// 占位?`ref.null anyref` ?`i32.const 0`),使后?`local.set` 类型一致?
     /// 占位值类型由 output 已分配的 local 类型决定;若未分配,?`value_types` 推断?
+    /// 未解析静态调用：参数从未压栈，禁止 `drop`×N（否则 BPHYS 已过后仍会在空栈 `drop` 上挂掉）。
+    /// 有 output 时压与槽位匹配的占位；无 output（unit Call）则为空操作。
     fn emit_unresolved_call_placeholder(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) {
-        for _ in arguments {
-            WasmOpcode::Drop.encode(&mut self.code);
-        }
+        let _ = arguments;
         if let Some(output) = output {
             self.emit_placeholder_for_output(output);
         }
