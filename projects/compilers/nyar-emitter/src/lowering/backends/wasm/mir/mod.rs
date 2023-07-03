@@ -699,6 +699,26 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             function_index_by_name.entry(dotted_alias.clone()).or_insert(wasm_idx);
             type_index_by_name.entry(dotted_alias).or_insert(type_idx);
         }
+        // 短名 `Owner::method` / `Owner.method`：MIR 常省略 `std.collection` 等命名空间前缀。
+        let parts = operation.parts();
+        if parts.len() >= 2 {
+            let owner = parts[parts.len() - 2].as_str();
+            let method = parts[parts.len() - 1].as_str();
+            for alias in [format!("{owner}::{method}"), format!("{owner}.{method}")] {
+                match function_index_by_name.get(&alias) {
+                    Some(&existing) if existing == wasm_idx => {}
+                    Some(_) => {
+                        // 同名短后缀碰撞（极少见）→ 删除别名，强制走完整路径。
+                        function_index_by_name.remove(&alias);
+                        type_index_by_name.remove(&alias);
+                    }
+                    None => {
+                        function_index_by_name.insert(alias.clone(), wasm_idx);
+                        type_index_by_name.insert(alias, type_idx);
+                    }
+                }
+            }
+        }
         if let Some(last) = operation.parts().last() {
             let simple = last.as_str();
             if ambiguous_simple.contains(simple) {
