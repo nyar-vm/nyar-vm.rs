@@ -29,7 +29,12 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             WasmPackageKind::Library => true,
             WasmPackageKind::Binary => false,
         };
-        let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode);
+        let library_invoke = if library_mode {
+            read_library_invoke_spec(&wasm_path)
+        } else {
+            None
+        };
+        let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
         fs::write(&launcher_path, launcher).into_diagnostic().wrap_err_with(|| format!("写入 Node 启动壳失败：{}", launcher_path.display()))?;
 
         Ok(vec![ArtifactDescriptor {
@@ -155,7 +160,72 @@ fn is_library_wasm_module(wasm_path: &Path) -> bool {
     has_named_function && !has_entry
 }
 
-fn build_node_launcher(artifact_name: &str, imports: &[(String, String)], utf8_literals: &[String], library_mode: bool) -> String {
+fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
+    let bytes = fs::read(wasm_path).ok()?;
+    let module = WasmBinaryModule::from_bytes(&bytes).ok()?;
+    for section in &module.sections {
+        if section.name.as_deref() == Some("nyar.library_invoke") {
+            return Some(String::from_utf8_lossy(&section.bytes).to_string());
+        }
+    }
+    None
+}
+
+fn library_invoke_marshaler_js(spec_json: &str) -> String {
+    format!(
+        r#"const LIBRARY_INVOKE = {spec_json};
+const GLUE_LIST_I64 = LIBRARY_INVOKE.glue?.list_i64 ?? null;
+
+function marshalLibraryArg(kind, value) {{
+    if (kind === "i64") {{
+        return BigInt(value ?? 0);
+    }}
+    if (kind === "list_i64" && GLUE_LIST_I64) {{
+        const nums = Array.isArray(value) ? value : [];
+        const list = exports[GLUE_LIST_I64.new](BigInt(nums.length));
+        const push = exports[GLUE_LIST_I64.push];
+        for (const item of nums) {{
+            push(list, BigInt(item));
+        }}
+        return list;
+    }}
+    return value;
+}}
+
+function demarshalLibraryReturn(kind, value) {{
+    if (kind === "list_i64" && GLUE_LIST_I64) {{
+        if (value == null) {{
+            return null;
+        }}
+        const len = Number(exports[GLUE_LIST_I64.length](value));
+        if (len === 0) {{
+            return null;
+        }}
+        const out = [];
+        const at = exports[GLUE_LIST_I64.at];
+        for (let i = 0; i < len; i++) {{
+            // V `ArrayList` 下标为 1-based ordinal（与 `⁅cardinal⁆` 一致）。
+            out.push(Number(at(value, i + 1)));
+        }}
+        return out;
+    }}
+    if (kind === "i64") {{
+        return Number(value);
+    }}
+    return value;
+}}
+"#,
+        spec_json = spec_json
+    )
+}
+
+fn build_node_launcher(
+    artifact_name: &str,
+    imports: &[(String, String)],
+    utf8_literals: &[String],
+    library_mode: bool,
+    library_invoke: Option<&str>,
+) -> String {
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
@@ -482,20 +552,30 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
         arg_parsing = smoke_arg_parsing,
         import_object = smoke_import_object,
         library_exports = if library_mode {
-            r#"export async function callExport(name, ...args) {
-    if (!exports) {
+            let marshaler = library_invoke.map(library_invoke_marshaler_js).unwrap_or_default();
+            format!(
+                r#"{marshaler}export async function callExport(name, ...args) {{
+    if (!exports) {{
         wasmInstance = await wasmResolveInstance(wasmBytes, importObject);
         exports = wasmInstance.exports;
-    }
+    }}
     const fn = exports[name];
-    if (typeof fn !== "function") {
-        throw new Error(`wasm export not found: ${name}`);
-    }
+    if (typeof fn !== "function") {{
+        throw new Error(`wasm export not found: ${{name}}`);
+    }}
+    const spec = LIBRARY_INVOKE?.exports?.[name];
+    if (spec?.params) {{
+        const marshaled = spec.params.map((kind, index) => marshalLibraryArg(kind, args[index]));
+        const raw = fn(...marshaled);
+        return demarshalLibraryReturn(spec.returns, raw);
+    }}
     return fn(...args);
-}
-"#
+}}
+"#,
+                marshaler = marshaler
+            )
         } else {
-            ""
+            String::new()
         },
         cli_dispatch = if library_mode { "" } else { cli_dispatch },
         executable_tail = if library_mode {
@@ -577,7 +657,7 @@ mod tests {
     #[test]
     fn build_node_launcher_honors_logical_entry_contract() {
         let imports: Vec<(String, String)> = vec![];
-        let launcher = build_node_launcher("demo", &imports, &[], false);
+        let launcher = build_node_launcher("demo", &imports, &[], false, None);
         assert!(launcher.contains("exports.main ?? exports._start"), "启动壳必须按 logical_entry 契约选择入口");
     }
 
@@ -589,7 +669,7 @@ mod tests {
             ("env".to_string(), "cli_get_output".to_string()),
             ("env".to_string(), "cli_get_verbose".to_string()),
         ];
-        let launcher = build_node_launcher("legion", &imports, &[], false);
+        let launcher = build_node_launcher("legion", &imports, &[], false, None);
 
         assert!(launcher.contains("command === \"build\""));
         assert!(launcher.contains("cli_project = positional[0]"));
@@ -604,15 +684,23 @@ mod tests {
 
     #[test]
     fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() {
-        let launcher = build_node_launcher("demo", &[], &[], true);
+        let launcher = build_node_launcher("demo", &[], &[], true, None);
         assert!(launcher.contains("export async function callExport"), "library glue must expose callExport");
         assert!(!launcher.contains("exports.main ?? exports._start"), "library glue must not auto-run main");
     }
 
     #[test]
+    fn build_node_launcher_library_mode_emits_invoke_marshaler_when_spec_present() {
+        let spec = r#"{"exports":{"twoSum":{"params":["list_i64","i64"],"returns":"list_i64"}},"glue":{"list_i64":{"new":"__nyar_glue.ArrayList.new","push":"__nyar_glue.ArrayList.push","length":"__nyar_glue.ArrayList.length","at":"__nyar_glue_list_i64_at"}}}"#;
+        let launcher = build_node_launcher("demo", &[], &[], true, Some(spec));
+        assert!(launcher.contains("marshalLibraryArg"), "library glue must marshal args from invoke spec");
+        assert!(launcher.contains("demarshalLibraryReturn"), "library glue must demarshal returns from invoke spec");
+    }
+
+    #[test]
     fn build_node_launcher_without_cli_imports_skips_cli_dispatch() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[], false);
+        let launcher = build_node_launcher("demo", &imports, &[], false, None);
         assert!(!launcher.contains("command === \"build\""), "非 CLI 导入不应启用 build 分派");
         assert!(!launcher.contains("exports.help"), "非 CLI 导入不应要求 help 导出");
         assert!(launcher.contains("exports.main ?? exports._start"));
@@ -623,7 +711,7 @@ mod tests {
     #[test]
     fn build_node_launcher_single_entry_stdout_contract() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[], false);
+        let launcher = build_node_launcher("demo", &imports, &[], false, None);
         assert!(launcher.contains("process.stdout.write"), "单入口 stdout 契约：应提供 stdout 输出路径");
         assert!(launcher.contains("output_bytes"), "单入口 stdout 契约：应使用 output_bytes 缓冲区");
     }
@@ -633,7 +721,7 @@ mod tests {
     #[test]
     fn build_node_launcher_does_not_pollute_non_cli_stdout_with_banner() {
         let imports = vec![("env".to_string(), "emit_byte".to_string())];
-        let launcher = build_node_launcher("demo", &imports, &[], false);
+        let launcher = build_node_launcher("demo", &imports, &[], false, None);
         assert!(!launcher.contains(BANNED_BANNER), "不应输出 banner");
         assert!(!launcher.contains(BANNED_BOOTSTRAP_ENV), "不应读取 bootstrap host 环境变量");
         assert!(!launcher.contains(BANNED_HOST_ENV), "不应读取 host 环境变量");
@@ -646,7 +734,7 @@ mod tests {
     #[test]
     fn build_node_launcher_no_imports_uses_empty_import_object() {
         let imports: Vec<(String, String)> = vec![];
-        let launcher = build_node_launcher("demo", &imports, &[], false);
+        let launcher = build_node_launcher("demo", &imports, &[], false, None);
         assert!(launcher.contains("WebAssembly.instantiate"), "应实例化 WASM 模块");
         assert!(launcher.contains("wasmResolveInstance(wasmBytes, {})"), "无 imports 时应使用空 importObject");
     }

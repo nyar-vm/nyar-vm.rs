@@ -47,6 +47,7 @@ use super::{
 };
 mod calls;
 mod control;
+mod library_glue;
 mod representation;
 mod type_registry;
 
@@ -1072,6 +1073,21 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         code_bodies.push(body);
         exports.push(("version", WasmExternalKind::Func.as_u8(), function_index));
     }
+
+    library_glue::append_library_mode_glue(
+        wasm_package_kind,
+        submission,
+        &ctx,
+        &mut module,
+        &mut exports,
+        &mut type_indices,
+        &mut function_indices,
+        &mut code_bodies,
+        import_count,
+        &function_index_by_name,
+        &gc_struct_type_indices,
+        &gc_array_type_indices,
+    );
 
     module.sections.push(type_section_bytes(type_indices));
     if !host_imports.is_empty() {
