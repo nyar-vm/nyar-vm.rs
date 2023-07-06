@@ -300,16 +300,9 @@ fn match_intrinsic_builtin_candidate(
                 return None;
             };
             let element = element.as_ref().clone();
-            // `self` 在 imply 内常仍是 `SelfType`；元素合同由数组注解与宿主 imply 目标共同约束，
-            // 不得再按调用点拼写补洞。`SelfType` / `AutoType` 与元素对齐延后到已替换后的形参检查。
-            let value_ty = infer_scrutinee_type(&args[1].value, &[], locals, struct_fields, singleton_names)
-                .unwrap_or(ValkyrieType::AutoType);
-            let value_ty = match value_ty {
-                ValkyrieType::r#SelfType => ValkyrieType::AutoType,
-                other => other,
-            };
-            if !matches!(value_ty, ValkyrieType::AutoType)
-                && matches!(
+            let value_ty = infer_scrutinee_type(&args[1].value, &[], locals, struct_fields, singleton_names)?;
+            if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
+                || matches!(
                     type_relations.match_parameter(&value_ty, &element),
                     ParameterMatchResult::NoMatch { .. }
                 )
@@ -500,6 +493,10 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>) -> 
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
     candidate
+}
+
+fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
+    candidate.param_specs.first().is_some_and(|parameter| parameter.name.name.as_str() == "self")
 }
 
 fn classify_callable_domain(name: &Identifier) -> OverloadDomain {
@@ -834,38 +831,11 @@ fn match_call_candidate(
     {
         return Some(matched);
     }
-    // 运算符重载：禁止在实参类型推断失败时回退到形参类型。
-    // 否则 `u16 + u16` 在 match 臂内推断失败时会“假装”匹配
-    // `Utf8Text::infix +(Utf8Text, utf8)`，JVM 侧对 int local 发
-    // 字符串拼接 → VerifyError: Expecting object/array on stack。
-    let operator_strict = matches!(candidate.domain, OverloadDomain::Operator);
     let actual_types = if candidate.param_specs.is_empty() {
         args.iter().map(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
-    }
-    else if let Ok(bound) = bind_call_arguments(&candidate.param_specs, args) {
-        let mut types = Vec::with_capacity(bound.len());
-        for (arg, param) in bound.iter().zip(candidate.param_specs.iter()) {
-            match infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names) {
-                Some(ty) => types.push(ty),
-                None if operator_strict => return None,
-                None => types.push(param.ty.clone()),
-            }
-        }
-        types
-    }
-    else if args.len() == candidate.param_specs.len() {
-        let mut types = Vec::with_capacity(args.len());
-        for (arg, param) in args.iter().zip(candidate.param_specs.iter()) {
-            match infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names) {
-                Some(ty) => types.push(ty),
-                None if operator_strict => return None,
-                None => types.push(param.ty.clone()),
-            }
-        }
-        types
-    }
-    else {
-        return None;
+    } else {
+        let bound = bind_call_arguments(&candidate.param_specs, args).ok()?;
+        bound.iter().map(|arg| infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     };
     // `self: Self` / untyped `self` must mean the method owner, not "any receiver".
     // Otherwise `Array.get` and `HashMap.get` both see `AutoType` self and
@@ -1023,20 +993,8 @@ fn try_resolve_call(
                 extractor_payload_type: None,
             });
         }
-        // Param typed as `micro(...) -> T` must still form a call contract even if the
-        // stored local type was left as AutoType / Named during early HIR construction.
-        if locals.contains_key(local_name)
-            && !candidates
-                .iter()
-                .any(|candidate| symbol_matches_callee_name(&candidate.symbol, &Identifier::new(local_name)))
-        {
-            return Some(HirResolvedCall {
-                symbol: NamePath::new(vec![Identifier::new(local_name)]),
-                domain: HirCallableDomain::Function,
-                return_type: ValkyrieType::AutoType,
-                parameter_types: args.iter().map(|_| ValkyrieType::AutoType).collect(),
-                extractor_payload_type: None,
-            });
+        if locals.contains_key(local_name) {
+            return None;
         }
     }
     // Language `panic(...)`: core Option/Result abort. Not a library overload; returns Never.
@@ -1066,7 +1024,7 @@ fn try_resolve_call(
             let owner = &path.parts()[0];
             let method_name = &path.parts()[1];
             if singleton_names.contains(owner) {
-                if let Some(resolved) = try_resolve_singleton_method(
+                return try_resolve_singleton_method(
                     owner,
                     method_name,
                     args,
@@ -1077,9 +1035,7 @@ fn try_resolve_call(
                     singleton_names,
                     true,
                     false,
-                ) {
-                    return Some(resolved);
-                }
+                );
             }
         }
     }
@@ -1087,72 +1043,37 @@ fn try_resolve_call(
     // `receiver.method(args)` — virtual dispatch: prepend receiver, match imply/class methods.
     // Typechecker may also flatten `args.length` into a Path whose root is a local/param.
     if let HirExprKind::FieldAccess { object, field } = &callee.kind {
-        if let Some(resolved) =
-            try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names)
-        {
-            return Some(resolved);
-        }
+        return try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names);
     }
     if let HirExprKind::Path(path) = &callee.kind {
-        if path.parts().len() >= 2 {
-            let root = path.parts()[0].as_str();
-            if locals.contains_key(root) || locals.keys().any(|key| key.as_str() == root) {
-                let method_name = path.parts().last().expect("path has parts");
-                let span = callee.span.clone();
-                let mut receiver = HirExpr {
-                    kind: HirExprKind::Variable(HirIdentifier { name: path.parts()[0].clone(), shadow_index: 0, span: span.clone() }),
-                    span: span.clone(),
-                };
-                for field in &path.parts()[1..path.parts().len() - 1] {
-                    receiver =
-                        HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone() }, span: span.clone() };
-                }
-                if let Some(resolved) = try_resolve_instance_method(
-                    &receiver,
-                    method_name,
-                    args,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                ) {
-                    return Some(resolved);
-                }
+        if path.parts().len() >= 2 && locals.contains_key(path.parts()[0].as_str()) {
+            let method_name = path.parts().last().expect("path has parts");
+            let span = callee.span.clone();
+            let mut receiver = HirExpr {
+                kind: HirExprKind::Variable(HirIdentifier { name: path.parts()[0].clone(), shadow_index: 0, span: span.clone() }),
+                span: span.clone(),
+            };
+            for field in &path.parts()[1..path.parts().len() - 1] {
+                receiver = HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone() }, span: span.clone() };
             }
-            // Even without a typed local, treat `binding.method` Paths as instance calls when the
-            // root looks like a variable (lowercase / non-type) — fail-closed via overload match.
-            else if root.chars().next().is_some_and(|ch| ch.is_lowercase() || ch == '_') {
-                let method_name = path.parts().last().expect("path has parts");
-                let span = callee.span.clone();
-                let receiver = HirExpr {
-                    kind: HirExprKind::Variable(HirIdentifier { name: path.parts()[0].clone(), shadow_index: 0, span: span.clone() }),
-                    span,
-                };
-                if let Some(resolved) = try_resolve_instance_method(
-                    &receiver,
-                    method_name,
-                    args,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                ) {
-                    return Some(resolved);
-                }
-            }
+            return try_resolve_instance_method(
+                &receiver,
+                method_name,
+                args,
+                candidates,
+                type_relations,
+                locals,
+                struct_fields,
+                singleton_names,
+            );
         }
     }
     if let HirExprKind::Path(path) = &callee.kind {
         if path.parts().len() >= 2 {
             let type_owner = &path.parts()[path.parts().len() - 2];
-            let method_name = path.parts().last().expect("qualified static path must name a method");
-            if !locals.contains_key(type_owner.as_str())
-                && !singleton_names.contains(type_owner)
-                && type_owner.as_str().chars().next().is_some_and(|ch| ch.is_uppercase())
-            {
-                if let Some(resolved) = try_resolve_type_static_method(
+            let method_name = path.parts().last().expect("qualified call path must have a final segment");
+            if singleton_names.contains(type_owner) {
+                return try_resolve_singleton_method(
                     type_owner,
                     method_name,
                     args,
@@ -1161,14 +1082,34 @@ fn try_resolve_call(
                     locals,
                     struct_fields,
                     singleton_names,
-                ) {
-                    return Some(resolved);
-                }
-                // `HashMap::new` and similar qualified static calls must not degrade into the
-                // global simple-name arity fallback, which can bind unrelated helpers such as
-                // `TuiRuntime.new` when only the method name matches.
-                return None;
+                    true,
+                    false,
+                );
             }
+            if candidates.iter().any(|candidate| {
+                candidate.owner.as_ref() == Some(type_owner)
+                    && candidate.symbol.parts().last().is_some_and(|name| name == method_name)
+            }) {
+                return try_resolve_type_static_method(
+                    type_owner,
+                    method_name,
+                    args,
+                    candidates,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                );
+            }
+            return try_resolve_qualified_free_function(
+                path,
+                args,
+                candidates,
+                type_relations,
+                locals,
+                struct_fields,
+                singleton_names,
+            );
         }
     }
 
@@ -1222,39 +1163,7 @@ fn try_resolve_call(
     if filtered.iter().any(|candidate| candidate.domain == OverloadDomain::Constructor) {
         filtered.retain(|candidate| candidate.domain == OverloadDomain::Constructor);
     }
-    let resolved = match resolve_overload(&filtered) {
-        Ok(resolved) => resolved,
-        Err(_) => {
-            // `Fine(x)` / `Fail(e)` / `Some(v)` 是 Call，不是 Construct 节点。
-            // 泛型载荷局部量常无法精确匹配；仅在**唯一**时按简单名接受同元数
-            // 构造器（其次函数）。禁止用 max_by_key 在多个
-            // `new` / 同拼写候选中挑选——那会绑到无关所有者如 `TuiRuntime.new`。
-            let fallback_candidates = candidates
-                .iter()
-                .filter(|candidate| {
-                    matches!(candidate.domain, OverloadDomain::Constructor | OverloadDomain::Function)
-                        && symbol_matches_callee_name(&candidate.symbol, &callee_name)
-                        && candidate.signature.params.len() == args.len()
-                })
-                .collect::<Vec<_>>();
-            if fallback_candidates.len() != 1 {
-                return None;
-            }
-            let fallback = fallback_candidates[0];
-            return Some(HirResolvedCall {
-                symbol: overload_symbol_path(fallback),
-                domain: match fallback.domain {
-                    OverloadDomain::Function => HirCallableDomain::Function,
-                    OverloadDomain::Constructor => HirCallableDomain::Constructor,
-                    OverloadDomain::Operator => HirCallableDomain::Operator,
-                    OverloadDomain::Extractor => HirCallableDomain::Extractor,
-                },
-                return_type: fallback.signature.return_type.clone(),
-                parameter_types: fallback.signature.params.clone(),
-                extractor_payload_type: None,
-            });
-        }
-    };
+    let resolved = resolve_overload(&filtered).ok()?;
     let matched =
         filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain).unwrap_or(&filtered[0]);
     let return_type = if is_boolean_operator(&callee_name) { ValkyrieType::Boolean } else { resolved.signature.return_type };
@@ -1409,6 +1318,36 @@ fn is_numeric_type(ty: &ValkyrieType) -> bool {
     }
 }
 
+fn try_resolve_qualified_free_function(
+    path: &NamePath,
+    args: &[HirCallArgument],
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
+    singleton_names: &BTreeSet<Identifier>,
+) -> Option<HirResolvedCall> {
+    let filtered = candidates
+        .iter()
+        .filter(|candidate| candidate.owner.is_none() && &candidate.symbol == path)
+        .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
+        .collect::<Vec<_>>();
+    let resolved = resolve_overload(&filtered).ok()?;
+    let domain = match resolved.domain {
+        OverloadDomain::Function => HirCallableDomain::Function,
+        OverloadDomain::Constructor => HirCallableDomain::Constructor,
+        OverloadDomain::Operator => HirCallableDomain::Operator,
+        OverloadDomain::Extractor => HirCallableDomain::Extractor,
+    };
+    Some(HirResolvedCall {
+        symbol: resolved.symbol,
+        domain,
+        return_type: resolved.signature.return_type,
+        parameter_types: resolved.signature.params,
+        extractor_payload_type: None,
+    })
+}
+
 fn try_resolve_instance_method(
     receiver: &HirExpr,
     method_name: &Identifier,
@@ -1439,39 +1378,18 @@ fn try_resolve_instance_method(
     let filtered = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Operator))
+        .filter(|candidate| candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
         .filter_map(|candidate| match_call_candidate(candidate, &full_args, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
     let matched =
         filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain).unwrap_or(&filtered[0]);
-    // Prefer the original candidate (with owner) for a stable method symbol path.
-    let original = candidates
-        .iter()
-        .find(|candidate| candidate.symbol == matched.symbol && candidate.owner == matched.owner)
-        .or_else(|| candidates.iter().find(|candidate| candidate.symbol.parts().last() == matched.symbol.parts().last()))
-        .unwrap_or(matched);
-    // Overload matching already used the concrete receiver type, but the
-    // candidate signature still contains the method's generic parameters
-    // (`Array<T>.get -> Option<T>`, for example).  Preserve that semantic
-    // instantiation in the resolved call metadata so SSA and every backend
-    // receive the same concrete return and formal types.
-    let actual_types =
-        full_args.iter().map(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>();
-    let (return_type, parameter_types) = match (original.signature.params.first(), actual_types.as_ref().and_then(|types| types.first())) {
-        (Some(receiver_type), Some(actual_receiver)) => {
-            let return_type = substitute_type_parameters(&original.signature.return_type, receiver_type, actual_receiver);
-            let parameter_types =
-                original.signature.params.iter().map(|param| substitute_type_parameters(param, receiver_type, actual_receiver)).collect();
-            (return_type, parameter_types)
-        }
-        _ => (resolved.signature.return_type, resolved.signature.params),
-    };
     Some(HirResolvedCall {
-        symbol: overload_symbol_path(original),
+        symbol: overload_symbol_path(matched),
         domain: HirCallableDomain::Function,
-        return_type,
-        parameter_types,
+        return_type: resolved.signature.return_type,
+        parameter_types: resolved.signature.params,
         extractor_payload_type: None,
     })
 }
@@ -1538,6 +1456,7 @@ fn try_resolve_type_static_method(
         .iter()
         .filter(|candidate| candidate.owner.as_ref() == Some(type_owner))
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
+        .filter(|candidate| !candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
         .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
@@ -1656,6 +1575,7 @@ fn match_singleton_method_candidate(
 
 fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
+        ValkyrieType::Array(_) => Some("Array"),
         ValkyrieType::Named(name) => Some(name.as_str()),
         ValkyrieType::Apply(base, _) => impl_nominal_type_name(base),
         ValkyrieType::Float32 => Some("f32"),
@@ -2904,38 +2824,85 @@ micro main() {
 }
 "#,
             );
-        match result {
-            Ok(hir) => {
-                let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
-                let mut saw_hashmap_new = false;
-                for statement in &main.body.statements {
-                    let HirStatementKind::Let { initializer: Some(value), .. } = &statement.kind else { continue };
-                    let HirExprKind::Call { callee, resolved, .. } = &value.kind else { continue };
-                    let path = match &callee.kind {
-                        HirExprKind::Path(path) => path.to_string(),
-                        _ => continue,
-                    };
-                    if path.contains("HashMap") && path.contains("new") {
-                        saw_hashmap_new = true;
-                        if let Some(resolved) = resolved {
-                            assert!(
-                                !resolved.symbol.to_string().contains("TuiRuntime"),
-                                "HashMap::new must not bind TuiRuntime.new, got {:?}",
-                                resolved.symbol
-                            );
-                        }
-                    }
-                }
-                assert!(saw_hashmap_new, "expected HashMap::new call");
-            }
-            Err(error) => {
-                let text = error.to_string();
-                assert!(
-                    text.contains("HashMap") || text.contains("new") || text.contains("SMIR003") || text.contains("unresolved") || text.contains("type"),
-                    "qualified HashMap::new must fail closed rather than bind TuiRuntime.new, got {text}"
-                );
-            }
-        }
+        let hir = result.expect("qualified static call must resolve from its declared signature");
+        let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
+        let resolved = main
+            .body
+            .statements
+            .iter()
+            .find_map(|statement| match &statement.kind {
+                HirStatementKind::Let { initializer: Some(value), .. } => match &value.kind {
+                    HirExprKind::Call { resolved: Some(resolved), .. } => Some(resolved),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .expect("HashMap::new must carry a resolved call contract");
+        assert_eq!(resolved.symbol.to_string(), "HashMap.new");
+        assert_eq!(resolved.parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
+    }
+
+    #[test]
+    fn receiver_presence_is_derived_from_the_declared_self_parameter() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 5203 });
+        let hir = compiler
+            .compile_source(
+                r#"
+structure Counter { value: i64 }
+
+imply Counter {
+    micro read(self): i64 { self.value }
+    micro make(value: i64): i64 { value }
+}
+
+micro main(counter: Counter) {
+    let current = counter.read()
+    let created = Counter.make(1)
+}
+"#,
+            )
+            .expect("declared instance and static methods must resolve");
+        let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
+        let resolved = main
+            .body
+            .statements
+            .iter()
+            .filter_map(|statement| match &statement.kind {
+                HirStatementKind::Let { initializer: Some(value), .. } => match &value.kind {
+                    HirExprKind::Call { resolved: Some(resolved), .. } => Some(resolved),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].symbol.to_string(), "Counter.read");
+        assert_eq!(resolved[0].parameter_types, vec![ValkyrieType::Named(Identifier::new("Counter"))]);
+        assert_eq!(resolved[1].symbol.to_string(), "Counter.make");
+        assert_eq!(resolved[1].parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
+    }
+
+    #[test]
+    fn instance_syntax_cannot_supply_a_missing_self_parameter() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 5204 });
+        let error = compiler
+            .compile_source(
+                r#"
+structure Counter { }
+
+imply Counter {
+    micro make(value: i64): i64 { value }
+}
+
+micro main(counter: Counter) {
+    counter.make(1)
+}
+"#,
+            )
+            .expect_err("a static method must not gain a receiver from dot syntax");
+        let message = error.to_string();
+        assert!(message.contains("SMIR003") || message.contains("unresolved"), "unexpected failure: {message}");
     }
 }
 
@@ -3215,9 +3182,9 @@ micro wrap<T>(value: T) -> Envelope<T> {
     }
 
     #[test]
-    fn utf8_slice_with_typed_local_stays_unresolved_until_adaptor_invoke() {
+    fn utf8_slice_without_adaptor_is_rejected_before_mir() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4203 });
-        let hir = compiler
+        let error = compiler
             .compile_source(
                 r#"
 namespace test;
@@ -3227,27 +3194,15 @@ micro slice_probe(text: utf8, start: i32, count: i32) -> utf8 {
 }
 "#,
             )
-            .expect("compile");
-        let function = hir.functions.iter().find(|function| function.name.as_str() == "slice_probe").expect("slice_probe");
-        let HirStatementKind::Expr(statement) = &function.body.statements[0].kind
-        else {
-            panic!("expected return statement")
-        };
-        let HirExprKind::Return(Some(expression)) = &statement.kind
-        else {
-            panic!("expected return expression")
-        };
-        // Utf8 method IntrinsicOpcode 路径已删除；在 std adaptor Invoke 闭合前必须失败关闭。
-        let HirExprKind::Call { resolved: None, .. } = &expression.kind
-        else {
-            panic!("utf8 slice must stay unresolved until adaptor Invoke: {expression:?}")
-        };
+            .expect_err("missing adaptor contract must fail before MIR");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+        assert!(error.to_string().contains("slice_probe"), "{error}");
     }
 
     #[test]
-    fn utf8_slice_with_typed_local_survives_loop_control_flow() {
+    fn utf8_loop_without_adaptor_is_rejected_before_mir() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4204 });
-        compiler
+        let error = compiler
             .compile_source(
                 r#"
 namespace test;
@@ -3271,7 +3226,9 @@ micro slice_loop_probe(text: utf8, op: utf8) -> i32 {
 }
 "#,
             )
-            .expect("loop-local utf8 slice must resolve through the structured contract");
+            .expect_err("loop control flow must not bypass missing adaptor contracts");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+        assert!(error.to_string().contains("slice_loop_probe"), "{error}");
     }
 
     #[test]
@@ -3334,7 +3291,7 @@ micro grow(text: utf8) -> [utf8] {
     }
 
     #[test]
-    fn array_push_resolves_inside_imply_like_utf8_split() {
+    fn array_push_resolves_inside_imply_with_declared_element_type() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4211 });
         let hir = compiler
             .compile_source(
@@ -3346,10 +3303,7 @@ class Utf8Text {}
 imply Utf8Text {
     micro split(self, separator: utf8) -> [utf8] {
         let mut result: [utf8] = []
-        if separator.length() <= 0 {
-            push(result, self)
-            return result
-        }
+        push(result, separator)
         push(result, "")
         return result
     }
@@ -3406,6 +3360,6 @@ imply Utf8Text {
                 walk(expr, &mut push_calls);
             }
         }
-        assert!(push_calls >= 1, "expected ArrayPush IntrinsicId binding inside imply split");
+        assert_eq!(push_calls, 2, "both calls must bind the declared ArrayPush identity");
     }
 }
