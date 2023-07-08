@@ -2,10 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use nyar::{Identifier, NyarType, QualifiedName};
+use miette::{Result, miette};
+use nyar::{Identifier, QualifiedName};
 use nyar_types::ExecutableFunction;
 
-use crate::{MirFunction, MirModule, MirOperand, MirOperation, concretize_type_lossy, mir::AggregateLayoutPlan, mir_function_to_executable};
+use crate::{MirFunction, MirModule, MirOperand, MirOperation, mir::AggregateLayoutPlan, mir_function_to_executable};
 
 /// Parse a MIR function `symbol` string into a [`QualifiedName`].
 ///
@@ -23,40 +24,18 @@ pub(crate) fn qualified_name_from_mir_symbol(symbol: &str) -> QualifiedName {
     QualifiedName::new(symbol.split('.').map(Identifier::new).collect())
 }
 
-/// Resolve the raw MIR `symbol` string for a [`QualifiedName`], preferring the
-/// instance-method dotted form when both could exist.
-fn mir_symbol_string_for_operation(operation: &QualifiedName, mir_by_symbol: &BTreeMap<&str, &MirFunction>) -> Option<String> {
-    let via_colon = operation.to_string();
-    if mir_by_symbol.contains_key(via_colon.as_str()) {
-        return Some(via_colon);
-    }
-    let parts = operation.parts();
-    if parts.len() >= 2 {
-        let owner = parts[..parts.len() - 1].iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
-        let method = parts[parts.len() - 1].as_str();
-        let via_dot = format!("{owner}.{method}");
-        if mir_by_symbol.contains_key(via_dot.as_str()) {
-            return Some(via_dot);
-        }
-    }
-    if parts.len() == 1 {
-        let simple = parts[0].as_str().to_string();
-        if mir_by_symbol.contains_key(simple.as_str()) {
-            return Some(simple);
-        }
-    }
-    None
-}
-
 /// 以 `seed_operations` 为根，沿 MIR `Call` 边从完整 `mir.functions` 收集可达函数。
 pub(crate) fn build_reachable_mir_functions(
     seed_operations: &[QualifiedName],
     mir: &MirModule,
-    _hir_singleton_names: &[&str],
-) -> BTreeMap<QualifiedName, ExecutableFunction> {
-    let mir_by_symbol: BTreeMap<&str, &MirFunction> = mir.functions.iter().map(|function| (function.symbol.as_str(), function)).collect();
-    let mir_by_operation: BTreeMap<QualifiedName, &MirFunction> =
-        mir.functions.iter().map(|function| (qualified_name_from_mir_symbol(function.symbol.as_str()), function)).collect();
+) -> Result<BTreeMap<QualifiedName, ExecutableFunction>> {
+    let mut mir_by_operation = BTreeMap::new();
+    for function in &mir.functions {
+        let operation = qualified_name_from_mir_symbol(&function.symbol);
+        if mir_by_operation.insert(operation.clone(), function).is_some() {
+            return Err(miette!("MIR callable identity collision for `{operation}`"));
+        }
+    }
     let mut result = BTreeMap::new();
     let mut queue = seed_operations.to_vec();
     let mut index = 0usize;
@@ -64,56 +43,26 @@ pub(crate) fn build_reachable_mir_functions(
     while index < queue.len() {
         let operation = queue[index].clone();
         index += 1;
-        let Some(mir_fn) = mir_by_operation.get(&operation).copied().or_else(|| {
-            mir_symbol_string_for_operation(&operation, &mir_by_symbol).and_then(|symbol| mir_by_symbol.get(symbol.as_str()).copied())
-        })
-        else {
-            continue;
-        };
-        if result.insert(operation.clone(), mir_function_to_executable(mir_fn)).is_some() {
+        let mir_fn = mir_by_operation.get(&operation).copied().ok_or_else(|| miette!("executable seed `{operation}` has no MIR definition"))?;
+        if result.contains_key(&operation) {
             continue;
         }
-        for callee in collect_mir_callee_operations(mir_fn, &mir_by_symbol, &mir_by_operation) {
+        result.insert(operation, mir_function_to_executable(mir_fn));
+        for callee in collect_mir_callee_operations(mir_fn, mir, &mir_by_operation)? {
             if !queue.iter().any(|existing| existing == &callee) {
                 queue.push(callee);
             }
         }
     }
 
-    result
-}
-
-/// Node 自举：`build_from_cli_state` 仅由 JS `exports.build()` 直接调用，不在 entry 可达闭包内。
-pub(crate) fn find_build_from_cli_seed(mir: &MirModule) -> Option<QualifiedName> {
-    mir.functions
-        .iter()
-        .find(|function| function.symbol.ends_with("::build_from_cli_state"))
-        .map(|function| qualified_name_from_mir_symbol(function.symbol.as_str()))
-}
-
-/// Node JS-glue CLI 契约入口：由 `.mjs` 启动壳直接调用，未必落在 `[main]` 可达闭包内。
-///
-/// 包含 `build_from_cli_state` / `version_text` / `print_root_help`，对应 `exports.build` /
-/// `exports.version` / `exports.help`。
-pub(crate) fn find_node_cli_glue_seeds(mir: &MirModule) -> Vec<QualifiedName> {
-    const SEED_SUFFIXES: &[&str] = &["::build_from_cli_state", "::version_text", "::print_root_help"];
-    let mut seeds = Vec::new();
-    for function in &mir.functions {
-        if SEED_SUFFIXES.iter().any(|suffix| function.symbol.ends_with(suffix)) {
-            let operation = qualified_name_from_mir_symbol(function.symbol.as_str());
-            if !seeds.iter().any(|existing| existing == &operation) {
-                seeds.push(operation);
-            }
-        }
-    }
-    seeds
+    Ok(result)
 }
 
 fn collect_mir_callee_operations(
     mir_fn: &MirFunction,
-    mir_by_symbol: &BTreeMap<&str, &MirFunction>,
+    mir: &MirModule,
     mir_by_operation: &BTreeMap<QualifiedName, &MirFunction>,
-) -> Vec<QualifiedName> {
+) -> Result<Vec<QualifiedName>> {
     let mut callees = Vec::new();
     for block in &mir_fn.blocks {
         for instruction in &block.instructions {
@@ -121,86 +70,17 @@ fn collect_mir_callee_operations(
             else {
                 continue;
             };
-            let MirOperand::Symbol(path) = callee
-            else {
-                continue;
-            };
-            if let Some(operation) = resolve_mir_callee_operation(path, arguments, mir_fn, mir_by_symbol, mir_by_operation) {
+            let MirOperand::Symbol(path) = callee else { continue };
+            let operation = QualifiedName::new(path.parts().to_vec());
+            if mir_by_operation.contains_key(&operation) {
                 callees.push(operation);
             }
-        }
-    }
-    callees
-}
-
-fn resolve_mir_callee_operation(
-    path: &crate::NamePath,
-    arguments: &[MirOperand],
-    mir_fn: &MirFunction,
-    mir_by_symbol: &BTreeMap<&str, &MirFunction>,
-    mir_by_operation: &BTreeMap<QualifiedName, &MirFunction>,
-) -> Option<QualifiedName> {
-    if path.parts().len() > 1 {
-        let dotted = path.to_string();
-        if mir_by_symbol.contains_key(dotted.as_str()) {
-            return Some(qualified_name_from_mir_symbol(dotted.as_str()));
-        }
-        let via_colon = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-        if mir_by_symbol.contains_key(via_colon.as_str()) {
-            return Some(qualified_name_from_mir_symbol(via_colon.as_str()));
-        }
-        return None;
-    }
-
-    let method_name = path.parts().last()?.as_str();
-    if path.parts().len() == 1 {
-        // Bare MIR symbols (empty / erased declaring_namespace) are exact keys — not
-        // `::name` / `.name` suffixes. Missing this drops helpers like `wasm_i32_types`
-        // from the CLR/WASM reachable closure and triggers `unknown_call_signature`.
-        if mir_by_symbol.contains_key(method_name) {
-            return Some(qualified_name_from_mir_symbol(method_name));
-        }
-        if let Some(receiver_ty) = arguments.first().and_then(|argument| match argument {
-            MirOperand::Value(value) => mir_fn.value_types.get(value).cloned(),
-            _ => None,
-        }) {
-            let receiver_ty = concretize_type_lossy(&receiver_ty);
-            if let Some(receiver_name) = receiver_type_name(&receiver_ty) {
-                if let Some(symbol) = mir_by_symbol.keys().find(|symbol| {
-                    mir_symbol_ends_with_simple(symbol, method_name)
-                        && symbol.split(['.', ':']).any(|segment| segment == receiver_name)
-                }) {
-                    return Some(qualified_name_from_mir_symbol(symbol));
-                }
+            else if !mir.external_calls.iter().any(|external| &external.symbol == path) {
+                return Err(miette!("MIR call `{path}` has neither a local definition nor an explicit import contract"));
             }
         }
-        let suffix_matches: Vec<&str> = mir_by_symbol
-            .keys()
-            .copied()
-            .filter(|symbol| mir_symbol_ends_with_simple(symbol, method_name))
-            .collect();
-        if suffix_matches.len() == 1 {
-            return Some(qualified_name_from_mir_symbol(suffix_matches[0]));
-        }
     }
-
-    None
-}
-
-/// True when `symbol` is exactly `simple` or ends with `::simple` / `.simple`.
-fn mir_symbol_ends_with_simple(symbol: &str, simple: &str) -> bool {
-    symbol == simple || symbol.ends_with(&format!("::{simple}")) || symbol.ends_with(&format!(".{simple}"))
-}
-
-fn receiver_type_name(ty: &NyarType) -> Option<&str> {
-    match ty {
-        NyarType::Utf8 => Some("utf8"),
-        NyarType::Utf16 => Some("utf16"),
-        NyarType::Array(_) => Some("Array"),
-        NyarType::Named(name) => Some(name.as_str()),
-        NyarType::Apply(base, _) => receiver_type_name(base),
-        _ => None,
-    }
+    Ok(callees)
 }
 
 #[cfg(test)]
@@ -278,7 +158,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("nyar::nyar_emitter::wasi::wasi_encode_command_adapt_module_with_mir");
-        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
+        let reachable = build_reachable_mir_functions(&[seed], &mir).expect("exact MIR seed must resolve");
         assert!(
             reachable.keys().any(|op| op.parts().last().is_some_and(|part| part.as_str() == "wasm_i32_types")),
             "bare Call to wasm_i32_types must enter the reachable closure; keys={:?}",
@@ -287,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn bare_call_reaches_uniquely_qualified_module_helper() {
+    fn unqualified_helper_call_fails_without_resolved_identity() {
         use crate::{
             MirBlock, MirBlockRef, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation, MirTerminator, MirValue, MirValueOrigin,
             MirValueRef, types::hir::ValkyrieType,
@@ -339,12 +219,11 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("std.collection.SwissTable.new");
-        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
-        assert!(
-            reachable.keys().any(|op| op.to_string().contains("swiss_table_normalize_capacity")),
-            "bare helper call must reach uniquely qualified std helper; keys={:?}",
-            reachable.keys().map(|op| op.to_string()).collect::<Vec<_>>()
-        );
+        let error = match build_reachable_mir_functions(&[seed], &mir) {
+            Ok(_) => panic!("an unqualified helper call must not be linked by its unique short name"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("explicit import contract"), "unexpected failure: {error}");
     }
 
     #[test]
@@ -382,7 +261,7 @@ mod tests {
                 label: "entry".into(),
                 parameters: Vec::new(),
                 instructions: vec![MirInstruction::from_operation(MirOperation::Call {
-                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("answer")])),
+                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("main"), Identifier::new("answer")])),
                     arguments: Vec::new(),
                 })],
                 terminator: MirTerminator::Return { value: None },
@@ -399,7 +278,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("main::main");
-        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
+        let reachable = build_reachable_mir_functions(&[seed], &mir).expect("qualified call must resolve exactly");
         let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
         assert!(
             reachable.contains_key(&answer_op),
@@ -460,10 +339,10 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("demo.two_sum");
-        let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
-        assert!(
-            !reachable.contains_key(&QualifiedName::new(vec![Identifier::new("TuiRuntime"), Identifier::new("new")])),
-            "unresolved bare `new` must not pull unrelated `.new` helpers into the library closure"
-        );
+        let error = match build_reachable_mir_functions(&[seed], &mir) {
+            Ok(_) => panic!("an unresolved bare constructor must fail closure construction"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("explicit import contract"), "unexpected failure: {error}");
     }
 }

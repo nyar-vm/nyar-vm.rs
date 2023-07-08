@@ -84,13 +84,7 @@ pub fn assemble_fragment(
         mir.aggregate_layouts.layouts.len(),
         mir.aggregate_layouts.layouts.iter().any(|layout| layout.name == "__tuple_ExecutableBlockRef_ExecutableBlockRef")
     );
-    let singleton_names = hir_module.singletons.iter().map(|singleton| singleton.name.as_str()).collect::<Vec<_>>();
     let mut mir_seed_operations = fragment.exported_operations.clone();
-    for seed in executable_closure::find_node_cli_glue_seeds(&mir) {
-        if !mir_seed_operations.iter().any(|operation| operation == &seed) {
-            mir_seed_operations.push(seed);
-        }
-    }
     // Witness 表里的 impl 方法（`imply Type: Trait { micro method }`）在 MIR 层
     // 已经按 `{Type}.{method}` 约定降级为独立函数，但它们不会被 entry 可达闭包
     // 扫到（调用点走 witness 符号，不走 `{Type}.{method}` 直接 Call）。这里把它们
@@ -103,7 +97,7 @@ pub fn assemble_fragment(
             }
         }
     }
-    let executable_functions = executable_closure::build_reachable_mir_functions(&mir_seed_operations, &mir, &singleton_names);
+    let executable_functions = executable_closure::build_reachable_mir_functions(&mir_seed_operations, &mir)?;
     eprintln!(
         "[seed-debug] fragment-closure-done index={partition_index} seeds={} functions={}",
         mir_seed_operations.len(),
