@@ -1,6 +1,6 @@
 //! NyarVM bytecode lowering from semantic MIR.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     contracts::{EffectKind, ValueOrigin, instruction_primary_result},
@@ -22,7 +22,10 @@ use super::{
     nyar_vm::{nyar_public_export_name, operation_short_name},
     singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
-use crate::FragmentSubmission;
+use crate::{
+    FragmentSubmission,
+    executable_provider::resolve_static_callee_operation,
+};
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -133,12 +136,19 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         layouts: Vec::new(),
     };
 
-    let function_index_by_name =
-        module.functions.iter().enumerate().map(|(index, function)| (function.name.clone(), index as i32)).collect::<BTreeMap<_, _>>();
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
 
+    let mut function_index_by_name = BTreeMap::<String, i32>::new();
     if let Some(exec) = &submission.executable {
-        for operation in exec.operations() {
+        let operations: Vec<QualifiedName> = exec
+            .operations()
+            .into_iter()
+            .filter(|operation| exec.get_function(operation).is_some())
+            .collect();
+        function_index_by_name = build_nyar_function_index_map(submission, exec.as_ref(), &operations);
+        let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
+
+        for operation in operations {
             let Some(view) = exec.get_function(&operation)
             else {
                 continue;
@@ -153,6 +163,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 submission,
                 mir_fn,
                 &function_index_by_name,
+                &function_entry_arities,
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
@@ -161,7 +172,12 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             module.constants.extend(emitter.constants);
             module.code_bytes.extend_from_slice(&emitter.code_bytes);
 
-            let arity = mir_fn.param_types.len() as i32;
+            // 与 JVM/CLR 对齐：调用约定 arity 以入口块 SSA 形参为准；`param_types` 可能含已废弃的 ABI 槽。
+            let arity = mir_fn
+                .blocks
+                .get(mir_fn.entry.0 as usize)
+                .map(|block| block.parameters.len())
+                .unwrap_or(mir_fn.param_types.len()) as i32;
             let local_count = ExecutableSlotPlan::plan_nyar(&ExecutableLoweringContext::new(submission), mir_fn).local_types.len() as i32;
             let function_index = module.functions.len() as i32;
             module.functions.push(NyarFunction {
@@ -171,15 +187,113 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 code_offset,
                 code_length: module.code_bytes.len() as i32 - code_offset,
             });
-            module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: export_name, function_index });
+            if nyar_should_export_operation(submission, &operation) {
+                module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: export_name, function_index });
+            }
         }
     }
 
-    let function_index_by_name =
-        module.functions.iter().enumerate().map(|(index, function)| (function.name.clone(), index as i32)).collect::<BTreeMap<_, _>>();
     augment_nyar_module_with_singletons(submission, &mut module, &function_index_by_name);
 
     module
+}
+
+/// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
+fn build_nyar_function_entry_arities(
+    exec: &dyn crate::executable_provider::ExecutableProvider,
+    operations: &[QualifiedName],
+) -> BTreeMap<i32, usize> {
+    let mut map = BTreeMap::new();
+    for (index, operation) in operations.iter().enumerate() {
+        let Some(view) = exec.get_function(operation) else {
+            continue;
+        };
+        let entry_arity = view
+            .function
+            .blocks
+            .get(view.function.entry.0 as usize)
+            .map(|block| block.parameters.len())
+            .unwrap_or(view.function.param_types.len());
+        map.insert(index as i32, entry_arity);
+    }
+    map
+}
+
+/// 登记别名；短名冲突时保留先注册者，禁止 `new`/`push` 等覆盖。
+fn nyar_alias_key_or_insert(map: &mut BTreeMap<String, i32>, key: String, dense: i32) {
+    if let Some(&existing) = map.get(&key) {
+        if existing == dense {
+            return;
+        }
+        return;
+    }
+    map.insert(key, dense);
+}
+
+fn build_nyar_function_index_map(
+    submission: &FragmentSubmission,
+    exec: &dyn crate::executable_provider::ExecutableProvider,
+    operations: &[QualifiedName],
+) -> BTreeMap<String, i32> {
+    let mut map = BTreeMap::new();
+    let mut ambiguous_simple = BTreeSet::<String>::new();
+    for (index, operation) in operations.iter().enumerate() {
+        let dense = index as i32;
+        let parts = operation.parts();
+        nyar_alias_key_or_insert(&mut map, operation.to_string(), dense);
+        if let Some(view) = exec.get_function(operation) {
+            nyar_alias_key_or_insert(&mut map, view.function.symbol.clone(), dense);
+            let dotted = view.function.symbol.replace('.', "::");
+            nyar_alias_key_or_insert(&mut map, dotted, dense);
+        }
+        for start in 0..parts.len() {
+            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+            nyar_alias_key_or_insert(&mut map, suffix, dense);
+        }
+        if parts.len() >= 2 {
+            let owner = parts[parts.len() - 2].as_str();
+            let method = parts[parts.len() - 1].as_str();
+            for alias in [format!("{owner}::{method}"), format!("{owner}.{method}")] {
+                match map.get(&alias) {
+                    Some(&existing) if existing == dense => {}
+                    Some(_) => {
+                        map.remove(&alias);
+                    }
+                    None => {
+                        map.insert(alias, dense);
+                    }
+                }
+            }
+        }
+        if let Some(last) = operation.parts().last() {
+            let simple = last.as_str();
+            if ambiguous_simple.contains(simple) {
+                continue;
+            }
+            match map.get(simple) {
+                Some(&existing) if existing == dense => {}
+                Some(_) => {
+                    ambiguous_simple.insert(simple.to_string());
+                    map.remove(simple);
+                }
+                None => {
+                    map.insert(simple.to_string(), dense);
+                }
+            }
+        }
+        if let Some(public_name) = submission.wasm_export_names.get(operation) {
+            nyar_alias_key_or_insert(&mut map, public_name.clone(), dense);
+        }
+    }
+    map
+}
+
+/// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
+fn nyar_should_export_operation(submission: &FragmentSubmission, operation: &QualifiedName) -> bool {
+    if submission.wasm_export_names.contains_key(operation) {
+        return true;
+    }
+    submission.exported_operations.iter().any(|exported| exported == operation)
 }
 
 fn nyar_mir_export_name(submission: &FragmentSubmission, operation: &QualifiedName) -> String {
@@ -200,6 +314,7 @@ fn lower_mir_function_to_bytecode(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
     function_index_by_name: &BTreeMap<String, i32>,
+    function_entry_arities: &BTreeMap<i32, usize>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
@@ -215,6 +330,7 @@ fn lower_mir_function_to_bytecode(
         slots,
         emitter,
         function_index_by_name,
+        function_entry_arities,
         layouts,
         layout_index_by_id,
     };
@@ -234,6 +350,7 @@ struct NyarMirLowerer<'a, 'e> {
     slots: ExecutableSlotPlan,
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_name: &'a BTreeMap<String, i32>,
+    function_entry_arities: &'a BTreeMap<i32, usize>,
     layouts: &'a mut Vec<NyarLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
@@ -258,15 +375,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::StoreVar { name, value, .. } => {
                 self.emit_operand(value);
-                if let Some(local) = self.slots.var_locals.get(name).copied() {
-                    self.emit_store_local(local);
-                    if let MirOperand::Value(source) = value {
-                        self.slots.value_locals.insert(*source, local);
-                    }
-                    if let Some(output) = output {
-                        self.slots.value_locals.insert(output, local);
-                    }
+                if let Some(output) = output {
+                    self.store_to_local(output);
                 }
+                else {
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                }
+                let _ = name;
             }
             MirInstructionKind::Copy { source } => {
                 self.emit_operand(source);
@@ -310,13 +425,15 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::ArrayFromElements { elements, .. } => {
+                let Some(output) = output else {
+                    return;
+                };
                 let layout = self.resolve_layout(None, "__fixedarray");
                 let layout_index = match &layout {
                     Some(aggregate) => self.ensure_nyar_layout(aggregate),
                     None => self.ensure_nyar_layout_count(elements.len() as i32),
                 };
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
-                let output = output.expect("ArrayFromElements must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
                 for (index, value) in elements.iter().enumerate() {
@@ -351,6 +468,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }
+                else {
+                    // 无 SSA 绑定的 FieldGet 不得污染后续 Call 的操作数栈；实参由 `emit_call_operand` 再求值。
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
                 let type_name = self.type_name_for_operand(object);
@@ -366,28 +487,26 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     if self.try_emit_host_phase_call(path, arguments, output) {
                         return;
                     }
-                }
-                for argument in arguments {
-                    self.emit_operand(argument);
+                    if self.try_emit_array_storage_intrinsic(path, arguments, output) {
+                        return;
+                    }
+                    if self.try_emit_arraylist_element_get(path, arguments, output) {
+                        return;
+                    }
                 }
                 if let MirOperand::Symbol(path) = callee {
-                    if self.try_emit_singleton_call(path, arguments.len(), output) {
+                    if self.try_emit_singleton_call(path, arguments, output) {
                         return;
                     }
-                    if let Some(index) = self.resolve_function_index(path) {
-                        self.emitter.emit_imm1(NyarHeadCode::Call, index);
-                        if let Some(output) = output {
-                            self.store_to_local(output);
-                        }
+                    if let Some(index) = self.resolve_function_index(path, arguments) {
+                        self.emit_direct_call(index, path, arguments, output);
                         return;
                     }
                 }
-                for _ in 0..arguments.len() {
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
-                }
+                panic!("unresolved Nyar call in validated Semantic MIR");
             }
             MirInstructionKind::ArrayGet { array, index } => {
-                self.emit_operand(array);
+                self.emit_call_operand(array);
                 self.emit_operand(index);
                 self.emitter.emit_call_intrinsic(IntrinsicId::ArrayGet, 2);
                 if let Some(output) = output {
@@ -395,17 +514,63 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::ArraySet { array, index, value } => {
-                self.emit_operand(array);
+                self.emit_call_operand(array);
                 self.emit_operand(index);
                 self.emit_operand(value);
                 self.emitter.emit_call_intrinsic(IntrinsicId::ArraySet, 3);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::ArrayLength { array } => {
-                self.emit_operand(array);
+                // 禁止 Const(0) 回退：会把 ArrayLen 的 array 实参变成 i32，运行时报 expected object。
+                if !self.emit_call_operand(array) {
+                    panic!(
+                        "nyar-vm ArrayLength operand not materializable in `{}`",
+                        self.mir_fn.symbol
+                    );
+                }
                 self.emitter.emit_call_intrinsic(IntrinsicId::ArrayLen, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
+                }
+            }
+            MirInstructionKind::SumNew { variant, payload, .. } => {
+                // Option / 名义 sum 的最小 ABI：Some(payload) 直接传 payload；None → Null（Const 0 占位，由后续 SumVariantIs 区分前需扩展）。
+                // 与 SumPayloadGet 成对：先保证 unwrap 链可读，再演进带 tag 的布局。
+                let is_none = variant == "None" || variant.ends_with(".None") || variant.ends_with("::None");
+                if is_none {
+                    self.emitter.emit_const_i32(0);
+                } else if let Some(payload) = payload {
+                    self.emit_call_operand(payload);
+                } else {
+                    self.emitter.emit_const_i32(0);
+                }
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                } else {
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
+                }
+            }
+            MirInstructionKind::SumPayloadGet { object, .. } => {
+                // 与上方 Some 直通 ABI 对齐：payload 即 receiver。
+                self.emit_call_operand(object);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+            }
+            MirInstructionKind::SumVariantIs { variant, object, .. } => {
+                // 直通 ABI：None 为 i32(0)；Some 为非 0 / 对象。`is_some` ≈ 非零。
+                let is_none = variant == "None" || variant.ends_with(".None") || variant.ends_with("::None");
+                self.emit_call_operand(object);
+                self.emitter.emit_const_i32(0);
+                if is_none {
+                    self.emitter.emit_plain(NyarHeadCode::I32Eq);
+                } else {
+                    self.emitter.emit_plain(NyarHeadCode::I32Ne);
+                }
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                } else {
+                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             _ => {}
@@ -417,6 +582,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirTerminator::Return { value } => {
                 if let Some(value) = value {
                     self.emit_operand(value);
+                }
+                else {
+                    // Call 约定固定压回 1 个返回值；unit / void 用 i32(0) 占位，供调用方 Pop。
+                    self.emitter.emit_const_i32(0);
                 }
                 self.emitter.emit_plain(NyarHeadCode::Return);
             }
@@ -731,10 +900,137 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         if let Some(output) = output {
             self.store_to_local(output);
         }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
         true
     }
 
-    fn try_emit_singleton_call(&mut self, path: &nyar::NamePath, arg_count: usize, output: Option<MirValueRef>) -> bool {
+    fn emit_direct_call(
+        &mut self,
+        function_index: i32,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) {
+        let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
+        assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
+        for argument in arguments {
+            assert!(self.emit_call_operand(argument), "unmaterialized Nyar call operand in `{path:?}`: {argument:?}");
+        }
+        self.emitter.emit_imm1(NyarHeadCode::Call, function_index);
+        if let Some(output) = output {
+            self.store_to_local(output);
+        }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
+    }
+
+    /// Call 实参：优先 local/LoadArg；失败时对定义该 SSA 值的 `FieldGet`/`Copy` 再求值。
+    fn emit_call_operand(&mut self, operand: &MirOperand) -> bool {
+        if self.try_emit_operand(operand) {
+            return true;
+        }
+        false
+    }
+
+    fn find_instruction_producing(&self, value: MirValueRef) -> Option<&MirInstruction> {
+        for block in &self.mir_fn.blocks {
+            for instruction in &block.instructions {
+                if instruction_primary_result(instruction) == Some(value) {
+                    return Some(instruction);
+                }
+            }
+        }
+        None
+    }
+
+    /// 数组存储 intrinsic：`builtin.array.*`，或首参为 `Array`/`FixedArray` 时的 push/len/get/set。
+    ///
+    /// 阻断 `ArrayList.push` 体内 `push(_items, v)` 被短名解析回 `ArrayList.push` 的递归。
+    fn try_emit_array_storage_intrinsic(
+        &mut self,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) -> bool {
+        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
+        let intrinsic = IntrinsicId::resolve_from_segments(&parts);
+        let Some(intrinsic) = intrinsic else {
+            return false;
+        };
+        let argc = match intrinsic {
+            IntrinsicId::ArrayPush => 2,
+            IntrinsicId::ArrayLen => 1,
+            IntrinsicId::ArrayGet => 2,
+            IntrinsicId::ArraySet => 3,
+            IntrinsicId::RefDeref | IntrinsicId::IsNull | IntrinsicId::UnwrapNull => return false,
+        };
+        if arguments.len() < argc {
+            return false;
+        }
+        for argument in &arguments[..argc] {
+            self.emit_call_operand(argument);
+        }
+        self.emitter.emit_call_intrinsic(intrinsic, argc as i32);
+        if let Some(output) = output {
+            self.store_to_local(output);
+        }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
+        true
+    }
+
+    /// `ArrayList.get` / `⁅ ⁆`：`_items` + 1-based ordinal → `ArrayGet`（0-based）。
+    ///
+    /// 闭包常只拉到 `length`/`push` 而漏 `get`；短名 `get` 还会与 `HashMap.get` 冲突。
+    fn try_emit_arraylist_element_get(
+        &mut self,
+        path: &nyar::NamePath,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) -> bool {
+        if arguments.len() < 2 {
+            return false;
+        }
+        let Some(receiver_ty) = self.call_receiver_nyar_type(arguments) else {
+            return false;
+        };
+        let Some(receiver_name) = nyar_type_layout_name(&receiver_ty) else {
+            return false;
+        };
+        if receiver_name != "ArrayList" && !receiver_name.ends_with(".ArrayList") && !receiver_name.ends_with("::ArrayList") {
+            return false;
+        }
+        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
+        let is_cardinal_index = simple.contains('⁅');
+        let is_get = simple == "get" || simple.contains("subscript");
+        if !is_get && !is_cardinal_index {
+            return false;
+        }
+        // self._items
+        if !self.emit_call_operand(&arguments[0]) {
+            return false;
+        }
+        self.emitter.emit_imm1(NyarHeadCode::FieldGet, 0);
+        self.emit_call_operand(&arguments[1]);
+        // `get(ordinal)` 为 1-based；`⁅cardinal⁆` 已是 0-based（体内 get(cardinal+1)）。
+        if is_get && !is_cardinal_index {
+            self.emitter.emit_const_i32(1);
+            self.emitter.emit_plain(NyarHeadCode::I32Sub);
+        }
+        self.emitter.emit_call_intrinsic(IntrinsicId::ArrayGet, 2);
+        if let Some(output) = output {
+            self.store_to_local(output);
+        } else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
+        true
+    }
+
+    fn try_emit_singleton_call(&mut self, path: &nyar::NamePath, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
         if path.parts().len() != 2 {
             return false;
         }
@@ -744,7 +1040,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         else {
             return false;
         };
-        let export_name = if method_name == plan.accessor_method() && arg_count == 0 {
+        let export_name = if method_name == plan.accessor_method() && arguments.is_empty() {
             nyar_singleton_accessor_export_name(plan)
         }
         else if method_name != plan.accessor_method() {
@@ -757,22 +1053,135 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         else {
             return false;
         };
-        self.emitter.emit_imm1(NyarHeadCode::Call, index);
-        if let Some(output) = output {
-            self.store_to_local(output);
-        }
+        self.emit_direct_call(index, path, arguments, output);
         true
     }
 
-    fn resolve_function_index(&self, path: &nyar::NamePath) -> Option<i32> {
+    fn resolve_function_index(&self, path: &nyar::NamePath, arguments: &[MirOperand]) -> Option<i32> {
+        let receiver_type = self.call_receiver_nyar_type(arguments);
+        if let Some(exec) = &self.submission.executable {
+            if let Some(operation) = resolve_static_callee_operation(exec.as_ref(), path) {
+                return self.function_index_for_operation(&operation);
+            }
+        if path.parts().len() == 1 {
+            // 接收者类型已知时，直接按 `Type.method` 查稠密表（闭包已收录 SwissTable.* 时生效）。
+            if let Some(receiver_ty) = &receiver_type {
+                if let Some(type_name) = nyar_type_layout_name(receiver_ty) {
+                    let simple = path.parts()[0].as_str();
+                    for key in [
+                        format!("{type_name}.{simple}"),
+                        format!("{type_name}::{simple}"),
+                        format!("std.collection.{type_name}.{simple}"),
+                        format!("std::collection::{type_name}::{simple}"),
+                    ] {
+                        if let Some(index) = self.function_index_by_name.get(&key) {
+                            return Some(*index);
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+        }
         if path.parts().len() == 2 {
-            let export_name = nyar_singleton_method_export_name(path.parts()[0].as_str(), path.parts()[1].as_str());
+            let field = path.parts()[0].as_str();
+            let method = path.parts()[1].as_str();
+            if let Some(self_ty) = self.mir_fn.param_types.first() {
+                let owner = nyar_type_layout_name(self_ty).unwrap_or_default();
+                if let Some(field_ty) = self.ctx.field_type(None, owner.as_str(), field) {
+                    if let Some(type_name) = nyar_type_layout_name(&field_ty) {
+                        for key in [format!("{type_name}.{method}"), format!("{type_name}::{method}")] {
+                            if let Some(index) = self.function_index_by_name.get(&key) {
+                                return Some(*index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let parts = path.parts();
+        if let Some(index) = self.function_index_by_name.get(&path.to_string()) {
+            return Some(*index);
+        }
+        let colon_path = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+        if colon_path != path.to_string() {
+            if let Some(index) = self.function_index_by_name.get(&colon_path) {
+                return Some(*index);
+            }
+        }
+        for start in 0..parts.len() {
+            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+            // 禁止 `_impl.contains_key` → `contains_key` 这类裸方法后缀误绑定。
+            if !suffix.contains("::") {
+                continue;
+            }
+            if let Some(index) = self.function_index_by_name.get(&suffix) {
+                return Some(*index);
+            }
+        }
+        if parts.len() == 2 {
+            let export_name = nyar_singleton_method_export_name(parts[0].as_str(), parts[1].as_str());
             if let Some(index) = self.function_index_by_name.get(&export_name) {
                 return Some(*index);
             }
         }
-        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or_default();
-        self.function_index_by_name.iter().find(|(name, _)| name.ends_with(simple) || name.contains(simple)).map(|(_, index)| *index)
+        None
+    }
+
+    fn call_receiver_nyar_type(&self, arguments: &[MirOperand]) -> Option<NyarType> {
+        let MirOperand::Value(value) = arguments.first()? else {
+            return None;
+        };
+        if let Some(ty) = self.mir_fn.value_types.get(value).cloned() {
+            return Some(ty);
+        }
+        // 与 executable_closure 对齐：FieldGet 结果缺 value_types 时按字段布局反查。
+        for block in &self.mir_fn.blocks {
+            for instruction in &block.instructions {
+                if instruction_primary_result(instruction) != Some(*value) {
+                    continue;
+                }
+                let MirInstructionKind::FieldGet { object, field } = &instruction.kind else {
+                    continue;
+                };
+                let owner = self.type_name_for_operand(object);
+                if owner.is_empty() {
+                    if let Some(self_ty) = self.mir_fn.param_types.first() {
+                        if let Some(name) = nyar_type_layout_name(self_ty) {
+                            return self.ctx.field_type(None, name.as_str(), field);
+                        }
+                    }
+                    continue;
+                }
+                return self.ctx.field_type(None, owner.as_str(), field);
+            }
+        }
+        None
+    }
+
+    fn function_index_for_operation(&self, operation: &QualifiedName) -> Option<i32> {
+        if let Some(index) = self.function_index_by_name.get(&operation.to_string()) {
+            return Some(*index);
+        }
+        if let Some(exec) = &self.submission.executable {
+            if let Some(view) = exec.get_function(operation) {
+                if let Some(index) = self.function_index_by_name.get(&view.function.symbol) {
+                    return Some(*index);
+                }
+                let dotted = view.function.symbol.replace('.', "::");
+                if let Some(index) = self.function_index_by_name.get(&dotted) {
+                    return Some(*index);
+                }
+            }
+        }
+        let parts = operation.parts();
+        for start in 0..parts.len() {
+            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+            if let Some(index) = self.function_index_by_name.get(&suffix) {
+                return Some(*index);
+            }
+        }
+        None
     }
 
     /// 解析聚合 layout：优先 layout_id，否则回退 type_name。
@@ -837,22 +1246,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn emit_block_argument_copies(&mut self, target: MirBlockRef, arguments: &[MirOperand]) {
-        let Some(target_block) = self.mir_fn.blocks.get(target.0 as usize)
-        else {
-            return;
-        };
-        for (index, parameter) in target_block.parameters.iter().enumerate() {
-            let Some(argument) = arguments.get(index)
-            else {
-                continue;
-            };
-            let Some(param_local) = self.slots.block_param_locals.get(&(target, index)).copied()
-            else {
-                continue;
-            };
+        let target_block = self.mir_fn.blocks.iter().find(|block| block.id == target).expect("validated branch target");
+        assert_eq!(arguments.len(), target_block.parameters.len(), "validated branch arity");
+        for argument in arguments {
             self.emit_operand(argument);
+        }
+        for index in (0..arguments.len()).rev() {
+            let param_local = self.slots.block_param_locals[&(target, index)];
             self.emit_store_local(param_local);
-            self.slots.value_locals.insert(*parameter, param_local);
         }
     }
 
@@ -884,37 +1285,15 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn emit_operand(&mut self, operand: &MirOperand) {
-        self.try_emit_operand(operand);
+        assert!(self.try_emit_operand(operand), "validated operand has a planned local");
     }
 
     fn try_emit_operand(&mut self, operand: &MirOperand) -> bool {
         match operand {
             MirOperand::Value(value) => {
-                if let Some(name) = self.value_binding_name(*value) {
-                    if let Some(local) = self.slots.var_locals.get(name).copied() {
-                        self.emit_load_local(local);
-                        return true;
-                    }
-                }
                 if let Some(local) = self.slots.value_locals.get(value).copied() {
                     self.emit_load_local(local);
                     return true;
-                }
-                if let Some(index) = self.parameter_index(*value) {
-                    self.emitter.emit_imm1(NyarHeadCode::LoadArg, index as i32);
-                    return true;
-                }
-                if let Some(local) = self.block_parameter_local(*value) {
-                    self.emit_load_local(local);
-                    return true;
-                }
-                if let Some(name) = self.value_binding_name(*value) {
-                    if let Some(named_value) = self.find_named_value(name) {
-                        if let Some(local) = self.slots.value_locals.get(&named_value).copied() {
-                            self.emit_load_local(local);
-                            return true;
-                        }
-                    }
                 }
                 false
             }
@@ -922,53 +1301,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emit_load_constant(constant);
                 true
             }
-            MirOperand::Symbol(path) => {
-                if let Some(local) = self.slots.var_locals.get(&path.to_string()).copied() {
-                    self.emit_load_local(local);
-                    return true;
-                }
-                if let Some(name) = path.parts().last().map(|part| part.as_str()) {
-                    if let Some(value) = self.find_named_value(name) {
-                        if let Some(local) = self.slots.value_locals.get(&value).copied() {
-                            self.emit_load_local(local);
-                            return true;
-                        }
-                    }
-                }
-                false
-            }
+            MirOperand::Symbol(_) => false,
         }
     }
 
-    fn value_binding_name(&self, value: MirValueRef) -> Option<&str> {
-        self.mir_fn.values.iter().find(|candidate| candidate.id == value).and_then(|candidate| match &candidate.origin {
-            ValueOrigin::Parameter { name, .. }
-            | ValueOrigin::LetBinding { name }
-            | ValueOrigin::BlockParameter { name, .. }
-            | ValueOrigin::MutRefBinding { name }
-            | ValueOrigin::PinMutRefBinding { name } => Some(name.as_str()),
-            _ => None,
-        })
-    }
-
-    fn find_named_value(&self, name: &str) -> Option<MirValueRef> {
-        self.mir_fn.values.iter().find_map(|value| match &value.origin {
-            ValueOrigin::Parameter { name: binding, .. }
-            | ValueOrigin::LetBinding { name: binding }
-            | ValueOrigin::BlockParameter { name: binding, .. }
-            | ValueOrigin::MutRefBinding { name: binding }
-            | ValueOrigin::PinMutRefBinding { name: binding } if binding == name => Some(value.id),
-            _ => None,
-        })
+    fn ensure_value_local(&mut self, value: MirValueRef) -> u16 {
+        self.slots.value_locals[&value]
     }
 
     fn store_to_local(&mut self, value: MirValueRef) {
-        if let Some(local) = self.slots.value_locals.get(&value).copied() {
-            self.emit_store_local(local);
-        }
-        else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
-        }
+        let local = self.ensure_value_local(value);
+        self.emit_store_local(local);
     }
 
     fn emit_load_local(&mut self, local: u16) {
@@ -977,22 +1320,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     fn emit_store_local(&mut self, local: u16) {
         self.emitter.emit_imm1(NyarHeadCode::StoreLocal, local as i32);
-    }
-
-    fn parameter_index(&self, value: MirValueRef) -> Option<usize> {
-        let entry = self.mir_fn.blocks.get(self.mir_fn.entry.0 as usize)?;
-        entry.parameters.iter().position(|parameter| *parameter == value)
-    }
-
-    fn block_parameter_local(&self, value: MirValueRef) -> Option<u16> {
-        for block in &self.mir_fn.blocks {
-            for (index, parameter) in block.parameters.iter().enumerate() {
-                if *parameter == value {
-                    return self.slots.block_param_locals.get(&(block.id, index)).copied();
-                }
-            }
-        }
-        None
     }
 
     fn infer_numeric_width_from_pair(&self, lhs: &MirOperand, rhs: &MirOperand) -> NumericWidth {
@@ -1021,6 +1348,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             _ => None,
         }
     }
+}
+
+fn nyar_type_layout_name(ty: &NyarType) -> Option<String> {
+    nyar_types::layout_key_for_nyar_type(ty).or_else(|| match ty {
+        NyarType::Named(name) => Some(name.as_str().to_string()),
+        NyarType::Apply(base, _) => nyar_type_layout_name(base),
+        _ => None,
+    })
 }
 
 /// 工作负载阶段宿主符号：末段名 → (`nyar.host` 符号, 最小参数个数)。
