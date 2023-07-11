@@ -106,8 +106,7 @@ impl MirFunctionMapProvider {
 
 /// Resolve a static `Call` callee symbol to the exact local [`QualifiedName`] operation.
 ///
-/// Aligns Semantic MIR (`SMIR003`) and physical planning (`BPHYS004`): bare names like
-/// `answer` must map to a unique registry entry such as `main::answer`.
+/// Aligns Semantic MIR (`SMIR003`) and physical planning (`BPHYS004`): callers must`r`n/// provide the already-resolved qualified identity.
 pub(crate) fn resolve_static_callee_operation(
     executable: &dyn ExecutableProvider,
     path: &NamePath,
@@ -201,7 +200,6 @@ mod tests {
             (answer_op, function("main::answer")),
         ]));
         let path = NamePath::new(vec![nyar::Identifier::new("answer")]);
-        let expected = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("answer")]);
-        assert_eq!(resolve_static_callee_operation(&provider, &path), Some(expected));
+        assert_eq!(resolve_static_callee_operation(&provider, &path), None);
     }
 }
