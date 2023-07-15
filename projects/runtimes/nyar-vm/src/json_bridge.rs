@@ -1,13 +1,10 @@
 //! JSON ↔ runtime `Value` bridge for CLI / leetcode harnesses.
 
 use miette::{IntoDiagnostic, Result};
-use nyar_gc::{ObjectHeap, ObjectPayload};
+use nyar_gc::ObjectHeap;
 use serde_json::Value as JsonValue;
 
-use crate::{array_runtime::build_fixed_array, error::NyarRuntimeError, value::{ObjectId, Value}};
-
-const JSON_FIXED_ARRAY_LAYOUT: u32 = 0;
-const JSON_ARRAY_LIST_LAYOUT: u32 = 1;
+use crate::{error::NyarRuntimeError, value::Value};
 
 /// Parses a JSON value into a runtime `Value` without heap allocation (scalars only).
 pub fn value_from_json(json: &JsonValue) -> Result<Value, NyarRuntimeError> {
@@ -28,7 +25,8 @@ pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHea
                     actual: "JSON array without runtime heap".to_owned(),
                 });
             };
-            build_array_list_from_json_array(heap, items)?
+            let _ = (heap, items);
+            return Err(NyarRuntimeError::UnsupportedFeature("JSON array export type/layout contract"));
         }
         JsonValue::Object(_) => return Err(NyarRuntimeError::TypeMismatch {
             expected: "declared object export contract",
@@ -55,20 +53,6 @@ fn scalar_i64(value: i64) -> Value {
     }
 }
 
-/// `ArrayList { _items, _capacity }` 与 std 降低后的两字段布局对齐。
-fn build_array_list_from_json_array(heap: &mut ObjectHeap, items: &[JsonValue]) -> Result<Value, NyarRuntimeError> {
-    let elements = items
-        .iter()
-        .map(|item| materialize_value_from_json(item, Some(heap)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let items_array = build_fixed_array(heap, JSON_FIXED_ARRAY_LAYOUT, &elements);
-    let capacity = Value::I32(items.len() as i32);
-    Ok(Value::Object(heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: JSON_ARRAY_LIST_LAYOUT,
-        slots: vec![items_array, capacity],
-    })))
-}
-
 /// 将标量或已声明的数组布局序列化为 JSON；无法证明布局时直接失败。
 pub fn value_to_json(value: &Value) -> Result<JsonValue, NyarRuntimeError> {
     value_to_json_with_heap(value, None)
@@ -91,36 +75,12 @@ pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Resu
                     actual: format!("object#{id} without heap"),
                 });
             };
-            layout_object_to_json_array(heap, *id)
+            let _ = heap;
+            Err(NyarRuntimeError::UnsupportedFeature("JSON object export type/layout contract"))
         }
         Value::Coroutine(id) => Err(NyarRuntimeError::TypeMismatch {
             expected: "JSON-exportable value",
             actual: format!("coroutine#{id}"),
-        }),
-    }
-}
-
-fn layout_object_to_json_array(heap: &ObjectHeap, object_id: ObjectId) -> Result<JsonValue, NyarRuntimeError> {
-    let Some(ObjectPayload::LayoutObject { layout_id, slots }) = heap.get(object_id) else {
-        return Err(NyarRuntimeError::TypeMismatch {
-            expected: "declared layout object",
-            actual: format!("unknown object#{object_id}"),
-        });
-    };
-    match *layout_id {
-        JSON_FIXED_ARRAY_LAYOUT => slots.iter().map(|slot| value_to_json_with_heap(slot, Some(heap))).collect(),
-        JSON_ARRAY_LIST_LAYOUT => {
-            let Some(Value::Object(items_id)) = slots.first() else {
-                return Err(NyarRuntimeError::TypeMismatch {
-                    expected: "declared ArrayList layout",
-                    actual: "ArrayList without items field".to_owned(),
-                });
-            };
-            layout_object_to_json_array(heap, *items_id)
-        }
-        _ => Err(NyarRuntimeError::TypeMismatch {
-            expected: "declared JSON export layout",
-            actual: format!("layout id {layout_id}"),
         }),
     }
 }
@@ -160,12 +120,16 @@ mod tests {
     }
 
     #[test]
-    fn materialize_json_array_as_array_list() {
+    fn structured_json_requires_export_contract() {
         let mut heap = ObjectHeap::new();
-        let value = materialize_value_from_json(&JsonValue::Array(vec![JsonValue::from(3), JsonValue::from(3)]), Some(&mut heap))
-            .expect("materialize");
-        let json = value_to_json_with_heap(&value, Some(&heap)).expect("array export");
-        assert_eq!(json, JsonValue::Array(vec![JsonValue::from(3), JsonValue::from(3)]));
+        assert!(materialize_value_from_json(&serde_json::json!([3, 3]), Some(&mut heap)).is_err());
+        for layout_id in [0, 1, 42] {
+            let id = heap.alloc(nyar_gc::ObjectPayload::LayoutObject {
+                layout_id,
+                slots: vec![Value::I32(3), Value::I32(3)],
+            });
+            assert!(value_to_json_with_heap(&Value::Object(id), Some(&heap)).is_err());
+        }
     }
 
     #[test]
