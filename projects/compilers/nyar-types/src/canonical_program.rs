@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, ItemInstanceId, NominalInstanceId, TypeId};
+use crate::semantic_ids::{EvidenceId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -115,13 +115,37 @@ pub struct TypeRecord {
     pub debug_name: String,
 }
 
+/// Semantic call edge whose callee identity was fixed before representation planning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalCall {
+    /// 已实例化的被调用项。
+    pub callee: ItemInstanceId,
+    /// 已定义的 SSA 实参。
+    pub arguments: Vec<MirValueId>,
+    /// 调用结果值；无结果调用必须显式为 `None`。
+    pub result: Option<MirValueId>,
+}
+
+/// One validated function body in Semantic MIR.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalFunction {
+    /// 此函数对应的已实例化项。
+    pub instance: ItemInstanceId,
+    /// 入口参数的 SSA 值与类型身份。
+    pub parameters: Vec<(MirValueId, TypeId)>,
+    /// 返回类型身份。
+    pub return_type: TypeId,
+    /// 已解析调用边；后端不得重新解析 callee。
+    pub calls: Vec<CanonicalCall>,
+}
+
 /// Validated Semantic MIR package owned by the success path (no embedded diagnostics).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CanonicalSemanticMir {
     /// Owning linked program identity.
     pub module_name: String,
-    /// Function count placeholder until CFG bodies are attached by identity.
-    pub function_count: u32,
+    /// 以稳定实例身份索引的完整函数合同。
+    pub functions: BTreeMap<ItemInstanceId, CanonicalFunction>,
 }
 
 /// Top-level canonical success bundle after link + MIR validation.
@@ -182,8 +206,17 @@ mod tests {
         let mut linked = LinkedSemanticProgram::default();
         linked.module_name = "demo".into();
         linked.item_instances.insert(ItemInstanceId::from_index(0).unwrap(), ItemInstanceRecord { symbol: "main".into(), substitution: None });
-        let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "demo".into(), function_count: 1 } };
-        assert_eq!(program.mir.function_count, 1);
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let function = CanonicalFunction {
+            instance,
+            parameters: Vec::new(),
+            return_type: TypeId::from_index(0).unwrap(),
+            calls: Vec::new(),
+        };
+        let mut functions = BTreeMap::new();
+        functions.insert(instance, function);
+        let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "demo".into(), functions } };
+        assert_eq!(program.mir.functions.len(), 1);
     }
 
     #[test]
