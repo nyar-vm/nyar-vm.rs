@@ -123,6 +123,31 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
         verify_import(index, import)?;
     }
 
+    let mut export_names = BTreeSet::new();
+    for export in &data.exports {
+        if export.symbol_name.is_empty() || !export_names.insert(&export.symbol_name) {
+            return Err(NyarRuntimeError::ModuleLoad("empty or duplicate export identity".to_owned()));
+        }
+        let count = match export.kind {
+            nyar_bytecode::NyarExportKind::Function => data.functions.len(),
+            nyar_bytecode::NyarExportKind::Global => data.globals.len(),
+        };
+        if export.function_index < 0 || export.function_index as usize >= count {
+            return Err(NyarRuntimeError::ModuleLoad(format!("export `{}` index out of range", export.symbol_name)));
+        }
+    }
+    for (index, function) in data.functions.iter().enumerate() {
+        if function.arity < 0 || function.local_count < 0 {
+            return Err(NyarRuntimeError::ModuleLoad(format!("function[{index}] has negative arity or local count")));
+        }
+    }
+    for &index in &data.init_function_indices {
+        let function = usize::try_from(index).ok().and_then(|index| data.functions.get(index))
+            .ok_or(NyarRuntimeError::FunctionIndexOutOfRange(index))?;
+        if function.arity != 0 {
+            return Err(NyarRuntimeError::ModuleLoad(format!("init function[{index}] must have zero arguments")));
+        }
+    }
     verify_code_stream(data)?;
     for (function_index, function) in data.functions.iter().enumerate() {
         verify_function(data, function_index, function)?;
@@ -666,6 +691,48 @@ mod tests {
     #[test]
     fn accepts_empty_v2_module() {
         verify_module(&empty_module()).expect("empty v2 ok");
+    }
+
+    #[test]
+    fn rejects_invalid_export_contracts() {
+        let mut module = empty_module();
+        module.exports.push(nyar_bytecode::NyarExport {
+            kind: nyar_bytecode::NyarExportKind::Global,
+            symbol_name: "value".to_owned(), function_index: -1,
+        });
+        assert!(verify_module(&module).is_err());
+        module.exports[0].function_index = 0;
+        assert!(verify_module(&module).is_err());
+        module.globals.push(nyar_bytecode::NyarGlobal { name: "value".to_owned(), type_name: "test".to_owned() });
+        verify_module(&module).expect("valid global export");
+        module.exports.push(module.exports[0].clone());
+        assert!(verify_module(&module).is_err());
+        module.exports.pop();
+        module.exports[0].symbol_name.clear();
+        assert!(verify_module(&module).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_function_and_initializer_contracts() {
+        let mut module = empty_module();
+        module.functions.push(NyarFunction {
+            name: "init".to_owned(), arity: -1, local_count: 0, code_offset: 0, code_length: 1,
+        });
+        module.code_bytes.push(NyarHeadCode::Return as u8);
+        assert!(verify_module(&module).is_err());
+        module.functions[0].arity = 0;
+        module.functions[0].local_count = -1;
+        assert!(verify_module(&module).is_err());
+        module.functions[0].local_count = 0;
+        module.init_function_indices.push(0);
+        verify_module(&module).expect("zero-argument initializer");
+        module.functions[0].arity = 1;
+        assert!(verify_module(&module).is_err());
+        module.functions[0].arity = 0;
+        module.init_function_indices[0] = -1;
+        assert!(verify_module(&module).is_err());
+        module.init_function_indices[0] = 1;
+        assert!(verify_module(&module).is_err());
     }
 
     #[test]

@@ -18,6 +18,15 @@ use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap};
 /// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
 type Nj1CacheKey = (u32, String, usize);
 
+pub(crate) fn validate_argument_count(function: &nyar_bytecode::NyarFunction, actual: usize) -> Result<(), NyarRuntimeError> {
+    if usize::try_from(function.arity).ok() != Some(actual) {
+        return Err(NyarRuntimeError::ModuleLoad(format!(
+            "function `{}` argument count mismatch: expected {}, got {actual}", function.name, function.arity
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 struct Nj1CacheEntry {
     blob: Vec<u8>,
@@ -213,6 +222,7 @@ impl Executor {
         if function_index >= module.functions.len() {
             return Err(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32));
         }
+        validate_argument_count(&module.functions[function_index], args.len())?;
 
         // 将外码 layouts 登记为 GC 可见的 LayoutDescriptor（保守：全部槽可能含引用）。
         for (index, layout) in module.layouts.iter().enumerate() {
@@ -544,6 +554,13 @@ mod tests {
         let mut executor = Executor::new();
         let result = executor.run(&module, 0, Vec::new()).expect("execute");
         assert_eq!(result, Value::I32(1));
+        assert!(executor.run(&module, 0, vec![Value::I32(2)]).is_err());
+        let mut argument_module = module.clone();
+        argument_module.functions[0].arity = 1;
+        assert!(executor.run(&argument_module, 0, Vec::new()).is_err());
+        let mut vm = crate::NyarVm::new();
+        assert!(vm.run(&module, "main", vec![Value::I32(2)]).is_err());
+        assert!(vm.run(&argument_module, "main", Vec::new()).is_err());
     }
 
     #[test]

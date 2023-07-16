@@ -1,6 +1,6 @@
 use crate::{
     error::NyarRuntimeError,
-    executor::Executor,
+    executor::{Executor, validate_argument_count},
     jit::{JitCompiledArtifact, JitCompiler, JitError},
     module::{LoadedModule, ModuleGlobals},
     value::Value,
@@ -38,6 +38,10 @@ impl NyarVm {
         entry: &str,
         args: Vec<Value>,
     ) -> Result<Value, NyarRuntimeError> {
+        let function_index = module.export_index(entry).ok_or_else(|| NyarRuntimeError::EntryNotFound(entry.to_string()))?;
+        let function = module.functions.get(function_index)
+            .ok_or(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
+        validate_argument_count(function, args.len())?;
         if !globals.init_done() {
             for &init_index in &module.init_function_indices {
                 let init_index = init_index as usize;
@@ -47,7 +51,6 @@ impl NyarVm {
             globals.mark_init_done();
         }
 
-        let function_index = module.export_index(entry).ok_or_else(|| NyarRuntimeError::EntryNotFound(entry.to_string()))?;
         self.executor.run_function_frame(module, function_index, args, globals.slots_mut())
     }
 
