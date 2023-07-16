@@ -95,6 +95,10 @@ fn validate_declaration_statement(statement: &RootStatement) -> Result<(), Parse
 }
 
 fn validate_function_declaration(function: &FunctionDeclaration) -> Result<(), ParseError> {
+    for parameter in &function.generic_parameters {
+        validate_generic_parameter(parameter)?;
+    }
+    validate_where_constraints(&function.where_constraints)?;
     for param in &function.params {
         validate_function_parameter(param)?;
     }
@@ -133,12 +137,7 @@ fn validate_imply_declaration(imply_decl: &ImplyDeclaration) -> Result<(), Parse
     if let Some(trait_type) = &imply_decl.trait_type {
         validate_type_expression(trait_type)?;
     }
-    for constraint in &imply_decl.where_constraints {
-        validate_type_expression(&constraint.target_type)?;
-        for bound in &constraint.bounds {
-            validate_type_expression(bound)?;
-        }
-    }
+    validate_where_constraints(&imply_decl.where_constraints)?;
     for method in &imply_decl.methods {
         validate_object_method(method)?;
     }
@@ -236,6 +235,10 @@ fn validate_object_field(field: &ObjectFieldDeclaration) -> Result<(), ParseErro
 }
 
 fn validate_object_method(method: &ObjectMethodDeclaration) -> Result<(), ParseError> {
+    for parameter in &method.generic_parameters {
+        validate_generic_parameter(parameter)?;
+    }
+    validate_where_constraints(&method.where_constraints)?;
     for param in &method.params {
         validate_function_parameter(param)?;
     }
@@ -274,6 +277,62 @@ fn validate_generic_parameter(parameter: &GenericParameterDeclaration) -> Result
         validate_type_expression(default_type)?;
     }
     Ok(())
+}
+
+fn validate_where_constraints(constraints: &[std_data::text::valkyrie::WhereConstraintDeclaration]) -> Result<(), ParseError> {
+    for constraint in constraints {
+        validate_type_expression(&constraint.target_type)?;
+        for bound in &constraint.bounds {
+            validate_type_expression(bound)?;
+            let std_data::text::valkyrie::TypeExpression::Path(path) = bound else {
+                return Err(ParseError::invalid_at("where bound 必须是 trait 路径", constraint.span.clone()));
+            };
+            let mut associated_names = std::collections::BTreeSet::new();
+            for argument in &path.arguments {
+                if let std_data::text::valkyrie::TypeExpression::Associated { name, .. } = argument {
+                    if !associated_names.insert(name.as_str()) {
+                        return Err(ParseError::invalid_at(format!("重复的关联类型等式 `{}`", name.as_str()), constraint.span.clone()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod where_contract_tests {
+    use super::*;
+
+    #[test]
+    fn associated_equations_remain_scoped_to_each_bound() {
+        let root = std_data::text::valkyrie::AstParser::parse_root(
+            "micro identity<T>(value: T) -> T where T: Mapper<i32, Item = i32> + Mapper<bool, Item = bool> { return value; }",
+        ).expect("structured declaration");
+        validate_ast_root(&root).expect("separate bounds do not share an equation namespace");
+    }
+
+    #[test]
+    fn non_path_where_bound_fails_at_ast_boundary() {
+        let root = std_data::text::valkyrie::AstParser::parse_root(
+            "micro identity<T>(value: T) -> T where T: [i32] { return value; }",
+        ).expect("structured type expression");
+        let error = validate_ast_root(&root).expect_err("array is not a trait declaration path");
+        assert!(error.to_string().contains("where bound 必须是 trait 路径"), "{error}");
+    }
+
+    #[test]
+    fn duplicate_associated_equations_fail_at_ast_boundary() {
+        for source in [
+            "micro identity<T>(value: T) -> T where T: Iterator<Item = i32, Item = bool> { return value; }",
+            "class Owner { micro identity<T>(value: T) -> T where T: Iterator<Item = i32, Item = bool> { return value; } }",
+            "imply<T> T where T: Iterator<Item = i32, Item = bool> {}",
+        ] {
+            let root = std_data::text::valkyrie::AstParser::parse_root(source).expect("structured declaration");
+            let error = validate_ast_root(&root).expect_err("duplicate equation must fail before HIR");
+            assert!(error.to_string().contains("重复的关联类型等式"), "{error}");
+        }
+    }
 }
 
 fn validate_function_parameter(param: &FunctionParameter) -> Result<(), ParseError> {
