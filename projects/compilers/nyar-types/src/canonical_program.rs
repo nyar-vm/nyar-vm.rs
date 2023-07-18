@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId};
+use crate::semantic_ids::{EvidenceId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -84,35 +84,35 @@ pub struct LinkedSemanticProgram {
 /// Placeholder item instance row (filled by linker / adaptor selection).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemInstanceRecord {
-    /// Stable declaration / adaptor key.
-    pub symbol: String,
-    /// Optional generic substitution identity.
-    pub substitution: Option<String>,
+    /// 已声明的 callable identity。
+    pub declaration: ItemId,
+    /// 完成泛型代入后的 substitution identity。
+    pub substitution: SubstitutionId,
 }
 
 /// Placeholder nominal instance row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NominalInstanceRecord {
-    /// Nominal type name / identity key.
-    pub nominal: String,
-    /// Substitution identity key when parametric.
-    pub substitution: Option<String>,
+    /// 名义类型声明身份。
+    pub declaration: TypeId,
+    /// 完成代入后的类型实例身份。
+    pub substitution: SubstitutionId,
 }
 
 /// Placeholder evidence row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRecord {
-    /// Trait / imply identity.
-    pub trait_id: String,
-    /// Implementing type identity.
-    pub implementing_type: String,
+    /// trait 或 adaptor 声明身份。
+    pub trait_id: ItemId,
+    /// 实现方的具体类型实例身份。
+    pub implementing_type: TypeInstanceId,
 }
 
 /// Placeholder type table row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeRecord {
-    /// Human-readable / debug key (not a backend carrier).
-    pub debug_name: String,
+    /// 类型表中的声明身份。
+    pub declaration: TypeId,
 }
 
 /// Semantic call edge whose callee identity was fixed before representation planning.
@@ -205,7 +205,11 @@ mod tests {
     fn canonical_program_is_success_only() {
         let mut linked = LinkedSemanticProgram::default();
         linked.module_name = "demo".into();
-        linked.item_instances.insert(ItemInstanceId::from_index(0).unwrap(), ItemInstanceRecord { symbol: "main".into(), substitution: None });
+        let item = ItemInstanceId::from_index(0).unwrap();
+        linked.item_instances.insert(item, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            substitution: SubstitutionId::from_index(0).unwrap(),
+        });
         let instance = ItemInstanceId::from_index(0).unwrap();
         let function = CanonicalFunction {
             instance,
