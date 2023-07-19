@@ -148,6 +148,59 @@ pub struct CanonicalSemanticMir {
     pub functions: BTreeMap<ItemInstanceId, CanonicalFunction>,
 }
 
+/// Canonical MIR 合同失败的确定性原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalMirError {
+    /// 表键与函数内部实例身份不一致。
+    FunctionKeyMismatch { key: ItemInstanceId, instance: ItemInstanceId },
+    /// 函数引用了未链接的 callee。
+    UnknownCallee { function: ItemInstanceId, callee: ItemInstanceId },
+    /// 类型身份未进入 canonical type table。
+    UnknownType { function: ItemInstanceId, ty: TypeId },
+    /// SSA 值在定义前被使用。
+    UseBeforeDefinition { function: ItemInstanceId, value: MirValueId },
+    /// 一个 SSA 值被重复定义。
+    DuplicateDefinition { function: ItemInstanceId, value: MirValueId },
+}
+
+impl CanonicalSemanticMir {
+    /// 在进入 RepresentationPlan 前验证 stable-ID、链接和 SSA 合同。
+    pub fn validate(&self, linked: &LinkedSemanticProgram) -> Result<(), CanonicalMirError> {
+        for (key, function) in &self.functions {
+            if key != &function.instance {
+                return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
+            }
+            let mut defined = std::collections::BTreeSet::new();
+            for (value, ty) in &function.parameters {
+                if !linked.types.contains_key(ty) {
+                    return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                }
+                if !defined.insert(*value) {
+                    return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
+                }
+            }
+            if !linked.types.contains_key(&function.return_type) {
+                return Err(CanonicalMirError::UnknownType { function: *key, ty: function.return_type });
+            }
+            for call in &function.calls {
+                if !linked.item_instances.contains_key(&call.callee) {
+                    return Err(CanonicalMirError::UnknownCallee { function: *key, callee: call.callee });
+                }
+                if call.arguments.iter().any(|value| !defined.contains(value)) {
+                    let value = *call.arguments.iter().find(|value| !defined.contains(value)).expect("missing argument");
+                    return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
+                }
+                if let Some(result) = call.result {
+                    if !defined.insert(result) {
+                        return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: result });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Top-level canonical success bundle after link + MIR validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CanonicalProgram {
@@ -206,6 +259,8 @@ mod tests {
         let mut linked = LinkedSemanticProgram::default();
         linked.module_name = "demo".into();
         let item = ItemInstanceId::from_index(0).unwrap();
+        let ty = TypeId::from_index(0).unwrap();
+        linked.types.insert(ty, TypeRecord { declaration: ty });
         linked.item_instances.insert(item, ItemInstanceRecord {
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
@@ -214,13 +269,33 @@ mod tests {
         let function = CanonicalFunction {
             instance,
             parameters: Vec::new(),
-            return_type: TypeId::from_index(0).unwrap(),
+            return_type: ty,
             calls: Vec::new(),
         };
         let mut functions = BTreeMap::new();
         functions.insert(instance, function);
         let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "demo".into(), functions } };
         assert_eq!(program.mir.functions.len(), 1);
+        program.mir.validate(&program.linked).expect("canonical MIR contract");
+    }
+
+    #[test]
+    fn canonical_mir_rejects_unknown_callee_before_planning() {
+        let mut linked = LinkedSemanticProgram::default();
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let unknown = ItemInstanceId::from_index(1).unwrap();
+        let ty = TypeId::from_index(0).unwrap();
+        linked.types.insert(ty, TypeRecord { declaration: ty });
+        let function = CanonicalFunction {
+            instance,
+            parameters: Vec::new(),
+            return_type: ty,
+            calls: vec![CanonicalCall { callee: unknown, arguments: Vec::new(), result: None }],
+        };
+        let mut functions = BTreeMap::new();
+        functions.insert(instance, function);
+        let mir = CanonicalSemanticMir { module_name: "demo".into(), functions };
+        assert!(matches!(mir.validate(&linked), Err(CanonicalMirError::UnknownCallee { .. })));
     }
 
     #[test]
