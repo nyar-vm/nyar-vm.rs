@@ -153,6 +153,8 @@ pub struct CanonicalSemanticMir {
 pub enum CanonicalMirError {
     /// 表键与函数内部实例身份不一致。
     FunctionKeyMismatch { key: ItemInstanceId, instance: ItemInstanceId },
+    /// Semantic MIR 函数自身不在链接闭包中。
+    UnknownFunction { function: ItemInstanceId },
     /// 函数引用了未链接的 callee。
     UnknownCallee { function: ItemInstanceId, callee: ItemInstanceId },
     /// 类型身份未进入 canonical type table。
@@ -169,6 +171,9 @@ impl CanonicalSemanticMir {
         for (key, function) in &self.functions {
             if key != &function.instance {
                 return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
+            }
+            if !linked.item_instances.contains_key(key) {
+                return Err(CanonicalMirError::UnknownFunction { function: *key });
             }
             let mut defined = std::collections::BTreeSet::new();
             for (value, ty) in &function.parameters {
@@ -293,6 +298,10 @@ mod tests {
         let instance = ItemInstanceId::from_index(0).unwrap();
         let unknown = ItemInstanceId::from_index(1).unwrap();
         let ty = TypeId::from_index(0).unwrap();
+        linked.item_instances.insert(instance, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            substitution: SubstitutionId::from_index(0).unwrap(),
+        });
         linked.types.insert(ty, TypeRecord { declaration: ty });
         let function = CanonicalFunction {
             instance,
