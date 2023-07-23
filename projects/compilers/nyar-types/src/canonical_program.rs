@@ -210,6 +210,13 @@ pub struct CanonicalProgram {
     pub mir: CanonicalSemanticMir,
 }
 
+impl CanonicalProgram {
+    /// 验证链接闭包与 Semantic MIR 后，才允许进入 processing half。
+    pub fn validate(&self) -> Result<(), CanonicalMirError> {
+        self.mir.validate(&self.linked)
+    }
+}
+
 /// One-way compile stream orchestration points (no God parallel authorities).
 ///
 /// Implementations live in `nyar-language` / `nyar-emitter`; this module only
@@ -277,6 +284,7 @@ mod tests {
         let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "demo".into(), functions } };
         assert_eq!(program.mir.functions.len(), 1);
         program.mir.validate(&program.linked).expect("canonical MIR contract");
+        program.validate().expect("canonical program contract");
     }
 
     #[test]

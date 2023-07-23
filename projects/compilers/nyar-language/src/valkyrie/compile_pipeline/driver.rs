@@ -8,6 +8,8 @@ use nyar_types::{
     pipeline::{LinkStage, RepresentationPlanStage, ValidateMirStage},
 };
 
+use super::diagnostics::fail_stage;
+
 /// Analysis-stream success through M2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnalysisOutcome {
@@ -56,6 +58,14 @@ where
 
     /// Run processing half starting from an already-validated program.
     pub fn run_processing(&self, program: &CanonicalProgram) -> StageResult<ProcessingOutcome> {
+        if let Err(error) = program.validate() {
+            return fail_stage(
+                nyar_types::CompileStage::ValidateMir,
+                "PIPE004",
+                &program.mir.module_name,
+                format!("canonical Semantic MIR contract failed: {error:?}"),
+            );
+        }
         let representation = self.planner.plan(program)?;
         Ok(ProcessingOutcome { program: program.clone(), representation })
     }
