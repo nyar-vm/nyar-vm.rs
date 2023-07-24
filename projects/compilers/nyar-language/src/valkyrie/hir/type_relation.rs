@@ -18,7 +18,7 @@ use crate::{
     },
     types::{
         Identifier,
-        hir::{HirModule, HirStruct, RowType, TraitObject, ValkyrieType},
+        hir::{HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
     },
 };
 
@@ -202,6 +202,35 @@ impl TypeRelationContext {
         }
     }
 
+    /// 在泛型实参完成代入后验证 callable 的声明级 where 合同。
+    pub fn satisfies_where_constraints(
+        &self,
+        constraints: &[HirWhereConstraint],
+        substitutions: &BTreeMap<Identifier, ValkyrieType>,
+    ) -> bool {
+        constraints.iter().all(|constraint| {
+            let target = substitute_relation_type(&constraint.target, substitutions);
+            let Some(target_name) = named_type_name(&target)
+            else {
+                return false;
+            };
+            constraint.bounds.iter().all(|bound| {
+                let Some(trait_name) = bound.trait_path.parts().last()
+                else {
+                    return false;
+                };
+                let Ok(witness) = self.traits.satisfy_named_trait(&target_name, trait_name)
+                else {
+                    return false;
+                };
+                bound.associated_types.iter().all(|equation| {
+                    let expected = substitute_relation_type(&equation.ty, substitutions);
+                    witness.associated_types.get(&equation.name).is_some_and(|actual| actual == &expected)
+                })
+            })
+        })
+    }
+
     pub fn match_row_requirement(&self, actual_name: &Identifier, requirement: &RowRequirement) -> ParameterMatchResult {
         let Some(candidate) = self.structs.get(actual_name)
         else {
@@ -218,6 +247,21 @@ impl TypeRelationContext {
 
     fn matches_non_error(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
         !matches!(self.match_parameter(actual, expected), ParameterMatchResult::NoMatch { .. })
+    }
+}
+
+fn substitute_relation_type(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
+    match ty {
+        ValkyrieType::Named(name) => substitutions.get(name).cloned().unwrap_or_else(|| ty.clone()),
+        ValkyrieType::Generic(generic) => substitutions.get(&generic.name).cloned().unwrap_or_else(|| ty.clone()),
+        ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
+            Box::new(substitute_relation_type(base, substitutions)),
+            args.iter().map(|arg| substitute_relation_type(arg, substitutions)).collect(),
+        ),
+        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_relation_type(inner, substitutions))),
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_relation_type(item, substitutions)).collect()),
+        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_relation_type(item, substitutions)).collect()),
+        other => other.clone(),
     }
 }
 

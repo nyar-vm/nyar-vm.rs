@@ -19,7 +19,7 @@ use crate::{
         hir::{
             HirBlock, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
             HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind,
-            HirStruct, HirVariadicKind, HirVariant, ValkyrieType,
+            HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
     valkyrie::{hir::PatternRefutability, mir::collect_aggregate_field_map},
@@ -50,6 +50,8 @@ pub struct OverloadCandidate {
     pub param_specs: Vec<HirParam>,
     /// Formal type variables which must be bound from actual arguments.
     pub generic_binders: BTreeSet<Identifier>,
+    /// 声明级 where 合同；实参代入后必须取得对应 witness。
+    pub where_constraints: Vec<HirWhereConstraint>,
 }
 
 impl OverloadCandidate {
@@ -68,6 +70,7 @@ impl OverloadCandidate {
             match_kind,
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
+            where_constraints: Vec::new(),
         }
     }
 
@@ -78,6 +81,11 @@ impl OverloadCandidate {
 
     pub fn with_generic_binder(mut self, binder: Identifier) -> Self {
         self.generic_binders.insert(binder);
+        self
+    }
+
+    fn with_where_constraints(mut self, constraints: Vec<HirWhereConstraint>) -> Self {
+        self.where_constraints = constraints;
         self
     }
 
@@ -97,6 +105,7 @@ impl OverloadCandidate {
             match_kind,
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
+            where_constraints: Vec::new(),
         }
     }
 }
@@ -320,6 +329,7 @@ fn match_intrinsic_builtin_candidate(
                 match_kind: OverloadMatchKind::NominalExact,
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
+                where_constraints: candidate.where_constraints.clone(),
             })
         }
         // 其它 Intrinsic 仍走通用形实参路径，直至各自合同闭合。
@@ -398,7 +408,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
-    candidate
+    candidate.with_where_constraints(function.where_constraints.clone())
 }
 
 /// Simple name used when matching an unqualified call site to overload candidates.
@@ -492,7 +502,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>) -> 
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
-    candidate
+    candidate.with_where_constraints(function.where_constraints.clone())
 }
 
 fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
@@ -865,6 +875,9 @@ fn match_call_candidate(
         unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions)?;
     }
     let expected_params = expected_params.iter().map(|ty| substitute_type_vars(ty, &substitutions)).collect::<Vec<_>>();
+    if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
+        return None;
+    }
     // Integer syntax is representation-polymorphic. It becomes a concrete
     // integer type only when an independently resolved formal parameter
     // constrains it. This is semantic call binding, not backend inference.
@@ -883,6 +896,7 @@ fn match_call_candidate(
         match_kind,
         param_specs: candidate.param_specs.clone(),
         generic_binders: candidate.generic_binders.clone(),
+        where_constraints: candidate.where_constraints.clone(),
     })
 }
 
