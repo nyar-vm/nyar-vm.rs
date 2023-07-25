@@ -69,7 +69,12 @@ pub(crate) fn function_interop_contract(function: &HirFunction) -> Option<Extern
         .annotations
         .iter()
         .find_map(attribute_to_interop_contract)
-        .or_else(|| function.is_abstract.then(|| ExternalImportLink::host(None, Vec::new())))
+        .or_else(|| {
+            function.annotations.iter().find_map(|attribute| {
+                (attribute_name(attribute).as_deref() == Some("host_contract"))
+                    .then(|| ExternalImportLink::host(None, Vec::new()))
+            })
+        })
 }
 
 /// 从 `[host_provider(X)]` 属性中杝坖目标契约符坷。
@@ -323,6 +328,42 @@ micro main() -> i64 {
         let plan = build_output.neutral_plan();
         assert_eq!(plan.semantic_fragments[0].external_import_links.len(), 1, "links={:?}", plan.semantic_fragments[0].external_import_links);
         assert_eq!(plan.semantic_fragments[0].external_call_edges.len(), 1, "edges={:?}", plan.semantic_fragments[0].external_call_edges);
+    }
+
+    #[test]
+    fn bare_abstract_declaration_has_no_import_contract() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 903 });
+        let module = compiler
+            .compile_source(
+                r#"
+micro declaration(message: utf8): unit;
+"#,
+            )
+            .unwrap();
+        let declaration = module.functions.iter().find(|function| function.name.as_str() == "declaration").expect("declaration");
+        assert!(declaration.is_abstract);
+        assert!(function_interop_contract(declaration).is_none());
+        let output = compiler.compile_source_to_build_output("micro declaration(message: utf8): unit;").expect("declaration output");
+        assert!(output.semantic_mir().external_calls.is_empty());
+    }
+
+    #[test]
+    fn host_contract_requires_explicit_annotation() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 904 });
+        let module = compiler
+            .compile_source(
+                r#"
+[host_contract]
+micro declaration(message: utf8): unit;
+"#,
+            )
+            .unwrap();
+        let declaration = module.functions.iter().find(|function| function.name.as_str() == "declaration").expect("declaration");
+        let contract = function_interop_contract(declaration).expect("explicit host contract");
+        assert!(contract.matches_boundary("host"));
+        assert!(contract.locator_segments().is_empty());
+        let output = compiler.compile_source_to_build_output("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
+        assert_eq!(output.semantic_mir().external_calls.len(), 1);
     }
 
     #[test]

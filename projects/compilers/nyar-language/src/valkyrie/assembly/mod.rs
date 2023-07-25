@@ -105,7 +105,7 @@ pub fn assemble_fragment(
     );
 
     let external_import_links =
-        merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions);
+        merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
 
     // Post-link MIR already carries dependency sum layouts (e.g. MsilOpcode from
     // CLR helpers linked into a Node ArtifactSet). Recomputing from consumer HIR
@@ -172,95 +172,51 @@ pub fn plan_artifacts_from_neutral_plan(
 fn merge_program_external_import_links(
     fragment_links: &BTreeMap<QualifiedName, ExternalImportLink>,
     functions: &[nyar::FunctionAnalysis],
-) -> BTreeMap<QualifiedName, ExternalImportLink> {
+) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
     let mut links = fragment_links.clone();
     for function in functions {
         let Some(link) = function.external_import_link.as_ref()
         else {
             continue;
         };
-        links.entry(function.symbol.clone()).or_insert_with(|| link.clone());
+        if let Some(existing) = links.get(&function.symbol) {
+            if existing != link {
+                return Err(miette!("导入身份 `{}` 对应冲突合同", function.symbol));
+            }
+        } else {
+            links.insert(function.symbol.clone(), link.clone());
+        }
     }
-    resolve_host_contract_links(&mut links, functions);
-    links
+    for (symbol, link) in &links {
+        if link.matches_boundary("host") && link.locator_segments().is_empty() {
+            return Err(miette!("host 合同 `{symbol}` 尚未由 Compiler 绑定 provider"));
+        }
+    }
+    Ok(links)
 }
 
-fn resolve_host_contract_links(links: &mut BTreeMap<QualifiedName, ExternalImportLink>, functions: &[nyar::FunctionAnalysis]) {
-    let mut provider_for_contract: BTreeMap<QualifiedName, QualifiedName> = BTreeMap::new();
-    for function in functions {
-        if let Some(contract) = &function.host_provider_for {
-            provider_for_contract.entry(contract.clone()).or_insert_with(|| function.symbol.clone());
-        }
-    }
-    if provider_for_contract.is_empty() {
-        return;
-    }
-    let contracts_to_resolve: Vec<QualifiedName> = links
-        .iter()
-        .filter(|(_, link)| link.matches_boundary("host") && link.locator_segments().is_empty())
-        .map(|(key, _)| key.clone())
-        .collect();
-    for contract in contracts_to_resolve {
-        let Some(provider) = provider_for_contract.get(&contract)
-        else {
-            continue;
-        };
-        let Some(resolved_link) = find_provider_ffi_link(links, provider, &contract)
-        else {
-            continue;
-        };
-        links.insert(contract, resolved_link.clone());
-    }
-}
+#[cfg(test)]
+mod import_contract_tests {
+    use super::*;
 
-fn find_provider_ffi_link<'a>(
-    links: &'a BTreeMap<QualifiedName, ExternalImportLink>,
-    provider: &QualifiedName,
-    contract: &QualifiedName,
-) -> Option<&'a ExternalImportLink> {
-    let provider_parts = provider.parts();
-    let provider_ns_len = provider_parts.len().saturating_sub(1);
-    let contract_last = contract.parts().last()?;
-    let mut best: Option<(MatchScore, &'a ExternalImportLink)> = None;
-    for (key, link) in links.iter() {
-        if !link.matches_boundary("host") || link.locator_segments().is_empty() {
-            continue;
-        }
-        let key_parts = key.parts();
-        if key_parts.len() <= provider_ns_len || key_parts.len() < 2 {
-            continue;
-        }
-        if key_parts[..provider_ns_len] != provider_parts[..provider_ns_len] {
-            continue;
-        }
-        let ffi_last = key_parts.last()?;
-        let score = score_ffi_match(ffi_last.as_str(), contract_last.as_str());
-        if score == MatchScore::None {
-            continue;
-        }
-        match &best {
-            None => best = Some((score, link)),
-            Some((current, _)) if *current < score => best = Some((score, link)),
-            _ => {}
-        }
+    #[test]
+    fn unresolved_host_contract_does_not_select_similarly_named_ffi() {
+        let contract = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("write")]);
+        let ffi = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("__console_write")]);
+        let links = BTreeMap::from([
+            (contract, ExternalImportLink::host(None, Vec::new())),
+            (ffi, ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".to_owned(), "write".to_owned()])),
+        ]);
+        let error = merge_program_external_import_links(&links, &[]).expect_err("unresolved provider");
+        assert!(error.to_string().contains("Compiler"));
     }
-    best.map(|(_, link)| link)
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum MatchScore {
-    None,
-    Partial,
-    Exact,
-}
-
-fn score_ffi_match(ffi_last: &str, contract_last: &str) -> MatchScore {
-    let stripped = ffi_last.strip_prefix("__").unwrap_or(ffi_last);
-    if stripped == contract_last {
-        return MatchScore::Exact;
+    #[test]
+    fn explicit_ffi_import_keeps_exact_contract() {
+        let symbol = QualifiedName::new(vec![Identifier::new("binding"), Identifier::new("write")]);
+        let links = BTreeMap::from([
+            (symbol, ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".to_owned(), "write".to_owned()])),
+        ]);
+        assert_eq!(merge_program_external_import_links(&links, &[]).expect("explicit import"), links);
     }
-    if stripped.ends_with(&format!("_{}", contract_last)) {
-        return MatchScore::Partial;
-    }
-    MatchScore::None
 }

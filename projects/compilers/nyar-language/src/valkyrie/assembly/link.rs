@@ -15,13 +15,15 @@ use crate::{
 };
 
 /// 只沿完整调用符号链接依赖函数及其支撑元数据，不推断泛型或改写调用语义。
-pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: &[MirModule]) {
+pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
     if !dependency_mirs.is_empty() {
-        // symbol → (dependency index, body). First dep wins on duplicate symbols.
+        // 完整身份必须唯一；依赖顺序不得决定语义绑定。
         let mut pool: BTreeMap<String, (usize, MirFunction)> = BTreeMap::new();
         for (dep_index, dep) in dependency_mirs.iter().enumerate() {
             for function in &dep.functions {
-                pool.entry(function.symbol.clone()).or_insert_with(|| (dep_index, function.clone()));
+                if pool.insert(function.symbol.clone(), (dep_index, function.clone())).is_some() {
+                    return Err(std_data::text::valkyrie::ParseError::invalid(format!("重复依赖 callable identity：`{}`", function.symbol)));
+                }
             }
         }
 
@@ -66,6 +68,19 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                 // 并对已链接函数体保留空操作遍历以备后用。
                 for (dep_index, symbols) in &linked_by_dep {
                     let dep = &dependency_mirs[*dep_index];
+                    for layout in &dep.aggregate_layouts.layouts {
+                        if let Some(existing) = consumer.aggregate_layouts.layouts.iter().find(|existing| {
+                            existing.name == layout.name && existing.namespace == layout.namespace
+                        }) {
+                            let mut normalized = layout.clone();
+                            normalized.id = existing.id;
+                            if *existing != normalized {
+                                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                                    "依赖布局合同冲突：`{}.{}`", layout.namespace, layout.name
+                                )));
+                            }
+                        }
+                    }
                     let remap = merge_aggregate_layout_plan(&mut consumer.aggregate_layouts, &dep.aggregate_layouts);
                     if !remap.is_empty() {
                         for function in &mut consumer.functions {
@@ -75,12 +90,24 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                         }
                     }
                     for sum in &dep.sum_types {
-                        if !consumer.sum_types.iter().any(|existing| existing.name == sum.name) {
+                        if let Some(existing) = consumer.sum_types.iter().find(|existing| existing.name == sum.name) {
+                            if existing != sum {
+                                return Err(std_data::text::valkyrie::ParseError::invalid(format!("依赖 sum 合同冲突：`{}`", sum.name)));
+                            }
+                        } else {
                             consumer.sum_types.push(sum.clone());
                         }
                     }
                     for hir_struct in &dep.structs {
-                        if !consumer.structs.iter().any(|existing| existing.name == hir_struct.name) {
+                        if let Some(existing) = consumer.structs.iter().find(|existing| {
+                            existing.name == hir_struct.name && existing.namespace == hir_struct.namespace
+                        }) {
+                            if existing != hir_struct {
+                                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                                    "依赖结构合同冲突：`{}.{}`", hir_struct.namespace, hir_struct.name
+                                )));
+                            }
+                        } else {
                             consumer.structs.push(hir_struct.clone());
                         }
                     }
@@ -94,7 +121,7 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
             }
         }
     }
-
+    Ok(())
 }
 
 fn remap_function_layout_ids(_function: &mut MirFunction, _remap: &BTreeMap<LayoutId, LayoutId>) {
@@ -179,7 +206,7 @@ mod tests {
         let mut consumer = bare_module("legion", vec![call_fn("legion::caller", "helper")]);
         let original = consumer.clone();
         let dependency = bare_module("library", vec![empty_fn("library::helper")]);
-        link_reachable_dependency_mir(&mut consumer, &[dependency]);
+        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
         assert_eq!(consumer, original);
     }
 
@@ -190,12 +217,50 @@ mod tests {
             vec![call_fn("legion::emitter_compile_project", "nyar.language.valkyrie::compile_project_from_source")],
         );
         let dependency = bare_module("nyar.language.valkyrie", vec![empty_fn("nyar.language.valkyrie::compile_project_from_source")]);
-        link_reachable_dependency_mir(&mut consumer, &[dependency]);
+        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
         assert!(
             consumer.functions.iter().any(|function| function.symbol.ends_with("compile_project_from_source")),
             "symbols={:?}",
             consumer.functions.iter().map(|function| &function.symbol).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn rejects_conflicting_struct_contract_and_preserves_distinct_owners() {
+        use crate::valkyrie::mir::MirStruct;
+        let structure = MirStruct {
+            name: "Item".to_owned(), namespace: "first".to_owned(),
+            fields: Vec::new(), is_value_type: true,
+        };
+        let mut consumer = bare_module("consumer", vec![call_fn("caller", "dependency.helper")]);
+        consumer.structs.push(structure.clone());
+        let mut dependency = bare_module("dependency", vec![empty_fn("dependency.helper")]);
+        let mut other = structure;
+        other.is_value_type = false;
+        dependency.structs.push(other.clone());
+        assert!(link_reachable_dependency_mir(&mut consumer.clone(), &[dependency.clone()]).is_err());
+        other.namespace = "second".to_owned();
+        dependency.structs[0] = other;
+        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("different owners");
+        assert_eq!(consumer.structs.len(), 2);
+    }
+
+    #[test]
+    fn rejects_same_owner_layout_conflict_but_allows_local_id_remap() {
+        use crate::valkyrie::mir::{AggregateLayout, MirStorageKind};
+        let layout = AggregateLayout {
+            id: 3, name: "Item".to_owned(), namespace: "owner".to_owned(),
+            storage: MirStorageKind::Value, size: 8, align: 8, fields: Vec::new(),
+        };
+        let mut consumer = bare_module("consumer", vec![call_fn("caller", "dependency.helper")]);
+        consumer.aggregate_layouts.layouts.push(layout.clone());
+        let mut dependency = bare_module("dependency", vec![empty_fn("dependency.helper")]);
+        let mut imported = layout;
+        imported.id = 7;
+        dependency.aggregate_layouts.layouts.push(imported);
+        link_reachable_dependency_mir(&mut consumer.clone(), &[dependency.clone()]).expect("module-local layout ids");
+        dependency.aggregate_layouts.layouts[0].size = 16;
+        assert!(link_reachable_dependency_mir(&mut consumer, &[dependency]).is_err());
     }
 
     #[test]
@@ -259,7 +324,7 @@ mod tests {
             sum_types: Vec::new(),
             diagnostics: Vec::new(),
         };
-        link_reachable_dependency_mir(&mut consumer, &[dependency]);
+        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
 
         assert!(consumer.functions.iter().any(|f| f.symbol.contains("is_none")), "linked Option.is_none");
         let option = consumer.aggregate_layouts.layouts.iter().find(|layout| layout.name == "Option").expect("Option layout merged");
@@ -296,7 +361,7 @@ mod tests {
             ));
 
         let mut consumer = bare_module("leetcode.two_sum", vec![consumer_fn]);
-        link_reachable_dependency_mir(&mut consumer, &[]);
+        link_reachable_dependency_mir(&mut consumer, &[]).expect("link contract");
         let function = &consumer.functions[0];
         let instruction = &function.blocks[0].instructions[0];
         assert!(matches!(instruction.kind, MirOperation::Call { .. }));
@@ -327,7 +392,7 @@ mod tests {
             ));
 
         let mut consumer = bare_module("leetcode.two_sum", vec![consumer_fn]);
-        link_reachable_dependency_mir(&mut consumer, &[]);
+        link_reachable_dependency_mir(&mut consumer, &[]).expect("link contract");
         let rewritten = &consumer.functions[0].blocks[0].instructions[0].kind;
         assert!(matches!(rewritten, MirOperation::Call { .. }));
     }
@@ -367,7 +432,7 @@ mod tests {
             ));
 
         let mut consumer = bare_module("leetcode.two_sum", vec![consumer_fn]);
-        link_reachable_dependency_mir(&mut consumer, &[]);
+        link_reachable_dependency_mir(&mut consumer, &[]).expect("link contract");
         let rewritten = &consumer.functions[0].blocks[0].instructions[0].kind;
         assert!(matches!(rewritten, MirOperation::Call { .. }));
     }
@@ -402,7 +467,7 @@ mod tests {
             }],
             diagnostics: Vec::new(),
         };
-        link_reachable_dependency_mir(&mut consumer, &[dependency]);
+        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
         assert!(consumer.sum_types.iter().any(|sum| sum.name == "MsilOpcode"), "linked dependency sum layouts must survive into consumer MIR");
     }
 }
