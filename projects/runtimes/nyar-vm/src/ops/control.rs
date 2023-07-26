@@ -1,7 +1,7 @@
 use nyar_bytecode::{NyarHeadCode, NyarInstruction};
 
 use crate::{
-    array_runtime::{array_get, array_len, array_set},
+    array_runtime::{array_get, array_len, array_push, array_set},
     error::NyarRuntimeError,
     frame::Frame,
     host::{ResolvedImport, execute_host_op},
@@ -103,9 +103,11 @@ pub fn execute_control(
             args.reverse();
 
             let result = match intrinsic_index {
-                0 => {
-                    return Err(NyarRuntimeError::UnsupportedFeature("CallIntrinsic ArrayPush"));
-                }
+                0 => array_push(
+                    ctx.heap,
+                    args.first().unwrap_or(&Value::Null),
+                    args.get(1).unwrap_or(&Value::Null),
+                )?,
                 1 => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
                 2 => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
                 3 => array_set(

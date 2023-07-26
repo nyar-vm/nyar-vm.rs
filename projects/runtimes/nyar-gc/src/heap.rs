@@ -427,6 +427,29 @@ impl ObjectHeap {
         self.objects.get_mut(id).and_then(|slot| slot.as_mut())
     }
 
+    /// 向布局对象末尾追加一个槽（可增长数组 `ArrayPush`）；写屏障与 `set_field` 同构。
+    pub fn append_field(&mut self, id: ObjectId, value: Value) -> Result<usize, &'static str> {
+        let container_gen = self.generation(id).ok_or("object not found")?;
+        let is_old_to_young = container_gen == Generation::Tenured
+            && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
+        if value.heap_ids().next().is_some() {
+            self.barrier.note_ref_write();
+        }
+        if is_old_to_young {
+            self.barrier.record_old_to_young(id);
+        }
+        match self.objects.get_mut(id).and_then(|slot| slot.as_mut()) {
+            Some(ObjectPayload::LayoutObject { slots, .. }) => {
+                let index = slots.len();
+                slots.push(value);
+                self.live_bytes = self.live_bytes.saturating_add(VALUE_SLOT_BYTES);
+                self.total_allocated_bytes = self.total_allocated_bytes.saturating_add(VALUE_SLOT_BYTES);
+                Ok(index)
+            }
+            _ => Err("not a layout object"),
+        }
+    }
+
     /// Write a field slot through the write barrier（含老→年轻记忆集与可选 SATB）。
     pub fn set_field(&mut self, id: ObjectId, field_slot: usize, value: Value) -> Result<(), &'static str> {
         let container_gen = self.generation(id).ok_or("object not found")?;

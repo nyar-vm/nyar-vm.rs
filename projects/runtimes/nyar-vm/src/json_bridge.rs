@@ -1,4 +1,4 @@
-//! JSON ↔ runtime `Value` bridge for CLI / leetcode harnesses.
+//! CLI 的 JSON 与运行时值边界；缺少导出类型和布局合同的结构值必须拒绝。
 
 use miette::{IntoDiagnostic, Result};
 use nyar_gc::ObjectHeap;
@@ -6,26 +6,25 @@ use serde_json::Value as JsonValue;
 
 use crate::{error::NyarRuntimeError, value::Value};
 
-/// Parses a JSON value into a runtime `Value` without heap allocation (scalars only).
+/// 将 JSON 标量转换为运行时值，不分配堆对象。
 pub fn value_from_json(json: &JsonValue) -> Result<Value, NyarRuntimeError> {
     materialize_value_from_json(json, None)
 }
 
-/// Parses a JSON value into a runtime `Value`, allocating `ArrayList` / fixed-array shells on `heap`.
+/// 转换 JSON 标量；提供堆也不能代替缺失的导出类型和布局合同。
 pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHeap>) -> Result<Value, NyarRuntimeError> {
     Ok(match json {
         JsonValue::Null => Value::Null,
         JsonValue::Bool(value) => Value::Bool(*value),
         JsonValue::Number(number) => json_number_to_value(number)?,
         JsonValue::String(value) => Value::String(value.clone()),
-        JsonValue::Array(items) => {
-            let Some(heap) = heap else {
+        JsonValue::Array(_) => {
+            if heap.is_none() {
                 return Err(NyarRuntimeError::TypeMismatch {
                     expected: "heap-backed array contract",
                     actual: "JSON array without runtime heap".to_owned(),
                 });
-            };
-            let _ = (heap, items);
+            }
             return Err(NyarRuntimeError::UnsupportedFeature("JSON array export type/layout contract"));
         }
         JsonValue::Object(_) => return Err(NyarRuntimeError::TypeMismatch {
@@ -53,7 +52,7 @@ fn scalar_i64(value: i64) -> Value {
     }
 }
 
-/// 将标量或已声明的数组布局序列化为 JSON；无法证明布局时直接失败。
+/// 将运行时标量序列化为 JSON；结构值没有正式导出合同就直接失败。
 pub fn value_to_json(value: &Value) -> Result<JsonValue, NyarRuntimeError> {
     value_to_json_with_heap(value, None)
 }
@@ -69,13 +68,12 @@ pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Resu
         Value::F64(value) => Ok(JsonValue::from(*value)),
         Value::String(value) => Ok(JsonValue::String(value.clone())),
         Value::Object(id) => {
-            let Some(heap) = heap else {
+            if heap.is_none() {
                 return Err(NyarRuntimeError::TypeMismatch {
                     expected: "declared object export contract",
                     actual: format!("object#{id} without heap"),
                 });
-            };
-            let _ = heap;
+            }
             Err(NyarRuntimeError::UnsupportedFeature("JSON object export type/layout contract"))
         }
         Value::Coroutine(id) => Err(NyarRuntimeError::TypeMismatch {
@@ -85,7 +83,7 @@ pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Resu
     }
 }
 
-/// Parses a JSON document containing a top-level array of call arguments (scalars only).
+/// 解析顶层调用参数列表；当前只接受标量参数。
 pub fn parse_call_args_json(source: &str) -> Result<Vec<Value>> {
     let json: JsonValue = serde_json::from_str(source).into_diagnostic()?;
     let JsonValue::Array(items) = json else {
@@ -94,7 +92,7 @@ pub fn parse_call_args_json(source: &str) -> Result<Vec<Value>> {
     items.iter().map(value_from_json).collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-/// Parses call arguments and materializes JSON arrays into heap `ArrayList` shells.
+/// 在运行时堆边界解析调用参数；结构参数缺少导出合同则失败。
 pub fn parse_call_args_json_with_heap(source: &str, heap: &mut ObjectHeap) -> Result<Vec<Value>> {
     let json: JsonValue = serde_json::from_str(source).into_diagnostic()?;
     let JsonValue::Array(items) = json else {

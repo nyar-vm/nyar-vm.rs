@@ -90,9 +90,12 @@ fn main() -> Result<()> {
                     .map_err(|error| miette::miette!("failed to begin workload phase: {error}"))?;
                 eprintln!("phase begin: {}", decision.reason);
             }
-            let loaded = vm.load(&bytes).wrap_err_with(|| format!("failed to load module: {}", module.display()))?;
+            let loaded = vm
+                .load(&bytes)
+                .map_err(|error| miette::miette!("failed to load module `{}`: {error}", module.display()))?;
             let args = match args_json {
-                Some(source) => json_bridge::parse_call_args_json(&source).wrap_err("failed to parse --args-json")?,
+                Some(source) => json_bridge::parse_call_args_json_with_heap(&source, vm.heap_mut())
+                    .wrap_err("failed to parse --args-json")?,
                 None => Vec::new(),
             };
             let result = vm
@@ -105,14 +108,19 @@ fn main() -> Result<()> {
                 eprintln!("phase end: {}", decision.reason);
             }
             if json {
-                println!("{}", serde_json::to_string(&json_bridge::value_to_json(&result)).into_diagnostic()?);
+                println!(
+                    "{}",
+                    serde_json::to_string(&json_bridge::value_to_json_with_heap(&result, Some(vm.heap()))?).into_diagnostic()?
+                );
             } else {
                 println!("{result}");
             }
         }
         Commands::List { module } => {
             let bytes = fs::read(&module).into_diagnostic().wrap_err_with(|| format!("failed to read module file: {}", module.display()))?;
-            let loaded = NyarVm::new().load(&bytes).wrap_err_with(|| format!("failed to load module: {}", module.display()))?;
+            let loaded = NyarVm::new()
+                .load(&bytes)
+                .map_err(|error| miette::miette!("failed to load module `{}`: {error}", module.display()))?;
             for export in &loaded.exports {
                 println!("{}\t{:?}", export.symbol_name, export.kind);
             }

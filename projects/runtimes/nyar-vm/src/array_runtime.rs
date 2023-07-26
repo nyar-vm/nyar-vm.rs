@@ -51,6 +51,27 @@ pub fn array_set(heap: &mut ObjectHeap, array: &Value, index: &Value, value: &Va
     }
 }
 
+/// `ArrayPush`：向可增长数组布局末尾追加元素；返回原数组引用。
+pub fn array_push(heap: &mut ObjectHeap, array: &Value, value: &Value) -> Result<Value, NyarRuntimeError> {
+    match array {
+        Value::Null => Err(NyarRuntimeError::TypeMismatch {
+            expected: "object",
+            actual: "null".to_string(),
+        }),
+        Value::Object(object_id) => {
+            heap.append_field(*object_id, value.clone()).map_err(|reason| match reason {
+                "object not found" => NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")),
+                other => NyarRuntimeError::TypeMismatch {
+                    expected: "layout array",
+                    actual: other.to_string(),
+                },
+            })?;
+            Ok(array.clone())
+        }
+        other => Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: other.type_name().to_string() }),
+    }
+}
+
 fn index_as_usize(value: &Value) -> Result<usize, NyarRuntimeError> {
     match value {
         Value::I32(value) if *value >= 0 => Ok(*value as usize),
@@ -101,6 +122,18 @@ fn write_layout_element(heap: &mut ObjectHeap, object_id: ObjectId, index: usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn array_push_grows_layout_slots() {
+        let mut heap = ObjectHeap::new();
+        let array = build_fixed_array(&mut heap, 0, &[]);
+        assert_eq!(array_len(&heap, &array).expect("len0"), Value::I32(0));
+        array_push(&mut heap, &array, &Value::I64(2)).expect("push");
+        array_push(&mut heap, &array, &Value::I64(7)).expect("push");
+        assert_eq!(array_len(&heap, &array).expect("len2"), Value::I32(2));
+        assert_eq!(array_get(&heap, &array, &Value::I32(0)).expect("get0"), Value::I64(2));
+        assert_eq!(array_get(&heap, &array, &Value::I32(1)).expect("get1"), Value::I64(7));
+    }
 
     #[test]
     fn fixed_array_len_get_set_use_layout_slots() {
