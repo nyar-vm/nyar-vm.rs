@@ -99,6 +99,24 @@ micro collect_array<I, T>(self: I) -> [T]
 }
 
 #[test]
+fn namespaced_function_preserves_where_contract() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 4308 });
+    let hir = compiler
+        .compile_source(r#"
+namespace std.iterator;
+trait Iterator { type Item; micro next(self) -> Option<Item>; }
+micro collect_array<I, T>(self: I) -> bool
+    where I: Iterator<Item = T>
+{
+    return true;
+}
+"#)
+        .expect("带 namespace 的函数必须保留 where 合同");
+    let function = hir.functions.iter().find(|function| function.name.as_str() == "collect_array").expect("collect_array HIR");
+    assert_eq!(function.where_constraints.len(), 1);
+}
+
+#[test]
 fn imported_impl_method_contract_survives_dependency_boundary() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4307 });
     let provider = compiler.compile_source(r#"
