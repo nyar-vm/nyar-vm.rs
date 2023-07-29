@@ -15,9 +15,9 @@ use crate::{
         type_relation::{ParameterMatchResult, TypeRelationContext},
     },
     types::{
-        Identifier, NamePath,
+        Identifier, NamePath, QualifiedName,
         hir::{
-            HirBlock, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
+            GenericType, HirBlock, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
             HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind,
             HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
         },
@@ -44,6 +44,7 @@ pub struct OverloadSignature {
 pub struct OverloadCandidate {
     pub symbol: NamePath,
     pub owner: Option<Identifier>,
+    pub trait_owner: Option<Identifier>,
     pub domain: OverloadDomain,
     pub signature: OverloadSignature,
     pub match_kind: OverloadMatchKind,
@@ -65,6 +66,7 @@ impl OverloadCandidate {
         Self {
             symbol,
             owner: None,
+            trait_owner: None,
             domain,
             signature: OverloadSignature { params, return_type },
             match_kind,
@@ -100,6 +102,7 @@ impl OverloadCandidate {
         Self {
             symbol,
             owner: Some(owner),
+            trait_owner: None,
             domain,
             signature: OverloadSignature { params, return_type },
             match_kind,
@@ -186,55 +189,89 @@ pub fn resolve_hir_calls(module: &mut HirModule) {
     let struct_fields = collect_aggregate_field_map(module);
     let singleton_names = module.singletons.iter().map(|singleton| singleton.name.clone()).collect::<std::collections::BTreeSet<_>>();
 
+    resolve_submodule_calls(module, &candidates, &type_relations, &struct_fields, &singleton_names);
+}
+
+fn resolve_submodule_calls(
+    module: &mut HirModule,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
+    singleton_names: &BTreeSet<Identifier>,
+) {
     for function in &mut module.functions {
-        resolve_function_calls(function, &candidates, &type_relations, &struct_fields, &singleton_names, None);
+        resolve_function_calls(function, candidates, type_relations, struct_fields, singleton_names, None);
     }
     for item in &mut module.structs {
+        let owner_type = struct_apply_type(item);
         for method in &mut item.methods {
-            resolve_function_calls(method, &candidates, &type_relations, &struct_fields, &singleton_names, Some(&item.name));
+            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
         }
     }
     for item in &mut module.singletons {
         for method in &mut item.methods {
-            resolve_function_calls(method, &candidates, &type_relations, &struct_fields, &singleton_names, Some(&item.name));
+            let owner_type = ValkyrieType::Named(item.name.clone());
+            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+        }
+        if let Some(constructor) = &mut item.constructor {
+            let owner_type = ValkyrieType::Named(item.name.clone());
+            resolve_function_calls(constructor, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
+        }
+        if let Some(finalizer) = &mut item.finalizer {
+            let owner_type = ValkyrieType::Named(item.name.clone());
+            resolve_function_calls(finalizer, candidates, type_relations, struct_fields, singleton_names, Some(&owner_type));
         }
     }
     for item in &mut module.traits {
-        for method in &mut item.methods {
-            resolve_function_calls(method, &candidates, &type_relations, &struct_fields, &singleton_names, None);
-        }
-        for method in &mut item.default_methods {
-            resolve_function_calls(method, &candidates, &type_relations, &struct_fields, &singleton_names, None);
+        for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) {
+            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, None);
         }
     }
     for item in &mut module.impls {
-        let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
         for method in &mut item.methods {
-            resolve_function_calls(method, &candidates, &type_relations, &struct_fields, &singleton_names, owner.as_ref());
+            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&item.target));
         }
+    }
+    for submodule in &mut module.submodules {
+        resolve_submodule_calls(submodule, candidates, type_relations, struct_fields, singleton_names);
     }
 }
 
 fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
+    let mut candidates = language_builtin_candidates();
+    candidates.extend(collect_declared_candidates(module));
+    candidates
+}
+
+fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     let mut candidates = Vec::new();
-    candidates.extend(language_builtin_candidates());
     candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function)));
+    for submodule in &module.submodules {
+        candidates.extend(collect_declared_candidates(submodule));
+    }
     for item in &module.structs {
         candidates.push(build_struct_constructor_candidate(item));
     }
     for item in &module.structs {
-        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, Some(item.name.clone()))));
+        candidates.extend(item.methods.iter().map(|method| {
+            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item), &item.generics)
+        }));
     }
     for item in &module.singletons {
-        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, Some(item.name.clone()))));
+        let owner_type = ValkyrieType::Named(item.name.clone());
+        candidates.extend(item.methods.iter().map(|method| {
+            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &owner_type, &[])
+        }));
     }
     for item in &module.traits {
-        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None)));
-        candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None)));
+        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
+        candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
     }
     for item in &module.impls {
         let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
-        candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, owner.clone())));
+        candidates.extend(item.methods.iter().map(|method| {
+            specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
+        }));
     }
     // Dependency exports contribute only their declared call contracts. Their
     // bodies remain owned by the exporting module and are never reparsed or
@@ -243,15 +280,19 @@ fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         candidates.extend(export.functions.iter().map(|function| build_function_candidate(&export.module, function)));
         for item in &export.structs {
             candidates.push(build_struct_constructor_candidate(item));
-            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, Some(item.name.clone()))));
+            candidates.extend(item.methods.iter().map(|method| {
+                specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item), &item.generics)
+            }));
         }
         for item in &export.traits {
-            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None)));
-            candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None)));
+            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
+            candidates.extend(item.default_methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
         }
         for item in &export.impls {
             let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
-            candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, owner.clone())));
+            candidates.extend(item.methods.iter().map(|method| {
+                specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
+            }));
         }
     }
     for item in &module.enums {
@@ -321,6 +362,7 @@ fn match_intrinsic_builtin_candidate(
             Some(OverloadCandidate {
                 symbol: candidate.symbol.clone(),
                 owner: None,
+                trait_owner: candidate.trait_owner.clone(),
                 domain: OverloadDomain::Function,
                 signature: OverloadSignature {
                     params: vec![array_ty.clone(), element],
@@ -426,14 +468,18 @@ fn symbol_matches_callee_name(symbol: &NamePath, callee_name: &Identifier) -> bo
 
 fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
     let param_specs = synthetic_field_params(item);
-    OverloadCandidate::new(
+    let mut candidate = OverloadCandidate::new(
         NamePath::new(vec![item.name.clone()]),
         OverloadDomain::Constructor,
         item.fields.iter().map(|field| field.ty.clone()).collect(),
         struct_apply_type(item),
         OverloadMatchKind::Row,
     )
-    .with_param_specs(param_specs)
+    .with_param_specs(param_specs);
+    for generic in &item.generics {
+        candidate = candidate.with_generic_binder(generic.name.clone());
+    }
+    candidate
 }
 
 fn synthetic_field_params(item: &HirStruct) -> Vec<HirParam> {
@@ -468,17 +514,21 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
     // `Result.Fail`. Putting `Result.Fail` in `symbol` while also setting
     // `owner = Result` produced the bogus `Result.Result.Fail` SMIR003 miss.
     let return_type = variant.result_type.clone().unwrap_or_else(|| enum_apply_type(enum_def));
-    OverloadCandidate::new_method(
+    let mut candidate = OverloadCandidate::new_method(
         enum_def.name.clone(),
         NamePath::new(vec![variant.name.clone()]),
         OverloadDomain::Constructor,
         variant_constructor_param_types(variant),
         return_type,
         OverloadMatchKind::Row,
-    )
+    );
+    for generic in &enum_def.generics {
+        candidate = candidate.with_generic_binder(generic.name.clone());
+    }
+    candidate
 }
 
-fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>) -> OverloadCandidate {
+fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, trait_owner: Option<Identifier>) -> OverloadCandidate {
     let candidate = if let Some(owner) = owner {
         OverloadCandidate::new_method(
             owner,
@@ -491,7 +541,10 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>) -> 
     }
     else {
         OverloadCandidate::new(
-            NamePath::new(vec![function.name.clone()]),
+            trait_owner
+                .as_ref()
+                .map(|owner| NamePath::new(vec![owner.clone(), function.name.clone()]))
+                .unwrap_or_else(|| NamePath::new(vec![function.name.clone()])),
             classify_callable_domain(&function.name),
             function.params.iter().map(|param| param.ty.clone()).collect(),
             function.return_type.clone(),
@@ -502,7 +555,67 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>) -> 
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
-    candidate.with_where_constraints(function.where_constraints.clone())
+    let mut candidate = candidate.with_where_constraints(function.where_constraints.clone());
+    candidate.trait_owner = trait_owner;
+    candidate
+}
+
+/// 将方法声明绑定到完整的名义 owner；仅保留 owner 的短名用于 callable identity。
+/// `Self` 和 impl 泛型必须在候选进入实参统一前完成替换，否则泛型实例方法会
+/// 被降成非泛型 nominal 类型，函数体中的 receiver 也会失去同一份代入事实。
+fn specialize_method_candidate(
+    mut candidate: OverloadCandidate,
+    owner_type: &ValkyrieType,
+    owner_generics: &[GenericType],
+) -> OverloadCandidate {
+    candidate.signature.params = candidate
+        .signature
+        .params
+        .iter()
+        .map(|ty| substitute_type_self(ty, owner_type))
+        .collect();
+    candidate.signature.return_type = substitute_type_self(&candidate.signature.return_type, owner_type);
+    candidate.param_specs = candidate
+        .param_specs
+        .iter()
+        .map(|param| {
+            let mut param = param.clone();
+            param.ty = substitute_type_self(&param.ty, owner_type);
+            param
+        })
+        .collect();
+    for generic in owner_generics {
+        candidate = candidate.with_generic_binder(generic.name.clone());
+    }
+    for generic in owner_type_generic_binders(owner_type) {
+        candidate = candidate.with_generic_binder(generic);
+    }
+    candidate
+}
+
+fn owner_type_generic_binders(ty: &ValkyrieType) -> BTreeSet<Identifier> {
+    fn collect(ty: &ValkyrieType, binders: &mut BTreeSet<Identifier>) {
+        match ty {
+            ValkyrieType::Generic(generic) => {
+                binders.insert(generic.name.clone());
+            }
+            ValkyrieType::Apply(base, arguments) => {
+                collect(base, binders);
+                for argument in arguments {
+                    match argument {
+                        ValkyrieType::Named(name) => {
+                            binders.insert(name.clone());
+                        }
+                        _ => collect(argument, binders),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut binders = BTreeSet::new();
+    collect(ty, &mut binders);
+    binders
 }
 
 fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
@@ -525,8 +638,9 @@ fn resolve_function_calls(
     type_relations: &TypeRelationContext,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
-    owner: Option<&Identifier>,
+    owner_type: Option<&ValkyrieType>,
 ) {
+    let type_relations = type_relations.with_callable_constraints(&function.where_constraints);
     let mut locals = function
         .params
         .iter()
@@ -534,7 +648,7 @@ fn resolve_function_calls(
             let ty = if matches!(param.ty, ValkyrieType::r#SelfType)
                 || (param.name.name.as_str() == "self" && matches!(param.ty, ValkyrieType::AutoType))
             {
-                owner.map(|owner| ValkyrieType::Named(owner.clone())).unwrap_or(param.ty.clone())
+                owner_type.cloned().unwrap_or(param.ty.clone())
             }
             else {
                 param.ty.clone()
@@ -542,7 +656,7 @@ fn resolve_function_calls(
             (param.name.name.to_string(), ty)
         })
         .collect::<BTreeMap<_, _>>();
-    resolve_block_calls(&mut function.body, candidates, type_relations, &mut locals, struct_fields, singleton_names);
+    resolve_block_calls(&mut function.body, candidates, &type_relations, &mut locals, struct_fields, singleton_names);
 }
 
 fn resolve_block_calls(
@@ -888,6 +1002,7 @@ fn match_call_candidate(
     Some(OverloadCandidate {
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
+        trait_owner: candidate.trait_owner.clone(),
         domain: candidate.domain.clone(),
         signature: OverloadSignature {
             params: expected_params,
@@ -1037,6 +1152,9 @@ fn try_resolve_call(
         if path.parts().len() == 2 {
             let owner = &path.parts()[0];
             let method_name = &path.parts()[1];
+            if let Some(trait_name) = constrained_trait_owner(owner, type_relations.callable_constraints()) {
+                return try_resolve_type_static_method(owner, method_name, args, candidates, type_relations, locals, struct_fields, singleton_names, Some(&trait_name));
+            }
             if singleton_names.contains(owner) {
                 return try_resolve_singleton_method(
                     owner,
@@ -1113,6 +1231,7 @@ fn try_resolve_call(
                     locals,
                     struct_fields,
                     singleton_names,
+                    None,
                 );
             }
             return try_resolve_qualified_free_function(
@@ -1341,9 +1460,11 @@ fn try_resolve_qualified_free_function(
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
+    let canonical_text = QualifiedName::new(path.parts().to_vec()).to_string();
+    let canonical_path = NamePath::new(vec![Identifier::new(&canonical_text)]);
     let filtered = candidates
         .iter()
-        .filter(|candidate| candidate.owner.is_none() && &candidate.symbol == path)
+        .filter(|candidate| candidate.owner.is_none() && candidate.symbol == canonical_path)
         .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
@@ -1389,12 +1510,41 @@ fn try_resolve_instance_method(
         });
     }
 
+    let receiver_type = infer_expr_type(receiver, locals)
+        .or_else(|| infer_scrutinee_type(receiver, &[], locals, struct_fields, singleton_names));
+    let generic_trait_owner = receiver_type.as_ref().and_then(|ty| match ty {
+        ValkyrieType::Generic(generic) => constrained_trait_owner(&generic.name, type_relations.callable_constraints()),
+        ValkyrieType::Named(name) => constrained_trait_owner(name, type_relations.callable_constraints()),
+        _ => None,
+    });
+
     let filtered = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Operator))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
+        .filter(|candidate| generic_trait_owner.as_ref().is_none_or(|owner| candidate.trait_owner.as_ref() == Some(owner)))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
-        .filter_map(|candidate| match_call_candidate(candidate, &full_args, type_relations, locals, struct_fields, singleton_names))
+        .filter_map(|candidate| {
+            let candidate = generic_trait_owner
+                .as_ref()
+                .map(|_| {
+                    substitute_trait_self(candidate, receiver_type.as_ref().expect("generic receiver type"))
+                })
+                .unwrap_or_else(|| candidate.clone());
+            let matched = match_call_candidate(&candidate, &full_args, type_relations, locals, struct_fields, singleton_names)?;
+            match generic_trait_owner.as_ref() {
+                Some(trait_owner) => {
+                    let generic_subject = receiver_type.as_ref().and_then(generic_type_parameter_name)?;
+                    Some(substitute_context_associated_types(
+                        &matched,
+                        type_relations.callable_constraints(),
+                        &generic_subject,
+                        trait_owner,
+                    ))
+                }
+                None => Some(matched),
+            }
+        })
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
     let matched =
@@ -1406,6 +1556,98 @@ fn try_resolve_instance_method(
         parameter_types: resolved.signature.params,
         extractor_payload_type: None,
     })
+}
+
+fn substitute_context_associated_types(
+    candidate: &OverloadCandidate,
+    constraints: &[HirWhereConstraint],
+    constrained_type: &Identifier,
+    trait_owner: &Identifier,
+) -> OverloadCandidate {
+    let mut candidate = candidate.clone();
+    let substitutions = constraints
+        .iter()
+        .filter(|constraint| generic_type_parameter_name(&constraint.target).as_ref() == Some(constrained_type))
+        .flat_map(|constraint| &constraint.bounds)
+        .filter(|bound| bound.trait_path.parts().last() == Some(trait_owner))
+        .flat_map(|bound| &bound.associated_types)
+        .map(|equation| (equation.name.clone(), equation.ty.clone()))
+        .collect::<BTreeMap<_, _>>();
+    candidate.signature.return_type = substitute_associated_equations(&candidate.signature.return_type, constrained_type, &substitutions);
+    candidate.signature.params = candidate
+        .signature
+        .params
+        .iter()
+        .map(|ty| substitute_associated_equations(ty, constrained_type, &substitutions))
+        .collect();
+    candidate
+}
+
+fn substitute_associated_equations(
+    ty: &ValkyrieType,
+    constrained_type: &Identifier,
+    equations: &BTreeMap<Identifier, ValkyrieType>,
+) -> ValkyrieType {
+    match ty {
+        ValkyrieType::Associated(associated) if generic_type_parameter_name(&associated.base).as_ref() == Some(constrained_type) => {
+            equations.get(&associated.name).cloned().unwrap_or_else(|| {
+                ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                    base: substitute_associated_equations(&associated.base, constrained_type, equations),
+                    name: associated.name.clone(),
+                    type_arguments: associated
+                        .type_arguments
+                        .iter()
+                        .map(|argument| substitute_associated_equations(argument, constrained_type, equations))
+                        .collect(),
+                }))
+            })
+        }
+        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: substitute_associated_equations(&associated.base, constrained_type, equations),
+            name: associated.name.clone(),
+            type_arguments: associated
+                .type_arguments
+                .iter()
+                .map(|argument| substitute_associated_equations(argument, constrained_type, equations))
+                .collect(),
+        })),
+        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
+            Box::new(substitute_associated_equations(base, constrained_type, equations)),
+            arguments.iter().map(|argument| substitute_associated_equations(argument, constrained_type, equations)).collect(),
+        ),
+        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(substitute_associated_equations(element, constrained_type, equations))),
+        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray {
+            element: Box::new(substitute_associated_equations(element, constrained_type, equations)),
+            length: *length,
+        },
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(
+            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
+        ),
+        ValkyrieType::Union(items) => ValkyrieType::Union(
+            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
+        ),
+        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(
+            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
+        ),
+        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_associated_equations(inner, constrained_type, equations))),
+        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
+            params: function
+                .params
+                .iter()
+                .map(|param| substitute_associated_equations(param, constrained_type, equations))
+                .collect(),
+            return_type: substitute_associated_equations(&function.return_type, constrained_type, equations),
+        })),
+        other => other.clone(),
+    }
+}
+
+fn generic_type_parameter_name(ty: &ValkyrieType) -> Option<Identifier> {
+    match ty {
+        ValkyrieType::Generic(generic) => Some(generic.name.clone()),
+        ValkyrieType::Named(name) => Some(name.clone()),
+        _ => None,
+    }
 }
 
 /// A primitive call keeps a language-level locator for diagnostics and later
@@ -1465,14 +1707,32 @@ fn try_resolve_type_static_method(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
+    trait_owner: Option<&Identifier>,
 ) -> Option<HirResolvedCall> {
     let filtered = candidates
         .iter()
-        .filter(|candidate| candidate.owner.as_ref() == Some(type_owner))
+        .filter(|candidate| match trait_owner {
+            Some(trait_owner) => candidate.trait_owner.as_ref() == Some(trait_owner),
+            None => candidate.owner.as_ref() == Some(type_owner),
+        })
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
-        .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
+        .filter_map(|candidate| {
+            let candidate = trait_owner
+                .map(|trait_owner| {
+                    let owner_type = ValkyrieType::Named(type_owner.clone());
+                    let candidate = substitute_trait_self(candidate, &owner_type);
+                    substitute_context_associated_types(
+                        &candidate,
+                        type_relations.callable_constraints(),
+                        type_owner,
+                        trait_owner,
+                    )
+                })
+                .unwrap_or_else(|| candidate.clone());
+            match_call_candidate(&candidate, args, type_relations, locals, struct_fields, singleton_names)
+        })
         .collect::<Vec<_>>();
     if filtered.is_empty() {
         return None;
@@ -1491,6 +1751,72 @@ fn try_resolve_type_static_method(
         return_type: substitute_self_type(&resolved.signature.return_type, Some(type_owner)),
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
         extractor_payload_type: None,
+    })
+}
+
+fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieType) -> OverloadCandidate {
+    let mut candidate = candidate.clone();
+    candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_type_self(ty, owner_type)).collect();
+    candidate.signature.return_type = substitute_type_self(&candidate.signature.return_type, owner_type);
+    candidate.where_constraints = candidate
+        .where_constraints
+        .iter()
+        .map(|constraint| HirWhereConstraint {
+            target: substitute_type_self(&constraint.target, owner_type),
+            bounds: constraint
+                .bounds
+                .iter()
+                .map(|bound| crate::types::hir::HirTraitBound {
+                    trait_path: bound.trait_path.clone(),
+                    type_arguments: bound.type_arguments.iter().map(|ty| substitute_type_self(ty, owner_type)).collect(),
+                    associated_types: bound
+                        .associated_types
+                        .iter()
+                        .map(|equation| crate::types::hir::HirAssociatedTypeBinding {
+                            name: equation.name.clone(),
+                            ty: substitute_type_self(&equation.ty, owner_type),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            span: constraint.span.clone(),
+        })
+        .collect();
+    candidate
+}
+
+fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
+    match ty {
+        ValkyrieType::SelfType => replacement.clone(),
+        ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_self(inner, replacement))),
+        ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
+            Box::new(substitute_type_self(base, replacement)),
+            args.iter().map(|arg| substitute_type_self(arg, replacement)).collect(),
+        ),
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_type_self(item, replacement)).collect()),
+        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_type_self(item, replacement)).collect()),
+        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_type_self(inner, replacement))),
+        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: substitute_type_self(&associated.base, replacement),
+            name: associated.name.clone(),
+            type_arguments: associated.type_arguments.iter().map(|ty| substitute_type_self(ty, replacement)).collect(),
+        })),
+        other => other.clone(),
+    }
+}
+
+fn constrained_trait_owner(owner: &Identifier, constraints: &[HirWhereConstraint]) -> Option<Identifier> {
+    constraints.iter().find_map(|constraint| {
+        let matches_owner = match &constraint.target {
+            ValkyrieType::Generic(generic) => generic.name == *owner,
+            ValkyrieType::Named(name) => name == owner,
+            _ => false,
+        };
+        if !matches_owner {
+            return None;
+        }
+        let bounds = constraint.bounds.iter().filter_map(|bound| bound.trait_path.parts().last().cloned()).collect::<Vec<_>>();
+        (bounds.len() == 1).then(|| bounds[0].clone())
     })
 }
 
@@ -1840,8 +2166,25 @@ fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, 
             args.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
         ),
         ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_vars(inner, substitutions))),
+        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray {
+            element: Box::new(substitute_type_vars(element, substitutions)),
+            length: *length,
+        },
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
         ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
+        ValkyrieType::Intersection(items) => {
+            ValkyrieType::Intersection(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect())
+        }
+        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_type_vars(inner, substitutions))),
+        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
+            params: function.params.iter().map(|param| substitute_type_vars(param, substitutions)).collect(),
+            return_type: substitute_type_vars(&function.return_type, substitutions),
+        })),
+        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: substitute_type_vars(&associated.base, substitutions),
+            name: associated.name.clone(),
+            type_arguments: associated.type_arguments.iter().map(|ty| substitute_type_vars(ty, substitutions)).collect(),
+        })),
         other => other.clone(),
     }
 }
@@ -3111,6 +3454,107 @@ micro answer(): i64 {
         };
         assert_eq!(resolved.domain, HirCallableDomain::Function);
         assert_eq!(resolved.symbol.to_string(), "main::answer");
+    }
+
+    #[test]
+    fn qualified_namespace_call_uses_canonical_identity() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4210 });
+        let hir = compiler.compile_source(r#"
+namespace library.console;
+micro emit(flag: bool): unit {}
+namespace library.client;
+micro invoke(): unit { library.console.emit(true) }
+"#).expect("qualified source call");
+        fn find(module: &HirModule) -> Option<&HirFunction> {
+            module.functions.iter().find(|function| function.name.as_str() == "invoke")
+                .or_else(|| module.submodules.iter().find_map(find))
+        }
+        let function = find(&hir).expect("invoke");
+        let expression = function.body.expr.as_ref().expect("call expression");
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind else {
+            panic!("qualified call must resolve");
+        };
+        assert_eq!(resolved.symbol.to_string(), "library::console::emit");
+    }
+
+    #[test]
+    fn submodule_imply_body_resolves_qualified_call() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4211 });
+        let hir = compiler.compile_source(r#"
+namespace library.console;
+micro emit(flag: bool): unit {}
+namespace library.client;
+class Client {}
+imply Client {
+    micro invoke(): unit { library.console.emit(true) }
+}
+"#).expect("qualified imply source call");
+        fn find(module: &HirModule) -> Option<&HirFunction> {
+            module.impls.iter().flat_map(|item| &item.methods)
+                .find(|function| function.name.as_str() == "invoke")
+                .or_else(|| module.submodules.iter().find_map(find))
+        }
+        let function = find(&hir).expect("invoke");
+        let expression = function.body.expr.as_ref().expect("call expression");
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind else {
+            panic!("qualified imply call must resolve");
+        };
+        assert_eq!(resolved.symbol.to_string(), "library::console::emit");
+    }
+
+    #[test]
+    fn method_generic_parameters_survive_hir_lowering() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4212 });
+        let hir = compiler.compile_source(r#"
+class Collector {
+    micro identity<T>(value: T) -> T where T: Iterator<Item = i32> { return value; }
+}
+"#).expect("generic method source");
+        let method = &hir.structs[0].methods[0];
+        assert_eq!(method.generics.len(), 1);
+        assert_eq!(method.generics[0].name.as_str(), "T");
+        assert_eq!(method.params.len(), 1);
+        assert_eq!(method.params[0].ty, method.return_type);
+        assert_eq!(method.where_constraints.len(), 1);
+        let constraint = &method.where_constraints[0];
+        assert_eq!(constraint.bounds.len(), 1);
+        let bound = &constraint.bounds[0];
+        assert_eq!(bound.associated_types.len(), 1);
+        assert_eq!(bound.trait_path.to_string(), "Iterator");
+        assert_eq!(bound.associated_types[0].name.as_str(), "Item");
+        assert_eq!(bound.associated_types[0].ty, ValkyrieType::Integer32 { signed: true });
+    }
+
+    #[test]
+    fn where_bounds_preserve_positional_arguments_and_equation_ownership() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4214 });
+        let hir = compiler.compile_source(r#"
+micro identity<T>(value: T) -> T
+    where T: Mapper<i32, bool, Item = i32> + Mapper<bool, i32, Item = bool>
+{ return value; }
+"#).expect("structured generic bounds");
+        let bounds = &hir.functions[0].where_constraints[0].bounds;
+        assert_eq!(bounds.len(), 2);
+        assert_eq!(bounds[0].trait_path, bounds[1].trait_path);
+        let integer = ValkyrieType::Integer32 { signed: true };
+        assert_eq!(bounds[0].type_arguments, vec![integer.clone(), ValkyrieType::Boolean]);
+        assert_eq!(bounds[1].type_arguments, vec![ValkyrieType::Boolean, integer.clone()]);
+        assert_eq!(bounds[0].associated_types[0].ty, integer);
+        assert_eq!(bounds[1].associated_types[0].ty, ValkyrieType::Boolean);
+    }
+
+    #[test]
+    fn unrelated_generic_declaration_does_not_make_nominal_type_a_wildcard() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4213 });
+        let hir = compiler.compile_source(r#"
+class T {}
+micro identity<T>(value: T) -> T { return value; }
+"#).expect("nominal and scoped generic declarations");
+        let relations = TypeRelationContext::from_module(&hir);
+        assert!(matches!(
+            relations.match_parameter(&ValkyrieType::Boolean, &ValkyrieType::Named(Identifier::new("T"))),
+            ParameterMatchResult::NoMatch { .. }
+        ));
     }
 
     #[test]

@@ -117,6 +117,26 @@ micro collect_array<I, T>(self: I) -> bool
 }
 
 #[test]
+fn concatenated_namespace_preserves_where_contract() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 4309 });
+    let hir = compiler
+        .compile_source(r#"
+namespace std.iterator;
+trait Iterator { type Item; micro next(self) -> Option<Item>; }
+
+namespace std.iterator;
+micro collect_array<I, T>(self: I) -> bool
+    where I: Iterator<Item = T>
+{
+    return true;
+}
+"#)
+        .expect("拼接后的重复 namespace 必须保留 where 合同");
+    let function = hir.functions.iter().find(|function| function.name.as_str() == "collect_array").expect("collect_array HIR");
+    assert_eq!(function.where_constraints.len(), 1);
+}
+
+#[test]
 fn imported_impl_method_contract_survives_dependency_boundary() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4307 });
     let provider = compiler.compile_source(r#"

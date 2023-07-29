@@ -1,6 +1,6 @@
 //! Function definitions for HIR.
 
-use super::{GenericType, HirAttribute, HirBlock, HirParam, HirVisibility, ValkyrieType};
+use super::{GenericType, HirAttribute, HirBlock, HirParam, HirVisibility, HirWhereConstraint, ValkyrieType};
 use crate::{Identifier, NamePath, SourceSpan};
 
 /// A function in HIR.
@@ -21,6 +21,8 @@ pub struct HirFunction {
     pub annotations: Vec<HirAttribute>,
     /// Generic parameters for the function.
     pub generics: Vec<GenericType>,
+    /// 函数或方法级 `where` 约束。
+    pub where_constraints: Vec<HirWhereConstraint>,
     /// Parameters of the function.
     pub params: Vec<HirParam>,
     /// The return type of the function.

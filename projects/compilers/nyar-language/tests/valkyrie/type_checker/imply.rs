@@ -387,6 +387,7 @@ fn module(traits: Vec<HirTrait>, impls: Vec<HirImpl>) -> HirModule {
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -421,7 +422,9 @@ fn literal_i64(value: i64) -> HirExpr {
 }
 
 fn where_constraint(target: ValkyrieType, bounds: Vec<&str>) -> HirWhereConstraint {
-    HirWhereConstraint { target, bounds: bounds.into_iter().map(path).collect(), span: span() }
+    HirWhereConstraint { target, bounds: bounds.into_iter().map(|name| nyar_language::valkyrie::types::hir::HirTraitBound {
+        trait_path: path(name), type_arguments: Vec::new(), associated_types: Vec::new(),
+    }).collect(), span: span() }
 }
 
 fn path(name: &str) -> NamePath {

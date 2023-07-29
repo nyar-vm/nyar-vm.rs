@@ -10,9 +10,31 @@ pub struct HirWhereConstraint {
     /// The constrained type.
     pub target: ValkyrieType,
     /// Trait bounds that the target must satisfy.
-    pub bounds: Vec<NamePath>,
+    pub bounds: Vec<HirTraitBound>,
     /// Source span for error reporting.
     pub span: SourceSpan,
+}
+
+/// 一个完整的 trait 约束，参数与关联等式归属于同一个 bound。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirTraitBound {
+    /// trait 的声明路径。
+    pub trait_path: NamePath,
+    /// 有序的位置类型参数。
+    pub type_arguments: Vec<ValkyrieType>,
+    /// 此 bound 的关联类型等式。
+    pub associated_types: Vec<HirAssociatedTypeBinding>,
+}
+
+/// 约束 trait 的关联类型绑定。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirAssociatedTypeBinding {
+    /// 关联类型名称。
+    pub name: crate::Identifier,
+    /// 关联类型的精确目标类型。
+    pub ty: ValkyrieType,
 }
 
 /// An impl block in HIR.

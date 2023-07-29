@@ -46,39 +46,27 @@ pub struct TypeRelationContext {
     nominal: NominalModuleView,
     traits: TraitModuleView,
     structs: BTreeMap<Identifier, HirStruct>,
-    /// 本模块中所有声明的泛型类型参数名称集合（如 `T`、`E`、`K`、`V`）。
-    ///
-    /// 在重载匹配 / 参数匹配时，`ValkyrieType::Named("T")` 无法与具体类型
-    /// （如 `i64`）区分——两者都是 `Named`。此集合用于在 `match_parameter` 中
-    /// 将期望类型为泛型参数的位置视为类型变量，接受任意实际类型，从而让
-    /// `Some(42)` 能匹配 `Some { value: T }` 的构造函数签名。
-    generic_params: BTreeSet<Identifier>,
+    callable_constraints: Vec<HirWhereConstraint>,
 }
 
 impl TypeRelationContext {
     pub fn from_module(module: &HirModule) -> Self {
-        let mut generic_params = BTreeSet::new();
-        for enum_def in module.enums.iter().chain(module.imported_nominal_enums()) {
-            for generic in &enum_def.generics {
-                generic_params.insert(generic.name.clone());
-            }
-        }
-        for struct_def in &module.structs {
-            for generic in &struct_def.generics {
-                generic_params.insert(generic.name.clone());
-            }
-        }
-        for function in &module.functions {
-            for generic in &function.generics {
-                generic_params.insert(generic.name.clone());
-            }
-        }
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
             structs: module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect(),
-            generic_params,
+            callable_constraints: Vec::new(),
         }
+    }
+
+    pub fn with_callable_constraints(&self, constraints: &[HirWhereConstraint]) -> Self {
+        let mut context = self.clone();
+        context.callable_constraints = constraints.to_vec();
+        context
+    }
+
+    pub fn callable_constraints(&self) -> &[HirWhereConstraint] {
+        &self.callable_constraints
     }
 
     pub fn match_parameter(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> ParameterMatchResult {
@@ -86,15 +74,6 @@ impl TypeRelationContext {
             return ParameterMatchResult::NominalExact;
         }
 
-        // 泛型类型参数（如 `T`）在 HIR 中表示为 `Named("T")`，与具体名义类型
-        // 无法区分。当期望类型是已注册的泛型参数时，视其为类型变量，接受任意
-        // 实际类型——这与 `unify_constructor_type_vars` 中将 `Named` 视为类型
-        // 变量的既有行为一致。
-        if let ValkyrieType::Named(expected_name) = expected {
-            if self.generic_params.contains(expected_name) {
-                return ParameterMatchResult::NominalExact;
-            }
-        }
 
         // Nominal applications retain their type arguments at the semantic
         // boundary.  Match the constructor nominally and each argument using
@@ -215,6 +194,12 @@ impl TypeRelationContext {
                 return false;
             };
             constraint.bounds.iter().all(|bound| {
+                if let Some(context) = self.callable_constraints.iter().find(|context| {
+                    let context_target = substitute_relation_type(&context.target, substitutions);
+                    named_type_name(&context_target).is_some_and(|name| name == target_name)
+                }) {
+                    return bound_is_satisfied_by_context(bound, context, &self.callable_constraints, substitutions);
+                }
                 let Some(trait_name) = bound.trait_path.parts().last()
                 else {
                     return false;
@@ -250,6 +235,54 @@ impl TypeRelationContext {
     }
 }
 
+fn bound_is_satisfied_by_context(
+    required: &crate::types::hir::HirTraitBound,
+    context: &HirWhereConstraint,
+    all_contexts: &[HirWhereConstraint],
+    substitutions: &BTreeMap<Identifier, ValkyrieType>,
+) -> bool {
+    context.bounds.iter().any(|provided| {
+        provided.trait_path == required.trait_path
+            && provided.type_arguments.len() == required.type_arguments.len()
+            && provided
+                .type_arguments
+                .iter()
+                .zip(&required.type_arguments)
+                .all(|(provided, required)| {
+                    normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
+                })
+            && required.associated_types.iter().all(|required_equation| {
+                let expected = normalize_context_type(&required_equation.ty, all_contexts, substitutions);
+                provided.associated_types.iter().any(|provided_equation| {
+                    provided_equation.name == required_equation.name
+                        && normalize_context_type(&provided_equation.ty, all_contexts, substitutions) == expected
+                })
+            })
+    })
+}
+
+fn normalize_context_type(
+    ty: &ValkyrieType,
+    contexts: &[HirWhereConstraint],
+    substitutions: &BTreeMap<Identifier, ValkyrieType>,
+) -> ValkyrieType {
+    let ty = substitute_relation_type(ty, substitutions);
+    let ValkyrieType::Associated(associated) = &ty else {
+        return ty;
+    };
+    let Some(base) = named_type_name(&associated.base) else {
+        return ty;
+    };
+    contexts
+        .iter()
+        .filter(|context| named_type_name(&substitute_relation_type(&context.target, substitutions)).is_some_and(|target| target == base))
+        .flat_map(|context| &context.bounds)
+        .flat_map(|bound| &bound.associated_types)
+        .find(|equation| equation.name == associated.name)
+        .map(|equation| normalize_context_type(&equation.ty, contexts, substitutions))
+        .unwrap_or(ty)
+}
+
 fn substitute_relation_type(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Named(name) => substitutions.get(name).cloned().unwrap_or_else(|| ty.clone()),
@@ -281,6 +314,7 @@ fn row_type_to_requirement(row: &RowType) -> RowRequirement {
 fn named_type_name(ty: &ValkyrieType) -> Option<Identifier> {
     match ty {
         ValkyrieType::Named(name) => Some(name.clone()),
+        ValkyrieType::Generic(generic) => Some(generic.name.clone()),
         ValkyrieType::Apply(base, _) => named_type_name(base),
         _ => None,
     }

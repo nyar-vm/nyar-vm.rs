@@ -172,6 +172,7 @@ fn module_with_traits(traits: Vec<HirTrait>, structs: Vec<HirStruct>, impls: Vec
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),

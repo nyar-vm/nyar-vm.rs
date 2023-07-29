@@ -377,6 +377,21 @@ fn lower_type_path(path: &AstTypePath) -> ValkyrieType {
     if path.name.parts.len() == 1 && last.as_str() == "Self" {
         return ValkyrieType::SelfType;
     }
+    if path.name.parts.first().is_some_and(|part| part == "Self") {
+        let mut base = ValkyrieType::SelfType;
+        for (index, name) in path.name.parts.iter().enumerate().skip(1) {
+            base = ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                base,
+                name: Identifier::new(name),
+                type_arguments: if index + 1 == path.name.parts.len() {
+                    path.arguments.iter().map(lower_type_expression).collect()
+                } else {
+                    Vec::new()
+                },
+            }));
+        }
+        return base;
+    }
     let base = if !is_shadowed_builtin_type(last.as_str())
         && (path.name.parts.len() == 1 || is_known_builtin_type_namespace(&path.name.parts, last.as_str()))
     {

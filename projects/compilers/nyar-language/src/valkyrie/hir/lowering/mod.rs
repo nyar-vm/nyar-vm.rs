@@ -62,39 +62,25 @@ fn take_compile_warnings() -> Vec<HirCompileWarning> {
     COMPILE_WARNINGS.with(|warnings| std::mem::take(&mut *warnings.borrow_mut()))
 }
 
-/// 自举阶段感知的语义校验包装：调用完整 `validate_semantic_module`，
-/// 但在返回 `ParseError` 时过滤掉以下已知误报类别，避免阻塞 v1 编译：
-///
-/// - `copy discipline violation`：stdlib 值类型含 `String`/`Vec` 等引用字段，
-///   当前 copy 纪律检查将合法的值类型字段误判为违规；
-/// - `不能被原地修改`：值类型方法体内修改自身字段（如 `TuiRuntime`）的合法 mutation
-///   被误判为违规。
-///
-/// 该包装位于 `hir/lowering` 而非 `validation`，避免与并发编辑器对校验层的回退冲突。
-/// 待 v2 编译器完善 move/borrow 与 mutable self 分析后移除。
-fn validate_semantic_module_bootstrap(hir: &HirModule) -> Result<(), ParseError> {
+/// 前端统一验证调用身份、枚举判别与完整语义合同，不按错误文本放行。
+fn validate_hir_contract(hir: &HirModule) -> Result<(), ParseError> {
     validate_resolved_call_contracts(hir)?;
     validate_enum_discriminators(hir)?;
-    match validate_semantic_module(hir) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let message = match &error {
-                ParseError::Invalid { message, .. } => message,
-                ParseError::Io(_) => return Err(error),
-            };
-            let remaining: Vec<&str> = message
-                .split("; ")
-                .filter(|segment| !segment.contains("copy discipline violation") && !segment.contains("不能被原地修改"))
-                .collect();
-            if remaining.is_empty() { Ok(()) } else { Err(ParseError::invalid(remaining.join("; "))) }
-        }
-    }
+    validate_semantic_module(hir)
 }
 
 /// Semantic MIR may only be produced from calls carrying an overload-selected
 /// contract.  In particular, do not let the SSA lowerer recover a symbol or a
 /// result type from source spelling, contextual type, or a backend convention.
 fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), ParseError> {
+    for submodule in &hir.submodules {
+        validate_resolved_call_contracts(submodule)?;
+    }
+    for singleton in &hir.singletons {
+        for function in &singleton.methods {
+            validate_function_call_contracts(function)?;
+        }
+    }
     for function in &hir.functions {
         validate_function_call_contracts(function)?;
     }
@@ -149,12 +135,7 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
     match &expr.kind {
         HirExprKind::Call { callee, args, resolved } => {
             if resolved.is_none() {
-                // Stage0 seed debt: trait-method / where-clause resolution (e.g. `collect`)
-                // is still incomplete. Soft here only so Stage1 can be re-emitted to
-                // validate Wasm CFG/Result lowering. Wasm emit stays fail-closed for
-                // unresolved static calls — do not treat this as permission to emit
-                // placeholder Wasm. Track as separate gate after B4 CFG.
-                eprintln!("[hir] SMIR003 unresolved call contract in `{function}` at {:?}", expr.span);
+                return Err(ParseError::invalid(format!("SMIR003 unresolved call contract in `{function}` at {:?}", expr.span)));
             }
             validate_expr_call_contracts(callee, function)?;
             for arg in args {
@@ -163,7 +144,7 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
         }
         HirExprKind::Construct { args, resolved, .. } => {
             if resolved.is_none() {
-                eprintln!("[hir] SMIR003 unresolved constructor contract in `{function}` at {:?}", expr.span);
+                return Err(ParseError::invalid(format!("SMIR003 unresolved constructor contract in `{function}` at {:?}", expr.span)));
             }
             for arg in args {
                 validate_expr_call_contracts(arg, function)?;
@@ -314,8 +295,8 @@ impl FrontendBuildOutput {
     /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
     /// requires those bodies in the executable registry (SMIR003), not only SPI
     /// signature contracts.
-    pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) {
-        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs);
+    pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
+        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)
     }
 
     /// 返回 `HIR` 函数数量，供装配层做调试输出。
@@ -499,7 +480,7 @@ impl ValkyrieCompiler {
     /// schema version of serialized HIR as a semantic guarantee.
     pub fn validate_hir_semantic_contract(&self, hir: &HirModule) -> Result<(), ParseError> {
         validate_interop_surface(hir)?;
-        validate_semantic_module_bootstrap(hir)
+        validate_hir_contract(hir)
     }
 
     /// Parses source text and lowers it into a minimal HIR module.
@@ -582,6 +563,91 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<HirModule, ParseError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports(root, imported_semantic_exports)
+    }
+}
+
+fn lower_trait_method(mut method: HirFunction, associated_names: &std::collections::BTreeSet<Identifier>) -> HirFunction {
+    let generic_names = method.generics.iter().map(|generic| generic.name.clone()).collect::<std::collections::BTreeSet<_>>();
+    for param in &mut method.params {
+        param.ty = lower_trait_associated_type_references(&param.ty, associated_names, &generic_names);
+    }
+    method.return_type = lower_trait_associated_type_references(&method.return_type, associated_names, &generic_names);
+    for constraint in &mut method.where_constraints {
+        constraint.target = lower_trait_associated_type_references(&constraint.target, associated_names, &generic_names);
+        for bound in &mut constraint.bounds {
+            for argument in &mut bound.type_arguments {
+                *argument = lower_trait_associated_type_references(argument, associated_names, &generic_names);
+            }
+            for equation in &mut bound.associated_types {
+                equation.ty = lower_trait_associated_type_references(&equation.ty, associated_names, &generic_names);
+            }
+        }
+    }
+    method
+}
+
+fn lower_trait_associated_type_references(
+    ty: &ValkyrieType,
+    associated_names: &std::collections::BTreeSet<Identifier>,
+    generic_names: &std::collections::BTreeSet<Identifier>,
+) -> ValkyrieType {
+    match ty {
+        ValkyrieType::Named(name) if associated_names.contains(name) && !generic_names.contains(name) => {
+            ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                base: ValkyrieType::SelfType,
+                name: name.clone(),
+                type_arguments: Vec::new(),
+            }))
+        }
+        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
+            Box::new(lower_trait_associated_type_references(base, associated_names, generic_names)),
+            arguments
+                .iter()
+                .map(|argument| lower_trait_associated_type_references(argument, associated_names, generic_names))
+                .collect(),
+        ),
+        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(lower_trait_associated_type_references(element, associated_names, generic_names))),
+        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray {
+            element: Box::new(lower_trait_associated_type_references(element, associated_names, generic_names)),
+            length: *length,
+        },
+        ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(lower_trait_associated_type_references(inner, associated_names, generic_names))),
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(
+            items
+                .iter()
+                .map(|item| lower_trait_associated_type_references(item, associated_names, generic_names))
+                .collect(),
+        ),
+        ValkyrieType::Union(items) => ValkyrieType::Union(
+            items
+                .iter()
+                .map(|item| lower_trait_associated_type_references(item, associated_names, generic_names))
+                .collect(),
+        ),
+        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(
+            items
+                .iter()
+                .map(|item| lower_trait_associated_type_references(item, associated_names, generic_names))
+                .collect(),
+        ),
+        ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
+            params: function
+                .params
+                .iter()
+                .map(|param| lower_trait_associated_type_references(param, associated_names, generic_names))
+                .collect(),
+            return_type: lower_trait_associated_type_references(&function.return_type, associated_names, generic_names),
+        })),
+        ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: lower_trait_associated_type_references(&associated.base, associated_names, generic_names),
+            name: associated.name.clone(),
+            type_arguments: associated
+                .type_arguments
+                .iter()
+                .map(|argument| lower_trait_associated_type_references(argument, associated_names, generic_names))
+                .collect(),
+        })),
+        other => other.clone(),
     }
 }
 
@@ -792,6 +858,7 @@ impl AstToHir {
                 .map(|attribute| lower_attribute(attribute, self.source_id, function.span.clone()))
                 .collect(),
             generics: lower_generic_parameters(&function.generic_parameters),
+            where_constraints: lower_ast_where_constraints(&function.where_constraints, self.source_id),
             params: function.params.iter().map(|param| lower_param(param, self.source_id, function.span.clone())).collect(),
             return_type: function.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: lower_block(function.body.as_ref(), self.source_id, function.span.clone()),
@@ -956,19 +1023,25 @@ impl AstToHir {
     }
 
     fn lower_trait(&self, trait_decl: &TraitDeclaration) -> HirTrait {
+        let associated_names = trait_decl
+            .body
+            .associated_types
+            .iter()
+            .map(|item| item.name.name.clone())
+            .collect::<std::collections::BTreeSet<_>>();
         let methods: Vec<HirFunction> = trait_decl
             .body
             .methods
             .iter()
             .filter(|method| !is_property_accessor(method) && method.body.is_none())
-            .map(|method| self.lower_object_method(method))
+            .map(|method| lower_trait_method(self.lower_object_method(method), &associated_names))
             .collect();
         let default_methods: Vec<HirFunction> = trait_decl
             .body
             .methods
             .iter()
             .filter(|method| !is_property_accessor(method) && method.body.is_some())
-            .map(|method| self.lower_object_method(method))
+            .map(|method| lower_trait_method(self.lower_object_method(method), &associated_names))
             .collect();
 
         HirTrait {
@@ -1038,7 +1111,8 @@ impl AstToHir {
                 .attributes()
                 .map(|attribute| lower_attribute(attribute, self.source_id, method.span.clone()))
                 .collect(),
-            generics: Vec::new(),
+            generics: lower_generic_parameters(&method.generic_parameters),
+            where_constraints: lower_ast_where_constraints(&method.where_constraints, self.source_id),
             params: lower_method_params(method, self.source_id),
             return_type: method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: lower_block(method.body.as_ref(), self.source_id, method.span.clone()),
@@ -1132,7 +1206,8 @@ impl AstToHir {
                 .attributes()
                 .map(|attribute| lower_attribute(attribute, self.source_id, method.span.clone()))
                 .collect(),
-            generics: Vec::new(),
+            generics: lower_generic_parameters(&method.generic_parameters),
+            where_constraints: lower_ast_where_constraints(&method.where_constraints, self.source_id),
             params: lower_property_params(method, self.source_id),
             return_type: method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
             body: lower_block(method.body.as_ref(), self.source_id, method.span.clone()),
@@ -1328,15 +1403,40 @@ fn lower_bound_identifier(bound: &TypeExpression) -> Identifier {
 }
 
 fn lower_imply_where_constraints(imply_decl: &ImplyDeclaration, source_id: SourceID) -> Vec<HirWhereConstraint> {
-    imply_decl
-        .where_constraints
-        .iter()
-        .map(|constraint| HirWhereConstraint {
-            target: lower_type_expression(&constraint.target_type),
-            bounds: constraint.bounds.iter().map(lower_trait_path).collect(),
-            span: with_source(&constraint.span, source_id),
-        })
-        .collect()
+    lower_ast_where_constraints(&imply_decl.where_constraints, source_id)
+}
+
+fn lower_ast_where_constraints(
+    constraints: &[std_data::text::valkyrie::WhereConstraintDeclaration],
+    source_id: SourceID,
+) -> Vec<HirWhereConstraint> {
+    constraints.iter().map(|constraint| HirWhereConstraint {
+        target: lower_type_expression(&constraint.target_type),
+        bounds: constraint.bounds.iter().map(lower_trait_bound).collect(),
+        span: with_source(&constraint.span, source_id),
+    }).collect()
+}
+
+fn lower_trait_bound(bound: &TypeExpression) -> crate::valkyrie::types::hir::HirTraitBound {
+    let mut lowered = crate::valkyrie::types::hir::HirTraitBound {
+        trait_path: lower_trait_path(bound),
+        type_arguments: Vec::new(),
+        associated_types: Vec::new(),
+    };
+    if let TypeExpression::Path(path) = bound {
+        for argument in &path.arguments {
+            match argument {
+                TypeExpression::Associated { name, ty, .. } => {
+                    lowered.associated_types.push(crate::valkyrie::types::hir::HirAssociatedTypeBinding {
+                        name: name.name.clone(),
+                        ty: lower_type_expression(ty),
+                    });
+                }
+                argument => lowered.type_arguments.push(lower_type_expression(argument)),
+            }
+        }
+    }
+    lowered
 }
 
 fn lower_param(param: &FunctionParameter, source_id: SourceID, fallback_span: Range<usize>) -> HirParam {
@@ -1360,47 +1460,11 @@ fn lower_param(param: &FunctionParameter, source_id: SourceID, fallback_span: Ra
 }
 
 fn lower_method_params(method: &ObjectMethodDeclaration, source_id: SourceID) -> Vec<HirParam> {
-    let mut params = Vec::new();
-    let has_explicit_self = method.params.first().is_some_and(|param| param.name.as_str() == "self");
-    if !has_modifier(&method.annotations, "static") && !has_explicit_self {
-        push_compile_warning(
-            "W_IMPLICIT_SELF",
-            "implicit `self` parameter is discouraged; declare `self` explicitly",
-            with_source(&method.span, source_id),
-        );
-        params.push(HirParam {
-            name: HirIdentifier { name: Identifier::new("self"), shadow_index: 0, span: with_source(&method.span, source_id) },
-            ty: ValkyrieType::r#SelfType,
-            binding_kind: HirParameterBindingKind::PositionalOrKeyword,
-            is_mutable: false,
-            default: None,
-            variadic: HirVariadicKind::None,
-        });
-    }
-    params.extend(method.params.iter().map(|param| lower_param(param, source_id, method.span.clone())));
-    params
+    method.params.iter().map(|param| lower_param(param, source_id, method.span.clone())).collect()
 }
 
 fn lower_property_params(method: &ObjectMethodDeclaration, source_id: SourceID) -> Vec<HirParam> {
-    let mut params = Vec::new();
-    let has_explicit_self = method.params.first().is_some_and(|param| param.name.as_str() == "self");
-    if !has_modifier(&method.annotations, "static") && !has_explicit_self {
-        push_compile_warning(
-            "W_IMPLICIT_SELF",
-            "implicit `self` parameter is discouraged; declare `self` explicitly",
-            with_source(&method.span, source_id),
-        );
-        params.push(HirParam {
-            name: HirIdentifier { name: Identifier::new("self"), shadow_index: 0, span: with_source(&method.span, source_id) },
-            ty: ValkyrieType::r#SelfType,
-            binding_kind: HirParameterBindingKind::PositionalOrKeyword,
-            is_mutable: false,
-            default: None,
-            variadic: HirVariadicKind::None,
-        });
-    }
-    params.extend(method.params.iter().map(|param| lower_param(param, source_id, method.span.clone())));
-    params
+    method.params.iter().map(|param| lower_param(param, source_id, method.span.clone())).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1494,6 +1558,87 @@ mod sum_discriminator_tests {
 
     fn test_span() -> SourceSpan {
         SourceSpan::new(SourceID::default(), 0, 0)
+    }
+
+    #[test]
+    fn unresolved_call_contract_is_rejected_before_mir() {
+        let expression = HirExpr {
+            kind: HirExprKind::Call {
+                callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("missing")])), span: test_span() }),
+                args: Vec::new(),
+                resolved: None,
+            },
+            span: test_span(),
+        };
+        let error = validate_expr_call_contracts(&expression, "contract_test").expect_err("unresolved call must fail");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
+    fn frontend_does_not_filter_copy_contract_errors() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let actual = compiler.compile_source("structure Holder { items: [i32] }")
+            .expect_err("frontend must propagate copy error");
+        assert!(actual.to_string().contains("copy discipline violation"));
+    }
+
+    #[test]
+    fn singleton_unresolved_call_is_rejected_before_mir_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("singleton Counter { micro invalid(self) -> i32 { return missing() } }")
+            .expect_err("singleton methods must obey the same resolved call contract");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
+    fn non_callable_local_is_rejected_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("micro invalid(value: i32) -> i32 { return value() }")
+            .expect_err("scalar local must not acquire an inferred callable signature");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
+    fn unique_callee_with_wrong_argument_type_is_rejected_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("micro take(value: i32) -> i32 { return value } micro invalid(value: utf8) -> i32 { return take(value) }")
+            .expect_err("unique name and arity must not override signature matching");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
+    fn callable_local_preserves_declared_signature_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let module = compiler
+            .compile_source("micro invoke(callback: micro(i32) -> i32, value: i32) -> i32 { return callback(value) }")
+            .expect("declared function value must resolve");
+        let function = module.functions.iter().find(|function| function.name.as_str() == "invoke").expect("invoke");
+        let HirStatementKind::Expr(statement) = &function.body.statements[0].kind else { panic!("expected return statement") };
+        let HirExprKind::Return(Some(expression)) = &statement.kind else { panic!("expected return value") };
+        let HirExprKind::Call { resolved: Some(contract), .. } = &expression.kind else { panic!("expected resolved callback") };
+        assert_eq!(contract.parameter_types, vec![function.params[1].ty.clone()]);
+        assert_eq!(contract.return_type, function.return_type);
+    }
+
+    #[test]
+    fn array_push_missing_element_type_is_rejected_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("micro invalid(values: [i32]) -> [i32] { push(values, missing) return values }")
+            .expect_err("missing element facts must not become AutoType intrinsic arguments");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
+    fn array_push_nominal_receiver_mismatch_is_rejected_from_source() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("class Owner {} imply Owner { micro invalid(self, values: [utf8]) -> [utf8] { push(values, self) return values } }")
+            .expect_err("nominal self must not be treated as an unknown utf8 element");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
     }
 
     #[test]
