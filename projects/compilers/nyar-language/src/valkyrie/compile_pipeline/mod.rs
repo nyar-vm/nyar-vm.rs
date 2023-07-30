@@ -17,7 +17,7 @@ mod stubs;
 pub use diagnostics::{diagnostic, fail_stage};
 pub use driver::{AnalysisOutcome, CompilePipeline, ProcessingOutcome};
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
-pub use stubs::{EmptyCanonicalValidator, EmptyLinker, EmptyRepresentationPlanner, FailClosedLinker, FailClosedPlanner, FailClosedValidator};
+pub use stubs::{FailClosedLinker, FailClosedPlanner, FailClosedValidator};
 
 use nyar_types::CompileStage;
 
