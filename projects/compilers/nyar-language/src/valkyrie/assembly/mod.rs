@@ -50,11 +50,6 @@ pub fn assemble_fragment(
         return Err(miette!("分区索引 `{partition_index}` 超出范围"));
     }
     let partition = &plan.partitions[partition_index];
-    eprintln!(
-        "[seed-debug] fragment-assembly-start index={partition_index} name={} exported={}",
-        partition.name,
-        partition.exported_operations.len()
-    );
     let fragment = build_output
         .neutral_plan()
         .semantic_fragments
@@ -77,13 +72,6 @@ pub fn assemble_fragment(
     };
 
     let mir = build_output.semantic_mir().clone();
-    eprintln!("[seed-debug] fragment-mir-lowered index={partition_index} functions={}", mir.functions.len());
-    eprintln!(
-        "[seed-debug] fragment-layout-plan index={} layouts={} tuple_block_ref={}",
-        partition_index,
-        mir.aggregate_layouts.layouts.len(),
-        mir.aggregate_layouts.layouts.iter().any(|layout| layout.name == "__tuple_ExecutableBlockRef_ExecutableBlockRef")
-    );
     let mut mir_seed_operations = fragment.exported_operations.clone();
     // Witness 表里的 impl 方法（`imply Type: Trait { micro method }`）在 MIR 层
     // 已经按 `{Type}.{method}` 约定降级为独立函数，但它们不会被 entry 可达闭包
@@ -98,11 +86,6 @@ pub fn assemble_fragment(
         }
     }
     let executable_functions = executable_closure::build_reachable_mir_functions(&mir_seed_operations, &mir)?;
-    eprintln!(
-        "[seed-debug] fragment-closure-done index={partition_index} seeds={} functions={}",
-        mir_seed_operations.len(),
-        executable_functions.len()
-    );
 
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
@@ -118,7 +101,6 @@ pub fn assemble_fragment(
             sum_types.push(sum);
         }
     }
-    eprintln!("[seed-debug] fragment-layouts-done index={partition_index} sums={} flags={}", sum_types.len(), flags_types.len());
 
     Ok(AssembledFragment {
         module_name: build_output.neutral_plan().module_name.to_string(),
