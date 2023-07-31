@@ -338,59 +338,10 @@ pub(super) fn is_array_shaped_valkyrie_type(ty: &ValkyrieType) -> bool {
 
 /// Lower instance calls to `Owner.method` when HIR only supplies a bare method name.
 pub(super) fn qualify_instance_method_symbol(
-    receiver: &MirOperand,
-    method_name: &Identifier,
     resolved: Option<&HirResolvedCall>,
-    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-    return_types: &BTreeMap<String, ValkyrieType>,
 ) -> (NamePath, Option<ValkyrieType>) {
-    let owner = receiver_method_owner_name(receiver, value_types).or_else(|| {
-        resolved.and_then(|call| {
-            call.parameter_types.first().and_then(|ty| {
-                named_type_name(ty).or_else(|| option_owner_name(ty)).map(str::to_string)
-            })
-        })
-    });
-    let qualified = |owner: &str| {
-        let symbol = NamePath::new(vec![Identifier::new(owner), method_name.clone()]);
-        let return_type = return_types.get(&format!("{owner}.{}", method_name.as_str())).cloned();
-        (symbol, return_type)
-    };
-    let needs_qualification = |symbol: &NamePath| -> bool {
-        if symbol.parts().len() == 1 {
-            return true;
-        }
-        if let Some(owner) = &owner {
-            return symbol.parts().first().map(|part| part.as_str()) != Some(owner.as_str());
-        }
-        false
-    };
-    match resolved {
-        Some(call) => {
-            let mut symbol = call.symbol.clone();
-            let mut return_type = Some(call.return_type.clone());
-            if needs_qualification(&symbol) {
-                if let Some(owner) = &owner {
-                    let (qualified_symbol, qualified_return) = qualified(owner);
-                    symbol = qualified_symbol;
-                    return_type = qualified_return.or(return_type);
-                }
-            }
-            (symbol, return_type)
-        }
-        None => {
-            if let Some(owner) = &owner {
-                qualified(&owner)
-            }
-            else {
-                eprintln!(
-                    "[mir] unresolved receiver call; lowering `{}` as diagnostic static symbol",
-                    method_name.as_str()
-                );
-                (NamePath::new(vec![method_name.clone()]), None)
-            }
-        }
-    }
+    let call = resolved.expect("validated HIR must provide the instance callable contract");
+    (call.symbol.clone(), Some(call.return_type.clone()))
 }
 
 pub(super) fn future_resume_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
