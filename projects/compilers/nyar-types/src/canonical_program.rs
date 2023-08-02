@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
+use crate::semantic_ids::{EvidenceId, FieldId, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -119,15 +119,92 @@ pub struct TypeRecord {
     pub declaration: TypeId,
 }
 
-/// Semantic call edge whose callee identity was fixed before representation planning.
+/// Semantic MIR 中的稳定基本块身份。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CanonicalBlockId(pub u32);
+
+/// Canonical Semantic MIR 的操作数。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalCall {
-    /// 已实例化的被调用项。
-    pub callee: ItemInstanceId,
-    /// 已定义的 SSA 实参。
-    pub arguments: Vec<MirValueId>,
-    /// 调用结果值；无结果调用必须显式为 `None`。
-    pub result: Option<MirValueId>,
+pub enum CanonicalOperand {
+    /// 已定义的 SSA 值。
+    Value(MirValueId),
+    /// 语言常量。
+    Constant(CanonicalConstant),
+}
+
+/// 不依赖目标的语言常量。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalConstant {
+    /// 有符号整数。
+    Int(i64),
+    /// 布尔值。
+    Bool(bool),
+    /// UTF-8 文本。
+    Utf8(String),
+    /// UTF-16 文本。
+    Utf16(String),
+    /// 单元值。
+    Unit,
+}
+
+/// 已解析、已类型化的 Semantic MIR 操作。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalOperation {
+    /// 普通调用；callee 只能来自链接后的实例身份。
+    Invoke { callee: ItemInstanceId, arguments: Vec<MirValueId> },
+    /// SSA 值复制。
+    Copy { source: MirValueId },
+    /// 加载语言常量。
+    LoadConstant { constant: CanonicalConstant },
+    /// 构造名义聚合。
+    StructNew { nominal: NominalInstanceId, fields: Vec<(FieldId, MirValueId)> },
+    /// 读取已解析字段。
+    FieldGet { object: MirValueId, field: FieldId },
+    /// 写入已解析字段。
+    FieldSet { object: MirValueId, field: FieldId, value: MirValueId },
+    /// 从完整类型的数组读取。
+    ArrayGet { array: MirValueId, index: MirValueId },
+    /// 向完整类型的数组写入。
+    ArraySet { array: MirValueId, index: MirValueId, value: MirValueId },
+    /// 读取数组长度。
+    ArrayLength { array: MirValueId },
+}
+
+/// 带稳定指令身份的 Semantic MIR 指令。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalInstruction {
+    /// 优化和表示规划使用的稳定指令身份。
+    pub id: InstructionId,
+    /// 本指令定义的 SSA 值。
+    pub results: Vec<MirValueId>,
+    /// 已完成身份解析的操作。
+    pub operation: CanonicalOperation,
+}
+
+/// Semantic MIR 基本块终结符。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalTerminator {
+    /// 返回函数结果。
+    Return { value: Option<MirValueId> },
+    /// 带显式并行块参数的跳转。
+    Jump { target: CanonicalBlockId, arguments: Vec<MirValueId> },
+    /// 条件分支。
+    Branch { condition: MirValueId, then_target: CanonicalBlockId, else_target: CanonicalBlockId },
+    /// 不可达终点。
+    Unreachable,
+}
+
+/// 完整的 Semantic MIR 基本块。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalBlock {
+    /// 稳定块身份。
+    pub id: CanonicalBlockId,
+    /// 块参数及其类型。
+    pub parameters: Vec<(MirValueId, TypeId)>,
+    /// 按语义执行顺序排列的指令。
+    pub instructions: Vec<CanonicalInstruction>,
+    /// 控制流终点。
+    pub terminator: CanonicalTerminator,
 }
 
 /// One validated function body in Semantic MIR.
@@ -141,8 +218,10 @@ pub struct CanonicalFunction {
     pub return_type: TypeId,
     /// 函数内所有 SSA 值的稳定类型身份。
     pub value_types: BTreeMap<MirValueId, TypeId>,
-    /// 已解析调用边；后端不得重新解析 callee。
-    pub calls: Vec<CanonicalCall>,
+    /// 函数入口块。
+    pub entry: CanonicalBlockId,
+    /// 完整 CFG；后端不得重建控制流或重新解析操作。
+    pub blocks: BTreeMap<CanonicalBlockId, CanonicalBlock>,
 }
 
 /// Validated Semantic MIR package owned by the success path (no embedded diagnostics).
@@ -179,6 +258,14 @@ pub enum CanonicalMirError {
     ValueTypeMismatch { function: ItemInstanceId, value: MirValueId, expected: TypeId },
     /// 函数入口或返回合同与其实例化声明不一致。
     FunctionSignatureMismatch { function: ItemInstanceId },
+    /// 基本块引用了不存在的目标。
+    UnknownBlock { function: ItemInstanceId, block: CanonicalBlockId },
+    /// 跳转参数数量与目标块参数不一致。
+    BlockParameterArityMismatch { function: ItemInstanceId, block: CanonicalBlockId },
+    /// 块参数或指令结果重复定义 SSA 值。
+    DuplicateBlockDefinition { function: ItemInstanceId, value: MirValueId },
+    /// 终结符使用了未定义的 SSA 值。
+    TerminatorUseBeforeDefinition { function: ItemInstanceId, value: MirValueId },
 }
 
 impl CanonicalSemanticMir {
@@ -216,35 +303,81 @@ impl CanonicalSemanticMir {
             if !linked.types.contains_key(&function.return_type) {
                 return Err(CanonicalMirError::UnknownType { function: *key, ty: function.return_type });
             }
-            for call in &function.calls {
-                let Some(callee) = linked.item_instances.get(&call.callee) else {
-                    return Err(CanonicalMirError::UnknownCallee { function: *key, callee: call.callee });
-                };
-                for ty in callee.parameter_types.iter().chain(std::iter::once(&callee.return_type)) {
+            if !function.blocks.contains_key(&function.entry) {
+                return Err(CanonicalMirError::UnknownBlock { function: *key, block: function.entry });
+            }
+            for (block_id, block) in &function.blocks {
+                let mut block_defined = defined.clone();
+                for (value, ty) in &block.parameters {
                     if !linked.types.contains_key(ty) {
                         return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
                     }
-                }
-                if call.arguments.len() != callee.parameter_types.len() {
-                    return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: call.callee });
-                }
-                if call.arguments.iter().any(|value| !defined.contains(value)) {
-                    let value = *call.arguments.iter().find(|value| !defined.contains(value)).expect("missing argument");
-                    return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
-                }
-                for (value, expected) in call.arguments.iter().zip(&callee.parameter_types) {
-                    if function.value_types.get(value) != Some(expected) {
-                        return Err(CanonicalMirError::CallArgumentTypeMismatch { function: *key, callee: call.callee, value: *value });
+                    if !block_defined.insert(*value) {
+                        return Err(CanonicalMirError::DuplicateBlockDefinition { function: *key, value: *value });
+                    }
+                    if function.value_types.get(value) != Some(ty) {
+                        return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *value, expected: *ty });
                     }
                 }
-                if let Some(result) = call.result {
-                    if function.value_types.get(&result) != Some(&callee.return_type) {
-                        return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: call.callee, value: result });
+                for instruction in &block.instructions {
+                    let mut uses = Vec::new();
+                    if let CanonicalOperation::Invoke { callee, arguments } = &instruction.operation {
+                        let Some(callee_record) = linked.item_instances.get(callee) else {
+                            return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *callee });
+                        };
+                        for ty in callee_record.parameter_types.iter().chain(std::iter::once(&callee_record.return_type)) {
+                            if !linked.types.contains_key(ty) {
+                                return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                            }
+                        }
+                        if arguments.len() != callee_record.parameter_types.len() {
+                            return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: *callee });
+                        }
+                        uses.extend(arguments.iter().copied());
+                        for (value, expected) in arguments.iter().zip(&callee_record.parameter_types) {
+                            if function.value_types.get(value) != Some(expected) {
+                                return Err(CanonicalMirError::CallArgumentTypeMismatch { function: *key, callee: *callee, value: *value });
+                            }
+                        }
+                        if let Some(result) = instruction.results.first() {
+                            if function.value_types.get(result) != Some(&callee_record.return_type) {
+                                return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: *callee, value: *result });
+                            }
+                        }
                     }
-                    if !defined.insert(result) {
-                        return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: result });
+                    if uses.iter().any(|value| !block_defined.contains(value)) {
+                        let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();
+                        return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
+                    }
+                    for result in &instruction.results {
+                        if !block_defined.insert(*result) {
+                            return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *result });
+                        }
+                        if !function.value_types.contains_key(result) {
+                            return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *result, expected: function.return_type });
+                        }
                     }
                 }
+                let (targets, terminator_values): (Vec<_>, Vec<_>) = match &block.terminator {
+                    CanonicalTerminator::Return { value } => (Vec::new(), value.iter().copied().collect()),
+                    CanonicalTerminator::Jump { target, arguments } => (vec![(*target, arguments.len())], arguments.clone()),
+                    CanonicalTerminator::Branch { condition, then_target, else_target } => (vec![(*then_target, 0), (*else_target, 0)], vec![*condition]),
+                    CanonicalTerminator::Unreachable => (Vec::new(), Vec::new()),
+                };
+                for value in terminator_values {
+                    if !block_defined.contains(&value) {
+                        return Err(CanonicalMirError::TerminatorUseBeforeDefinition { function: *key, value });
+                    }
+                }
+                for (target, arity) in targets {
+                    let Some(target_block) = function.blocks.get(&target) else {
+                        return Err(CanonicalMirError::UnknownBlock { function: *key, block: target });
+                    };
+                    if target_block.parameters.len() != arity {
+                        return Err(CanonicalMirError::BlockParameterArityMismatch { function: *key, block: target });
+                    }
+                }
+                let _ = block_id;
             }
         }
         Ok(())
@@ -330,7 +463,11 @@ mod tests {
             parameters: Vec::new(),
             return_type: ty,
             value_types: BTreeMap::new(),
-            calls: Vec::new(),
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
+                id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
+                terminator: CanonicalTerminator::Return { value: None },
+            })]),
         };
         let mut functions = BTreeMap::new();
         functions.insert(instance, function);
@@ -358,7 +495,15 @@ mod tests {
             parameters: Vec::new(),
             return_type: ty,
             value_types: BTreeMap::new(),
-            calls: vec![CanonicalCall { callee: unknown, arguments: Vec::new(), result: None }],
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
+                id: CanonicalBlockId(0), parameters: Vec::new(),
+                instructions: vec![CanonicalInstruction {
+                    id: InstructionId::from_index(0).unwrap(), results: Vec::new(),
+                    operation: CanonicalOperation::Invoke { callee: unknown, arguments: Vec::new() },
+                }],
+                terminator: CanonicalTerminator::Return { value: None },
+            })]),
         };
         let mut functions = BTreeMap::new();
         functions.insert(instance, function);
@@ -392,7 +537,15 @@ mod tests {
             parameters: vec![(argument, ty)],
             return_type: ty,
             value_types: BTreeMap::from([(argument, ty), (result, ty)]),
-            calls: vec![CanonicalCall { callee, arguments: vec![argument], result: Some(result) }],
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
+                id: CanonicalBlockId(0), parameters: Vec::new(),
+                instructions: vec![CanonicalInstruction {
+                    id: InstructionId::from_index(0).unwrap(), results: vec![result],
+                    operation: CanonicalOperation::Invoke { callee, arguments: vec![argument] },
+                }],
+                terminator: CanonicalTerminator::Return { value: Some(result) },
+            })]),
         };
         CanonicalProgram {
             linked,
@@ -404,7 +557,9 @@ mod tests {
     fn canonical_call_requires_instantiated_signature() {
         let mut program = typed_call_program();
         program.validate().expect("完整实例化调用合同");
-        program.mir.functions.values_mut().next().unwrap().calls[0].arguments.clear();
+        if let CanonicalOperation::Invoke { arguments, .. } = &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation {
+            arguments.clear();
+        }
         assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
     }
 
