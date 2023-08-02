@@ -610,13 +610,6 @@ pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
 impl MirLowerer {
     /// Lowers HIR to semantic MIR (PerformEffect intact, no state-machine rewrite).
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
-        eprintln!(
-            "[seed-debug] mir-lower-start module={} hir_functions={} structs={} impls={}",
-            module.name,
-            module.functions.len(),
-            module.structs.len(),
-            module.impls.len()
-        );
         let mut return_types = collect_module_return_types(module);
         return_types.extend(crate::valkyrie::mir::collect_singleton_return_types(module));
         let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
@@ -635,14 +628,7 @@ impl MirLowerer {
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let mut functions = Vec::new();
-        for (index, function) in module.functions.iter().enumerate() {
-            let trace_function = index < 3 || (490..=510).contains(&index);
-            if trace_function {
-                eprintln!("[seed-debug] mir-function-start index={} name={}", index + 1, function.name);
-            }
-            if index == 0 || (index + 1) % 100 == 0 || index + 1 == module.functions.len() {
-                eprintln!("[seed-debug] mir-function-progress {}/{} name={}", index + 1, module.functions.len(), function.name);
-            }
+        for function in &module.functions {
             functions.push(lower_function_semantic(
                 module,
                 function,
@@ -655,9 +641,6 @@ impl MirLowerer {
                 &effectful_resume_map,
                 None,
             ));
-            if trace_function {
-                eprintln!("[seed-debug] mir-function-done index={} name={}", index + 1, function.name);
-            }
         }
         functions.extend(lower_singleton_method_functions(
             module,
@@ -679,7 +662,6 @@ impl MirLowerer {
             &singleton_accessors,
             &effectful_resume_map,
         ));
-        eprintln!("[seed-debug] mir-lower-done module={} functions={} structs={}", module.name, functions.len(), structs.len());
         // MirFunction 不再携带 per-function diagnostics。
         let result = MirModule {
             name: module.name.to_string(),

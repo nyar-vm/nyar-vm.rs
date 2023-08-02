@@ -113,11 +113,6 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                     }
                 }
 
-                eprintln!(
-                    "[seed-debug] dependency-mir-link linked={} consumer_functions={}",
-                    linked_symbols.len(),
-                    consumer.functions.len()
-                );
             }
         }
     }
