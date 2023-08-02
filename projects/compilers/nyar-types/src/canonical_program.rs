@@ -88,6 +88,10 @@ pub struct ItemInstanceRecord {
     pub declaration: ItemId,
     /// 完成泛型代入后的 substitution identity。
     pub substitution: SubstitutionId,
+    /// 完成代入后的参数类型身份，顺序与调用 ABI 一致。
+    pub parameter_types: Vec<TypeId>,
+    /// 完成代入后的返回类型身份。
+    pub return_type: TypeId,
 }
 
 /// Placeholder nominal instance row.
@@ -135,6 +139,8 @@ pub struct CanonicalFunction {
     pub parameters: Vec<(MirValueId, TypeId)>,
     /// 返回类型身份。
     pub return_type: TypeId,
+    /// 函数内所有 SSA 值的稳定类型身份。
+    pub value_types: BTreeMap<MirValueId, TypeId>,
     /// 已解析调用边；后端不得重新解析 callee。
     pub calls: Vec<CanonicalCall>,
 }
@@ -163,6 +169,16 @@ pub enum CanonicalMirError {
     UseBeforeDefinition { function: ItemInstanceId, value: MirValueId },
     /// 一个 SSA 值被重复定义。
     DuplicateDefinition { function: ItemInstanceId, value: MirValueId },
+    /// 调用实参数量与实例化签名不一致。
+    CallArityMismatch { function: ItemInstanceId, callee: ItemInstanceId },
+    /// 调用实参的 SSA 类型与实例化签名不一致。
+    CallArgumentTypeMismatch { function: ItemInstanceId, callee: ItemInstanceId, value: MirValueId },
+    /// 调用结果的 SSA 类型与实例化返回类型不一致。
+    CallResultTypeMismatch { function: ItemInstanceId, callee: ItemInstanceId, value: MirValueId },
+    /// 函数参数的 SSA 类型表记录不一致。
+    ValueTypeMismatch { function: ItemInstanceId, value: MirValueId, expected: TypeId },
+    /// 函数入口或返回合同与其实例化声明不一致。
+    FunctionSignatureMismatch { function: ItemInstanceId },
 }
 
 impl CanonicalSemanticMir {
@@ -172,8 +188,18 @@ impl CanonicalSemanticMir {
             if key != &function.instance {
                 return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
             }
-            if !linked.item_instances.contains_key(key) {
+            let Some(owner) = linked.item_instances.get(key) else {
                 return Err(CanonicalMirError::UnknownFunction { function: *key });
+            };
+            if function.parameters.iter().map(|(_, ty)| *ty).collect::<Vec<_>>() != owner.parameter_types
+                || function.return_type != owner.return_type
+            {
+                return Err(CanonicalMirError::FunctionSignatureMismatch { function: *key });
+            }
+            for ty in function.value_types.values() {
+                if !linked.types.contains_key(ty) {
+                    return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                }
             }
             let mut defined = std::collections::BTreeSet::new();
             for (value, ty) in &function.parameters {
@@ -183,19 +209,38 @@ impl CanonicalSemanticMir {
                 if !defined.insert(*value) {
                     return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
                 }
+                if function.value_types.get(value) != Some(ty) {
+                    return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *value, expected: *ty });
+                }
             }
             if !linked.types.contains_key(&function.return_type) {
                 return Err(CanonicalMirError::UnknownType { function: *key, ty: function.return_type });
             }
             for call in &function.calls {
-                if !linked.item_instances.contains_key(&call.callee) {
+                let Some(callee) = linked.item_instances.get(&call.callee) else {
                     return Err(CanonicalMirError::UnknownCallee { function: *key, callee: call.callee });
+                };
+                for ty in callee.parameter_types.iter().chain(std::iter::once(&callee.return_type)) {
+                    if !linked.types.contains_key(ty) {
+                        return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                    }
+                }
+                if call.arguments.len() != callee.parameter_types.len() {
+                    return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: call.callee });
                 }
                 if call.arguments.iter().any(|value| !defined.contains(value)) {
                     let value = *call.arguments.iter().find(|value| !defined.contains(value)).expect("missing argument");
                     return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
                 }
+                for (value, expected) in call.arguments.iter().zip(&callee.parameter_types) {
+                    if function.value_types.get(value) != Some(expected) {
+                        return Err(CanonicalMirError::CallArgumentTypeMismatch { function: *key, callee: call.callee, value: *value });
+                    }
+                }
                 if let Some(result) = call.result {
+                    if function.value_types.get(&result) != Some(&callee.return_type) {
+                        return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: call.callee, value: result });
+                    }
                     if !defined.insert(result) {
                         return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: result });
                     }
@@ -276,12 +321,15 @@ mod tests {
         linked.item_instances.insert(item, ItemInstanceRecord {
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: Vec::new(),
+            return_type: ty,
         });
         let instance = ItemInstanceId::from_index(0).unwrap();
         let function = CanonicalFunction {
             instance,
             parameters: Vec::new(),
             return_type: ty,
+            value_types: BTreeMap::new(),
             calls: Vec::new(),
         };
         let mut functions = BTreeMap::new();
@@ -301,12 +349,15 @@ mod tests {
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: Vec::new(),
+            return_type: ty,
         });
         linked.types.insert(ty, TypeRecord { declaration: ty });
         let function = CanonicalFunction {
             instance,
             parameters: Vec::new(),
             return_type: ty,
+            value_types: BTreeMap::new(),
             calls: vec![CanonicalCall { callee: unknown, arguments: Vec::new(), result: None }],
         };
         let mut functions = BTreeMap::new();
@@ -318,6 +369,73 @@ mod tests {
     #[test]
     fn structured_diagnostic_set_rejects_empty() {
         assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
+    }
+
+    fn typed_call_program() -> CanonicalProgram {
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let callee = ItemInstanceId::from_index(1).unwrap();
+        let ty = TypeId::from_index(0).unwrap();
+        let argument = MirValueId::from_index(0).unwrap();
+        let result = MirValueId::from_index(1).unwrap();
+        let mut linked = LinkedSemanticProgram::default();
+        linked.types.insert(ty, TypeRecord { declaration: ty });
+        for instance in [caller, callee] {
+            linked.item_instances.insert(instance, ItemInstanceRecord {
+                declaration: ItemId::from_index(instance.index()).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: vec![ty],
+                return_type: ty,
+            });
+        }
+        let function = CanonicalFunction {
+            instance: caller,
+            parameters: vec![(argument, ty)],
+            return_type: ty,
+            value_types: BTreeMap::from([(argument, ty), (result, ty)]),
+            calls: vec![CanonicalCall { callee, arguments: vec![argument], result: Some(result) }],
+        };
+        CanonicalProgram {
+            linked,
+            mir: CanonicalSemanticMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) },
+        }
+    }
+
+    #[test]
+    fn canonical_call_requires_instantiated_signature() {
+        let mut program = typed_call_program();
+        program.validate().expect("完整实例化调用合同");
+        program.mir.functions.values_mut().next().unwrap().calls[0].arguments.clear();
+        assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_call_rejects_argument_type_mismatch() {
+        let mut program = typed_call_program();
+        let other = TypeId::from_index(1).unwrap();
+        program.linked.types.insert(other, TypeRecord { declaration: other });
+        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(1).unwrap()).unwrap().parameter_types[0] = other;
+        assert!(matches!(program.validate(), Err(CanonicalMirError::CallArgumentTypeMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_call_rejects_missing_result_type() {
+        let mut program = typed_call_program();
+        program.mir.functions.values_mut().next().unwrap().value_types.remove(&MirValueId::from_index(1).unwrap());
+        assert!(matches!(program.validate(), Err(CanonicalMirError::CallResultTypeMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_function_requires_declared_entry_signature() {
+        let mut program = typed_call_program();
+        program.mir.functions.values_mut().next().unwrap().parameters.clear();
+        assert!(matches!(program.validate(), Err(CanonicalMirError::FunctionSignatureMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_call_rejects_unlinked_signature_type() {
+        let mut program = typed_call_program();
+        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(1).unwrap()).unwrap().return_type = TypeId::from_index(9).unwrap();
+        assert!(matches!(program.validate(), Err(CanonicalMirError::UnknownType { .. })));
     }
 
     #[test]
