@@ -258,6 +258,8 @@ pub enum CanonicalMirError {
     ValueTypeMismatch { function: ItemInstanceId, value: MirValueId, expected: TypeId },
     /// 函数入口或返回合同与其实例化声明不一致。
     FunctionSignatureMismatch { function: ItemInstanceId },
+    /// 返回值类型与函数合同不一致。
+    ReturnTypeMismatch { function: ItemInstanceId, value: MirValueId },
     /// 基本块引用了不存在的目标。
     UnknownBlock { function: ItemInstanceId, block: CanonicalBlockId },
     /// 跳转参数数量与目标块参数不一致。
@@ -320,8 +322,8 @@ impl CanonicalSemanticMir {
                     }
                 }
                 for instruction in &block.instructions {
-                    let mut uses = Vec::new();
-                    if let CanonicalOperation::Invoke { callee, arguments } = &instruction.operation {
+                    let uses = match &instruction.operation {
+                        CanonicalOperation::Invoke { callee, arguments } => {
                         let Some(callee_record) = linked.item_instances.get(callee) else {
                             return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *callee });
                         };
@@ -333,7 +335,6 @@ impl CanonicalSemanticMir {
                         if arguments.len() != callee_record.parameter_types.len() {
                             return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: *callee });
                         }
-                        uses.extend(arguments.iter().copied());
                         for (value, expected) in arguments.iter().zip(&callee_record.parameter_types) {
                             if function.value_types.get(value) != Some(expected) {
                                 return Err(CanonicalMirError::CallArgumentTypeMismatch { function: *key, callee: *callee, value: *value });
@@ -344,7 +345,17 @@ impl CanonicalSemanticMir {
                                 return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: *callee, value: *result });
                             }
                         }
+                        arguments.clone()
                     }
+                    CanonicalOperation::Copy { source } => vec![*source],
+                    CanonicalOperation::LoadConstant { .. } => Vec::new(),
+                    CanonicalOperation::StructNew { fields, .. } => fields.iter().map(|(_, value)| *value).collect(),
+                    CanonicalOperation::FieldGet { object, .. } => vec![*object],
+                    CanonicalOperation::FieldSet { object, value, .. } => vec![*object, *value],
+                    CanonicalOperation::ArrayGet { array, index } => vec![*array, *index],
+                    CanonicalOperation::ArraySet { array, index, value } => vec![*array, *index, *value],
+                    CanonicalOperation::ArrayLength { array } => vec![*array],
+                    };
                     if uses.iter().any(|value| !block_defined.contains(value)) {
                         let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();
                         return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
@@ -359,7 +370,14 @@ impl CanonicalSemanticMir {
                     }
                 }
                 let (targets, terminator_values): (Vec<_>, Vec<_>) = match &block.terminator {
-                    CanonicalTerminator::Return { value } => (Vec::new(), value.iter().copied().collect()),
+                    CanonicalTerminator::Return { value } => {
+                        if let Some(value) = value {
+                            if function.value_types.get(value) != Some(&function.return_type) {
+                                return Err(CanonicalMirError::ReturnTypeMismatch { function: *key, value: *value });
+                            }
+                        }
+                        (Vec::new(), value.iter().copied().collect())
+                    }
                     CanonicalTerminator::Jump { target, arguments } => (vec![(*target, arguments.len())], arguments.clone()),
                     CanonicalTerminator::Branch { condition, then_target, else_target } => (vec![(*then_target, 0), (*else_target, 0)], vec![*condition]),
                     CanonicalTerminator::Unreachable => (Vec::new(), Vec::new()),
