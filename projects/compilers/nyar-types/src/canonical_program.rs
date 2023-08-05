@@ -123,21 +123,31 @@ pub enum CanonicalTypeKind {
     Tuple(Vec<TypeId>),
     /// 数组类型。
     Array { element: TypeId, length: Option<u64> },
-    /// Option 类型。
-    Option(TypeId),
+    /// 语言的显式可空类型；名义 Option 使用 Nominal 记录。
+    Nullable(TypeId),
+    /// 匿名联合类型。
+    Union(Vec<TypeId>),
+    /// 匿名交集类型。
+    Intersection(Vec<TypeId>),
 }
 
 /// Canonical 原生类型种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanonicalPrimitiveType {
+    /// 无返回值。
+    Void,
     /// 布尔。
     Bool,
-    /// 整数。
-    Integer,
-    /// 浮点。
-    Float,
+    /// 带宽度和符号的整数。
+    Integer { bits: u16, signed: bool },
+    /// 带宽度的浮点。
+    Float { bits: u16 },
+    /// Unicode 字符。
+    Character,
     /// 文本。
-    Text,
+    Utf8,
+    /// UTF-16 文本。
+    Utf16,
     /// 单元。
     Unit,
 }
@@ -149,6 +159,40 @@ pub struct TypeRecord {
     pub declaration: TypeId,
     /// 类型的完整语义形状。
     pub kind: CanonicalTypeKind,
+}
+
+impl LinkedSemanticProgram {
+    /// 验证整个类型闭包，不限于当前函数引用到的行。
+    pub fn validate_types(&self) -> Result<(), CanonicalMirError> {
+        for (owner, record) in &self.types {
+            let references = match &record.kind {
+                CanonicalTypeKind::Primitive(primitive) => {
+                    let valid = match primitive {
+                        CanonicalPrimitiveType::Integer { bits, .. } => matches!(bits, 8 | 16 | 32 | 64 | 128),
+                        CanonicalPrimitiveType::Float { bits } => matches!(bits, 32 | 64),
+                        _ => true,
+                    };
+                    if !valid {
+                        return Err(CanonicalMirError::InvalidPrimitiveType { ty: *owner });
+                    }
+                    Vec::new()
+                }
+                CanonicalTypeKind::Nominal { declaration, arguments } => {
+                    std::iter::once(*declaration).chain(arguments.iter().copied()).collect()
+                }
+                CanonicalTypeKind::Tuple(members)
+                | CanonicalTypeKind::Union(members)
+                | CanonicalTypeKind::Intersection(members) => members.clone(),
+                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => vec![*element],
+            };
+            for referenced in references {
+                if !self.types.contains_key(&referenced) {
+                    return Err(CanonicalMirError::UnknownTypeReference { owner: *owner, referenced });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Semantic MIR 中的稳定基本块身份。
@@ -268,6 +312,10 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
+    /// 类型形状引用了不存在的类型。
+    UnknownTypeReference { owner: TypeId, referenced: TypeId },
+    /// 原生标量宽度不属于语言类型合同。
+    InvalidPrimitiveType { ty: TypeId },
     /// 表键与函数内部实例身份不一致。
     FunctionKeyMismatch { key: ItemInstanceId, instance: ItemInstanceId },
     /// Semantic MIR 函数自身不在链接闭包中。
@@ -305,6 +353,7 @@ pub enum CanonicalMirError {
 impl CanonicalSemanticMir {
     /// 在进入 RepresentationPlan 前验证 stable-ID、链接和 SSA 合同。
     pub fn validate(&self, linked: &LinkedSemanticProgram) -> Result<(), CanonicalMirError> {
+        linked.validate_types()?;
         for (key, function) in &self.functions {
             if key != &function.instance {
                 return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
