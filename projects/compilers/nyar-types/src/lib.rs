@@ -6,7 +6,8 @@ pub use self::{
     canonical_program::{
         CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
         CanonicalOperand, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CompileStage, DiagnosticRecord, EvidenceRecord,
-        ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, StageResult, StructuredDiagnosticSet, TypeRecord, pipeline,
+        ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, StageResult, StructuredDiagnosticSet, TypeRecord, CanonicalPrimitiveType,
+        CanonicalTypeKind, pipeline,
     },
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     errors::{NyarError, NyarErrorKind},

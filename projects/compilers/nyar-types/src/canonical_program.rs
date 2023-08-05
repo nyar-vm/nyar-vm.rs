@@ -112,11 +112,43 @@ pub struct EvidenceRecord {
     pub implementing_type: TypeInstanceId,
 }
 
-/// Placeholder type table row.
+/// Canonical 类型的结构事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalTypeKind {
+    /// 语言原生标量或单元类型。
+    Primitive(CanonicalPrimitiveType),
+    /// 名义类型及其已代入参数。
+    Nominal { declaration: TypeId, arguments: Vec<TypeId> },
+    /// 元组类型。
+    Tuple(Vec<TypeId>),
+    /// 数组类型。
+    Array { element: TypeId, length: Option<u64> },
+    /// Option 类型。
+    Option(TypeId),
+}
+
+/// Canonical 原生类型种类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalPrimitiveType {
+    /// 布尔。
+    Bool,
+    /// 整数。
+    Integer,
+    /// 浮点。
+    Float,
+    /// 文本。
+    Text,
+    /// 单元。
+    Unit,
+}
+
+/// Canonical 类型表中的结构化记录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeRecord {
     /// 类型表中的声明身份。
     pub declaration: TypeId,
+    /// 类型的完整语义形状。
+    pub kind: CanonicalTypeKind,
 }
 
 /// Semantic MIR 中的稳定基本块身份。
@@ -468,7 +500,7 @@ mod tests {
         linked.module_name = "demo".into();
         let item = ItemInstanceId::from_index(0).unwrap();
         let ty = TypeId::from_index(0).unwrap();
-        linked.types.insert(ty, TypeRecord { declaration: ty });
+        linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         linked.item_instances.insert(item, ItemInstanceRecord {
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
@@ -507,7 +539,7 @@ mod tests {
             parameter_types: Vec::new(),
             return_type: ty,
         });
-        linked.types.insert(ty, TypeRecord { declaration: ty });
+        linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         let function = CanonicalFunction {
             instance,
             parameters: Vec::new(),
@@ -541,7 +573,7 @@ mod tests {
         let argument = MirValueId::from_index(0).unwrap();
         let result = MirValueId::from_index(1).unwrap();
         let mut linked = LinkedSemanticProgram::default();
-        linked.types.insert(ty, TypeRecord { declaration: ty });
+        linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         for instance in [caller, callee] {
             linked.item_instances.insert(instance, ItemInstanceRecord {
                 declaration: ItemId::from_index(instance.index()).unwrap(),
@@ -585,7 +617,7 @@ mod tests {
     fn canonical_call_rejects_argument_type_mismatch() {
         let mut program = typed_call_program();
         let other = TypeId::from_index(1).unwrap();
-        program.linked.types.insert(other, TypeRecord { declaration: other });
+        program.linked.types.insert(other, TypeRecord { declaration: other, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool) });
         program.linked.item_instances.get_mut(&ItemInstanceId::from_index(1).unwrap()).unwrap().parameter_types[0] = other;
         assert!(matches!(program.validate(), Err(CanonicalMirError::CallArgumentTypeMismatch { .. })));
     }
