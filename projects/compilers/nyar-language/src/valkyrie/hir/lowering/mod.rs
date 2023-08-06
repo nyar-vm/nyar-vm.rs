@@ -290,6 +290,11 @@ impl FrontendBuildOutput {
         &self.semantic_mir
     }
 
+    /// 将 Semantic MIR 交给唯一的 canonical producer。
+    pub fn canonical_program(&self) -> Result<nyar_types::CanonicalProgram, nyar_types::StructuredDiagnosticSet> {
+        crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+    }
+
     /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
     ///
     /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
