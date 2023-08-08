@@ -43,9 +43,10 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             return_type: type_id(&type_values, &contract.return_type)?,
         });
     }
+    let mut next_instruction = 0u32;
     let functions = module.functions.iter().enumerate().map(|(index, function)| {
         let instance = item_instance(index as u32);
-        Ok((instance, lower_function(function, instance, &symbols, &type_values)?))
+        Ok((instance, lower_function(function, instance, &symbols, &type_values, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
@@ -134,13 +135,17 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
     })
 }
 
-fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let parameters = function.values.iter().filter_map(|value| match value.origin { MirValueOrigin::Parameter { index, .. } => Some((index, value.id)), _ => None }).map(|(index, value)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, &function.param_types[index])?))).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
     let blocks = function.blocks.iter().map(|block| {
         let id = CanonicalBlockId(block.id.0);
         let parameters = block.parameters.iter().map(|value| { let value = MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?; Ok((value, *value_types.get(&value).ok_or_else(|| error_without_module("CAN005", "块参数缺少类型事实"))?)) }).collect::<Result<_, StructuredDiagnosticSet>>()?;
-        let instructions = block.instructions.iter().map(|instruction| Ok(CanonicalInstruction { id: instruction.id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, symbols, ids)? })).collect::<Result<_, StructuredDiagnosticSet>>()?;
+        let instructions = block.instructions.iter().map(|instruction| {
+            let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+            *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
+            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, symbols, ids)? })
+        }).collect::<Result<_, StructuredDiagnosticSet>>()?;
         Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     Ok(CanonicalFunction { instance, parameters, return_type: type_id(ids, &function.return_type)?, value_types, entry: CanonicalBlockId(function.entry.0), blocks })
