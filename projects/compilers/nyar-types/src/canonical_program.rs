@@ -240,10 +240,25 @@ pub enum CanonicalOperation {
     FieldSet { object: MirValueId, field: FieldId, value: MirValueId },
     /// 从完整类型的数组读取。
     ArrayGet { array: MirValueId, index: MirValueId },
+    /// 按完整类型和语言初始化规则构造数组。
+    ArrayNew { array_type: TypeId, length: MirValueId, initialization: CanonicalArrayInitialization },
+    /// 从完整元素序列构造数组。
+    ArrayFromElements { array_type: TypeId, elements: Vec<MirValueId> },
     /// 向完整类型的数组写入。
     ArraySet { array: MirValueId, index: MirValueId, value: MirValueId },
     /// 读取数组长度。
     ArrayLength { array: MirValueId },
+    /// 构造元组值。
+    TupleNew { element_types: Vec<TypeId>, fields: Vec<MirValueId> },
+}
+
+/// 数组的语言初始化合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanonicalArrayInitialization {
+    /// 使用语言定义的元素默认值。
+    Default,
+    /// 使用已求值的 SSA 值填充所有元素。
+    Fill(MirValueId),
 }
 
 /// 带稳定指令身份的 Semantic MIR 指令。
@@ -434,8 +449,14 @@ impl CanonicalSemanticMir {
                     CanonicalOperation::FieldGet { object, .. } => vec![*object],
                     CanonicalOperation::FieldSet { object, value, .. } => vec![*object, *value],
                     CanonicalOperation::ArrayGet { array, index } => vec![*array, *index],
+                    CanonicalOperation::ArrayNew { length, initialization, .. } => match initialization {
+                        CanonicalArrayInitialization::Default => vec![*length],
+                        CanonicalArrayInitialization::Fill(value) => vec![*length, *value],
+                    },
+                    CanonicalOperation::ArrayFromElements { elements, .. } => elements.clone(),
                     CanonicalOperation::ArraySet { array, index, value } => vec![*array, *index, *value],
                     CanonicalOperation::ArrayLength { array } => vec![*array],
+                    CanonicalOperation::TupleNew { fields, .. } => fields.clone(),
                     };
                     if uses.iter().any(|value| !block_defined.contains(value)) {
                         let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();

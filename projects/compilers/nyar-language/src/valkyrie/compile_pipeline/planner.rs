@@ -55,8 +55,11 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         | CanonicalOperation::FieldGet { .. }
                         | CanonicalOperation::FieldSet { .. }
                         | CanonicalOperation::ArrayGet { .. }
+                        | CanonicalOperation::ArrayNew { .. }
+                        | CanonicalOperation::ArrayFromElements { .. }
                         | CanonicalOperation::ArraySet { .. }
-                        | CanonicalOperation::ArrayLength { .. } => {}
+                        | CanonicalOperation::ArrayLength { .. }
+                        | CanonicalOperation::TupleNew { .. } => {}
                     }
                 }
             }

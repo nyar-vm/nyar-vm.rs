@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
-    CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
+    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, StructuredDiagnosticSet, SubstitutionId, TypeId,
     TypeRecord,
@@ -144,14 +144,14 @@ fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BT
         let instructions = block.instructions.iter().map(|instruction| {
             let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
             *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, symbols, ids)? })
+            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, symbols, ids)? })
         }).collect::<Result<_, StructuredDiagnosticSet>>()?;
         Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     Ok(CanonicalFunction { instance, parameters, return_type: type_id(ids, &function.return_type)?, value_types, entry: CanonicalBlockId(function.entry.0), blocks })
 }
 
-fn lower_operation(operation: &MirOperation, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
         MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: *symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?, arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
@@ -160,7 +160,25 @@ fn lower_operation(operation: &MirOperation, symbols: &BTreeMap<String, ItemInst
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? }),
         MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
-        MirOperation::ArrayNew { .. } => Err(error_without_module("CAN008", "数组构造尚未有无损 canonical 形状")),
+        MirOperation::ArrayNew { array_type, length, initialization } => Ok(CanonicalOperation::ArrayNew {
+            array_type: type_id(ids, array_type)?,
+            length: value(length)?,
+            initialization: match initialization {
+                crate::valkyrie::mir::ArrayInitialization::Default => CanonicalArrayInitialization::Default,
+                crate::valkyrie::mir::ArrayInitialization::Fill(fill) => CanonicalArrayInitialization::Fill(value(fill)?),
+            },
+        }),
+        MirOperation::ArrayFromElements { array_type, elements } => Ok(CanonicalOperation::ArrayFromElements {
+            array_type: type_id(ids, array_type)?,
+            elements: elements.iter().map(value).collect::<Result<_, _>>()?,
+        }),
+        MirOperation::TupleNew { fields } => Ok(CanonicalOperation::TupleNew {
+            element_types: match results.first().and_then(|result| value_types.get(result)) {
+                Some(ValkyrieType::Tuple(types)) => types.iter().map(|ty| type_id(ids, ty)).collect::<Result<_, _>>()?,
+                _ => return Err(error_without_module("CAN017", "元组构造结果缺少完整 Tuple 类型")),
+            },
+            fields: fields.iter().map(value).collect::<Result<_, _>>()?,
+        }),
         _ => Err(error_without_module("CAN009", "操作没有无损 canonical 形状")),
     }
 }
