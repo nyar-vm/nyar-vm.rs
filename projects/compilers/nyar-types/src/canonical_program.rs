@@ -363,6 +363,10 @@ pub enum CanonicalMirError {
     DuplicateBlockDefinition { function: ItemInstanceId, value: MirValueId },
     /// 终结符使用了未定义的 SSA 值。
     TerminatorUseBeforeDefinition { function: ItemInstanceId, value: MirValueId },
+    /// SSA 定义块不支配使用块。
+    NonDominatingUse { function: ItemInstanceId, value: MirValueId, block: CanonicalBlockId },
+    /// 跳转实参与目标块参数类型不一致。
+    BlockParameterTypeMismatch { function: ItemInstanceId, block: CanonicalBlockId, value: MirValueId },
 }
 
 impl CanonicalSemanticMir {
@@ -403,6 +407,47 @@ impl CanonicalSemanticMir {
             }
             if !function.blocks.contains_key(&function.entry) {
                 return Err(CanonicalMirError::UnknownBlock { function: *key, block: function.entry });
+            }
+            let all_blocks = function.blocks.keys().copied().collect::<std::collections::BTreeSet<_>>();
+            let mut predecessors = all_blocks.iter().map(|block| (*block, std::collections::BTreeSet::new())).collect::<BTreeMap<_, _>>();
+            for block in function.blocks.values() {
+                let targets = match &block.terminator {
+                    CanonicalTerminator::Jump { target, .. } => vec![*target],
+                    CanonicalTerminator::Branch { then_target, else_target, .. } => vec![*then_target, *else_target],
+                    _ => Vec::new(),
+                };
+                for target in targets {
+                    if let Some(preds) = predecessors.get_mut(&target) { preds.insert(block.id); }
+                }
+            }
+            let mut dominators = all_blocks.iter().map(|block| {
+                let initial = if *block == function.entry { std::collections::BTreeSet::from([*block]) } else { all_blocks.clone() };
+                (*block, initial)
+            }).collect::<BTreeMap<_, _>>();
+            loop {
+                let mut changed = false;
+                for block in all_blocks.iter().copied().filter(|block| *block != function.entry) {
+                    let mut next = all_blocks.clone();
+                    for predecessor in predecessors.get(&block).into_iter().flat_map(|values| values.iter()) {
+                        next = next.intersection(dominators.get(predecessor).unwrap()).copied().collect();
+                    }
+                    next.insert(block);
+                    if next != dominators[&block] { dominators.insert(block, next); changed = true; }
+                }
+                if !changed { break; }
+            }
+            let mut definitions = function.parameters.iter().map(|(value, _)| (*value, None)).collect::<BTreeMap<_, _>>();
+            for block in function.blocks.values() {
+                for (value, _) in &block.parameters {
+                    if definitions.insert(*value, Some(block.id)).is_some() {
+                        return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
+                    }
+                }
+                for value in block.instructions.iter().flat_map(|instruction| instruction.results.iter()) {
+                    if definitions.insert(*value, Some(block.id)).is_some() {
+                        return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
+                    }
+                }
             }
             for (block_id, block) in &function.blocks {
                 let mut block_defined = defined.clone();
@@ -462,6 +507,13 @@ impl CanonicalSemanticMir {
                         let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();
                         return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value });
                     }
+                    for value in &uses {
+                        if let Some(Some(definition_block)) = definitions.get(value) {
+                            if definition_block != block_id && !dominators[block_id].contains(definition_block) {
+                                return Err(CanonicalMirError::NonDominatingUse { function: *key, value: *value, block: *block_id });
+                            }
+                        }
+                    }
                     for result in &instruction.results {
                         if !block_defined.insert(*result) {
                             return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *result });
@@ -495,6 +547,13 @@ impl CanonicalSemanticMir {
                     };
                     if target_block.parameters.len() != arity {
                         return Err(CanonicalMirError::BlockParameterArityMismatch { function: *key, block: target });
+                    }
+                    if let CanonicalTerminator::Jump { arguments, .. } = &block.terminator {
+                        for (value, (_, expected)) in arguments.iter().zip(&target_block.parameters) {
+                            if function.value_types.get(value) != Some(expected) {
+                                return Err(CanonicalMirError::BlockParameterTypeMismatch { function: *key, block: target, value: *value });
+                            }
+                        }
                     }
                 }
                 let _ = block_id;
