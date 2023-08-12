@@ -6,7 +6,7 @@ use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
-    FieldId, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
+    FieldId, FieldRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
 
 use crate::valkyrie::{
@@ -20,15 +20,17 @@ use super::diagnostics::fail_stage;
 pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
     let type_values = collect_types(module)?;
     let symbols = collect_symbols(module)?;
-    let (nominals, fields) = collect_aggregate_identities(module, &type_values)?;
+    let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
     }
     for (name, (nominal, declaration)) in &nominals {
-        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution") });
+        let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
+        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), fields: nominal_fields });
         let _ = name;
     }
+    linked.fields = field_records;
     for (index, function) in module.functions.iter().enumerate() {
         let instance = item_instance(index as u32);
         linked.item_instances.insert(instance, ItemInstanceRecord {
@@ -60,9 +62,10 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
 
 type AggregateIdentity = (NominalInstanceId, TypeId);
 
-fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>), StructuredDiagnosticSet> {
+fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
     let mut fields = BTreeMap::new();
+    let mut field_records = BTreeMap::new();
     let mut next_field = 0u32;
     for (index, aggregate) in module.structs.iter().enumerate() {
         let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
@@ -78,9 +81,10 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
             if fields.insert((qualified.clone(), field.name.clone()), id).is_some() {
                 return Err(error_without_module("CAN022", format!("字段 identity 重复: {qualified}.{}", field.name)));
             }
+            field_records.insert(id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? });
         }
     }
-    Ok((nominals, fields))
+    Ok((nominals, fields, field_records))
 }
 
 fn collect_symbols(module: &MirModule) -> Result<BTreeMap<String, ItemInstanceId>, StructuredDiagnosticSet> {

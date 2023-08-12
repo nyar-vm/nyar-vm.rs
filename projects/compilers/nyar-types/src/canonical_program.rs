@@ -75,6 +75,8 @@ pub struct LinkedSemanticProgram {
     pub item_instances: BTreeMap<ItemInstanceId, ItemInstanceRecord>,
     /// Closed nominal ADT instances.
     pub nominal_instances: BTreeMap<NominalInstanceId, NominalInstanceRecord>,
+    /// 已解析字段身份及其 owner/类型合同。
+    pub fields: BTreeMap<FieldId, FieldRecord>,
     /// Selected evidence bindings.
     pub evidence: BTreeMap<EvidenceId, EvidenceRecord>,
     /// Semantic type table.
@@ -101,6 +103,17 @@ pub struct NominalInstanceRecord {
     pub declaration: TypeId,
     /// 完成代入后的类型实例身份。
     pub substitution: SubstitutionId,
+    /// 该实例声明的全部字段，顺序为语言声明顺序。
+    pub fields: Vec<FieldId>,
+}
+
+/// 已解析字段的 owner 与值类型合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldRecord {
+    /// 字段所属名义实例。
+    pub owner: NominalInstanceId,
+    /// 字段值类型。
+    pub ty: TypeId,
 }
 
 /// Placeholder evidence row.
@@ -327,6 +340,8 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
+    /// 聚合实例身份未知。
+    UnknownNominal { function: ItemInstanceId, nominal: NominalInstanceId },
     /// 类型形状引用了不存在的类型。
     UnknownTypeReference { owner: TypeId, referenced: TypeId },
     /// 原生标量宽度不属于语言类型合同。
@@ -367,6 +382,16 @@ pub enum CanonicalMirError {
     NonDominatingUse { function: ItemInstanceId, value: MirValueId, block: CanonicalBlockId },
     /// 跳转实参与目标块参数类型不一致。
     BlockParameterTypeMismatch { function: ItemInstanceId, block: CanonicalBlockId, value: MirValueId },
+    /// 聚合字段身份未知。
+    UnknownField { function: ItemInstanceId, field: FieldId },
+    /// 字段不属于当前聚合 owner。
+    FieldOwnerMismatch { function: ItemInstanceId, field: FieldId, nominal: NominalInstanceId },
+    /// 字段值类型与声明不一致。
+    FieldTypeMismatch { function: ItemInstanceId, field: FieldId, value: MirValueId },
+    /// 聚合构造缺少声明字段。
+    MissingStructField { function: ItemInstanceId, nominal: NominalInstanceId, field: FieldId },
+    /// 聚合构造重复声明字段。
+    DuplicateStructField { function: ItemInstanceId, nominal: NominalInstanceId, field: FieldId },
 }
 
 impl CanonicalSemanticMir {
@@ -490,9 +515,70 @@ impl CanonicalSemanticMir {
                     }
                     CanonicalOperation::Copy { source } => vec![*source],
                     CanonicalOperation::LoadConstant { .. } => Vec::new(),
-                    CanonicalOperation::StructNew { fields, .. } => fields.iter().map(|(_, value)| *value).collect(),
-                    CanonicalOperation::FieldGet { object, .. } => vec![*object],
-                    CanonicalOperation::FieldSet { object, value, .. } => vec![*object, *value],
+                    CanonicalOperation::StructNew { nominal, fields } => {
+                        let Some(nominal_record) = linked.nominal_instances.get(nominal) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
+                        };
+                        let mut seen = std::collections::BTreeSet::new();
+                        for (field, value) in fields {
+                            if !seen.insert(*field) {
+                                return Err(CanonicalMirError::DuplicateStructField { function: *key, nominal: *nominal, field: *field });
+                            }
+                            let Some(record) = linked.fields.get(field) else {
+                                return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
+                            };
+                            if record.owner != *nominal {
+                                return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: *nominal });
+                            }
+                            if function.value_types.get(value) != Some(&record.ty) {
+                                return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
+                            }
+                        }
+                        for field in &nominal_record.fields {
+                            if !seen.contains(field) {
+                                return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
+                            }
+                        }
+                        fields.iter().map(|(_, value)| *value).collect()
+                    }
+                    CanonicalOperation::FieldGet { object, field } => {
+                        let Some(record) = linked.fields.get(field) else {
+                            return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
+                        };
+                        let Some(object_ty) = function.value_types.get(object) else {
+                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                        };
+                        let Some(CanonicalTypeKind::Nominal { declaration, .. }) = linked.types.get(object_ty).map(|record| &record.kind) else {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                        };
+                        let nominal = linked.nominal_instances.iter().find_map(|(id, instance)| (instance.declaration == *declaration).then_some(*id));
+                        if nominal != Some(record.owner) {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: nominal.unwrap_or(record.owner) });
+                        }
+                        if instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&record.ty) {
+                            return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: instruction.results.first().copied().unwrap_or(*object) });
+                        }
+                        vec![*object]
+                    }
+                    CanonicalOperation::FieldSet { object, field, value } => {
+                        let Some(record) = linked.fields.get(field) else {
+                            return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
+                        };
+                        let Some(object_ty) = function.value_types.get(object) else {
+                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                        };
+                        let Some(CanonicalTypeKind::Nominal { declaration, .. }) = linked.types.get(object_ty).map(|record| &record.kind) else {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                        };
+                        let nominal = linked.nominal_instances.iter().find_map(|(id, instance)| (instance.declaration == *declaration).then_some(*id));
+                        if nominal != Some(record.owner) {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: nominal.unwrap_or(record.owner) });
+                        }
+                        if function.value_types.get(value) != Some(&record.ty) {
+                            return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
+                        }
+                        vec![*object, *value]
+                    }
                     CanonicalOperation::ArrayGet { array, index } => vec![*array, *index],
                     CanonicalOperation::ArrayNew { length, initialization, .. } => match initialization {
                         CanonicalArrayInitialization::Default => vec![*length],
