@@ -102,12 +102,15 @@ pub struct MirModule {
 
 /// 由导入语义导出持有的静态解析调用合同。
 ///
-/// 不得挂 `dispatch` / witness / intrinsic 旁路。类型归属 ItemInstance / 类型表
-///（Invoke 落地后），不得作为 God 字段回填。
+/// 声明签名属于模块级 callable 合同，不复制到单条 Call 上；不得挂分派旁路。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirExternalCallContract {
-    /// Exact source-level symbol selected by HIR overload resolution.
+    /// HIR 选择的精确源码身份。
     pub symbol: NamePath,
+    /// 语义导出声明的参数类型；禁止缺失后默认成空参数列表。
+    pub parameter_types: Vec<ValkyrieType>,
+    /// 语义导出声明的返回类型。
+    pub return_type: ValkyrieType,
 }
 
 /// `MIR` 结构体定义。
@@ -429,8 +432,8 @@ pub enum MirOperation {
     },
     /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {
-        type_name: String,
-        fields: Vec<(String, MirOperand)>,
+        type_name: NamePath,
+        fields: Vec<(Identifier, MirOperand)>,
     },
     TupleNew {
         fields: Vec<MirOperand>,
@@ -441,11 +444,11 @@ pub enum MirOperation {
     },
     FieldGet {
         object: MirOperand,
-        field: String,
+        field: Identifier,
     },
     FieldSet {
         object: MirOperand,
-        field: String,
+        field: Identifier,
         value: MirOperand,
     },
     /// Construct a value of an explicitly declared nominal sum variant.
@@ -744,25 +747,41 @@ impl MirLowerer {
 }
 
 fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {
-    module
+    fn collect_abstract_functions(module: &HirModule, out: &mut Vec<MirExternalCallContract>) {
+        out.extend(module.functions
+        .iter()
+        .filter(|function| {
+            function.is_abstract
+                && crate::valkyrie::backend_contract::interop::function_interop_contract(function).is_some()
+        })
+        .map(|function| {
+            MirExternalCallContract {
+                symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
+                parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
+                return_type: function.return_type.clone(),
+            }
+        }));
+        for submodule in &module.submodules {
+            collect_abstract_functions(submodule, out);
+        }
+    }
+    let mut contracts = Vec::new();
+    collect_abstract_functions(module, &mut contracts);
+    contracts.extend(module
         .imported_semantic_exports
         .iter()
         .flat_map(|export| {
             export.functions.iter().map(move |function| {
-                let symbol = if function.declaring_namespace.parts().is_empty() {
-                    let mut parts = export.module.parts().to_vec();
-                    parts.push(function.name.clone());
-                    NamePath::new(parts)
+                let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
+                MirExternalCallContract {
+                    symbol,
+                    parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
+                    return_type: function.return_type.clone(),
                 }
-                else {
-                    let mut parts = function.declaring_namespace.parts().to_vec();
-                    parts.push(function.name.clone());
-                    NamePath::new(parts)
-                };
-                MirExternalCallContract { symbol }
             })
         })
-        .collect()
+        .collect::<Vec<_>>());
+    contracts
 }
 
 fn lower_singleton_method_functions(

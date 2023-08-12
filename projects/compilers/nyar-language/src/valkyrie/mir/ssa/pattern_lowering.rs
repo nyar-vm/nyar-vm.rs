@@ -69,7 +69,7 @@ impl MirBuilder {
             _ => {}
         }
 
-        let operand = self.lower_expr_to_operand_with_hint(&resolved_expr, ty.as_ref());
+        let operand = self.lower_expr_to_operand_with_hint(expr, ty.as_ref());
         self.bind_pattern_from_operand(pattern, operand, ty);
     }
 
@@ -101,21 +101,21 @@ impl MirBuilder {
                     let value_names = self.aggregate_layouts.value_type_names.iter().map(|item| Identifier::new(item)).collect();
                     if storage_kind_for_type(inferred_type, &value_names) == MirStorageKind::Value {
                         if let Some(layout_id) = ensure_layout_for_type(&mut self.aggregate_layouts, inferred_type) {
-                            self.instructions.push(MirInstruction::from_operation(MirOperation::AggregateCopy {
+                            self.push_instruction(MirOperation::AggregateCopy {
                                 source: operand,
                                 dest: MirOperand::Value(value),
-                            }));
+                            }, vec![value]);
                             self.value_types.insert(value, inferred_type.clone());
                             self.bindings.insert(name, MirOperand::Value(value));
                             return;
                         }
                     }
                 }
-                self.instructions.push(MirInstruction::from_operation(MirOperation::StoreVar {
+                self.push_instruction(MirOperation::StoreVar {
                     name: name.clone(),
                     value: operand,
                     ty: inferred_type.clone(),
-                }));
+                }, vec![value]);
                 if let Some(inferred_type) = inferred_type {
                     self.value_types.insert(value, inferred_type);
                 }
@@ -793,7 +793,7 @@ impl MirBuilder {
             let storage = layout_id
                 .and_then(|id| self.aggregate_layouts.layouts.iter().find(|layout| layout.id == id).map(|layout| layout.storage))
                 .unwrap_or(storage);
-            self.instructions.push(MirInstruction::from_operation(MirOperation::FieldGet { object: value, field: "payload".to_string() }));
+            self.push_instruction(MirOperation::FieldGet { object: value, field: Identifier::new("payload") }, vec![output]);
             let payload_ty = resolved.extractor_payload_type.clone().unwrap_or_else(|| resolved.return_type.clone());
             self.value_types.insert(output, payload_ty);
             return MirOperand::Value(output);
@@ -879,7 +879,8 @@ impl MirBuilder {
         let storage = layout_id
             .and_then(|id| self.aggregate_layouts.layouts.iter().find(|layout| layout.id == id).map(|layout| layout.storage))
             .unwrap_or(fallback_storage);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::FieldGet { object, field: field_name.to_string() }));
+        // 必须绑定 results：空 results 会让后端 FieldGet 后 Pop，后续 ArrayLength/Call 读到假值。
+        self.push_instruction(MirOperation::FieldGet { object, field: field_name.clone() }, vec![output]);
         if let Some(field_type) = self
             .lookup_struct_field_type(struct_name, field_name.as_str())
             .or_else(|| self.field_type_from_layout(layout_id, field_name.as_str()))

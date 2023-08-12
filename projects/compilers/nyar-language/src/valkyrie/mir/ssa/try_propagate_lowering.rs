@@ -180,7 +180,10 @@ impl MirBuilder {
         let storage = storage_kind_for_named_type(&class_name.to_string(), &self.struct_is_value_type);
         let layout_id = self.aggregate_layouts.type_name_to_layout.get(class_name.as_str()).copied();
         self.instructions
-            .push(MirInstruction::from_operation(MirOperation::StructNew { type_name: class_name.to_string(), fields: struct_fields }));
+            .push(MirInstruction::from_operation(MirOperation::StructNew {
+                type_name: NamePath::new(vec![class_name.clone()]),
+                fields: struct_fields.into_iter().map(|(name, value)| (Identifier::new(&name), value)).collect(),
+            }));
         self.value_types.insert(value, ValkyrieType::Named(class_name.clone()));
         MirOperand::Value(value)
     }

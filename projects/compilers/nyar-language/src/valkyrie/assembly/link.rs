@@ -297,7 +297,7 @@ mod tests {
         dep_fn.values.push(tag.clone());
         dep_fn.blocks[0]
             .instructions
-            .push(MirInstruction::from_operation(MirOperation::FieldGet { object: MirOperand::Value(MirValueRef(0)), field: "tag".into() }));
+            .push(MirInstruction::from_operation(MirOperation::FieldGet { object: MirOperand::Value(MirValueRef(0)), field: Identifier::new("tag") }));
 
         let mut consumer = MirModule {
             name: "legion".into(),

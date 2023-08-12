@@ -135,16 +135,16 @@ fn convert_instruction_kind(kind: &MirOperation) -> InstructionKind {
             InstructionKind::Call { callee: convert_operand(callee), arguments: arguments.iter().map(convert_operand).collect() }
         }
         MirOperation::StructNew { type_name, fields } => InstructionKind::StructNew {
-            type_name: type_name.clone(),
-            fields: fields.iter().map(|(name, value)| (name.clone(), convert_operand(value))).collect(),
+            type_name: type_name.to_string(),
+            fields: fields.iter().map(|(name, value)| (name.to_string(), convert_operand(value))).collect(),
         },
         MirOperation::TupleNew { fields, .. } => InstructionKind::TupleNew { fields: fields.iter().map(convert_operand).collect() },
         MirOperation::AggregateCopy { source, dest } => {
             InstructionKind::AggregateCopy { source: convert_operand(source), dest: convert_operand(dest) }
         }
-        MirOperation::FieldGet { object, field } => InstructionKind::FieldGet { object: convert_operand(object), field: field.clone() },
+        MirOperation::FieldGet { object, field } => InstructionKind::FieldGet { object: convert_operand(object), field: field.to_string() },
         MirOperation::FieldSet { object, field, value } => {
-            InstructionKind::FieldSet { object: convert_operand(object), field: field.clone(), value: convert_operand(value) }
+            InstructionKind::FieldSet { object: convert_operand(object), field: field.to_string(), value: convert_operand(value) }
         }
         MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload } => InstructionKind::SumNew {
             sum_type: sum_type.clone(),

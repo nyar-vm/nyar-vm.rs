@@ -113,7 +113,7 @@ micro main() -> i64 {
     let accessor_pos =
         all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_get_pos =
-        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldGet { field, .. } if field == "total")).expect("FieldGet for 'total'");
+        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldGet { field, .. } if field.as_str() == "total")).expect("FieldGet for 'total'");
     assert!(
         accessor_pos < field_get_pos,
         "accessor call must precede FieldGet, got accessor at {accessor_pos} and FieldGet at {field_get_pos}"
@@ -142,7 +142,7 @@ micro main() {
     let accessor_pos =
         all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_set_pos =
-        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldSet { field, .. } if field == "total")).expect("FieldSet for 'total'");
+        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldSet { field, .. } if field.as_str() == "total")).expect("FieldSet for 'total'");
     assert!(
         accessor_pos < field_set_pos,
         "accessor call must precede FieldSet, got accessor at {accessor_pos} and FieldSet at {field_set_pos}"
@@ -182,7 +182,7 @@ singleton Counter {
             matches!(
                 &ins.kind,
                 MirOperation::FieldGet { object: MirOperand::Value(v), field, .. }
-                if *v == self_value && field == "total"
+                if *v == self_value && field.as_str() == "total"
             )
         })
         .count();
@@ -191,7 +191,7 @@ singleton Counter {
             matches!(
                 &ins.kind,
                 MirOperation::FieldSet { object: MirOperand::Value(v), field, .. }
-                if *v == self_value && field == "total"
+                if *v == self_value && field.as_str() == "total"
             )
         })
         .count();

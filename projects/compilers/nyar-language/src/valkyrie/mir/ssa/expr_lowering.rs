@@ -17,8 +17,8 @@ use super::{
     },
     callee_name_matches,
     expr_helpers::{
-        is_array_shaped_valkyrie_type, known_instance_method_return_type, named_type_name, peel_generic_apply, qualify_instance_method_symbol,
-        receiver_method_owner_name, reject_text_operator_for_numeric_args,
+        is_array_shaped_valkyrie_type, known_instance_method_return_type, named_type_name, peel_generic_apply,
+        qualify_instance_method_symbol, receiver_method_owner_name, reject_text_operator_for_numeric_args,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -238,7 +238,8 @@ impl MirBuilder {
 
     fn emit_array_length_operand(&mut self, array: MirOperand) -> MirOperand {
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::ArrayLength { array }));
+        // 必须绑定 results：`from_operation` 空 results 会让 wasm 端 `array.len` 后丢弃并返回 0。
+        self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
         self.value_types.insert(value, ValkyrieType::Named(Identifier::new("usize")));
         MirOperand::Value(value)
     }
@@ -274,7 +275,7 @@ impl MirBuilder {
         }
         let array = arguments.first().cloned()?;
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::ArrayLength { array }));
+        self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
         let return_type = resolved
             .map(|call| call.return_type.clone())
             .or_else(|| expected_type.cloned())
@@ -868,38 +869,7 @@ impl MirBuilder {
                         }
                     }
                     // Call 不得携带 dispatch / witness / evidence / intrinsic / parameter_types。
-                    let (callee_symbol, return_type) = qualify_instance_method_symbol(
-                        &receiver_operand,
-                        &method_name,
-                        resolved.as_ref(),
-                        &self.value_types,
-                        &self.return_types,
-                    );
-                    let known_return_type = {
-                        let method = if callee_symbol.parts().len() >= 2 {
-                            callee_symbol.parts()[1].as_str()
-                        } else {
-                            method_name.as_str()
-                        };
-                        let owner = if callee_symbol.parts().len() >= 2 {
-                            Some(callee_symbol.parts()[0].as_str().to_string())
-                        } else {
-                            receiver_method_owner_name(&receiver_operand, &self.value_types)
-                        };
-                        owner
-                            .as_deref()
-                            .and_then(|owner| known_instance_method_return_type(owner, method))
-                            .or_else(|| known_instance_method_return_type("", method))
-                            .or_else(|| match method {
-                                "unwrap" => Some(ValkyrieType::AutoType),
-                                "is_some" | "is_none" => Some(ValkyrieType::Boolean),
-                                "get" => Some(ValkyrieType::Apply(
-                                    Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                                    vec![ValkyrieType::AutoType],
-                                )),
-                                _ => None,
-                            })
-                    };
+                    let (callee_symbol, return_type) = qualify_instance_method_symbol(resolved.as_ref());
                     let callee = MirOperand::Symbol(callee_symbol);
                     if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
                         return operand;
@@ -913,13 +883,7 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    let return_type = return_type
-                        .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
-                        .or_else(|| expected_type.cloned())
-                        .or(known_return_type)
-                        .or_else(|| (method_name.as_str() == "unwrap").then_some(ValkyrieType::AutoType))
-                        .unwrap_or(ValkyrieType::Unit);
-                    return self.push_call_returning(callee, arguments, return_type);
+                    return self.push_call_returning(callee, arguments, return_type.expect("resolved instance call return type"));
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -935,10 +899,13 @@ impl MirBuilder {
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
                         let storage = self.storage_for_layout_id(layout_id, self.storage_for_object_operand(&receiver_operand));
                         let callee_value = self.next_value(MirValueOrigin::Temporary);
-                        self.instructions.push(MirInstruction::from_operation(MirOperation::FieldGet {
-                            object: receiver_operand,
-                            field: field.to_string(),
-                        }));
+                        self.push_instruction(
+                            MirOperation::FieldGet {
+                                object: receiver_operand,
+                                field: field.clone(),
+                            },
+                            vec![callee_value],
+                        );
                         if let Some(field_ty) = field_ty {
                             self.value_types.insert(callee_value, field_ty);
                         }
@@ -1113,11 +1080,14 @@ impl MirBuilder {
                 let length_operand = self.lower_expr_to_operand(length);
                 let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.instructions.push(MirInstruction::from_operation(MirOperation::ArrayNew {
-                    array_type: array_type.clone(),
-                    length: length_operand,
-                    initialization: super::ArrayInitialization::Default,
-                }));
+                self.push_instruction(
+                    MirOperation::ArrayNew {
+                        array_type: array_type.clone(),
+                        length: length_operand,
+                        initialization: super::ArrayInitialization::Default,
+                    },
+                    vec![value],
+                );
                 self.value_types.insert(value, array_type);
                 MirOperand::Value(value)
             }
@@ -1139,8 +1109,10 @@ impl MirBuilder {
                 };
                 let elements = items.iter().map(|item| self.lower_expr_to_operand_with_hint(item, element_hint)).collect::<Vec<_>>();
                 let array_value = self.next_value(MirValueOrigin::Temporary);
-                self.instructions
-                    .push(MirInstruction::from_operation(MirOperation::ArrayFromElements { array_type: array_type.clone(), elements }));
+                self.push_instruction(
+                    MirOperation::ArrayFromElements { array_type: array_type.clone(), elements },
+                    vec![array_value],
+                );
                 self.value_types.insert(array_value, array_type);
                 MirOperand::Value(array_value)
             }
@@ -1277,7 +1249,7 @@ impl MirBuilder {
                         ))
                     });
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.push_instruction(MirOperation::StructNew { type_name: struct_type_name, fields }, vec![value]);
+                self.push_instruction(MirOperation::StructNew { type_name: NamePath::new(vec![Identifier::new(&struct_type_name)]), fields: fields.into_iter().map(|(name, value)| (Identifier::new(&name), value)).collect() }, vec![value]);
                 self.value_types.insert(value, self.struct_construct_result_type(name, resolved.as_ref()));
                 MirOperand::Value(value)
             }
@@ -1301,8 +1273,8 @@ impl MirBuilder {
                 let storage = self.storage_for_layout_id(layout_id, self.storage_for_object_operand(&object_operand));
                 let field_ty = self.field_type_for_object_operand(&object_operand, field);
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.instructions
-                    .push(MirInstruction::from_operation(MirOperation::FieldGet { object: object_operand, field: field.to_string() }));
+                // 必须绑定 results：空 results 会让后端把 FieldGet 结果 Pop 掉，后续 `.length` / Call 读到假值。
+                self.push_instruction(MirOperation::FieldGet { object: object_operand, field: field.clone() }, vec![value]);
                 if let Some(field_ty) = field_ty
                     .or_else(|| self.field_type_from_layout(layout_id, field.as_str()))
                     .or_else(|| self.return_types.get(field.as_str()).cloned())
@@ -1318,7 +1290,7 @@ impl MirBuilder {
                 let value_operand = self.lower_expr_to_operand(value);
                 self.instructions.push(MirInstruction::from_operation(MirOperation::FieldSet {
                     object: object_operand,
-                    field: field.to_string(),
+                    field: field.clone(),
                     value: value_operand,
                 }));
                 MirOperand::Constant(MirConstant::Unit)
@@ -1334,51 +1306,29 @@ impl MirBuilder {
                 let existing = self.bindings.get(&name).cloned();
                 let expected = existing.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
                 let operand = self.lower_expr_to_operand_with_hint(value, expected.as_ref());
-                // Value-type assign uses AggregateCopy. On reassignment, copy into the
-                // existing binding's ValueId (loop-carried / pre-match home) — a fresh
-                // dest leaves later same-body peeks on the old SSA (parse_von separator Fail).
                 if let Some(ty) = infer_builder_operand_type(&operand, &self.value_types) {
                     if self.storage_for_type(&ty) == MirStorageKind::Value {
                         let layout_id = ensure_layout_for_type(&mut self.aggregate_layouts, &ty);
                         if let Some(layout_id) = layout_id {
-                            let dest = match existing {
-                                Some(MirOperand::Value(id)) => id,
-                                _ => self.next_value(MirValueOrigin::LetBinding { name: name.clone() }),
-                            };
-                            self.instructions.push(MirInstruction::from_operation(MirOperation::AggregateCopy {
+                            let dest = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
+                            self.push_instruction(MirOperation::AggregateCopy {
                                 source: operand.clone(),
                                 dest: MirOperand::Value(dest),
-                            }));
-                            // 复用已有 ValueId 时不要覆盖已注册的类型：
-                            // `let mut i: usize = 0; while ... { i = i + 1 }` 中，
-                            // `i + 1` 的 HIR 重载可能被误绑为 Utf8Text（Self-matching
-                            // false positive），若用 `insert` 覆盖会污染循环 header
-                            // 参数的类型注册，触发 JVM VerifyError。新创建的 ValueId
-                            // 在表中不存在，`or_insert` 会插入推断类型。
-                            self.value_types.entry(dest).or_insert(ty);
+                            }, vec![dest]);
+                            self.value_types.insert(dest, ty);
                             self.bindings.insert(name, MirOperand::Value(dest));
                             return MirOperand::Constant(MirConstant::Unit);
                         }
                     }
                 }
-                // Reference / scalar mutables: StoreVar into the named home. Keep the
-                // existing ValueId when reassigning so match/if-restored bindings and
-                // CLR block-param locals observe the write in the same body.
-                let new_value = match existing {
-                    Some(MirOperand::Value(id)) => id,
-                    _ => self.next_value(MirValueOrigin::LetBinding { name: name.clone() }),
-                };
-                self.instructions.push(MirInstruction::from_operation(MirOperation::StoreVar {
+                let new_value = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
+                self.push_instruction(MirOperation::StoreVar {
                     name: name.clone(),
                     value: operand.clone(),
                     ty: None,
-                }));
+                }, vec![new_value]);
                 if let Some(ty) = infer_builder_operand_type(&operand, &self.value_types) {
-                    // 复用已有 ValueId 时不要覆盖已注册的类型：循环中 `i = i + 1`
-                    // 的 HIR 重载可能被误绑为 Utf8Text，覆盖会污染循环 header
-                    // 参数的类型注册。新创建的 ValueId 在表中不存在，`or_insert`
-                    // 会插入推断类型。
-                    self.value_types.entry(new_value).or_insert(ty);
+                    self.value_types.insert(new_value, ty);
                 }
                 self.bindings.insert(name, MirOperand::Value(new_value));
                 MirOperand::Constant(MirConstant::Unit)

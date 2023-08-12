@@ -680,9 +680,9 @@ fn lower_mir_instruction(instruction: &MirInstruction) -> LirOperation {
             LirOperationKind::Move { source: LirOperand::Constant(MirConstant::Unit) }
         }
         MirOperation::StructNew { type_name, fields } => LirOperationKind::StructNew {
-            type_name: type_name.clone(),
+            type_name: type_name.to_string(),
             storage: crate::valkyrie::mir::MirStorageKind::Value,
-            fields: fields.iter().map(|(name, value)| (name.clone(), lower_mir_operand(value.clone()))).collect(),
+            fields: fields.iter().map(|(name, value)| (name.to_string(), lower_mir_operand(value.clone()))).collect(),
         },
         MirOperation::TupleNew { fields, .. } => LirOperationKind::StructNew {
             type_name: format!("Tuple{}", fields.len()),
@@ -691,11 +691,11 @@ fn lower_mir_instruction(instruction: &MirInstruction) -> LirOperation {
         },
         MirOperation::AggregateCopy { source, .. } => LirOperationKind::Move { source: lower_mir_operand(source.clone()) },
         MirOperation::FieldGet { object, field } => {
-            LirOperationKind::FieldGet { object: lower_mir_operand(object.clone()), field: field.clone() }
+            LirOperationKind::FieldGet { object: lower_mir_operand(object.clone()), field: field.to_string() }
         }
         MirOperation::FieldSet { object, field, value } => LirOperationKind::FieldSet {
             object: lower_mir_operand(object.clone()),
-            field: field.clone(),
+            field: field.to_string(),
             value: lower_mir_operand(value.clone()),
         },
         // Legacy LIR is not a backend input. Preserve the payload dependency;
