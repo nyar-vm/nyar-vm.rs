@@ -118,6 +118,11 @@ fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType, TypeId>, S
         collect_type_list(&mut types, &contract.parameter_types)?;
         collect_type(&mut types, &contract.return_type)?;
     }
+    for aggregate in &module.structs {
+        for field in &aggregate.fields {
+            collect_type(&mut types, &field.ty)?;
+        }
+    }
     Ok(types.into_iter().enumerate().map(|(index, ty)| (ty, TypeId::from_index(index as u32).expect("type identity overflow"))).collect())
 }
 
