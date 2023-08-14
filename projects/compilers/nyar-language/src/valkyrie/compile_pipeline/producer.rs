@@ -6,7 +6,7 @@ use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
-    FieldId, FieldRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
+    FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
 
 use crate::valkyrie::{
@@ -46,6 +46,14 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: item_id(external_start + offset as u32),
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+            parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
+            return_type: type_id(&type_values, &contract.return_type)?,
+        });
+        let import = ImportIndex::from_index(offset as u32).ok_or_else(|| error_without_module("CAN031", "import identity 溢出"))?;
+        let capability = ImportCapability::new(module.name.clone(), contract.symbol.to_string());
+        linked.imports.insert(import, ImportRecord {
+            capability,
+            callee: instance,
             parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &contract.return_type)?,
         });
@@ -280,7 +288,7 @@ fn canonical_error(module: &MirModule, error: CanonicalMirError) -> StructuredDi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::valkyrie::mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirInstruction, MirModule, MirValue, MirValueRef};
+    use crate::valkyrie::mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef};
     use crate::valkyrie::types::{Identifier, NamePath};
     use std::collections::BTreeMap;
 
@@ -324,6 +332,27 @@ mod tests {
         );
         let error = canonical_program_from_semantic_mir(&module).expect_err("未解析 callable 必须在 producer 失败");
         assert_eq!(error.records[0].code, "CAN007");
+    }
+
+    #[test]
+    fn producer_binds_external_callable_to_import_index_and_signature() {
+        let mut module = module_with(
+            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
+            None,
+            BTreeMap::new(),
+        );
+        module.external_calls.push(MirExternalCallContract {
+            symbol: NamePath::new(vec![Identifier::new("std"), Identifier::new("console"), Identifier::new("write")]),
+            parameter_types: vec![ValkyrieType::Boolean],
+            return_type: ValkyrieType::Unit,
+        });
+
+        let program = canonical_program_from_semantic_mir(&module).expect("external declaration has a complete import contract");
+        let import = ImportIndex::from_index(0).unwrap();
+        let record = program.linked.imports.get(&import).expect("import index");
+        assert_eq!(record.callee.index(), 1);
+        assert_eq!(record.parameter_types, vec![program.linked.types.iter().find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool)).then_some(*id)).unwrap()]);
+        assert_eq!(record.return_type, program.linked.types.iter().find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit)).then_some(*id)).unwrap());
     }
 }
 

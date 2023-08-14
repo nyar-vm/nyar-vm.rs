@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, FieldId, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
+use crate::semantic_ids::{EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -79,6 +79,8 @@ pub struct LinkedSemanticProgram {
     pub fields: BTreeMap<FieldId, FieldRecord>,
     /// Selected evidence bindings.
     pub evidence: BTreeMap<EvidenceId, EvidenceRecord>,
+    /// 已绑定的外部导入槽；执行层只消费 `ImportIndex`。
+    pub imports: BTreeMap<ImportIndex, ImportRecord>,
     /// Semantic type table.
     pub types: BTreeMap<TypeId, TypeRecord>,
 }
@@ -123,6 +125,19 @@ pub struct EvidenceRecord {
     pub trait_id: ItemId,
     /// 实现方的具体类型实例身份。
     pub implementing_type: TypeInstanceId,
+}
+
+/// 已完成签名绑定的外部导入记录。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportRecord {
+    /// 互操作链接能力，仅用于链接和诊断，不作为执行分派键。
+    pub capability: ImportCapability,
+    /// 对应的外部 callable 实例。
+    pub callee: ItemInstanceId,
+    /// 已代入的参数类型。
+    pub parameter_types: Vec<TypeId>,
+    /// 已代入的返回类型。
+    pub return_type: TypeId,
 }
 
 /// Canonical 类型的结构事实。
@@ -201,6 +216,19 @@ impl LinkedSemanticProgram {
             for referenced in references {
                 if !self.types.contains_key(&referenced) {
                     return Err(CanonicalMirError::UnknownTypeReference { owner: *owner, referenced });
+                }
+            }
+        }
+        for import in self.imports.values() {
+            let Some(callee) = self.item_instances.get(&import.callee) else {
+                return Err(CanonicalMirError::UnknownFunction { function: import.callee });
+            };
+            if callee.parameter_types != import.parameter_types || callee.return_type != import.return_type {
+                return Err(CanonicalMirError::ImportSignatureMismatch { function: import.callee });
+            }
+            for ty in import.parameter_types.iter().chain(std::iter::once(&import.return_type)) {
+                if !self.types.contains_key(ty) {
+                    return Err(CanonicalMirError::UnknownType { function: import.callee, ty: *ty });
                 }
             }
         }
@@ -342,6 +370,8 @@ pub struct CanonicalSemanticMir {
 pub enum CanonicalMirError {
     /// 聚合实例身份未知。
     UnknownNominal { function: ItemInstanceId, nominal: NominalInstanceId },
+    /// 外部导入记录与 callable 签名不一致。
+    ImportSignatureMismatch { function: ItemInstanceId },
     /// 类型形状引用了不存在的类型。
     UnknownTypeReference { owner: TypeId, referenced: TypeId },
     /// 原生标量宽度不属于语言类型合同。
