@@ -45,6 +45,64 @@ thread_local! {
     static COMPILE_WARNINGS: RefCell<Vec<HirCompileWarning>> = const { RefCell::new(Vec::new()) };
 }
 
+#[cfg(test)]
+mod source_group_tests {
+    use super::{CompilerSourceGroup, ValkyrieCompiler};
+
+    #[test]
+    fn compiler_owns_dependency_group_linking() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "core".into(),
+                name: "core".into(),
+                source: "micro answer() -> i32 { return 1 }".into(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(),
+                name: "app".into(),
+                source: "micro main() -> i32 { return answer() }".into(),
+                direct_dependencies: vec!["core".into()],
+            },
+        ];
+        let output = ValkyrieCompiler::default().compile_source_groups(&groups).expect("compiler closes source groups");
+        assert_eq!(output.hir_module().name.to_string(), "app");
+        assert!(output.semantic_mir().functions.iter().any(|function| function.symbol == "core::answer"));
+    }
+
+    #[test]
+    fn compiler_rejects_unknown_dependency_identity() {
+        let groups = vec![CompilerSourceGroup {
+            dependency_key: "app".into(),
+            name: "app".into(),
+            source: "micro main() { return }".into(),
+            direct_dependencies: vec!["missing".into()],
+        }];
+        let error = ValkyrieCompiler::default().compile_source_groups(&groups).expect_err("unknown dependency must fail at Compiler boundary");
+        assert!(error.to_string().contains("semantic dependency export `missing`"));
+    }
+
+    #[test]
+    fn compiler_rejects_dependency_identity_collision() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "same".into(),
+                name: "first".into(),
+                source: "micro first() { return }".into(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "same".into(),
+                name: "second".into(),
+                source: "micro second() { return }".into(),
+                direct_dependencies: Vec::new(),
+            },
+        ];
+        let error = ValkyrieCompiler::default().compile_source_groups(&groups).expect_err("duplicate dependency identity must fail");
+        assert!(error.to_string().contains("identity collision"));
+    }
+}
+
 struct CompileWarningScope;
 
 impl CompileWarningScope {
@@ -257,6 +315,19 @@ use vx::enhance_vx_widgets;
 pub struct ValkyrieCompiler {
     /// Source id attached to synthesized spans during lowering.
     pub source_id: SourceID,
+}
+
+/// Resolver 交给 Compiler 的有序源码语义组。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompilerSourceGroup {
+    /// Resolver 分配的稳定依赖身份。
+    pub dependency_key: String,
+    /// 诊断和模块身份使用的名称。
+    pub name: String,
+    /// 已完成 staging 的源码内容。
+    pub source: String,
+    /// 只允许引用已完成链接的直接依赖身份。
+    pub direct_dependencies: Vec<String>,
 }
 
 /// Stable frontend build output consumed by the application layer.
@@ -548,6 +619,47 @@ impl ValkyrieCompiler {
     ) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source_with_semantic_exports(source, imported_semantic_exports)?;
         Ok(FrontendBuildOutput::from_hir_module(hir_module))
+    }
+
+    /// 从完整依赖顺序的源码快照构建一个语义闭包。
+    ///
+    /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
+    /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
+    pub fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
+        let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
+        let mut dependency_mirs = Vec::new();
+        let mut final_output = None;
+        for group in groups {
+            let dependency_exports = group
+                .direct_dependencies
+                .iter()
+                .map(|name| exports.get(name).cloned().ok_or_else(|| ParseError::invalid(format!("semantic dependency export `{name}` is unavailable for `{}`", group.name))))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut hir_module = self.compile_source_with_semantic_exports(&group.source, &dependency_exports)?;
+            hir_module.name = NamePath::new(vec![Identifier::new(&group.name)]);
+            let output = FrontendBuildOutput::from_hir_module(hir_module);
+            let hir = output.hir_module();
+            let export = HirDependencySemanticExport {
+                module: NamePath::new(vec![Identifier::new(&group.name)]),
+                functions: hir.functions.clone(),
+                structs: hir.structs.clone(),
+                enums: hir.enums.clone(),
+                traits: hir.traits.clone(),
+                type_aliases: hir.type_aliases.clone(),
+                impls: hir.impls.clone(),
+            };
+            if exports.insert(group.dependency_key.clone(), export).is_some() {
+                return Err(ParseError::invalid(format!("semantic dependency export identity collision for `{}`", group.dependency_key)));
+            }
+            if let Some(previous) = final_output.replace(output) {
+                dependency_mirs.push(previous.semantic_mir().clone());
+            }
+        }
+        let mut final_output = final_output.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        if !dependency_mirs.is_empty() {
+            final_output.link_dependency_mir_modules(&dependency_mirs)?;
+        }
+        Ok(final_output)
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.
