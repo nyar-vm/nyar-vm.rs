@@ -88,6 +88,25 @@ impl IdKind for MirValueIdKind {
 }
 pub type MirValueId = SemanticId<MirValueIdKind>;
 
+/// Semantic MIR 函数内 SSA 值在全程序中的稳定身份。
+///
+/// `MirValueId` 只在所属函数内有效；表示规划跨函数保存值载体时必须携带
+/// `ItemInstanceId`，禁止把不同函数中同编号的 local 合并。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ValueIdentity {
+    /// SSA 值所属的已链接函数实例。
+    pub function: ItemInstanceId,
+    /// 函数内的 SSA 值身份。
+    pub value: MirValueId,
+}
+
+impl ValueIdentity {
+    /// 创建一个带函数 owner 的 SSA 值身份。
+    pub const fn new(function: ItemInstanceId, value: MirValueId) -> Self {
+        Self { function, value }
+    }
+}
+
 /// 已声明的语言项（函数 / 方法 / 构造器 / trait 方法 /
 /// std adaptor 入口 / intrinsic 声明）。由包链接器分配。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -529,7 +548,7 @@ pub enum MirValueDefinition {
 ///
 /// 键只能是稳定语义 id。禁止 `function@block:index`。
 pub mod layout_choice {
-    use super::{EffectSiteId, EvidenceId, InstructionId, MirValueId, NominalInstanceId};
+    use super::{EffectSiteId, EvidenceId, InstructionId, NominalInstanceId, ValueIdentity};
     use std::collections::BTreeMap;
 
     /// 可调用 / apply 位点的布局选择（不是语言范畴）。
@@ -601,7 +620,7 @@ pub mod layout_choice {
         /// 按指令的 invoke / apply 降低。
         pub invoke_lowerings: BTreeMap<InstructionId, InvokeLowering>,
         /// 按值的载体表示。
-        pub value_reps: BTreeMap<MirValueId, ValueRepresentation>,
+        pub value_reps: BTreeMap<ValueIdentity, ValueRepresentation>,
         /// 按 evidence 的布局。
         pub evidence_layouts: BTreeMap<EvidenceId, EvidenceLayout>,
         /// 按名义实例的 ADT 布局。
@@ -614,6 +633,7 @@ pub mod layout_choice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout_choice::ValueRepresentation;
 
     #[test]
     fn evidence_id_is_stable_and_distinct() {
@@ -638,6 +658,14 @@ mod tests {
         let insn = InstructionId::from_index(3).unwrap();
         plan.invoke_lowerings.insert(insn, layout_choice::InvokeLowering::Direct);
         assert!(plan.invoke_lowerings.contains_key(&insn));
+        let function = ItemInstanceId::from_index(0).unwrap();
+        let other_function = ItemInstanceId::from_index(1).unwrap();
+        let value = MirValueId::from_index(0).unwrap();
+        plan.value_reps.insert(ValueIdentity::new(function, value), ValueRepresentation::Specialized);
+        plan.value_reps.insert(ValueIdentity::new(other_function, value), ValueRepresentation::Reified);
+        assert!(plan.value_reps.contains_key(&ValueIdentity::new(function, value)));
+        assert!(plan.value_reps.contains_key(&ValueIdentity::new(other_function, value)));
+        assert_eq!(plan.value_reps.len(), 2);
     }
 
     #[test]

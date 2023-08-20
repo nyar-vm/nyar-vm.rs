@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use nyar_types::{
     pipeline::RepresentationPlanStage,
     layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, ValueRepresentation},
-    CanonicalOperation, CanonicalProgram, StageResult,
+    CanonicalOperation, CanonicalProgram, StageResult, ValueIdentity,
 };
 
 use super::diagnostics::fail_stage;
@@ -31,7 +31,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
         let mut instruction_ids = BTreeSet::new();
         for function in program.mir.functions.values() {
             for value in function.value_types.keys() {
-                plan.value_reps.insert(*value, value_representation(function, *value));
+                plan.value_reps.insert(ValueIdentity::new(function.instance, *value), value_representation(function, *value));
             }
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
