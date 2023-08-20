@@ -10,7 +10,7 @@ pub const IDENTITY_SCHEMA_VERSION: u32 = 1;
 pub const MIR_CONTRACT_VERSION: u32 = 3;
 
 /// RepresentationPlan / layout 侧表合同版本。
-pub const LAYOUT_PLAN_VERSION: u32 = 1;
+pub const LAYOUT_PLAN_VERSION: u32 = 2;
 
 /// 将四元组格式化为 cache / provenance 指纹片段。
 pub fn contract_version_fingerprint() -> String {

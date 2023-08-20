@@ -84,4 +84,35 @@ mod tests {
         let plan = CanonicalRepresentationPlanner.plan(&program).expect("空 canonical 程序是合法成功值");
         assert!(plan.invoke_lowerings.is_empty());
     }
+
+    #[test]
+    fn source_function_values_keep_their_owners_through_representation_planning() {
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_build_output(
+                "micro boolean_identity(value: bool) -> bool { return value } \
+                 micro integer_identity(value: i32) -> i32 { return value }",
+            )
+            .expect("源码必须完成前端分析");
+        let program = output.canonical_program().expect("源码必须产生有效 CanonicalProgram");
+        let plan = CanonicalRepresentationPlanner.plan(&program).expect("完整语义合同必须完成表示规划");
+        let functions = program.mir.functions.values().collect::<Vec<_>>();
+        assert_eq!(functions.len(), 2);
+        let first_value = functions[0].parameters[0].0;
+        let second_value = functions[1].parameters[0].0;
+        assert_eq!(first_value, second_value);
+        assert_ne!(functions[0].parameters[0].1, functions[1].parameters[0].1);
+        let expected_values = functions.iter().map(|function| function.value_types.len()).sum::<usize>();
+        assert_eq!(plan.value_reps.len(), expected_values);
+        for function in &functions {
+            for value in function.value_types.keys() {
+                assert!(plan.value_reps.contains_key(&ValueIdentity::new(function.instance, *value)));
+            }
+        }
+
+        let mut invalid = program.clone();
+        invalid.mir.functions.get_mut(&functions[1].instance).unwrap().value_types.remove(&second_value);
+        let error = CanonicalRepresentationPlanner.plan(&invalid).expect_err("缺类型必须在表示规划前失败");
+        assert_eq!(error.records[0].code, "PLAN001");
+        assert_eq!(error.records[0].stage, nyar_types::CompileStage::ValidateMir);
+    }
 }
