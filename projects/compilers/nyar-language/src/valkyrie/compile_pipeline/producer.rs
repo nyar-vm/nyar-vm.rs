@@ -184,7 +184,7 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
 
 fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-    let parameters = function.values.iter().filter_map(|value| match value.origin { MirValueOrigin::Parameter { index, .. } => Some((index, value.id)), _ => None }).map(|(index, value)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, &function.param_types[index])?))).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
+    let parameters = canonical_entry_parameters(function, ids)?;
     let blocks = function.blocks.iter().map(|block| {
         let id = CanonicalBlockId(block.id.0);
         let parameters = if block.id == function.entry {
@@ -201,6 +201,29 @@ fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BT
         Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     Ok(CanonicalFunction { instance, parameters, return_type: type_id(ids, &function.return_type)?, value_types, entry: CanonicalBlockId(function.entry.0), blocks })
+}
+
+fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<Vec<(MirValueId, TypeId)>, StructuredDiagnosticSet> {
+    let invalid = || error_without_module("CAN032", format!("函数 `{}` 的声明参数、SSA 参数来源与入口块参数不一致", function.symbol));
+    let entry = function.blocks.iter().find(|block| block.id == function.entry).ok_or_else(invalid)?;
+    let mut origins = BTreeMap::new();
+    for value in &function.values {
+        if let MirValueOrigin::Parameter { index, .. } = value.origin {
+            if function.param_types.get(index).is_none() || origins.insert(index, value.id).is_some() {
+                return Err(invalid());
+            }
+        }
+    }
+    if origins.len() != function.param_types.len() || entry.parameters.len() != function.param_types.len() {
+        return Err(invalid());
+    }
+    function.param_types.iter().enumerate().map(|(index, ty)| {
+        let value = origins.get(&index).ok_or_else(invalid)?;
+        if entry.parameters.get(index) != Some(value) || function.value_types.get(value) != Some(ty) {
+            return Err(invalid());
+        }
+        Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))
+    }).collect()
 }
 
 fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
@@ -326,6 +349,31 @@ mod tests {
         assert_eq!(program.linked.item_instances.len(), 1);
         assert_eq!(program.mir.functions.len(), 1);
         assert!(program.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
+    }
+
+    #[test]
+    fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_build_output("micro select(value: bool, other: i32) -> bool { return value }")
+            .expect("源码必须完成前端分析");
+        let module = output.semantic_mir();
+        canonical_program_from_semantic_mir(module).expect("合法入口必须产生 CanonicalProgram");
+
+        let mut missing = module.clone();
+        missing.functions[0].blocks[0].parameters.pop();
+        let mut reordered = module.clone();
+        reordered.functions[0].blocks[0].parameters.swap(0, 1);
+        let mut invalid_origin = module.clone();
+        invalid_origin.functions[0].values[0].origin = MirValueOrigin::Parameter { index: usize::MAX, name: "value".into() };
+        let mut duplicate_origin = module.clone();
+        duplicate_origin.functions[0].values.push(module.functions[0].values[0].clone());
+        let mut wrong_type = module.clone();
+        let value = wrong_type.functions[0].blocks[0].parameters[0];
+        wrong_type.functions[0].value_types.insert(value, ValkyrieType::Unit);
+        for invalid in [missing, reordered, invalid_origin, duplicate_origin, wrong_type] {
+            let error = canonical_program_from_semantic_mir(&invalid).expect_err("不一致入口不得通过删除参数修复");
+            assert_eq!(error.records[0].code, "CAN032");
+        }
     }
 
     #[test]
