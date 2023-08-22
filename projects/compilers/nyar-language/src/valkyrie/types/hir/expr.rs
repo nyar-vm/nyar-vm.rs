@@ -116,6 +116,8 @@ pub struct HirResolvedCall {
     /// Formal parameter types from overload selection (HIR only; must not be re-copied onto Semantic MIR Call).
     #[cfg_attr(feature = "serde", serde(default))]
     pub parameter_types: Vec<ValkyrieType>,
+    /// 声明签名是否以 `self` 参数开头；没有 `self` 就是静态调用。
+    pub has_receiver: bool,
     /// Payload type after peeling nullable `T?` extractor returns.
     #[cfg_attr(feature = "serde", serde(default))]
     pub extractor_payload_type: Option<ValkyrieType>,

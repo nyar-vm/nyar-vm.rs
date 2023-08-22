@@ -1119,6 +1119,7 @@ fn try_resolve_call(
                 domain: HirCallableDomain::Function,
                 return_type: func.return_type.clone(),
                 parameter_types: func.params.clone(),
+                has_receiver: false,
                 extractor_payload_type: None,
             });
         }
@@ -1135,6 +1136,7 @@ fn try_resolve_call(
                 domain: HirCallableDomain::Function,
                 return_type: ValkyrieType::Named(Identifier::new("Never")),
                 parameter_types: args.iter().map(|_| ValkyrieType::AutoType).collect(),
+                has_receiver: false,
                 extractor_payload_type: None,
             });
         }
@@ -1144,6 +1146,7 @@ fn try_resolve_call(
                 domain: HirCallableDomain::Function,
                 return_type: ValkyrieType::Utf8,
                 parameter_types: args.iter().map(|_| ValkyrieType::AutoType).collect(),
+                has_receiver: false,
                 extractor_payload_type: None,
             });
         }
@@ -1262,6 +1265,7 @@ fn try_resolve_call(
                 domain: HirCallableDomain::Function,
                 return_type,
                 parameter_types,
+                has_receiver: false,
                 extractor_payload_type: None,
             });
         }
@@ -1310,6 +1314,7 @@ fn try_resolve_call(
         },
         return_type,
         parameter_types: resolved.signature.params,
+        has_receiver: candidate_has_receiver_parameter(matched),
         extractor_payload_type: None,
     })
 }
@@ -1339,6 +1344,7 @@ fn primitive_operator_contract(
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
             parameter_types: vec![ValkyrieType::Boolean],
+            has_receiver: false,
             extractor_payload_type: None,
         });
     }
@@ -1352,6 +1358,7 @@ fn primitive_operator_contract(
             domain: HirCallableDomain::Operator,
             return_type: operand.clone(),
             parameter_types: vec![operand],
+            has_receiver: false,
             extractor_payload_type: None,
         });
     }
@@ -1384,6 +1391,7 @@ fn primitive_operator_contract(
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
             parameter_types: vec![left, right],
+            has_receiver: false,
             extractor_payload_type: None,
         });
     }
@@ -1405,6 +1413,7 @@ fn primitive_operator_contract(
         domain: HirCallableDomain::Operator,
         return_type,
         parameter_types: vec![left, right],
+        has_receiver: false,
         extractor_payload_type: None,
     })
 }
@@ -1479,6 +1488,7 @@ fn try_resolve_qualified_free_function(
         domain,
         return_type: resolved.signature.return_type,
         parameter_types: resolved.signature.params,
+        has_receiver: false,
         extractor_payload_type: None,
     })
 }
@@ -1506,6 +1516,7 @@ fn try_resolve_instance_method(
             domain: HirCallableDomain::Function,
             return_type,
             parameter_types,
+            has_receiver: true,
             extractor_payload_type: None,
         });
     }
@@ -1554,6 +1565,7 @@ fn try_resolve_instance_method(
         domain: HirCallableDomain::Function,
         return_type: resolved.signature.return_type,
         parameter_types: resolved.signature.params,
+        has_receiver: candidate_has_receiver_parameter(matched),
         extractor_payload_type: None,
     })
 }
@@ -1750,6 +1762,7 @@ fn try_resolve_type_static_method(
         },
         return_type: substitute_self_type(&resolved.signature.return_type, Some(type_owner)),
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
+        has_receiver: candidate_has_receiver_parameter(matched),
         extractor_payload_type: None,
     })
 }
@@ -1861,6 +1874,7 @@ fn try_resolve_singleton_method(
         domain: HirCallableDomain::Function,
         return_type,
         parameter_types,
+        has_receiver: candidate_has_receiver_parameter(original),
         extractor_payload_type: None,
     })
 }
@@ -2013,6 +2027,7 @@ fn try_resolve_constructor(
             domain: HirCallableDomain::Constructor,
             return_type: candidate.signature.return_type.clone(),
             parameter_types: candidate.signature.params.clone(),
+            has_receiver: false,
             extractor_payload_type: None,
         });
     }
@@ -2061,6 +2076,7 @@ fn try_resolve_constructor(
                 domain: HirCallableDomain::Constructor,
                 return_type: fallback.signature.return_type.clone(),
                 parameter_types: fallback.signature.params.clone(),
+                has_receiver: false,
                 extractor_payload_type: None,
             });
         }
@@ -2078,6 +2094,7 @@ fn try_resolve_constructor(
         domain: HirCallableDomain::Constructor,
         return_type,
         parameter_types: resolved.signature.params,
+        has_receiver: false,
         extractor_payload_type: None,
     })
 }
@@ -2266,6 +2283,7 @@ fn try_resolve_pattern_extractor(
         domain: HirCallableDomain::Extractor,
         return_type,
         parameter_types,
+        has_receiver: candidate_has_receiver_parameter(matched),
         extractor_payload_type: Some(payload_type),
     })
 }
@@ -2883,6 +2901,7 @@ fn synthesize_builtin_result_extractor(canonical_callee: &NamePath, actual_type:
         domain: HirCallableDomain::Extractor,
         return_type: actual_type.clone(),
         parameter_types: vec![actual_type.clone()],
+        has_receiver: true,
         extractor_payload_type: payload,
     })
 }
@@ -3236,8 +3255,10 @@ micro main(counter: Counter) {
         assert_eq!(resolved.len(), 2);
         assert_eq!(resolved[0].symbol.to_string(), "Counter.read");
         assert_eq!(resolved[0].parameter_types, vec![ValkyrieType::Named(Identifier::new("Counter"))]);
+        assert!(resolved[0].has_receiver);
         assert_eq!(resolved[1].symbol.to_string(), "Counter.make");
         assert_eq!(resolved[1].parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
+        assert!(!resolved[1].has_receiver);
     }
 
     #[test]

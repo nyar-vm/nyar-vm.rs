@@ -815,7 +815,9 @@ impl MirBuilder {
                     self.value_types.insert(value, tuple_type);
                     return MirOperand::Value(value);
                 }
-                if let Some((receiver_operand, method_name)) = self.extract_method_call(callee) {
+                if let Some((receiver_operand, method_name)) = self.extract_method_call(callee)
+                    .filter(|_| resolved.as_ref().is_some_and(|call| call.has_receiver))
+                {
                     let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
                     // Skip receiver slot (index 0) when binding hints for explicit args.
                     let mut arguments = args
