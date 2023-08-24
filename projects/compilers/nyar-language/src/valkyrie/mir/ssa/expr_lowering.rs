@@ -113,28 +113,16 @@ impl MirBuilder {
             })
     }
 
-    /// Option 结构操作入口：优先 `Extractor` / `extractor_payload_type` 合同；
-    /// 无合同时才回退迁移期表面名（不得按类型名猜）。
-    fn is_option_unwrap_call(resolved: Option<&HirResolvedCall>, surface_name: Option<&str>) -> bool {
-        if let Some(call) = resolved {
-            if matches!(call.domain, HirCallableDomain::Extractor) || call.extractor_payload_type.is_some() {
-                return true;
-            }
-            return call.symbol.parts().last().is_some_and(|part| part.as_str() == "unwrap");
-        }
-        surface_name == Some("unwrap")
+    /// Option 结构操作只接受 HIR 已解析的 extractor 合同。
+    fn is_option_unwrap_call(resolved: Option<&HirResolvedCall>) -> bool {
+        resolved.is_some_and(|call| matches!(call.domain, HirCallableDomain::Extractor) || call.extractor_payload_type.is_some())
     }
 
-    fn is_option_is_some_call(resolved: Option<&HirResolvedCall>, surface_name: Option<&str>) -> bool {
-        if let Some(call) = resolved {
-            if matches!(call.return_type, ValkyrieType::Boolean)
+    fn is_option_is_some_call(resolved: Option<&HirResolvedCall>) -> bool {
+        resolved.is_some_and(|call| {
+            matches!(call.return_type, ValkyrieType::Boolean)
                 && call.parameter_types.first().is_some_and(|ty| Self::option_sum_name(ty).is_some())
-            {
-                return true;
-            }
-            return call.symbol.parts().last().is_some_and(|part| part.as_str() == "is_some");
-        }
-        surface_name == Some("is_some")
+        })
     }
 
     fn try_lower_option_unwrap(
@@ -742,18 +730,12 @@ impl MirBuilder {
                 }
                 // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
                 // 先要求 Option 形接收者，再按 Extractor 合同（或迁移显示名）进入结构操作。
-                let unwrap_surface = match &callee.kind {
-                    HirExprKind::Variable(id) => Some(id.name.as_str()),
-                    HirExprKind::Path(path) => path.parts().last().map(|part| part.as_str()),
-                    _ => None,
-                };
-                if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref(), unwrap_surface) {
+                if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref()) {
                     let receiver_operand = self.lower_expr_to_operand(&args[0].value);
                     let payload_hint = resolved
                         .as_ref()
                         .map(|call| call.return_type.clone())
-                        .or_else(|| expected_type.cloned())
-                        .or_else(|| Some(ValkyrieType::AutoType));
+                        .or_else(|| expected_type.cloned());
                     let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                         .filter(|ty| Self::option_sum_name(ty).is_some())
                         .or_else(|| {
@@ -766,16 +748,6 @@ impl MirBuilder {
                         });
                     if let Some(operand) =
                         self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
-                    {
-                        return operand;
-                    }
-                    // 合同未解析时仍不得发出 Unit Call；强制 Option<Auto> 走 SumPayloadGet。
-                    let forced = ValkyrieType::Apply(
-                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                        vec![ValkyrieType::AutoType],
-                    );
-                    if let Some(operand) =
-                        self.try_lower_option_unwrap(receiver_operand, Some(&forced), Some(&ValkyrieType::AutoType))
                     {
                         return operand;
                     }
@@ -815,7 +787,7 @@ impl MirBuilder {
                     self.value_types.insert(value, tuple_type);
                     return MirOperand::Value(value);
                 }
-                if let Some((receiver_operand, method_name)) = self.extract_method_call(callee)
+                if let Some((receiver_operand, _method_name)) = self.extract_method_call(callee)
                     .filter(|_| resolved.as_ref().is_some_and(|call| call.has_receiver))
                 {
                     let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
@@ -829,19 +801,18 @@ impl MirBuilder {
                         })
                         .collect::<Vec<_>>();
                     arguments.insert(0, receiver_operand.clone());
-                    if args.is_empty() && Self::is_option_is_some_call(resolved.as_ref(), Some(method_name.as_str())) {
+                    if args.is_empty() && Self::is_option_is_some_call(resolved.as_ref()) {
                         if Self::option_shaped_type(&receiver_operand, &self.value_types, None, None).is_some() {
                             if let Some(operand) = self.try_lower_option_is_some(receiver_operand.clone()) {
                                 return operand;
                             }
                         }
                     }
-                    if args.is_empty() && Self::is_option_unwrap_call(resolved.as_ref(), Some(method_name.as_str())) {
+                    if args.is_empty() && Self::is_option_unwrap_call(resolved.as_ref()) {
                         let payload_hint = resolved
                             .as_ref()
                             .map(|call| call.return_type.clone())
-                            .or_else(|| expected_type.cloned())
-                            .or_else(|| Some(ValkyrieType::AutoType));
+                            .or_else(|| expected_type.cloned());
                         // 仅采纳已是 Option 形的接收者类型；非 Option 推断不得挡住 payload 回退。
                         let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                             .filter(|ty| Self::option_sum_name(ty).is_some())
@@ -856,17 +827,6 @@ impl MirBuilder {
                         if let Some(operand) =
                             self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
                         {
-                            return operand;
-                        }
-                        let forced = ValkyrieType::Apply(
-                            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                            vec![ValkyrieType::AutoType],
-                        );
-                        if let Some(operand) = self.try_lower_option_unwrap(
-                            receiver_operand.clone(),
-                            Some(&forced),
-                            Some(&ValkyrieType::AutoType),
-                        ) {
                             return operand;
                         }
                     }
@@ -922,35 +882,28 @@ impl MirBuilder {
                             .collect::<Vec<_>>();
                         let return_type = resolved
                             .as_ref()
-                            .map(|call| call.return_type.clone())
-                            .or_else(|| self.return_types.get(field.as_str()).cloned())
-                            .or_else(|| expected_type.cloned())
-                            .unwrap_or(ValkyrieType::Unit);
+                            .expect("函数类型字段调用必须有已解析调用合同")
+                            .return_type
+                            .clone();
                         // `unit` 不得占用物理 value 槽（BPHYS001）。
                         return self.push_call_returning(MirOperand::Value(callee_value), arguments, return_type);
                     }
 
                     // `obj.field.method()` where `obj` is not yet in bindings (e.g. nested
                     // temporaries) still must lower as a receiver Call, not a dotted Symbol.
+                    let has_receiver = resolved.as_ref().is_some_and(|call| call.has_receiver);
                     let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
                     let mut arguments = args
                         .iter()
                         .enumerate()
                         .map(|(index, arg)| {
-                            let hint = param_types.and_then(|params| params.get(index + 1));
+                            let hint = param_types.and_then(|params| params.get(index + usize::from(has_receiver)));
                             self.lower_expr_to_operand_with_hint(&arg.value, hint)
                         })
                         .collect::<Vec<_>>();
-                    arguments.insert(0, receiver_operand.clone());
-                    let parameter_types = resolved.as_ref().map(|call| {
-                        let mut types = call.parameter_types.clone();
-                        if types.len() + 1 == arguments.len() {
-                            if let Some(receiver_type) = infer_builder_operand_type(&receiver_operand, &self.value_types) {
-                                types.insert(0, receiver_type);
-                            }
-                        }
-                        types
-                    });
+                    if has_receiver {
+                        arguments.insert(0, receiver_operand.clone());
+                    }
                     let callee = MirOperand::Symbol(
                         resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract").symbol.clone(),
                     );
@@ -968,10 +921,9 @@ impl MirBuilder {
                     }
                     let return_type = resolved
                         .as_ref()
-                        .map(|call| call.return_type.clone())
-                        .or_else(|| self.return_types.get(field.as_str()).cloned())
-                        .or_else(|| expected_type.cloned())
-                        .unwrap_or(ValkyrieType::Unit);
+                        .expect("字段调用必须有已解析调用合同")
+                        .return_type
+                        .clone();
                     // `unit` 不得占用物理 value 槽（BPHYS001）。
                     return self.push_call_returning(callee, arguments, return_type);
                 }
@@ -1041,7 +993,7 @@ impl MirBuilder {
                 if arguments.len() == 1 {
                     if let MirOperand::Symbol(path) = &callee {
                         let surface = path.parts().last().map(|part| part.as_str());
-                        if Self::is_option_is_some_call(resolved.as_ref(), surface)
+                        if Self::is_option_is_some_call(resolved.as_ref())
                             && Self::option_shaped_type(&arguments[0], &self.value_types, None, None).is_some()
                         {
                             if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone()) {
