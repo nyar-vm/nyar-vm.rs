@@ -17,7 +17,7 @@ use super::{
     },
     callee_name_matches,
     expr_helpers::{
-        is_array_shaped_valkyrie_type, known_instance_method_return_type, named_type_name, peel_generic_apply,
+        is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
         qualify_instance_method_symbol, receiver_method_owner_name, reject_text_operator_for_numeric_args,
     },
     infer_builder_operand_type, lower_callee_operand,
@@ -725,9 +725,6 @@ impl MirBuilder {
             }
             HirExprKind::Call { callee, args, resolved } => {
                 let (explicit_generic_arguments, callee) = peel_generic_apply(callee.as_ref());
-                if let Some(result) = self.try_lower_singleton_static_call(callee, args) {
-                    return result;
-                }
                 // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
                 // 先要求 Option 形接收者，再按 Extractor 合同（或迁移显示名）进入结构操作。
                 if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref()) {

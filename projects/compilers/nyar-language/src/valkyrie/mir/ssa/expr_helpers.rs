@@ -78,46 +78,6 @@ impl MirBuilder {
         MirOperand::Value(value)
     }
 
-    pub(super) fn try_lower_singleton_static_call(
-        &mut self,
-        callee: &HirExpr,
-        args: &[crate::types::hir::HirCallArgument],
-    ) -> Option<MirOperand> {
-        if let Some(result) = self.try_lower_singleton_receiver_call(callee, args) {
-            return Some(result);
-        }
-        let HirExprKind::Path(path) = &callee.kind
-        else {
-            return None;
-        };
-        if path.parts().len() < 2 {
-            return None;
-        }
-        let singleton_name = path.parts()[0].as_str();
-        if !self.singleton_accessors.contains_key(singleton_name) {
-            return None;
-        }
-        let method_name = path.parts()[1].clone();
-        if let Some(accessor) = self.singleton_accessors.get(singleton_name) {
-            if method_name.as_str() == accessor.as_str() {
-                return Some(self.emit_singleton_instance_operand(singleton_name));
-            }
-        }
-        let instance = self.emit_singleton_instance_operand(singleton_name);
-        let mut arguments = args.iter().map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
-        arguments.insert(0, instance);
-        let parameter_types =
-            arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        let value = self.push_call(
-            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
-            arguments,
-        );
-        if let Some(return_type) = self.return_types.get(method_name.as_str()).cloned() {
-            self.value_types.insert(value, return_type);
-        }
-        Some(MirOperand::Value(value))
-    }
-
     pub(super) fn struct_construct_result_type(
         &self,
         name: &crate::types::Identifier,
@@ -145,42 +105,6 @@ impl MirBuilder {
             }
         }
         name.to_string()
-    }
-
-    pub(super) fn try_lower_singleton_receiver_call(
-        &mut self,
-        callee: &HirExpr,
-        args: &[crate::types::hir::HirCallArgument],
-    ) -> Option<MirOperand> {
-        let method_name = match &callee.kind {
-            HirExprKind::Variable(identifier) => identifier.name.clone(),
-            HirExprKind::Path(path) if path.parts().len() == 1 => path.parts()[0].clone(),
-            _ => return None,
-        };
-        let receiver = args.first()?;
-        let singleton_name = match &receiver.value.kind {
-            HirExprKind::Variable(identifier) if self.singleton_accessors.contains_key(identifier.name.as_str()) => identifier.name.as_str(),
-            HirExprKind::Path(path) if path.parts().len() == 1 && self.singleton_accessors.contains_key(path.parts()[0].as_str()) => {
-                path.parts()[0].as_str()
-            }
-            _ => return None,
-        };
-        if self.singleton_accessors.get(singleton_name).is_some_and(|accessor| accessor.as_str() == method_name.as_str()) {
-            return Some(self.emit_singleton_instance_operand(singleton_name));
-        }
-        let instance = self.emit_singleton_instance_operand(singleton_name);
-        let mut arguments = args.iter().skip(1).map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
-        arguments.insert(0, instance);
-        let parameter_types =
-            arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        let value = self.push_call(
-            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), method_name.clone()])),
-            arguments,
-        );
-        if let Some(return_type) = self.return_types.get(method_name.as_str()).cloned() {
-            self.value_types.insert(value, return_type);
-        }
-        Some(MirOperand::Value(value))
     }
 
     pub(super) fn lower_singleton_field_object(&mut self, object: &HirExpr) -> Option<MirOperand> {
@@ -261,40 +185,6 @@ pub(super) fn option_owner_name(ty: &ValkyrieType) -> Option<&str> {
         ValkyrieType::Nullable(_) => Some("Option"),
         ValkyrieType::Named(name) if name.as_str() == "Option" => Some("Option"),
         ValkyrieType::Apply(base, _) if named_type_name(base) == Some("Option") => Some("Option"),
-        _ => None,
-    }
-}
-
-/// Fallback return types for std text methods when HIR/`return_types` omit cross-package contracts.
-pub(super) fn known_instance_method_return_type(owner: &str, method: &str) -> Option<ValkyrieType> {
-    use crate::types::Identifier;
-    match (owner, method) {
-        ("Utf8Text", "length") | ("Utf16Text", "length") | ("Utf8Text", "byte_length") => {
-            Some(ValkyrieType::Integer32 { signed: true })
-        }
-        ("Utf8Text", "count_char") => Some(ValkyrieType::Named(Identifier::new("usize"))),
-        ("Utf8Text", "char_at") | ("Utf16Text", "char_at") => Some(ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-            vec![ValkyrieType::Character],
-        )),
-        // 集合表面：HIR 跨包合同未解析时，避免 Call 结果缺类型触发 SMIR001。
-        // ArrayList.push 是 mutator → unit；Array 上的 functional `push` 返回 Array（见 std Array.v）。
-        ("ArrayList", "push") => Some(ValkyrieType::Unit),
-        ("ArrayList", "length") | ("Array", "length") | ("HashMap", "length") => {
-            Some(ValkyrieType::Named(Identifier::new("usize")))
-        }
-        ("HashMap", "contains_key") | ("ArrayList", "contains") => Some(ValkyrieType::Boolean),
-        ("HashMap", "get") | ("ArrayList", "get") | ("Array", "get") => Some(ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-            vec![ValkyrieType::AutoType],
-        )),
-        ("HashMap", "insert") | ("HashMap", "remove") => Some(ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-            vec![ValkyrieType::AutoType],
-        )),
-        // unwrap 绝不能落到 Unit Call（空 results → SumPayloadGet SMIR006；
-        // 且 `push(x.unwrap())` 会把 Constant::Unit 推进 ArrayList → BPHYS001）。
-        ("Option", "unwrap") | ("Nullable", "unwrap") | ("", "unwrap") => Some(ValkyrieType::AutoType),
         _ => None,
     }
 }
