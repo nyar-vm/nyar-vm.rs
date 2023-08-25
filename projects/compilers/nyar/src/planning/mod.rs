@@ -32,6 +32,15 @@ use crate::{
 /// 规划阶段失败。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanningError {
+    /// Canonical 语义程序或表示计划未能建立。
+    SemanticContract {
+        /// 当前模块。
+        module: String,
+        /// 失败阶段。
+        stage: nyar_types::CompileStage,
+        /// 结构化诊断摘要。
+        detail: String,
+    },
     /// 没有找到可解释当前片段的后端解释器。
     MissingBackendInterpreter {
         /// 当前片段。

@@ -16,6 +16,8 @@ use nyar::{
     ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
     ProjectionPolicy, QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, suspend_consumption_model_for_lane,
 };
+use crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner;
+use nyar_types::pipeline::RepresentationPlanStage;
 
 use crate::{
     FrontendBuildOutput, FrontendNeutralPlan, MirLowerer, NyarPlanningContract, collect_singleton_instance_plans, compute_nominal_layouts,
@@ -34,6 +36,16 @@ pub fn plan_artifacts_from_build_output(
     backend_registry: BackendRegistry,
     clr_suspend_strategy: ClrSuspendStrategy,
 ) -> Result<ArtifactPartitionPlan, PlanningError> {
+    let canonical = build_output.canonical_program().map_err(|error| PlanningError::SemanticContract {
+        module: build_output.neutral_plan().module_name.to_string(),
+        stage: nyar_types::CompileStage::ValidateMir,
+        detail: format!("CanonicalProgram 建立失败: {error:?}"),
+    })?;
+    CanonicalRepresentationPlanner.plan(&canonical).map_err(|error| PlanningError::SemanticContract {
+        module: build_output.neutral_plan().module_name.to_string(),
+        stage: nyar_types::CompileStage::RepresentationPlan,
+        detail: format!("RepresentationPlan 建立失败: {error:?}"),
+    })?;
     build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
 }
 
