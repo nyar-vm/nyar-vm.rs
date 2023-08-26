@@ -34,6 +34,8 @@ mod value_semantics;
 #[cfg(test)]
 mod singleton_tests;
 #[cfg(test)]
+mod call_type_contract_tests;
+#[cfg(test)]
 mod workload_phase_tests;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
@@ -613,8 +615,6 @@ pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
 impl MirLowerer {
     /// Lowers HIR to semantic MIR (PerformEffect intact, no state-machine rewrite).
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
-        let mut return_types = collect_module_return_types(module);
-        return_types.extend(crate::valkyrie::mir::collect_singleton_return_types(module));
         let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
         crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
         merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
@@ -635,7 +635,6 @@ impl MirLowerer {
             functions.push(lower_function_semantic(
                 module,
                 function,
-                &return_types,
                 &struct_field_layouts,
                 &struct_parent_index,
                 &struct_is_value_type,
@@ -647,7 +646,6 @@ impl MirLowerer {
         }
         functions.extend(lower_singleton_method_functions(
             module,
-            &return_types,
             &struct_field_layouts,
             &struct_parent_index,
             &struct_is_value_type,
@@ -657,7 +655,6 @@ impl MirLowerer {
         ));
         functions.extend(lower_impl_method_functions(
             module,
-            &return_types,
             &struct_field_layouts,
             &struct_parent_index,
             &struct_is_value_type,
@@ -680,8 +677,6 @@ impl MirLowerer {
     }
 
     pub fn lower_module(module: &HirModule) -> MirModule {
-        let mut return_types = collect_module_return_types(module);
-        return_types.extend(crate::valkyrie::mir::collect_singleton_return_types(module));
         let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
         crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
         merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
@@ -702,7 +697,6 @@ impl MirLowerer {
             functions.push(lower_function(
                 module,
                 function,
-                &return_types,
                 &struct_field_layouts,
                 &struct_parent_index,
                 &struct_is_value_type,
@@ -714,7 +708,6 @@ impl MirLowerer {
         }
         functions.extend(lower_singleton_method_functions(
             module,
-            &return_types,
             &struct_field_layouts,
             &struct_parent_index,
             &struct_is_value_type,
@@ -724,7 +717,6 @@ impl MirLowerer {
         ));
         functions.extend(lower_impl_method_functions(
             module,
-            &return_types,
             &struct_field_layouts,
             &struct_parent_index,
             &struct_is_value_type,
@@ -786,7 +778,6 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
 
 fn lower_singleton_method_functions(
     module: &HirModule,
-    return_types: &BTreeMap<String, ValkyrieType>,
     struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
     struct_parent_index: &BTreeMap<String, Vec<String>>,
     struct_is_value_type: &BTreeMap<String, bool>,
@@ -800,7 +791,6 @@ fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -816,7 +806,6 @@ fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 constructor,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -832,7 +821,6 @@ fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 finalizer,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -850,7 +838,6 @@ fn lower_singleton_method_functions(
 
 fn lower_impl_method_functions(
     module: &HirModule,
-    return_types: &BTreeMap<String, ValkyrieType>,
     struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
     struct_parent_index: &BTreeMap<String, Vec<String>>,
     struct_is_value_type: &BTreeMap<String, bool>,
@@ -868,7 +855,6 @@ fn lower_impl_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -886,7 +872,6 @@ fn lower_impl_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -904,7 +889,6 @@ fn lower_impl_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                return_types,
                 struct_field_layouts,
                 struct_parent_index,
                 struct_is_value_type,
@@ -925,34 +909,6 @@ fn lower_struct(hir_struct: &crate::types::hir::HirStruct) -> MirStruct {
     let fields = hir_struct.fields.iter().map(|field| MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
     MirStruct { name: hir_struct.name.to_string(), namespace, fields, is_value_type: hir_struct.is_value_type }
-}
-
-fn collect_module_return_types(module: &HirModule) -> BTreeMap<String, ValkyrieType> {
-    let mut map = module
-        .functions
-        .iter()
-        .map(|function| (stable_hir_function_symbol(&module.name, function), function.return_type.clone()))
-        .collect::<BTreeMap<_, _>>();
-    for impl_block in &module.impls {
-        let Some(type_name) = nominal_type_name(&impl_block.target)
-        else {
-            continue;
-        };
-        for method in &impl_block.methods {
-            let return_ty = resolve_self_type_with_owner(&method.return_type, Some(&impl_block.target));
-            map.insert(format!("{type_name}.{}", method.name), return_ty.clone());
-            map.insert(method.name.to_string(), return_ty);
-        }
-    }
-    for item in &module.structs {
-        let owner = ValkyrieType::Named(item.name.clone());
-        for method in &item.methods {
-            let return_ty = resolve_self_type_with_owner(&method.return_type, Some(&owner));
-            map.insert(format!("{}.{}", item.name, method.name), return_ty.clone());
-            map.insert(method.name.to_string(), return_ty);
-        }
-    }
-    map
 }
 
 /// Replace `Self` / `Named("Self")` with the imply/struct owner type.
@@ -1027,7 +983,6 @@ fn merge_imported_struct_is_value_type(module: &HirModule, is_value_type: &mut B
 fn lower_function(
     module: &HirModule,
     function: &HirFunction,
-    return_types: &BTreeMap<String, ValkyrieType>,
     struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
     struct_parent_index: &BTreeMap<String, Vec<String>>,
     struct_is_value_type: &BTreeMap<String, bool>,
@@ -1039,7 +994,6 @@ fn lower_function(
     let mut function = lower_function_semantic(
         module,
         function,
-        return_types,
         struct_field_layouts,
         struct_parent_index,
         struct_is_value_type,
@@ -1054,7 +1008,6 @@ fn lower_function(
 fn lower_function_semantic(
     module: &HirModule,
     function: &HirFunction,
-    return_types: &BTreeMap<String, ValkyrieType>,
     struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
     struct_parent_index: &BTreeMap<String, Vec<String>>,
     struct_is_value_type: &BTreeMap<String, bool>,
@@ -1067,7 +1020,6 @@ fn lower_function_semantic(
     let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
-        return_types.clone(),
         struct_field_layouts.clone(),
         struct_parent_index.clone(),
         struct_is_value_type.clone(),
@@ -1185,7 +1137,6 @@ struct MirBuilder {
     case_chains: Vec<MirCaseChain>,
     bindings: BTreeMap<String, MirOperand>,
     value_types: BTreeMap<MirValueRef, ValkyrieType>,
-    return_types: BTreeMap<String, ValkyrieType>,
     struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
     struct_parent_index: BTreeMap<String, Vec<String>>,
     struct_is_value_type: BTreeMap<String, bool>,
@@ -1233,7 +1184,6 @@ struct MirBuilder {
 
 impl MirBuilder {
     fn new(
-        return_types: BTreeMap<String, ValkyrieType>,
         struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
         struct_parent_index: BTreeMap<String, Vec<String>>,
         struct_is_value_type: BTreeMap<String, bool>,
@@ -1262,7 +1212,6 @@ impl MirBuilder {
             case_chains: Vec::new(),
             bindings: BTreeMap::new(),
             value_types: BTreeMap::new(),
-            return_types,
             struct_field_layouts,
             struct_parent_index,
             struct_is_value_type,
@@ -1499,9 +1448,6 @@ impl MirBuilder {
         let parameter_types =
             arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
         let value = self.push_call(MirOperand::Symbol(NamePath::new(vec![Identifier::new(name)])), arguments);
-        if let Some(return_type) = self.return_types.get(name).cloned() {
-            self.value_types.insert(value, return_type);
-        }
         value
     }
 }

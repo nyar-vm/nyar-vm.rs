@@ -32,7 +32,6 @@ impl TestMirBuilder {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 BTreeMap::new(),
-                BTreeMap::new(),
                 AggregateLayoutPlan::default(),
                 BTreeMap::new(),
                 BTreeMap::new(),
@@ -145,7 +144,6 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     lower_function(
         &module,
         &function,
-        &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),

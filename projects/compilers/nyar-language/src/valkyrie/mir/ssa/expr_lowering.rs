@@ -1014,13 +1014,7 @@ impl MirBuilder {
                     .or_else(|| function_ty.map(|func| func.return_type))
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                     .or_else(|| match &callee {
-                        MirOperand::Symbol(path) => language_operator_call_return_type(path, &arguments, &self.value_types)
-                            .or_else(|| {
-                                self.return_types
-                                    .get(&path.to_string())
-                                    .cloned()
-                                    .or_else(|| path.parts().last().and_then(|name| self.return_types.get(name.as_str()).cloned()))
-                            }),
+                        MirOperand::Symbol(path) => language_operator_call_return_type(path, &arguments, &self.value_types),
                         _ => None,
                     })
                     .or_else(|| expected_type.cloned())
@@ -1228,7 +1222,6 @@ impl MirBuilder {
                 self.push_instruction(MirOperation::FieldGet { object: object_operand, field: field.clone() }, vec![value]);
                 if let Some(field_ty) = field_ty
                     .or_else(|| self.field_type_from_layout(layout_id, field.as_str()))
-                    .or_else(|| self.return_types.get(field.as_str()).cloned())
                 {
                     self.value_types.insert(value, field_ty);
                 }

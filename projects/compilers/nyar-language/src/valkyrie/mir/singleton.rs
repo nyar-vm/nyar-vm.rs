@@ -79,17 +79,6 @@ pub fn merge_singleton_field_layouts(
     }
 }
 
-/// Collect singleton method return types keyed by method name.
-pub fn collect_singleton_return_types(module: &HirModule) -> std::collections::BTreeMap<String, crate::types::hir::ValkyrieType> {
-    let mut types = std::collections::BTreeMap::new();
-    for singleton in &module.singletons {
-        for method in &singleton.methods {
-            types.insert(method.name.to_string(), method.return_type.clone());
-        }
-    }
-    types
-}
-
 fn plan_from_singleton(singleton: &HirSingleton) -> SingletonInstancePlan {
     let constructor_symbol = singleton.constructor.as_ref().map(|func| format!("{}.{}", singleton.name, func.name));
     let finalizer_symbol = singleton.finalizer.as_ref().map(|func| format!("{}.{}", singleton.name, func.name));
