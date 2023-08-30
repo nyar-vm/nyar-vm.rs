@@ -51,6 +51,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
                         }
                         CanonicalOperation::Copy { .. }
+                        | CanonicalOperation::AggregateCopy { .. }
                         | CanonicalOperation::LoadConstant { .. }
                         | CanonicalOperation::FieldGet { .. }
                         | CanonicalOperation::FieldSet { .. }

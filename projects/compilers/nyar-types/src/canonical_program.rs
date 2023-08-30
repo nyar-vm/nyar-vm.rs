@@ -271,6 +271,8 @@ pub enum CanonicalOperation {
     Invoke { callee: ItemInstanceId, arguments: Vec<MirValueId> },
     /// SSA 值复制。
     Copy { source: MirValueId },
+    /// 按已解析聚合类型复制值。
+    AggregateCopy { source: MirValueId, destination: MirValueId },
     /// 加载语言常量。
     LoadConstant { constant: CanonicalConstant },
     /// 构造名义聚合。
@@ -544,6 +546,17 @@ impl CanonicalSemanticMir {
                         arguments.clone()
                     }
                     CanonicalOperation::Copy { source } => vec![*source],
+                    CanonicalOperation::AggregateCopy { source, destination } => {
+                        let source_type = function.value_types.get(source);
+                        let destination_type = function.value_types.get(destination);
+                        if source_type.is_none() || source_type != destination_type {
+                            return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *destination, expected: source_type.copied().unwrap_or(function.return_type) });
+                        }
+                        if instruction.results.as_slice() != [*destination] {
+                            return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *destination });
+                        }
+                        vec![*source]
+                    }
                     CanonicalOperation::LoadConstant { .. } => Vec::new(),
                     CanonicalOperation::StructNew { nominal, fields } => {
                         let Some(nominal_record) = linked.nominal_instances.get(nominal) else {

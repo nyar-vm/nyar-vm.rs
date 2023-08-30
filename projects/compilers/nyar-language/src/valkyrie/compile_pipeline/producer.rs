@@ -231,6 +231,10 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
     match operation {
         MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: *symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?, arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
         MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
+        MirOperation::AggregateCopy { source, dest } => Ok(CanonicalOperation::AggregateCopy {
+            source: value(source)?,
+            destination: value(dest)?,
+        }),
         MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? }),
