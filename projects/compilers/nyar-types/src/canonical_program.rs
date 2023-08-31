@@ -88,8 +88,6 @@ pub struct LinkedSemanticProgram {
 /// Placeholder item instance row (filled by linker / adaptor selection).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemInstanceRecord {
-    /// 编译器已解析出的 callable 身份，仅用于导出与诊断映射。
-    pub identity: String,
     /// 已声明的 callable identity。
     pub declaration: ItemId,
     /// 完成泛型代入后的 substitution identity。
@@ -194,15 +192,6 @@ pub struct TypeRecord {
 impl LinkedSemanticProgram {
     /// 验证整个类型闭包，不限于当前函数引用到的行。
     pub fn validate_types(&self) -> Result<(), CanonicalMirError> {
-        let mut identities = BTreeMap::new();
-        for (instance, record) in &self.item_instances {
-            if record.identity.is_empty() {
-                return Err(CanonicalMirError::MissingCallableIdentity { function: *instance });
-            }
-            if identities.insert(record.identity.as_str(), *instance).is_some() {
-                return Err(CanonicalMirError::DuplicateCallableIdentity { function: *instance });
-            }
-        }
         for (owner, record) in &self.types {
             let references = match &record.kind {
                 CanonicalTypeKind::Primitive(primitive) => {
@@ -381,10 +370,6 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
-    /// callable 实例缺少 Compiler 解析出的身份。
-    MissingCallableIdentity { function: ItemInstanceId },
-    /// 多个 callable 实例错误共享同一身份。
-    DuplicateCallableIdentity { function: ItemInstanceId },
     /// 聚合实例身份未知。
     UnknownNominal { function: ItemInstanceId, nominal: NominalInstanceId },
     /// 外部导入记录与 callable 签名不一致。
@@ -775,7 +760,6 @@ mod tests {
         let ty = TypeId::from_index(0).unwrap();
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         linked.item_instances.insert(item, ItemInstanceRecord {
-            identity: "demo::main".into(),
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
             parameter_types: Vec::new(),
@@ -808,7 +792,6 @@ mod tests {
         let unknown = ItemInstanceId::from_index(1).unwrap();
         let ty = TypeId::from_index(0).unwrap();
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            identity: "demo::target".into(),
             declaration: ItemId::from_index(0).unwrap(),
             substitution: SubstitutionId::from_index(0).unwrap(),
             parameter_types: Vec::new(),
@@ -841,23 +824,6 @@ mod tests {
         assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
     }
 
-    #[test]
-    fn canonical_rejects_missing_callable_identity() {
-        let mut program = typed_call_program();
-        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().identity.clear();
-        assert!(matches!(program.validate(), Err(CanonicalMirError::MissingCallableIdentity { .. })));
-    }
-
-    #[test]
-    fn canonical_rejects_duplicate_callable_identity() {
-        let mut program = typed_call_program();
-        let caller = ItemInstanceId::from_index(0).unwrap();
-        let callee = ItemInstanceId::from_index(1).unwrap();
-        let identity = program.linked.item_instances.get(&caller).unwrap().identity.clone();
-        program.linked.item_instances.get_mut(&callee).unwrap().identity = identity;
-        assert!(matches!(program.validate(), Err(CanonicalMirError::DuplicateCallableIdentity { .. })));
-    }
-
     fn typed_call_program() -> CanonicalProgram {
         let caller = ItemInstanceId::from_index(0).unwrap();
         let callee = ItemInstanceId::from_index(1).unwrap();
@@ -868,7 +834,6 @@ mod tests {
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         for instance in [caller, callee] {
             linked.item_instances.insert(instance, ItemInstanceRecord {
-                identity: if instance == caller { "typed::caller".into() } else { "typed::callee".into() },
                 declaration: ItemId::from_index(instance.index()).unwrap(),
                 substitution: SubstitutionId::from_index(0).unwrap(),
                 parameter_types: vec![ty],

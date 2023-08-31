@@ -37,7 +37,6 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (index, function) in module.functions.iter().enumerate() {
         let instance = item_instance(index as u32);
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            identity: function.symbol.clone(),
             declaration: item_id(index as u32),
             substitution: monomorphic_substitution(function)?,
             parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
@@ -48,7 +47,6 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (offset, contract) in module.external_calls.iter().enumerate() {
         let instance = item_instance(external_start + offset as u32);
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            identity: contract.symbol.to_string(),
             declaration: item_id(external_start + offset as u32),
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
             parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
