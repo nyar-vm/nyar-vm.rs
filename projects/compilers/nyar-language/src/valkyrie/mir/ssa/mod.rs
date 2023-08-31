@@ -47,6 +47,7 @@ pub use value_semantics::{
 };
 
 use builtin_helpers::plain_type_pattern_matches;
+use nyar_types::VariantId;
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, named_type_name};
 use expr_lowering::lower_literal;
@@ -71,6 +72,13 @@ pub enum MirDiagnostic {
     UnsupportedExpression {
         span: crate::SourceSpan,
         kind: String,
+    },
+    /// 语义 sum registry 中不存在 lowering 请求的 variant。
+    UnresolvedVariantIdentity {
+        /// 声明的 sum owner。
+        sum_type: String,
+        /// 请求的 variant 名称。
+        variant: String,
     },
 }
 
@@ -458,7 +466,7 @@ pub enum MirOperation {
         sum_type: String,
         /// Type arguments with `sum_type` form NominalInstanceKey (empty ⇒ monomorphic).
         type_args: Vec<ValkyrieType>,
-        variant: String,
+        variant: VariantId,
         payload_type: Option<ValkyrieType>,
         payload: Option<MirOperand>,
     },
@@ -469,7 +477,7 @@ pub enum MirOperation {
         sum_type: String,
         /// Type arguments with `sum_type` form NominalInstanceKey (empty ⇒ monomorphic).
         type_args: Vec<ValkyrieType>,
-        variant: String,
+        variant: VariantId,
         payload_type: ValkyrieType,
         object: MirOperand,
     },
@@ -478,7 +486,7 @@ pub enum MirOperation {
     SumVariantIs {
         sum_type: String,
         type_args: Vec<ValkyrieType>,
-        variant: String,
+        variant: VariantId,
         object: MirOperand,
     },
     /// 模式探测指令，用于 handler/case dispatch 的匹配检查。
@@ -631,6 +639,7 @@ impl MirLowerer {
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let mut functions = Vec::new();
+        let mut diagnostics = Vec::new();
         for function in &module.functions {
             functions.push(lower_function_semantic(
                 module,
@@ -642,6 +651,7 @@ impl MirLowerer {
                 &singleton_accessors,
                 &effectful_resume_map,
                 None,
+                &mut diagnostics,
             ));
         }
         functions.extend(lower_singleton_method_functions(
@@ -652,6 +662,7 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
             module,
@@ -661,6 +672,7 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
         let result = MirModule {
@@ -671,7 +683,7 @@ impl MirLowerer {
             external_calls,
             aggregate_layouts,
             sum_types,
-            diagnostics: Vec::new(),
+            diagnostics,
         };
         result
     }
@@ -693,6 +705,7 @@ impl MirLowerer {
         let imports = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let mut functions = Vec::new();
+        let mut diagnostics = Vec::new();
         for function in &module.functions {
             functions.push(lower_function(
                 module,
@@ -704,6 +717,7 @@ impl MirLowerer {
                 &singleton_accessors,
                 &effectful_resume_map,
                 None,
+                &mut diagnostics,
             ));
         }
         functions.extend(lower_singleton_method_functions(
@@ -714,6 +728,7 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
             module,
@@ -723,6 +738,7 @@ impl MirLowerer {
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
+            &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
         MirModule {
@@ -733,7 +749,7 @@ impl MirLowerer {
             external_calls,
             aggregate_layouts,
             sum_types,
-            diagnostics: Vec::new(),
+            diagnostics,
         }
     }
 }
@@ -784,6 +800,7 @@ fn lower_singleton_method_functions(
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for singleton in &module.singletons {
@@ -798,6 +815,7 @@ fn lower_singleton_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, method.name);
             functions.push(mir_function);
@@ -813,6 +831,7 @@ fn lower_singleton_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, constructor.name);
             functions.push(mir_function);
@@ -828,6 +847,7 @@ fn lower_singleton_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(ValkyrieType::Named(singleton.name.clone())),
+                diagnostics,
             );
             mir_function.symbol = format!("{}.{}", singleton.name, finalizer.name);
             functions.push(mir_function);
@@ -844,6 +864,7 @@ fn lower_impl_method_functions(
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for impl_block in &module.impls {
@@ -862,6 +883,7 @@ fn lower_impl_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(impl_block.target.clone()),
+                diagnostics,
             );
             mir_function.symbol = format!("{type_name}.{}", method.name);
             functions.push(mir_function);
@@ -879,6 +901,7 @@ fn lower_impl_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(ValkyrieType::Named(item.name.clone())),
+                diagnostics,
             );
             mir_function.symbol = format!("{}.{}", item.name, method.name);
             functions.push(mir_function);
@@ -896,6 +919,7 @@ fn lower_impl_method_functions(
                 singleton_accessors,
                 effectful_resume_map,
                 Some(ValkyrieType::Named(trait_def.name.clone())),
+                diagnostics,
             );
             mir_function.symbol = format!("{}.{}", trait_def.name, method.name);
             functions.push(mir_function);
@@ -990,6 +1014,7 @@ fn lower_function(
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
     impl_owner_type: Option<ValkyrieType>,
+    diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let mut function = lower_function_semantic(
         module,
@@ -1001,6 +1026,7 @@ fn lower_function(
         singleton_accessors,
         effectful_resume_map,
         impl_owner_type,
+        diagnostics,
     );
     function
 }
@@ -1015,6 +1041,7 @@ fn lower_function_semantic(
     singleton_accessors: &BTreeMap<String, String>,
     effectful_resume_map: &BTreeMap<String, ValkyrieType>,
     impl_owner_type: Option<ValkyrieType>,
+    diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
     let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
@@ -1111,6 +1138,7 @@ fn lower_function_semantic(
             (ty, owner) => resolve_self_type_with_owner(ty, owner),
         })
         .collect();
+    diagnostics.append(&mut builder.diagnostics);
     let mut mir_function = MirFunction {
         symbol: stable_hir_function_symbol(&module.name, function),
         return_type: resolved_return_type,
@@ -1183,6 +1211,20 @@ struct MirBuilder {
 }
 
 impl MirBuilder {
+    pub(super) fn variant_id(&mut self, sum_type: &str, variant: &str) -> Option<VariantId> {
+        let mut index = 0u32;
+        for sum in &self.sum_types {
+            for candidate in &sum.variants {
+                if sum.name == sum_type && candidate.name == variant {
+                    return VariantId::from_index(index);
+                }
+                index = index.checked_add(1)?;
+            }
+        }
+        self.diagnostics.push(MirDiagnostic::UnresolvedVariantIdentity { sum_type: sum_type.to_owned(), variant: variant.to_owned() });
+        None
+    }
+
     fn new(
         struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
         struct_parent_index: BTreeMap<String, Vec<String>>,

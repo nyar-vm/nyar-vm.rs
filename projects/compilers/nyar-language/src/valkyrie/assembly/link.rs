@@ -98,6 +98,11 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                             consumer.sum_types.push(sum.clone());
                         }
                     }
+                    for function in &mut consumer.functions {
+                        if symbols.contains(&function.symbol) {
+                            relocate_variant_ids(function, &dep.sum_types, &consumer.sum_types)?;
+                        }
+                    }
                     for hir_struct in &dep.structs {
                         if let Some(existing) = consumer.structs.iter().find(|existing| {
                             existing.name == hir_struct.name && existing.namespace == hir_struct.namespace
@@ -121,6 +126,44 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
 
 fn remap_function_layout_ids(_function: &mut MirFunction, _remap: &BTreeMap<LayoutId, LayoutId>) {
     // 聚合指令不再在 Semantic MIR 操作上携带 layout_id。
+}
+
+fn relocate_variant_ids(
+    function: &mut MirFunction,
+    source: &[nyar_types::SumTypeLayout],
+    destination: &[nyar_types::SumTypeLayout],
+) -> Result<(), std_data::text::valkyrie::ParseError> {
+    let mut destination_ids = BTreeMap::new();
+    let mut index = 0u32;
+    for sum in destination {
+        for variant in &sum.variants {
+            let id = nyar_types::VariantId::from_index(index)
+                .ok_or_else(|| std_data::text::valkyrie::ParseError::invalid("variant identity 溢出"))?;
+            if destination_ids.insert((sum.name.as_str(), variant.name.as_str()), id).is_some() {
+                return Err(std_data::text::valkyrie::ParseError::invalid("重复 variant 声明 identity"));
+            }
+            index = index.checked_add(1).ok_or_else(|| std_data::text::valkyrie::ParseError::invalid("variant identity 溢出"))?;
+        }
+    }
+    let source_variants: Vec<_> = source.iter().flat_map(|sum| sum.variants.iter().map(move |variant| (sum.name.as_str(), variant.name.as_str()))).collect();
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            let (owner, id) = match &mut instruction.kind {
+                MirOperation::SumNew { sum_type, variant, .. }
+                | MirOperation::SumPayloadGet { sum_type, variant, .. }
+                | MirOperation::SumVariantIs { sum_type, variant, .. } => (sum_type, variant),
+                _ => continue,
+            };
+            let declaration = source_variants.get(id.index() as usize)
+                .ok_or_else(|| std_data::text::valkyrie::ParseError::invalid(format!("函数 `{}` 引用未知 variant identity {id}", function.symbol)))?;
+            if declaration.0 != owner.as_str() {
+                return Err(std_data::text::valkyrie::ParseError::invalid(format!("函数 `{}` 的 variant owner 不一致", function.symbol)));
+            }
+            *id = *destination_ids.get(declaration)
+                .ok_or_else(|| std_data::text::valkyrie::ParseError::invalid("目标 registry 缺少 variant 声明"))?;
+        }
+    }
+    Ok(())
 }
 
 fn symbol_satisfied(need: &str, local: &BTreeSet<String>) -> bool {
@@ -437,13 +480,19 @@ mod tests {
         use nyar_types::{SumTypeLayout, SumVariantLayout};
 
         let mut consumer = bare_module("legion", vec![call_fn("legion::clr_local_slot_bytes", "nyar.emitter::typed_instr")]);
+        consumer.sum_types.push(SumTypeLayout {
+            name: "ConsumerSum".into(),
+            is_unite: true,
+            tag_width: 1,
+            variants: vec![SumVariantLayout { name: "Existing".into(), tag: 0, payload_type: None }],
+        });
         let mut dep_fn = empty_fn("nyar.emitter::typed_instr");
         let out = MirValue { id: MirValueRef(0), origin: MirValueOrigin::Temporary };
         dep_fn.values.push(out.clone());
         dep_fn.blocks[0].instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
             sum_type: "MsilOpcode".into(),
             type_args: Vec::new(),
-            variant: "Stloc0".into(),
+            variant: nyar_types::VariantId::from_index(0).expect("variant identity"),
             payload_type: None,
             payload: None,
         }));
@@ -464,5 +513,9 @@ mod tests {
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
         assert!(consumer.sum_types.iter().any(|sum| sum.name == "MsilOpcode"), "linked dependency sum layouts must survive into consumer MIR");
+        let MirOperation::SumNew { variant, .. } = &consumer.functions[1].blocks[0].instructions[0].kind else {
+            panic!("linked function must retain its sum operation");
+        };
+        assert_eq!(*variant, nyar_types::VariantId::from_index(1).expect("relocated variant identity"));
     }
 }

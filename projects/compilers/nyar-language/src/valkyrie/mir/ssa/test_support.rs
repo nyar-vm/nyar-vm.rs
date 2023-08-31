@@ -106,6 +106,7 @@ pub fn lower_test_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieT
 pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     let function = HirFunction {
         name: Identifier::new("main"),
+        where_constraints: Vec::new(),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
         annotations: Vec::new(),
@@ -151,6 +152,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         &BTreeMap::new(),
         &BTreeMap::new(),
         None,
+        &mut Vec::new(),
     )
 }
 

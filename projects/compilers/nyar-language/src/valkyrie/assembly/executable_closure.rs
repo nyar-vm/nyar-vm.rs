@@ -47,7 +47,8 @@ pub(crate) fn build_reachable_mir_functions(
         if result.contains_key(&operation) {
             continue;
         }
-        result.insert(operation, mir_function_to_executable(mir_fn));
+        let executable = mir_function_to_executable(mir_fn, &mir.sum_types).map_err(|error| miette!("MIR backend-private conversion failed: {error}"))?;
+        result.insert(operation, executable);
         for callee in collect_mir_callee_operations(mir_fn, mir, &mir_by_operation)? {
             if !queue.iter().any(|existing| existing == &callee) {
                 queue.push(callee);

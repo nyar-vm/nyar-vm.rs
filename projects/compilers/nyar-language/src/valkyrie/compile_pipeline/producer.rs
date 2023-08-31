@@ -18,6 +18,9 @@ use super::diagnostics::fail_stage;
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值。
 pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
+    if !module.diagnostics.is_empty() {
+        return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
+    }
     let type_values = collect_types(module)?;
     let symbols = collect_symbols(module)?;
     let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
@@ -389,6 +392,21 @@ mod tests {
         );
         let error = canonical_program_from_semantic_mir(&module).expect_err("未解析 callable 必须在 producer 失败");
         assert_eq!(error.records[0].code, "CAN007");
+    }
+
+    #[test]
+    fn producer_rejects_semantic_mir_lowering_diagnostics() {
+        let mut module = module_with(
+            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
+            None,
+            BTreeMap::new(),
+        );
+        module.diagnostics.push(crate::valkyrie::mir::MirDiagnostic::UnresolvedVariantIdentity {
+            sum_type: "Option".into(),
+            variant: "Missing".into(),
+        });
+        let error = canonical_program_from_semantic_mir(&module).expect_err("lowering diagnostic must not enter canonical success");
+        assert_eq!(error.records[0].code, "CAN033");
     }
 
     #[test]

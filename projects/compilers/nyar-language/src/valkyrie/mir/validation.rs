@@ -96,7 +96,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: "sum construction references an undeclared sum".to_string(),
                     });
                 };
-                let Some(declared) = sum.variants.iter().find(|candidate| candidate.name == *variant)
+                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -140,8 +140,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: format!("sum payload extraction references undeclared sum `{sum_type}`"),
                     });
                 };
-                let Some(declared) =
-                    sum.variants.iter().find(|candidate| candidate.name == *variant).and_then(|candidate| candidate.payload_type.as_ref())
+                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant).and_then(|candidate| candidate.payload_type.as_ref())
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -180,7 +179,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: format!("SumVariantIs references undeclared sum `{sum_type}`"),
                     });
                 };
-                if !sum.variants.iter().any(|candidate| candidate.name == *variant) {
+                if declared_variant(&module.sum_types, sum_type, *variant).is_none() {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -230,6 +229,19 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
         }
     }
     Ok(())
+}
+
+fn declared_variant<'a>(sum_types: &'a [nyar_types::SumTypeLayout], sum_type: &str, variant: nyar_types::VariantId) -> Option<&'a nyar_types::SumVariantLayout> {
+    let mut next = 0u32;
+    for sum in sum_types {
+        for declared in &sum.variants {
+            if next == variant.index() {
+                return (sum.name == sum_type).then_some(declared);
+            }
+            next = next.checked_add(1)?;
+        }
+    }
+    None
 }
 
 fn type_matches_sum_owner_valkyrie(ty: &ValkyrieType, sum_type: &str) -> bool {
@@ -527,8 +539,6 @@ fn text_constant_type(constant: &MirConstant) -> Option<ValkyrieType> {
 }
 
 pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
-    validate_semantic_module(module)
-        .map_err(|error| ParseError::invalid(format!("{} {} at {}: {}", error.code, error.function, error.location, error.detail)))?;
     for diagnostic in &module.diagnostics {
         match diagnostic {
             MirDiagnostic::PatternLoweringFailed { reason, .. } => {
@@ -537,11 +547,13 @@ pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
             MirDiagnostic::UnsupportedExpression { span, kind } => {
                 return Err(ParseError::invalid(format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")));
             }
-        }
-        if let MirDiagnostic::UnsupportedExpression { span, kind } = diagnostic {
-            return Err(ParseError::invalid(format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")));
+            MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
+                return Err(ParseError::invalid(format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")));
+            }
         }
     }
+    validate_semantic_module(module)
+        .map_err(|error| ParseError::invalid(format!("{} {} at {}: {}", error.code, error.function, error.location, error.detail)))?;
     for function in &module.functions {
         validate_function(function)?;
     }

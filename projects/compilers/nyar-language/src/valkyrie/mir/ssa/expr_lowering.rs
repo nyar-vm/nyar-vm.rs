@@ -83,12 +83,13 @@ impl MirBuilder {
     fn try_lower_option_is_some(&mut self, receiver: MirOperand) -> Option<MirOperand> {
         let actual_type = infer_builder_operand_type(&receiver, &self.value_types).filter(|ty| Self::option_sum_name(ty).is_some())?;
         let sum_name = Self::option_sum_name(&actual_type)?.to_string();
+        let variant = self.variant_id(&sum_name, "Some")?;
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
             MirOperation::SumVariantIs {
                 sum_type: sum_name,
                 type_args: type_args_from_sum_shaped(&actual_type),
-                variant: "Some".to_string(),
+                variant,
                 object: receiver,
             },
             vec![value],
@@ -134,6 +135,7 @@ impl MirBuilder {
         let actual_type = Self::option_shaped_type(&receiver, &self.value_types, hint, payload_hint)?;
         let sum_name = Self::option_sum_name(&actual_type)?.to_string();
         let payload_type = Self::option_payload_type(&actual_type).or_else(|| payload_hint.cloned())?;
+        let variant = self.variant_id(&sum_name, "Some")?;
         if let MirOperand::Value(receiver_ref) = &receiver {
             if self.value_types.get(receiver_ref).is_none_or(|ty| Self::option_sum_name(ty).is_none()) {
                 self.value_types.insert(
@@ -147,7 +149,7 @@ impl MirBuilder {
             MirOperation::SumPayloadGet {
                 sum_type: sum_name,
                 type_args: type_args_from_sum_shaped(&actual_type),
-                variant: "Some".to_string(),
+                variant,
                 payload_type: payload_type.clone(),
                 object: receiver,
             },
@@ -177,12 +179,13 @@ impl MirBuilder {
         if Self::option_sum_name(&return_type).is_none() {
             return None;
         }
+        let variant = self.variant_id("Option", "None")?;
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
             MirOperation::SumNew {
                 sum_type: "Option".to_string(),
                 type_args: type_args_from_sum_shaped(&return_type),
-                variant: "None".to_string(),
+                variant,
                 payload_type: None,
                 payload: None,
             },
@@ -198,6 +201,7 @@ impl MirBuilder {
         resolved: Option<&HirResolvedCall>,
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
+        let variant = self.variant_id("Option", "Some")?;
         let payload_operand = self.lower_expr_to_operand(payload_expr);
         let payload_type = infer_builder_operand_type(&payload_operand, &self.value_types)
             .or_else(|| resolved.and_then(|call| call.parameter_types.first().cloned()));
@@ -214,7 +218,7 @@ impl MirBuilder {
             MirOperation::SumNew {
                 sum_type: "Option".to_string(),
                 type_args: type_args_from_sum_shaped(&return_type),
-                variant: "Some".to_string(),
+                variant,
                 payload_type: payload_type.clone(),
                 payload: Some(payload_operand),
             },
@@ -321,11 +325,12 @@ impl MirBuilder {
                     })
                 })?;
             let option_value = self.next_value(MirValueOrigin::CallResult);
+            let variant = self.variant_id("Option", "Some")?;
             self.push_instruction(
                 MirOperation::SumNew {
                     sum_type: "Option".to_string(),
                     type_args: type_args_from_sum_shaped(&return_type),
-                    variant: "Some".to_string(),
+                    variant,
                     payload_type,
                     payload: Some(MirOperand::Value(element_value)),
                 },
@@ -966,6 +971,9 @@ impl MirBuilder {
                             sum_new_parts_from_constructor(call, &arguments, &self.sum_types)
                         {
                             let value = self.next_value(MirValueOrigin::CallResult);
+                            let Some(variant_id) = self.variant_id(&sum_type, &variant) else {
+                                return MirOperand::Constant(MirConstant::Unit);
+                            };
                             let (return_type, payload_type) = concretize_variant_constructor_types(
                                 &call.return_type,
                                 payload_type,
@@ -975,7 +983,7 @@ impl MirBuilder {
                                 &self.value_types,
                             );
                             self.push_instruction(
-                                MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload },
+                                MirOperation::SumNew { sum_type, type_args, variant: variant_id, payload_type, payload },
                                 vec![value],
                             );
                             self.value_types.insert(value, return_type);
@@ -1147,6 +1155,9 @@ impl MirBuilder {
                         _ => field_values.first().cloned(),
                     };
                     let variant = name.to_string();
+                    let Some(variant_id) = self.variant_id(&sum_type, &variant) else {
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
                     let (return_type, payload_type) = concretize_variant_constructor_types(
                         &ctor_return,
                         payload_type,
@@ -1156,7 +1167,7 @@ impl MirBuilder {
                         &self.value_types,
                     );
                     self.push_instruction(
-                        MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload },
+                        MirOperation::SumNew { sum_type, type_args, variant: variant_id, payload_type, payload },
                         vec![value],
                     );
                     self.value_types.insert(value, return_type);
@@ -1365,11 +1376,12 @@ impl MirBuilder {
         let (return_type, payload_type) =
             concretize_variant_constructor_types(&contextual, None, variant_name, Some(&contextual), &[], &self.value_types);
         let type_args = type_args_from_sum_shaped(&contextual);
+        let variant = self.variant_id(&sum_type, variant_name)?;
         self.push_instruction(
             MirOperation::SumNew {
-                sum_type,
+                sum_type: sum_type.clone(),
                 type_args,
-                variant: variant_name.to_string(),
+                variant,
                 payload_type,
                 payload: None,
             },
