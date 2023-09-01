@@ -118,49 +118,6 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                     }
                 }
 
-                // 链接后的函数体拥有 callable identity 的实现权。对应的
-                // imported SPI 只能作为签名证据参与校验，不能与实现同时
-                // 进入 Canonical item registry；已达依赖的外部合同则必须
-                // 一并并入，否则依赖函数体中的调用会在下一阶段失去事实。
-                let local_functions: BTreeMap<_, _> = consumer
-                    .functions
-                    .iter()
-                    .map(|function| (function.symbol.as_str(), function))
-                    .collect();
-                let mut imported = BTreeMap::new();
-                for dep_index in linked_by_dep.keys() {
-                    let dependency = &dependency_mirs[*dep_index];
-                    for contract in &dependency.external_calls {
-                        if let Some(function) = local_functions.get(contract.symbol.to_string().as_str()) {
-                            if function.param_types != contract.parameter_types || function.return_type != contract.return_type {
-                                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
-                                    "依赖 callable `{}` 的实现与导入签名不一致",
-                                    contract.symbol
-                                )));
-                            }
-                            continue;
-                        }
-                        if let Some(existing) = consumer.external_calls.iter().find(|existing| existing.symbol == contract.symbol) {
-                            if existing.parameter_types != contract.parameter_types || existing.return_type != contract.return_type {
-                                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
-                                    "外部 callable `{}` 的依赖合同冲突",
-                                    contract.symbol
-                                )));
-                            }
-                        }
-                        else if let Some(previous) = imported.get(&contract.symbol) {
-                            if previous != contract {
-                                return Err(std_data::text::valkyrie::ParseError::invalid(format!("重复外部 callable 合同：`{}`", contract.symbol)));
-                            }
-                        }
-                        else {
-                            imported.insert(contract.symbol.clone(), contract.clone());
-                        }
-                    }
-                }
-                consumer.external_calls.retain(|contract| !local_functions.contains_key(contract.symbol.to_string().as_str()));
-                consumer.external_calls.extend(imported.into_values());
-
             }
         }
     }
