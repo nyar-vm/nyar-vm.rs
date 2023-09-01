@@ -29,6 +29,7 @@ use crate::{
     },
 };
 use nyar_types::NyarType;
+use nyar_types::{layout_choice::RepresentationPlan, pipeline::RepresentationPlanStage};
 use ordered_float::OrderedFloat;
 use std_data::text::valkyrie::{
     AstParser, AttributeItem, BinaryOperator, ClassDeclaration, ClassLikeKind, DeclarationBody, FlagsDeclaration, FlagsMemberDeclaration,
@@ -336,14 +337,32 @@ pub struct FrontendBuildOutput {
     hir_module: HirModule,
     neutral_plan: FrontendNeutralPlan,
     semantic_mir: crate::valkyrie::mir::MirModule,
+    canonical_program: nyar_types::CanonicalProgram,
+    representation_plan: RepresentationPlan,
 }
 
 impl FrontendBuildOutput {
     /// Build output from a lowered HIR module.
-    pub fn from_hir_module(hir_module: HirModule) -> Self {
+    pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
+        Self::from_hir_module_with_dependency_mirs(hir_module, &[])
+    }
+
+    /// 在 CanonicalProgram 生成前完成依赖 MIR 链接，保证各阶段消费同一闭包。
+    pub fn from_hir_module_with_dependency_mirs(
+        hir_module: HirModule,
+        dependency_mirs: &[crate::valkyrie::mir::MirModule],
+    ) -> Result<Self, ParseError> {
         let neutral_plan = hir_module_to_frontend_neutral_plan(&hir_module);
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-        Self { hir_module, neutral_plan, semantic_mir }
+        let mut semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
+        if !dependency_mirs.is_empty() {
+            crate::valkyrie::assembly::link_reachable_dependency_mir(&mut semantic_mir, dependency_mirs)?;
+        }
+        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
+            .map_err(|error| ParseError::invalid(format!("Semantic MIR 无法形成 CanonicalProgram: {error:?}")))?;
+        let representation_plan = crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner
+            .plan(&canonical_program)
+            .map_err(|error| ParseError::invalid(format!("CanonicalProgram 无法形成 RepresentationPlan: {error:?}")))?;
+        Ok(Self { hir_module, neutral_plan, semantic_mir, canonical_program, representation_plan })
     }
 
     /// 返回 lowering 后的 HIR 模块。
@@ -363,16 +382,12 @@ impl FrontendBuildOutput {
 
     /// 将 Semantic MIR 交给唯一的 canonical producer。
     pub fn canonical_program(&self) -> Result<nyar_types::CanonicalProgram, nyar_types::StructuredDiagnosticSet> {
-        crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+        Ok(self.canonical_program.clone())
     }
 
-    /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
-    ///
-    /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
-    /// requires those bodies in the executable registry (SMIR003), not only SPI
-    /// signature contracts.
-    pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
-        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)
+    /// 返回 Compiler 已完成验证的目标无关表示计划。
+    pub fn representation_plan(&self) -> &RepresentationPlan {
+        &self.representation_plan
     }
 
     /// 返回 `HIR` 函数数量，供装配层做调试输出。
@@ -607,7 +622,7 @@ impl ValkyrieCompiler {
     /// Parses source text and lowers it into the stable frontend build bundle.
     pub fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source(source)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// Builds the stable frontend bundle with resolved nominal dependency
@@ -618,7 +633,7 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source_with_semantic_exports(source, imported_semantic_exports)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
@@ -637,7 +652,7 @@ impl ValkyrieCompiler {
                 .collect::<Result<Vec<_>, _>>()?;
             let mut hir_module = self.compile_source_with_semantic_exports(&group.source, &dependency_exports)?;
             hir_module.name = NamePath::new(vec![Identifier::new(&group.name)]);
-            let output = FrontendBuildOutput::from_hir_module(hir_module);
+            let output = FrontendBuildOutput::from_hir_module(hir_module)?;
             let hir = output.hir_module();
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
@@ -655,17 +670,14 @@ impl ValkyrieCompiler {
                 dependency_mirs.push(previous.semantic_mir().clone());
             }
         }
-        let mut final_output = final_output.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        if !dependency_mirs.is_empty() {
-            final_output.link_dependency_mir_modules(&dependency_mirs)?;
-        }
-        Ok(final_output)
+        let final_output = final_output.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        FrontendBuildOutput::from_hir_module_with_dependency_mirs(final_output.hir_module, &dependency_mirs)
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.
     pub fn compile_path_to_build_output(&self, path: &Path) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_path(path)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// Lowers parser output into a HIR module.
