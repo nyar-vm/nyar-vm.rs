@@ -366,6 +366,15 @@ impl FrontendBuildOutput {
         crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
     }
 
+    /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
+    ///
+    /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
+    /// requires those bodies in the executable registry (SMIR003), not only SPI
+    /// signature contracts.
+    pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
+        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)
+    }
+
     /// 返回 `HIR` 函数数量，供装配层做调试输出。
     pub fn hir_function_count(&self) -> usize {
         self.hir_module.functions.len()
@@ -598,7 +607,7 @@ impl ValkyrieCompiler {
     /// Parses source text and lowers it into the stable frontend build bundle.
     pub fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source(source)?;
-            Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        Ok(FrontendBuildOutput::from_hir_module(hir_module))
     }
 
     /// Builds the stable frontend bundle with resolved nominal dependency
@@ -648,7 +657,7 @@ impl ValkyrieCompiler {
         }
         let mut final_output = final_output.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         if !dependency_mirs.is_empty() {
-            crate::valkyrie::assembly::link_reachable_dependency_mir(&mut final_output.semantic_mir, &dependency_mirs)?;
+            final_output.link_dependency_mir_modules(&dependency_mirs)?;
         }
         Ok(final_output)
     }
