@@ -44,8 +44,12 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         );
                     }
                     match &instruction.operation {
-                        CanonicalOperation::Invoke { .. } => {
-                            plan.invoke_lowerings.insert(instruction.id, InvokeLowering::Direct);
+                        CanonicalOperation::Invoke { callee, .. } => {
+                            let lowering = match callee {
+                                nyar_types::CanonicalCallee::Item(_) => InvokeLowering::Direct,
+                                nyar_types::CanonicalCallee::Value(_) => InvokeLowering::TypedReference,
+                            };
+                            plan.invoke_lowerings.insert(instruction.id, lowering);
                         }
                         CanonicalOperation::StructNew { nominal, .. } => {
                             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);

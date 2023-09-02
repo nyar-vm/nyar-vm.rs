@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
-    CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
+    CanonicalCallee, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
     FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
@@ -141,6 +141,10 @@ fn collect_type(types: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) -> Result
     match ty {
         ValkyrieType::Apply(base, args) => { collect_type(types, base)?; collect_type_list(types, args)?; }
         ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => collect_type_list(types, items)?,
+        ValkyrieType::Function(function) => {
+            collect_type_list(types, &function.params)?;
+            collect_type(types, &function.return_type)?;
+        }
         ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect_type(types, element)?,
         ValkyrieType::FixedArray { element, .. } => collect_type(types, element)?,
         ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType => {
@@ -181,6 +185,10 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
         ValkyrieType::Nullable(element) => CanonicalTypeKind::Nullable(id(element)?),
         ValkyrieType::Union(items) => CanonicalTypeKind::Union(items.iter().map(id).collect::<Result<_, _>>()?),
         ValkyrieType::Intersection(items) => CanonicalTypeKind::Intersection(items.iter().map(id).collect::<Result<_, _>>()?),
+        ValkyrieType::Function(function) => CanonicalTypeKind::Function {
+            parameters: function.params.iter().map(id).collect::<Result<_, _>>()?,
+            return_type: id(&function.return_type)?,
+        },
         _ => return Err(error_without_module("CAN003", "类型没有无损 canonical 形状")),
     })
 }
@@ -232,7 +240,8 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
 fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
-        MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: *symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?, arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
+        MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
+        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Value(MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
         MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
         MirOperation::AggregateCopy { source, dest } => Ok(CanonicalOperation::AggregateCopy {
             source: value(source)?,
