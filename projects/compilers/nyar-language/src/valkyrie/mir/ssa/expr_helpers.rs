@@ -274,23 +274,9 @@ pub(super) fn lower_callee_operand(
             let bare = symbol.parts().last().cloned().unwrap_or_else(|| Identifier::new("unknown"));
             return MirOperand::Symbol(NamePath::new(vec![bare]));
         }
-        // Never reconstitute a binding-rooted field chain as a zero-arg dotted Symbol.
-        if let HirExprKind::Path(path) = &expr.kind {
-            if path.parts().len() >= 2 && builder.bindings.contains_key(path.parts()[0].as_str()) {
-                let bare = symbol.parts().last().cloned().unwrap_or_else(|| path.parts().last().unwrap().clone());
-                return MirOperand::Symbol(NamePath::new(vec![bare]));
-            }
-        }
-        if matches!(&expr.kind, HirExprKind::FieldAccess { .. }) {
-            let bare = symbol.parts().last().cloned().unwrap_or_else(|| Identifier::new("unknown"));
-            return MirOperand::Symbol(NamePath::new(vec![bare]));
-        }
         return MirOperand::Symbol(symbol.clone());
     }
     match &expr.kind {
-        HirExprKind::Path(path) if path.parts().len() >= 2 && builder.bindings.contains_key(path.parts()[0].as_str()) => {
-            MirOperand::Symbol(NamePath::new(vec![path.parts().last().unwrap().clone()]))
-        }
         HirExprKind::Path(path) => MirOperand::Symbol(path.clone()),
         HirExprKind::Variable(identifier) => MirOperand::Symbol(NamePath::new(vec![identifier.name.clone()])),
         HirExprKind::GenericApply { callee, .. } => lower_callee_operand(callee, None, builder),
