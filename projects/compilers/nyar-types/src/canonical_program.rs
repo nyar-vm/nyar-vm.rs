@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId, VariantId};
+use crate::semantic_ids::{EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -77,8 +77,6 @@ pub struct LinkedSemanticProgram {
     pub nominal_instances: BTreeMap<NominalInstanceId, NominalInstanceRecord>,
     /// 已解析字段身份及其 owner/类型合同。
     pub fields: BTreeMap<FieldId, FieldRecord>,
-    /// 已解析 sum variant 身份及其 owner/payload 合同。
-    pub variants: BTreeMap<VariantId, VariantRecord>,
     /// Selected evidence bindings.
     pub evidence: BTreeMap<EvidenceId, EvidenceRecord>,
     /// 已绑定的外部导入槽；执行层只消费 `ImportIndex`。
@@ -118,15 +116,6 @@ pub struct FieldRecord {
     pub owner: NominalInstanceId,
     /// 字段值类型。
     pub ty: TypeId,
-}
-
-/// 已解析 sum variant 的 owner 与 payload 合同。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VariantRecord {
-    /// 所属名义实例。
-    pub owner: NominalInstanceId,
-    /// 单 payload 类型；无 payload 时为空。
-    pub payload_type: Option<TypeId>,
 }
 
 /// Placeholder evidence row.
@@ -291,12 +280,6 @@ pub enum CanonicalOperation {
     AggregateCopy { source: MirValueId, destination: MirValueId },
     /// 加载语言常量。
     LoadConstant { constant: CanonicalConstant },
-    /// 构造已解析的 sum variant。
-    SumNew { variant: VariantId, payload: Option<MirValueId> },
-    /// 提取已解析 variant 的 payload。
-    SumPayloadGet { variant: VariantId, object: MirValueId },
-    /// 检查 sum 值是否为已解析 variant。
-    SumVariantIs { variant: VariantId, object: MirValueId },
     /// 构造名义聚合。
     StructNew { nominal: NominalInstanceId, fields: Vec<(FieldId, MirValueId)> },
     /// 读取已解析字段。
@@ -463,10 +446,6 @@ pub enum CanonicalMirError {
     MissingStructField { function: ItemInstanceId, nominal: NominalInstanceId, field: FieldId },
     /// 聚合构造重复声明字段。
     DuplicateStructField { function: ItemInstanceId, nominal: NominalInstanceId, field: FieldId },
-    /// sum variant 身份未知。
-    UnknownVariant { function: ItemInstanceId, variant: VariantId },
-    /// sum variant payload 与声明合同不一致。
-    VariantPayloadMismatch { function: ItemInstanceId, variant: VariantId },
 }
 
 impl CanonicalSemanticMir {
@@ -630,31 +609,6 @@ impl CanonicalSemanticMir {
                         vec![*source]
                     }
                     CanonicalOperation::LoadConstant { .. } => Vec::new(),
-                    CanonicalOperation::SumNew { variant, payload } => {
-                        let Some(record) = linked.variants.get(variant) else {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        };
-                        match (record.payload_type, payload) {
-                            (Some(expected), Some(value)) if function.value_types.get(value) == Some(&expected) => vec![*value],
-                            (None, None) => Vec::new(),
-                            _ => return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant }),
-                        }
-                    }
-                    CanonicalOperation::SumPayloadGet { variant, object } => {
-                        let Some(record) = linked.variants.get(variant) else {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        };
-                        if record.payload_type.is_none() {
-                            return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
-                        }
-                        vec![*object]
-                    }
-                    CanonicalOperation::SumVariantIs { variant, object } => {
-                        if !linked.variants.contains_key(variant) {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        }
-                        vec![*object]
-                    }
                     CanonicalOperation::StructNew { nominal, fields } => {
                         let Some(nominal_record) = linked.nominal_instances.get(nominal) else {
                             return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
