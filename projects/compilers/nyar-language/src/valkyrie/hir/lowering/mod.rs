@@ -572,10 +572,20 @@ impl ValkyrieCompiler {
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<HirModule, ParseError> {
+        self.compile_source_with_semantic_exports_and_name(source, imported_semantic_exports, None)
+    }
+
+    /// 在解析调用前固定 Resolver 分配的模块身份。
+    pub fn compile_source_with_semantic_exports_and_name(
+        &self,
+        source: &str,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
         let mut root = AstParser::parse_root(source)?;
         expand_tgrammar_in_root(&mut root);
         expand_macros_in_root(&mut root);
-        let hir = self.lower_root_with_semantic_exports(&root, imported_semantic_exports)?;
+        let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
         self.validate_hir_semantic_contract(&hir)?;
         Ok(hir)
     }
@@ -635,8 +645,11 @@ impl ValkyrieCompiler {
                 .iter()
                 .map(|name| exports.get(name).cloned().ok_or_else(|| ParseError::invalid(format!("semantic dependency export `{name}` is unavailable for `{}`", group.name))))
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut hir_module = self.compile_source_with_semantic_exports(&group.source, &dependency_exports)?;
-            hir_module.name = NamePath::new(vec![Identifier::new(&group.name)]);
+            let hir_module = self.compile_source_with_semantic_exports_and_name(
+                &group.source,
+                &dependency_exports,
+                Some(NamePath::new(vec![Identifier::new(&group.name)])),
+            )?;
             let output = FrontendBuildOutput::from_hir_module(hir_module);
             let hir = output.hir_module();
             let export = HirDependencySemanticExport {
@@ -680,6 +693,16 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<HirModule, ParseError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports(root, imported_semantic_exports)
+    }
+
+    /// 在 HIR 调用解析前覆盖模块身份。
+    pub fn lower_root_with_semantic_exports_and_name(
+        &self,
+        root: &ValkyrieRoot,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
+        AstToHir::new(self.source_id).lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, module_name)
     }
 }
 
@@ -792,17 +815,28 @@ impl AstToHir {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<HirModule, ParseError> {
+        self.lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, None)
+    }
+
+    /// 在 HIR 调用解析前覆盖模块身份；仅供完整 source closure 编译使用。
+    pub fn lower_root_with_semantic_exports_and_name(
+        &self,
+        root: &ValkyrieRoot,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name_override: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
         validate_ast_root(root)?;
         let _warning_scope = CompileWarningScope::enter();
         let _builtin_type_alias_scope = BuiltinTypeAliasScope::enter(root);
-        let module_name = root
-            .statements
-            .iter()
-            .find_map(|statement| match statement {
-                RootStatement::Namespace(NamespaceDeclaration { name, .. }) => Some(lower_name_path(name)),
-                _ => None,
-            })
-            .unwrap_or_else(default_module_name);
+        let module_name = module_name_override.unwrap_or_else(|| {
+            root.statements
+                .iter()
+                .find_map(|statement| match statement {
+                    RootStatement::Namespace(NamespaceDeclaration { name, .. }) => Some(lower_name_path(name)),
+                    _ => None,
+                })
+                .unwrap_or_else(default_module_name)
+        });
 
         let imports = root
             .statements
