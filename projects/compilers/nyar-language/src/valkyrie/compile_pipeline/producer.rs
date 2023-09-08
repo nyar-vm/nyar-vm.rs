@@ -1,6 +1,6 @@
 //! 将已完成语义解析的 MIR 生产为 CanonicalProgram。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
@@ -127,46 +127,10 @@ fn insert_symbol(symbols: &mut BTreeMap<String, ItemInstanceId>, symbol: String,
 }
 
 fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType, TypeId>, StructuredDiagnosticSet> {
-    let mut types = BTreeSet::new();
-    for function in &module.functions {
-        collect_type(&mut types, &function.return_type)?;
-        for ty in &function.param_types { collect_type(&mut types, ty)?; }
-        for ty in function.value_types.values() { collect_type(&mut types, ty)?; }
+    if module.type_identities.is_empty() && (!module.functions.is_empty() || !module.external_calls.is_empty() || !module.structs.is_empty()) {
+        return Err(error(module, "CAN035", "Semantic MIR 缺少 Compiler type identity 表"));
     }
-    for contract in &module.external_calls {
-        collect_type_list(&mut types, &contract.parameter_types)?;
-        collect_type(&mut types, &contract.return_type)?;
-    }
-    for aggregate in &module.structs {
-        for field in &aggregate.fields {
-            collect_type(&mut types, &field.ty)?;
-        }
-    }
-    Ok(types.into_iter().enumerate().map(|(index, ty)| (ty, TypeId::from_index(index as u32).expect("type identity overflow"))).collect())
-}
-
-fn collect_type(types: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) -> Result<(), StructuredDiagnosticSet> {
-    match ty {
-        ValkyrieType::Apply(base, args) => { collect_type(types, base)?; collect_type_list(types, args)?; }
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => collect_type_list(types, items)?,
-        ValkyrieType::Function(function) => {
-            collect_type_list(types, &function.params)?;
-            collect_type(types, &function.return_type)?;
-        }
-        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect_type(types, element)?,
-        ValkyrieType::FixedArray { element, .. } => collect_type(types, element)?,
-        ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType => {
-            return Err(error_without_module("CAN002", "类型尚未完成泛型/关联类型代入"));
-        }
-        _ => {}
-    }
-    types.insert(ty.clone());
-    Ok(())
-}
-
-fn collect_type_list(types: &mut BTreeSet<ValkyrieType>, values: &[ValkyrieType]) -> Result<(), StructuredDiagnosticSet> {
-    for value in values { collect_type(types, value)?; }
-    Ok(())
+    Ok(module.type_identities.clone())
 }
 
 fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<CanonicalTypeKind, StructuredDiagnosticSet> {
@@ -344,7 +308,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value_types: BTreeMap<MirValueRef, ValkyrieType>) -> MirModule {
-        MirModule {
+        let mut module = MirModule {
             name: "demo".into(),
             functions: vec![MirFunction {
                 symbol: "demo::main".into(),
@@ -359,9 +323,11 @@ mod tests {
                     terminator: MirTerminator::Return { value: return_value.map(MirOperand::Value) },
                 }],
             }],
-            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), aggregate_layouts: AggregateLayoutPlan::default(),
+            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(), flags_types: Vec::new(), diagnostics: Vec::new(),
-        }
+        };
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
+        module
     }
 
     #[test]
@@ -420,6 +386,18 @@ mod tests {
         module.callable_identities.clear();
         let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler callable identity 必须失败");
         assert_eq!(error.records[0].code, "CAN034");
+    }
+
+    #[test]
+    fn producer_rejects_missing_compiler_type_identity() {
+        let mut module = module_with(
+            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
+            None,
+            BTreeMap::new(),
+        );
+        module.type_identities.clear();
+        let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler type identity 必须失败");
+        assert_eq!(error.records[0].code, "CAN035");
     }
 
     #[test]

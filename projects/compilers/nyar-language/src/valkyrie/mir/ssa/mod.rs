@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     symbols::stable_hir_function_symbol,
@@ -101,6 +101,9 @@ pub struct MirModule {
     /// Compiler 在 Semantic MIR 边界确定的完整 callable identity 表。
     /// Canonical producer 只能消费该表，不能按函数遍历顺序重新编号。
     pub callable_identities: BTreeMap<String, ItemInstanceId>,
+    /// Compiler 在 Semantic MIR 边界确定的类型 identity 表。
+    /// Canonical producer 不得重新收集或按排序结果重编号。
+    pub type_identities: BTreeMap<ValkyrieType, nyar_types::TypeId>,
     /// Value/reference aggregate inline layout plan.
     pub aggregate_layouts: value_semantics::AggregateLayoutPlan,
     /// Canonical nominal-sum registry.  This is language semantic metadata:
@@ -640,7 +643,7 @@ impl MirLowerer {
         let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
-        let structs: Vec<_> = module.structs.iter().map(lower_struct).collect();
+        let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let mut functions = Vec::new();
@@ -681,6 +684,7 @@ impl MirLowerer {
         ));
         // MirFunction 不再携带 per-function diagnostics。
         let callable_identities = callable_identity_table(&functions, &external_calls);
+        let type_identities = type_identity_table(&functions, &external_calls, &structs);
         let result = MirModule {
             name: module.name.to_string(),
             functions,
@@ -688,6 +692,7 @@ impl MirLowerer {
             imports,
             external_calls,
             callable_identities,
+            type_identities,
             aggregate_layouts,
             sum_types,
             flags_types,
@@ -709,7 +714,7 @@ impl MirLowerer {
         let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
-        let structs = module.structs.iter().map(lower_struct).collect();
+        let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
         let imports = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let mut functions = Vec::new();
@@ -750,6 +755,7 @@ impl MirLowerer {
         ));
         // MirFunction 不再携带 per-function diagnostics。
         let callable_identities = callable_identity_table(&functions, &external_calls);
+        let type_identities = type_identity_table(&functions, &external_calls, &structs);
         MirModule {
             name: module.name.to_string(),
             functions,
@@ -757,6 +763,7 @@ impl MirLowerer {
             imports,
             external_calls,
             callable_identities,
+            type_identities,
             aggregate_layouts,
             sum_types,
             flags_types,
@@ -781,6 +788,41 @@ fn callable_identity_table(functions: &[MirFunction], external_calls: &[MirExter
 /// 在依赖函数进入最终 Semantic MIR 闭包后，由 Compiler linker 重新冻结 callable 表。
 pub fn rebuild_callable_identities(module: &mut MirModule) {
     module.callable_identities = callable_identity_table(&module.functions, &module.external_calls);
+    module.type_identities = type_identity_table(&module.functions, &module.external_calls, &module.structs);
+}
+
+fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
+    fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
+        match ty {
+            ValkyrieType::Apply(base, args) => { collect(set, base); for arg in args { collect(set, arg); } }
+            ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+                for item in items { collect(set, item); }
+            }
+            ValkyrieType::Function(function) => {
+                for param in &function.params { collect(set, param); }
+                collect(set, &function.return_type);
+            }
+            ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => collect(set, element),
+            ValkyrieType::FixedArray { element, .. } => collect(set, element),
+            _ => {}
+        }
+        set.insert(ty.clone());
+    }
+
+    let mut types = BTreeSet::new();
+    for function in functions {
+        collect(&mut types, &function.return_type);
+        for ty in &function.param_types { collect(&mut types, ty); }
+        for ty in function.value_types.values() { collect(&mut types, ty); }
+    }
+    for contract in external_calls {
+        for ty in &contract.parameter_types { collect(&mut types, ty); }
+        collect(&mut types, &contract.return_type);
+    }
+    for structure in structs {
+        for field in &structure.fields { collect(&mut types, &field.ty); }
+    }
+    types.into_iter().enumerate().map(|(index, ty)| (ty, nyar_types::TypeId::from_index(index as u32).expect("type identity overflow"))).collect()
 }
 
 fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {

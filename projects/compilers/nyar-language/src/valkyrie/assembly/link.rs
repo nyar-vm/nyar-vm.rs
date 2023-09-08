@@ -243,18 +243,21 @@ mod tests {
             .enumerate()
             .map(|(index, function)| (function.symbol.clone(), nyar_types::ItemInstanceId::from_index(index as u32).unwrap()))
             .collect();
-        MirModule {
+        let mut module = MirModule {
             name: name.into(),
             functions,
             structs: Vec::new(),
             imports: Vec::new(),
             external_calls: Vec::new(),
             callable_identities,
+            type_identities: BTreeMap::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             diagnostics: Vec::new(),
-        }
+        };
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
+        module
     }
 
     #[test]
@@ -367,6 +370,7 @@ mod tests {
             imports: Vec::new(),
             external_calls: Vec::new(),
             callable_identities: BTreeMap::new(),
+            type_identities: BTreeMap::new(),
             aggregate_layouts: consumer_plan,
             sum_types: Vec::new(),
             flags_types: Vec::new(),
@@ -379,6 +383,7 @@ mod tests {
             imports: Vec::new(),
             external_calls: Vec::new(),
             callable_identities: BTreeMap::new(),
+            type_identities: BTreeMap::new(),
             aggregate_layouts: dep_plan,
             sum_types: Vec::new(),
             flags_types: Vec::new(),
@@ -525,6 +530,7 @@ mod tests {
             imports: Vec::new(),
             external_calls: Vec::new(),
             callable_identities: BTreeMap::new(),
+            type_identities: BTreeMap::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: vec![SumTypeLayout {
                 name: "MsilOpcode".into(),
