@@ -20,7 +20,7 @@ use crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner;
 use nyar_types::pipeline::RepresentationPlanStage;
 
 use crate::{
-    FrontendBuildOutput, FrontendNeutralPlan, MirLowerer, NyarPlanningContract, collect_singleton_instance_plans, compute_nominal_layouts,
+    FrontendBuildOutput, FrontendNeutralPlan, collect_singleton_instance_plans,
 };
 
 pub use link::link_reachable_dependency_mir;
@@ -102,18 +102,6 @@ pub fn assemble_fragment(
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
 
-    // Post-link MIR already carries dependency sum layouts (e.g. MsilOpcode from
-    // CLR helpers linked into a Node ArtifactSet). Recomputing from consumer HIR
-    // alone drops those and triggers SMIR006 on SumNew — same class of bug as
-    // aggregate_layouts, which already reuse MIR-final plans.
-    let mut sum_types = mir.sum_types.clone();
-    let (hir_sum_types, flags_types) = compute_nominal_layouts(hir_module);
-    for sum in hir_sum_types {
-        if !sum_types.iter().any(|existing| existing.name == sum.name) {
-            sum_types.push(sum);
-        }
-    }
-
     Ok(AssembledFragment {
         module_name: build_output.neutral_plan().module_name.to_string(),
         fragment_id: fragment.id.clone(),
@@ -131,8 +119,8 @@ pub fn assemble_fragment(
         control_flow,
         suspend_runtime,
         aggregate_layouts: mir.aggregate_layouts.clone(),
-        sum_types,
-        flags_types,
+        sum_types: mir.sum_types.clone(),
+        flags_types: mir.flags_types.clone(),
         executable_functions,
         singleton_instances: collect_singleton_instance_plans(hir_module),
         wasm_export_names: fragment.wasm_export_names.clone(),

@@ -156,6 +156,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("nyar::nyar_emitter::wasi::wasi_encode_command_adapt_module_with_mir");
@@ -217,6 +218,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("std.collection.SwissTable.new");
@@ -276,6 +278,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("main::main");
@@ -337,6 +340,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("demo.two_sum");

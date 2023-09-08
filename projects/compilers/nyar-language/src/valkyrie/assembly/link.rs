@@ -98,6 +98,16 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                             consumer.sum_types.push(sum.clone());
                         }
                     }
+                    for flags in &dep.flags_types {
+                        if let Some(existing) = consumer.flags_types.iter().find(|existing| existing.name == flags.name) {
+                            if existing != flags {
+                                return Err(std_data::text::valkyrie::ParseError::invalid(format!("依赖 flags 合同冲突：`{}`", flags.name)));
+                            }
+                        }
+                        else {
+                            consumer.flags_types.push(flags.clone());
+                        }
+                    }
                     for function in &mut consumer.functions {
                         if symbols.contains(&function.symbol) {
                             relocate_variant_ids(function, &dep.sum_types, &consumer.sum_types)?;
@@ -235,6 +245,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -350,6 +361,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: consumer_plan,
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         let dependency = MirModule {
@@ -360,6 +372,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: dep_plan,
             sum_types: Vec::new(),
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
@@ -509,6 +522,7 @@ mod tests {
                 tag_width: 4,
                 variants: vec![SumVariantLayout { name: "Stloc0".into(), tag: 0, payload_type: None }],
             }],
+            flags_types: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");

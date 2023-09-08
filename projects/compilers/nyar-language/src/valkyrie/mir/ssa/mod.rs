@@ -106,6 +106,8 @@ pub struct MirModule {
     /// payload contracts.  Backends may project either form differently, but
     /// must not reconstruct either from names or host string representations.
     pub sum_types: Vec<SumTypeLayout>,
+    /// `MIR` 阶段确定的 flags 名义布局；装配和后端不得从 HIR 重新收集。
+    pub flags_types: Vec<FlagsLayout>,
     /// `MIR` lowering 过程中收集的编译期诊断，由校验层转化为编译错误。
     pub diagnostics: Vec<MirDiagnostic>,
 }
@@ -632,7 +634,7 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
+        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
         let structs: Vec<_> = module.structs.iter().map(lower_struct).collect();
@@ -683,6 +685,7 @@ impl MirLowerer {
             external_calls,
             aggregate_layouts,
             sum_types,
+            flags_types,
             diagnostics,
         };
         result
@@ -698,7 +701,7 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
+        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
         let structs = module.structs.iter().map(lower_struct).collect();
@@ -749,6 +752,7 @@ impl MirLowerer {
             external_calls,
             aggregate_layouts,
             sum_types,
+            flags_types,
             diagnostics,
         }
     }

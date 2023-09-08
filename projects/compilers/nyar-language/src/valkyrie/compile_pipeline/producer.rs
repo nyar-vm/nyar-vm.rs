@@ -353,7 +353,7 @@ mod tests {
                 }],
             }],
             structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), aggregate_layouts: AggregateLayoutPlan::default(),
-            sum_types: Vec::new(), diagnostics: Vec::new(),
+            sum_types: Vec::new(), flags_types: Vec::new(), diagnostics: Vec::new(),
         }
     }
 
