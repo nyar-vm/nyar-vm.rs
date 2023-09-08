@@ -47,7 +47,7 @@ pub use value_semantics::{
 };
 
 use builtin_helpers::plain_type_pattern_matches;
-use nyar_types::VariantId;
+use nyar_types::{ItemInstanceId, VariantId};
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, named_type_name};
 use expr_lowering::lower_literal;
@@ -98,6 +98,9 @@ pub struct MirModule {
     /// Backend preparation may consume these contracts, but must not create
     /// new language semantics from its host ABI.
     pub external_calls: Vec<MirExternalCallContract>,
+    /// Compiler 在 Semantic MIR 边界确定的完整 callable identity 表。
+    /// Canonical producer 只能消费该表，不能按函数遍历顺序重新编号。
+    pub callable_identities: BTreeMap<String, ItemInstanceId>,
     /// Value/reference aggregate inline layout plan.
     pub aggregate_layouts: value_semantics::AggregateLayoutPlan,
     /// Canonical nominal-sum registry.  This is language semantic metadata:
@@ -677,12 +680,14 @@ impl MirLowerer {
             &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
+        let callable_identities = callable_identity_table(&functions, &external_calls);
         let result = MirModule {
             name: module.name.to_string(),
             functions,
             structs,
             imports,
             external_calls,
+            callable_identities,
             aggregate_layouts,
             sum_types,
             flags_types,
@@ -744,18 +749,38 @@ impl MirLowerer {
             &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
+        let callable_identities = callable_identity_table(&functions, &external_calls);
         MirModule {
             name: module.name.to_string(),
             functions,
             structs,
             imports,
             external_calls,
+            callable_identities,
             aggregate_layouts,
             sum_types,
             flags_types,
             diagnostics,
         }
     }
+
+}
+
+fn callable_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract]) -> BTreeMap<String, ItemInstanceId> {
+    let mut symbols = functions.iter().map(|function| function.symbol.clone()).collect::<Vec<_>>();
+    symbols.extend(external_calls.iter().map(|contract| contract.symbol.to_string()));
+    symbols.sort();
+    symbols.dedup();
+    symbols
+        .into_iter()
+        .enumerate()
+        .map(|(index, symbol)| (symbol, ItemInstanceId::from_index(index as u32).expect("callable identity overflow")))
+        .collect()
+}
+
+/// 在依赖函数进入最终 Semantic MIR 闭包后，由 Compiler linker 重新冻结 callable 表。
+pub fn rebuild_callable_identities(module: &mut MirModule) {
+    module.callable_identities = callable_identity_table(&module.functions, &module.external_calls);
 }
 
 fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {

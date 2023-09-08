@@ -34,20 +34,19 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let _ = name;
     }
     linked.fields = field_records;
-    for (index, function) in module.functions.iter().enumerate() {
-        let instance = item_instance(index as u32);
+    for function in &module.functions {
+        let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: item_id(index as u32),
+            declaration: item_id(instance.index()),
             substitution: monomorphic_substitution(function)?,
             parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &function.return_type)?,
         });
     }
-    let external_start = module.functions.len() as u32;
     for (offset, contract) in module.external_calls.iter().enumerate() {
-        let instance = item_instance(external_start + offset as u32);
+        let instance = *symbols.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: item_id(external_start + offset as u32),
+            declaration: item_id(instance.index()),
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
             parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &contract.return_type)?,
@@ -62,8 +61,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         });
     }
     let mut next_instruction = 0u32;
-    let functions = module.functions.iter().enumerate().map(|(index, function)| {
-        let instance = item_instance(index as u32);
+    let functions = module.functions.iter().map(|function| {
+        let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         Ok((instance, lower_function(function, instance, &symbols, &type_values, &nominals, &fields, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
@@ -99,13 +98,22 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
 }
 
 fn collect_symbols(module: &MirModule) -> Result<BTreeMap<String, ItemInstanceId>, StructuredDiagnosticSet> {
-    let mut symbols = BTreeMap::new();
-    for (index, function) in module.functions.iter().enumerate() {
-        insert_symbol(&mut symbols, function.symbol.clone(), item_instance(index as u32), module)?;
+    if module.callable_identities.is_empty() && (!module.functions.is_empty() || !module.external_calls.is_empty()) {
+        return Err(error(module, "CAN034", "Semantic MIR 缺少 Compiler callable identity 表"));
     }
-    let external_start = module.functions.len() as u32;
-    for (offset, contract) in module.external_calls.iter().enumerate() {
-        insert_symbol(&mut symbols, contract.symbol.to_string(), item_instance(external_start + offset as u32), module)?;
+    let mut symbols = BTreeMap::new();
+    for function in &module.functions {
+        let Some(identity) = module.callable_identities.get(&function.symbol) else {
+            return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)));
+        };
+        insert_symbol(&mut symbols, function.symbol.clone(), *identity, module)?;
+    }
+    for contract in &module.external_calls {
+        let symbol = contract.symbol.to_string();
+        let Some(identity) = module.callable_identities.get(&symbol) else {
+            return Err(error(module, "CAN034", format!("导入 `{symbol}` 缺少 Compiler callable identity")));
+        };
+        insert_symbol(&mut symbols, symbol, *identity, module)?;
     }
     Ok(symbols)
 }
@@ -324,7 +332,6 @@ fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, St
 fn contains_unresolved_type(ty: &ValkyrieType) -> bool { matches!(ty, ValkyrieType::Generic(_) | ValkyrieType::SelfType | ValkyrieType::Associated(_) | ValkyrieType::AutoType) }
 fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> { ids.get(ty).copied().ok_or_else(|| error_without_module("CAN014", "类型事实未进入 canonical table")) }
 fn item_id(index: u32) -> ItemId { ItemId::from_index(index).expect("item identity overflow") }
-fn item_instance(index: u32) -> ItemInstanceId { ItemInstanceId::from_index(index).expect("item instance overflow") }
 fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, "", message).err().unwrap() }
 fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap() }
 fn canonical_error(module: &MirModule, error: CanonicalMirError) -> StructuredDiagnosticSet { fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, format!("canonical MIR 校验失败: {error:?}")).err().unwrap() }
@@ -352,7 +359,7 @@ mod tests {
                     terminator: MirTerminator::Return { value: return_value.map(MirOperand::Value) },
                 }],
             }],
-            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), aggregate_layouts: AggregateLayoutPlan::default(),
+            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(), flags_types: Vec::new(), diagnostics: Vec::new(),
         }
     }
@@ -404,6 +411,18 @@ mod tests {
     }
 
     #[test]
+    fn producer_rejects_missing_compiler_callable_identity() {
+        let mut module = module_with(
+            MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
+            None,
+            BTreeMap::new(),
+        );
+        module.callable_identities.clear();
+        let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler callable identity 必须失败");
+        assert_eq!(error.records[0].code, "CAN034");
+    }
+
+    #[test]
     fn producer_rejects_semantic_mir_lowering_diagnostics() {
         let mut module = module_with(
             MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },
@@ -430,6 +449,7 @@ mod tests {
             parameter_types: vec![ValkyrieType::Boolean],
             return_type: ValkyrieType::Unit,
         });
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
 
         let program = canonical_program_from_semantic_mir(&module).expect("external declaration has a complete import contract");
         let import = ImportIndex::from_index(0).unwrap();
