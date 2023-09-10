@@ -16,7 +16,7 @@ use nyar::{
     ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
     ProjectionPolicy, QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, suspend_consumption_model_for_lane,
 };
-use crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner;
+use crate::valkyrie::compile_pipeline::{CanonicalRepresentationPlanner, CompilerArtifact};
 use nyar_types::pipeline::RepresentationPlanStage;
 
 use crate::{
@@ -28,25 +28,38 @@ pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, F
 pub use nyar::AssembledFragment;
 pub use suspend_payload::{build_first_class_suspend_payload, build_state_machine_suspend_payload};
 
-/// Plan artifacts from `FrontendBuildOutput` using injected target and projection policy.
-pub fn plan_artifacts_from_build_output(
+/// Compiler 语义成功产物与目标分区计划的不可分离 bundle。
+#[derive(Debug, Clone)]
+pub struct PlannedCompilerArtifacts {
+    /// 编译器拥有的 Canonical/Representation 成功产物。
+    pub compiler: CompilerArtifact,
+    /// 目标分区选择；不包含语义补造事实。
+    pub partitions: ArtifactPartitionPlan,
+}
+
+/// Plan compiler artifacts from `FrontendBuildOutput` using injected target and projection policy.
+pub fn plan_compiler_artifacts_from_build_output(
     build_output: &FrontendBuildOutput,
     target: CanonicalTarget,
     projection_policy: ProjectionPolicy,
     backend_registry: BackendRegistry,
     clr_suspend_strategy: ClrSuspendStrategy,
-) -> Result<ArtifactPartitionPlan, PlanningError> {
+) -> Result<PlannedCompilerArtifacts, PlanningError> {
     let canonical = build_output.canonical_program().map_err(|error| PlanningError::SemanticContract {
         module: build_output.neutral_plan().module_name.to_string(),
         stage: nyar_types::CompileStage::ValidateMir,
         detail: format!("CanonicalProgram 建立失败: {error:?}"),
     })?;
-    CanonicalRepresentationPlanner.plan(&canonical).map_err(|error| PlanningError::SemanticContract {
+    let representation = CanonicalRepresentationPlanner.plan(&canonical).map_err(|error| PlanningError::SemanticContract {
         module: build_output.neutral_plan().module_name.to_string(),
         stage: nyar_types::CompileStage::RepresentationPlan,
         detail: format!("RepresentationPlan 建立失败: {error:?}"),
     })?;
-    build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
+    let partitions = build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)?;
+    Ok(PlannedCompilerArtifacts {
+        compiler: CompilerArtifact { program: canonical, representation },
+        partitions,
+    })
 }
 
 /// Assemble a platform [`AssembledFragment`] for the given partition.
