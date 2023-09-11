@@ -145,6 +145,8 @@ pub struct EvidenceRecord {
 /// 已完成签名绑定的外部导入记录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportRecord {
+    /// Compiler 已选择并验证的外部链接合同。
+    pub link: crate::ExternalImportLink,
     /// 互操作链接能力，仅用于链接和诊断，不作为执行分派键。
     pub capability: ImportCapability,
     /// 对应的外部 callable 实例。

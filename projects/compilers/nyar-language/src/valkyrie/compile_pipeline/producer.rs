@@ -69,6 +69,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let import = ImportIndex::from_index(offset as u32).ok_or_else(|| error_without_module("CAN031", "import identity 溢出"))?;
         let capability = ImportCapability::new(module.name.clone(), contract.symbol.to_string());
         linked.imports.insert(import, ImportRecord {
+            link: contract.link.clone(),
             capability,
             callee: instance,
             parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
@@ -454,6 +455,7 @@ mod tests {
         );
         module.external_calls.push(MirExternalCallContract {
             symbol: NamePath::new(vec![Identifier::new("std"), Identifier::new("console"), Identifier::new("write")]),
+            link: nyar_types::ExternalImportLink::host(None, vec!["std".to_owned(), "console".to_owned(), "write".to_owned()]),
             parameter_types: vec![ValkyrieType::Boolean],
             return_type: ValkyrieType::Unit,
         });

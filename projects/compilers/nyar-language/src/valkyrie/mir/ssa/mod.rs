@@ -130,6 +130,8 @@ pub struct MirModule {
 pub struct MirExternalCallContract {
     /// HIR 选择的精确源码身份。
     pub symbol: NamePath,
+    /// 声明阶段形成的显式外部链接合同。
+    pub link: nyar_types::ExternalImportLink,
     /// 语义导出声明的参数类型；禁止缺失后默认成空参数列表。
     pub parameter_types: Vec<ValkyrieType>,
     /// 语义导出声明的返回类型。
@@ -860,12 +862,14 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
             function.is_abstract
                 && crate::valkyrie::backend_contract::interop::function_interop_contract(function).is_some()
         })
-        .map(|function| {
-            MirExternalCallContract {
+        .filter_map(|function| {
+            let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
+            Some(MirExternalCallContract {
                 symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
+                link,
                 parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
                 return_type: function.return_type.clone(),
-            }
+            })
         }));
         for submodule in &module.submodules {
             collect_abstract_functions(submodule, out);
@@ -877,13 +881,15 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
         .imported_semantic_exports
         .iter()
         .flat_map(|export| {
-            export.functions.iter().map(move |function| {
+            export.functions.iter().filter_map(move |function| {
+                let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                 let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
-                MirExternalCallContract {
+                Some(MirExternalCallContract {
                     symbol,
+                    link,
                     parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
                     return_type: function.return_type.clone(),
-                }
+                })
             })
         })
         .collect::<Vec<_>>());
