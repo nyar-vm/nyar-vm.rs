@@ -28,25 +28,6 @@ pub struct ProcessingOutcome {
     pub representation: RepresentationPlan,
 }
 
-/// Compiler 在进入装配层前必须持有的完整语义成功产物。
-///
-/// `CanonicalProgram` 与 `RepresentationPlan` 是同一次编译的配对结果。
-/// 装配层不得重新生成其中任一项，也不得只把它们当作前置校验。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompilerArtifact {
-    /// 已验证的 Canonical Semantic MIR 与链接事实。
-    pub program: CanonicalProgram,
-    /// 与该程序严格配对的稀疏表示计划。
-    pub representation: RepresentationPlan,
-}
-
-impl CompilerArtifact {
-    /// 从已完成处理阶段的结果取得 Compiler 成功产物。
-    pub fn from_processing(outcome: ProcessingOutcome) -> Self {
-        Self { program: outcome.program, representation: outcome.representation }
-    }
-}
-
 /// One-way driver over stage contracts from `nyar_types::pipeline`.
 ///
 /// Does not accept `FrontendNeutralPlan` or `FragmentSubmission` as inputs.

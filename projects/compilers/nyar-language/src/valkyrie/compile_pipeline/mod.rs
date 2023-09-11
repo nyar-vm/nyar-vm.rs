@@ -17,7 +17,7 @@ mod planner;
 mod stubs;
 
 pub use diagnostics::{diagnostic, fail_stage};
-pub use driver::{AnalysisOutcome, CompilePipeline, CompilerArtifact, ProcessingOutcome};
+pub use driver::{AnalysisOutcome, CompilePipeline, ProcessingOutcome};
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use producer::canonical_program_from_semantic_mir;
 pub use planner::CanonicalRepresentationPlanner;

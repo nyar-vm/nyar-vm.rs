@@ -51,7 +51,7 @@ pub use valkyrie::{
         compute_aggregate_layout_plan, layout_id_for_nyar_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
         storage_kind_for_type,
     },
-    module, plan_compiler_artifacts_from_build_output, plan_artifacts_from_neutral_plan, PlannedCompilerArtifacts, type_checker, types,
+    module, plan_artifacts_from_build_output, plan_artifacts_from_neutral_plan, type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
     typing, validation,
     validation::ControlFlowScheduler,
