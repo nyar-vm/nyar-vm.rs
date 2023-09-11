@@ -81,9 +81,24 @@ pub struct LinkedSemanticProgram {
     pub evidence: BTreeMap<EvidenceId, EvidenceRecord>,
     /// 已绑定的外部导入槽；执行层只消费 `ImportIndex`。
     pub imports: BTreeMap<ImportIndex, ImportRecord>,
+    /// 已解析的公开导出合同，键为 Compiler 分配的 callable identity。
+    pub exports: BTreeMap<ItemInstanceId, ExportRecord>,
+    /// 已解析的程序入口合同。
+    pub entries: BTreeMap<ItemInstanceId, EntryRecord>,
     /// Semantic type table.
     pub types: BTreeMap<TypeId, TypeRecord>,
 }
+
+/// 一个已链接 callable 的公开导出合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportRecord {
+    /// 公开 ABI 名称，仅用于互操作边界。
+    pub exported_name: String,
+}
+
+/// 一个已链接 callable 的程序入口合同。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EntryRecord;
 
 /// Placeholder item instance row (filled by linker / adaptor selection).
 #[derive(Debug, Clone, PartialEq, Eq)]

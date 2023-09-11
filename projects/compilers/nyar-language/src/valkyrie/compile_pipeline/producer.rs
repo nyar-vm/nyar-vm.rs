@@ -8,6 +8,7 @@ use nyar_types::{
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
     FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
+use nyar_types::canonical_program::{EntryRecord, ExportRecord};
 
 use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
@@ -42,6 +43,20 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &function.return_type)?,
         });
+    }
+    for export in &module.exports {
+        let symbol = export.symbol.to_string();
+        let instance = *symbols.get(&symbol).ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
+        if linked.exports.insert(instance, ExportRecord { exported_name: export.exported_name.clone() }).is_some() {
+            return Err(error(module, "CAN037", format!("callable `{symbol}` 存在重复导出合同")));
+        }
+    }
+    for entry in &module.entries {
+        let symbol = entry.symbol.to_string();
+        let instance = *symbols.get(&symbol).ok_or_else(|| error(module, "CAN038", format!("入口 `{symbol}` 缺少 Compiler callable identity")))?;
+        if linked.entries.insert(instance, EntryRecord).is_some() {
+            return Err(error(module, "CAN039", format!("callable `{symbol}` 存在重复入口合同")));
+        }
     }
     for (offset, contract) in module.external_calls.iter().enumerate() {
         let instance = *symbols.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
@@ -323,7 +338,7 @@ mod tests {
                     terminator: MirTerminator::Return { value: return_value.map(MirOperand::Value) },
                 }],
             }],
-            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
+            structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), exports: Vec::new(), entries: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(), flags_types: Vec::new(), diagnostics: Vec::new(),
         };
         crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
@@ -338,6 +353,21 @@ mod tests {
         assert_eq!(program.linked.item_instances.len(), 1);
         assert_eq!(program.mir.functions.len(), 1);
         assert!(program.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
+    }
+
+    #[test]
+    fn producer_carries_export_and_entry_contracts_by_callable_identity() {
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_build_output(
+                "[export(name: \"public_main\")] [main] micro main() -> unit { return }",
+            )
+            .expect("源码必须完成前端分析");
+        let program = canonical_program_from_semantic_mir(output.semantic_mir()).expect("公开合同必须进入 canonical");
+        assert_eq!(program.linked.exports.len(), 1);
+        assert_eq!(program.linked.entries.len(), 1);
+        let (instance, export) = program.linked.exports.iter().next().unwrap();
+        assert_eq!(program.linked.entries.get(instance), Some(&nyar_types::canonical_program::EntryRecord));
+        assert_eq!(export.exported_name, "public_main");
     }
 
     #[test]

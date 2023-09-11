@@ -17,7 +17,7 @@ pub use singleton::{
 };
 pub use ssa::{
     AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant,
-    MirDiagnostic, MirEffectKind, MirExternalCallContract, MirField, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind,
+    MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind,
     MirStruct, MirTerminator, MirValue, MirValueOrigin, MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan,
     layout_id_for_nyar_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type, merge_aggregate_layout_plan,
     storage_kind_for_named_type, storage_kind_for_type,

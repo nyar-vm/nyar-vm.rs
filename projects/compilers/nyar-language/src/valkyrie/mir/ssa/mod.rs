@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use nyar_types::builtin_attribute;
 
 use crate::{
     symbols::stable_hir_function_symbol,
@@ -8,7 +9,7 @@ use crate::{
         Identifier, NamePath,
         hir::{
             HirExpr, HirFunction, HirImpl, HirMatchArm, HirModule, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
-            parse_workload_phase_from_annotations,
+            parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id,
         },
     },
 };
@@ -98,6 +99,10 @@ pub struct MirModule {
     /// Backend preparation may consume these contracts, but must not create
     /// new language semantics from its host ABI.
     pub external_calls: Vec<MirExternalCallContract>,
+    /// Compiler 在 Semantic MIR 边界确定的公开导出合同。
+    pub exports: Vec<MirExportContract>,
+    /// Compiler 在 Semantic MIR 边界确定的入口合同。
+    pub entries: Vec<MirEntryContract>,
     /// Compiler 在 Semantic MIR 边界确定的完整 callable identity 表。
     /// Canonical producer 只能消费该表，不能按函数遍历顺序重新编号。
     pub callable_identities: BTreeMap<String, ItemInstanceId>,
@@ -129,6 +134,22 @@ pub struct MirExternalCallContract {
     pub parameter_types: Vec<ValkyrieType>,
     /// 语义导出声明的返回类型。
     pub return_type: ValkyrieType,
+}
+
+/// 已解析 callable 的公开导出合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MirExportContract {
+    /// 已解析的 callable 符号；Canonical producer 只用它查 Compiler identity。
+    pub symbol: NamePath,
+    /// 公开 ABI 名称。
+    pub exported_name: String,
+}
+
+/// 已解析 callable 的程序入口合同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MirEntryContract {
+    /// 已解析的 callable 符号。
+    pub symbol: NamePath,
 }
 
 /// `MIR` 结构体定义。
@@ -646,6 +667,7 @@ impl MirLowerer {
         let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
+        let (exports, entries) = collect_surface_contracts(module);
         let mut functions = Vec::new();
         let mut diagnostics = Vec::new();
         for function in &module.functions {
@@ -691,6 +713,8 @@ impl MirLowerer {
             structs,
             imports,
             external_calls,
+            exports,
+            entries,
             callable_identities,
             type_identities,
             aggregate_layouts,
@@ -717,6 +741,7 @@ impl MirLowerer {
         let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
         let imports = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
+        let (exports, entries) = collect_surface_contracts(module);
         let mut functions = Vec::new();
         let mut diagnostics = Vec::new();
         for function in &module.functions {
@@ -762,6 +787,8 @@ impl MirLowerer {
             structs,
             imports,
             external_calls,
+            exports,
+            entries,
             callable_identities,
             type_identities,
             aggregate_layouts,
@@ -861,6 +888,28 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
         })
         .collect::<Vec<_>>());
     contracts
+}
+
+fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec<MirEntryContract>) {
+    fn visit(module: &HirModule, exports: &mut Vec<MirExportContract>, entries: &mut Vec<MirEntryContract>) {
+        for function in &module.functions {
+            let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function);
+            if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
+                exports.push(MirExportContract { symbol: symbol.clone(), exported_name: spec.resolve_exported_name(&function.name) });
+            }
+            if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
+                entries.push(MirEntryContract { symbol });
+            }
+        }
+        for submodule in &module.submodules {
+            visit(submodule, exports, entries);
+        }
+    }
+
+    let mut exports = Vec::new();
+    let mut entries = Vec::new();
+    visit(module, &mut exports, &mut entries);
+    (exports, entries)
 }
 
 fn lower_singleton_method_functions(
