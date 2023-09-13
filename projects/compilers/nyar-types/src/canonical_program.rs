@@ -355,8 +355,31 @@ pub enum CanonicalTerminator {
     Jump { target: CanonicalBlockId, arguments: Vec<MirValueId> },
     /// 条件分支。
     Branch { condition: MirValueId, then_target: CanonicalBlockId, else_target: CanonicalBlockId },
+    /// 执行已解析 effect，并转移到恢复块。
+    PerformEffect { effect: CanonicalEffectKind, payload: Option<MirValueId>, resume_target: CanonicalBlockId },
+    /// 按已解析状态值分发到恢复块。
+    StateDispatch { state: MirValueId, cases: Vec<(u32, CanonicalBlockId)>, default_target: CanonicalBlockId },
+    /// 将 effect 控制权交还 runtime。
+    YieldToRuntime { effect: CanonicalEffectKind, payload: Option<MirValueId>, resume_state: u32 },
     /// 不可达终点。
     Unreachable,
+}
+
+/// Semantic MIR 中不依赖目标的 effect 类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalEffectKind {
+    /// `raise expr`。
+    Raise,
+    /// `yield expr`。
+    Yield,
+    /// `yield from expr`。
+    DelegateYield,
+    /// `expr.await`。
+    Await,
+    /// `expr.awake`。
+    AsyncSpawn,
+    /// `expr.block`。
+    AsyncBlock,
 }
 
 /// 完整的 Semantic MIR 基本块。
@@ -401,6 +424,12 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
+    /// effect 终结符缺少语义 payload。
+    MissingEffectPayload { function: ItemInstanceId, block: CanonicalBlockId },
+    /// 状态分发值不是整数类型。
+    InvalidDispatchState { function: ItemInstanceId, value: MirValueId },
+    /// 状态分发中同一状态存在多个目标。
+    DuplicateDispatchState { function: ItemInstanceId, block: CanonicalBlockId, state: u32 },
     /// 聚合实例身份未知。
     UnknownNominal { function: ItemInstanceId, nominal: NominalInstanceId },
     /// 外部导入记录与 callable 签名不一致。
@@ -510,6 +539,10 @@ impl CanonicalSemanticMir {
                 let targets = match &block.terminator {
                     CanonicalTerminator::Jump { target, .. } => vec![*target],
                     CanonicalTerminator::Branch { then_target, else_target, .. } => vec![*then_target, *else_target],
+                    CanonicalTerminator::PerformEffect { resume_target, .. } => vec![*resume_target],
+                    CanonicalTerminator::StateDispatch { cases, default_target, .. } => {
+                        cases.iter().map(|(_, target)| *target).chain(std::iter::once(*default_target)).collect()
+                    }
                     _ => Vec::new(),
                 };
                 for target in targets {
@@ -731,11 +764,38 @@ impl CanonicalSemanticMir {
                     }
                     CanonicalTerminator::Jump { target, arguments } => (vec![(*target, arguments.len())], arguments.clone()),
                     CanonicalTerminator::Branch { condition, then_target, else_target } => (vec![(*then_target, 0), (*else_target, 0)], vec![*condition]),
+                    CanonicalTerminator::PerformEffect { effect, resume_target, payload } => {
+                        let payload = payload.ok_or(CanonicalMirError::MissingEffectPayload { function: *key, block: *block_id })?;
+                        let resume_arity = usize::from(*effect != CanonicalEffectKind::AsyncSpawn);
+                        (vec![(*resume_target, resume_arity)], vec![payload])
+                    }
+                    CanonicalTerminator::StateDispatch { state, cases, default_target } => {
+                        let state_type = function.value_types.get(state).and_then(|ty| linked.types.get(ty));
+                        if !matches!(state_type.map(|record| &record.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))) {
+                            return Err(CanonicalMirError::InvalidDispatchState { function: *key, value: *state });
+                        }
+                        let mut states = std::collections::BTreeSet::new();
+                        for (state, _) in cases {
+                            if !states.insert(*state) {
+                                return Err(CanonicalMirError::DuplicateDispatchState { function: *key, block: *block_id, state: *state });
+                            }
+                        }
+                        (cases.iter().map(|(_, target)| (*target, 0)).chain(std::iter::once((*default_target, 0))).collect(), vec![*state])
+                    }
+                    CanonicalTerminator::YieldToRuntime { payload, .. } => {
+                        let payload = payload.ok_or(CanonicalMirError::MissingEffectPayload { function: *key, block: *block_id })?;
+                        (Vec::new(), vec![payload])
+                    }
                     CanonicalTerminator::Unreachable => (Vec::new(), Vec::new()),
                 };
                 for value in terminator_values {
                     if !block_defined.contains(&value) {
                         return Err(CanonicalMirError::TerminatorUseBeforeDefinition { function: *key, value });
+                    }
+                    if let Some(Some(definition_block)) = definitions.get(&value) {
+                        if definition_block != block_id && !dominators[block_id].contains(definition_block) {
+                            return Err(CanonicalMirError::NonDominatingUse { function: *key, value, block: *block_id });
+                        }
                     }
                 }
                 for (target, arity) in targets {
@@ -890,6 +950,72 @@ mod tests {
     #[test]
     fn structured_diagnostic_set_rejects_empty() {
         assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
+    }
+
+    #[test]
+    fn canonical_effect_terminator_preserves_payload_and_resume_contract() {
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let ty = TypeId::from_index(0).unwrap();
+        let payload = MirValueId::from_index(0).unwrap();
+        let resume_value = MirValueId::from_index(1).unwrap();
+        let mut linked = LinkedSemanticProgram::default();
+        linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
+        linked.item_instances.insert(instance, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: vec![ty],
+            return_type: ty,
+        });
+        let function = CanonicalFunction {
+            instance,
+            parameters: vec![(payload, ty)],
+            return_type: ty,
+            value_types: BTreeMap::from([(payload, ty), (resume_value, ty)]),
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([
+                (CanonicalBlockId(0), CanonicalBlock {
+                    id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
+                    terminator: CanonicalTerminator::PerformEffect {
+                        effect: CanonicalEffectKind::Raise, payload: Some(payload), resume_target: CanonicalBlockId(1),
+                    },
+                }),
+                (CanonicalBlockId(1), CanonicalBlock {
+                    id: CanonicalBlockId(1), parameters: vec![(resume_value, ty)], instructions: Vec::new(),
+                    terminator: CanonicalTerminator::Return { value: None },
+                }),
+            ]),
+        };
+        let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
+        program.validate(&linked).expect("effect payload and resume block are complete");
+    }
+
+    #[test]
+    fn canonical_effect_terminator_rejects_missing_payload() {
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let ty = TypeId::from_index(0).unwrap();
+        let mut linked = LinkedSemanticProgram::default();
+        linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
+        linked.item_instances.insert(instance, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(),
+            substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: Vec::new(),
+            return_type: ty,
+        });
+        let function = CanonicalFunction {
+            instance,
+            parameters: Vec::new(),
+            return_type: ty,
+            value_types: BTreeMap::new(),
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
+                id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
+                terminator: CanonicalTerminator::PerformEffect {
+                    effect: CanonicalEffectKind::Raise, payload: None, resume_target: CanonicalBlockId(0),
+                },
+            })]),
+        };
+        let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
+        assert!(matches!(program.validate(&linked), Err(CanonicalMirError::MissingEffectPayload { .. })));
     }
 
     fn typed_call_program() -> CanonicalProgram {

@@ -8,7 +8,7 @@ use nyar_types::{
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
     FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
-use nyar_types::canonical_program::{EntryRecord, ExportRecord};
+use nyar_types::canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord};
 
 use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
@@ -299,8 +299,30 @@ fn lower_terminator(terminator: &MirTerminator) -> Result<CanonicalTerminator, S
         MirTerminator::Return { value: None } => Ok(CanonicalTerminator::Return { value: None }),
         MirTerminator::Jump { target, arguments } => Ok(CanonicalTerminator::Jump { target: CanonicalBlockId(target.0), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
         MirTerminator::Branch { condition, then_target, else_target } => Ok(CanonicalTerminator::Branch { condition: value(condition)?, then_target: CanonicalBlockId(then_target.0), else_target: CanonicalBlockId(else_target.0) }),
+        MirTerminator::PerformEffect { effect, payload, resume_target } => Ok(CanonicalTerminator::PerformEffect {
+            effect: lower_effect(*effect), payload: payload.as_ref().map(value).transpose()?, resume_target: CanonicalBlockId(resume_target.0),
+        }),
+        MirTerminator::StateDispatch { state, cases, default_target } => Ok(CanonicalTerminator::StateDispatch {
+            state: MirValueId::from_index(state.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?,
+            cases: cases.iter().map(|(state, target)| (*state, CanonicalBlockId(target.0))).collect(),
+            default_target: CanonicalBlockId(default_target.0),
+        }),
+        MirTerminator::YieldToRuntime { effect, payload, resume_state } => Ok(CanonicalTerminator::YieldToRuntime {
+            effect: lower_effect(*effect), payload: payload.as_ref().map(value).transpose()?, resume_state: *resume_state,
+        }),
         MirTerminator::Unreachable => Ok(CanonicalTerminator::Unreachable),
-        _ => Err(error_without_module("CAN011", "终结符没有无损 canonical 形状")),
+    }
+}
+
+fn lower_effect(effect: crate::valkyrie::mir::MirEffectKind) -> CanonicalEffectKind {
+    use crate::valkyrie::mir::MirEffectKind;
+    match effect {
+        MirEffectKind::Raise => CanonicalEffectKind::Raise,
+        MirEffectKind::Yield => CanonicalEffectKind::Yield,
+        MirEffectKind::DelegateYield => CanonicalEffectKind::DelegateYield,
+        MirEffectKind::Await => CanonicalEffectKind::Await,
+        MirEffectKind::AsyncSpawn => CanonicalEffectKind::AsyncSpawn,
+        MirEffectKind::AsyncBlock => CanonicalEffectKind::AsyncBlock,
     }
 }
 
