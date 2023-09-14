@@ -98,7 +98,7 @@ mod tests {
                  micro integer_identity(value: i32) -> i32 { return value }",
             )
             .expect("源码必须完成前端分析");
-        let program = output.canonical_program().expect("源码必须产生有效 CanonicalProgram");
+        let program = output.canonical_program();
         let plan = CanonicalRepresentationPlanner.plan(&program).expect("完整语义合同必须完成表示规划");
         let functions = program.mir.functions.values().collect::<Vec<_>>();
         assert_eq!(functions.len(), 2);

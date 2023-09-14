@@ -336,14 +336,17 @@ pub struct FrontendBuildOutput {
     hir_module: HirModule,
     neutral_plan: FrontendNeutralPlan,
     semantic_mir: crate::valkyrie::mir::MirModule,
+    canonical_program: nyar_types::CanonicalProgram,
 }
 
 impl FrontendBuildOutput {
     /// Build output from a lowered HIR module.
-    pub fn from_hir_module(hir_module: HirModule) -> Self {
+    pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
         let neutral_plan = hir_module_to_frontend_neutral_plan(&hir_module);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-        Self { hir_module, neutral_plan, semantic_mir }
+        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
+            .map_err(|error| ParseError::invalid(format!("CanonicalProgram 生产失败: {error:?}")))?;
+        Ok(Self { hir_module, neutral_plan, semantic_mir, canonical_program })
     }
 
     /// 返回 lowering 后的 HIR 模块。
@@ -361,9 +364,9 @@ impl FrontendBuildOutput {
         &self.semantic_mir
     }
 
-    /// 将 Semantic MIR 交给唯一的 canonical producer。
-    pub fn canonical_program(&self) -> Result<nyar_types::CanonicalProgram, nyar_types::StructuredDiagnosticSet> {
-        crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+    /// 返回 Compiler 已验证的 CanonicalProgram；消费者不得重新生产。
+    pub fn canonical_program(&self) -> &nyar_types::CanonicalProgram {
+        &self.canonical_program
     }
 
     /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
@@ -372,7 +375,10 @@ impl FrontendBuildOutput {
     /// requires those bodies in the executable registry (SMIR003), not only SPI
     /// signature contracts.
     pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
-        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)
+        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)?;
+        self.canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+            .map_err(|error| ParseError::invalid(format!("依赖链接后的 CanonicalProgram 生产失败: {error:?}")))?;
+        Ok(())
     }
 
     /// 返回 `HIR` 函数数量，供装配层做调试输出。
@@ -617,7 +623,7 @@ impl ValkyrieCompiler {
     /// Parses source text and lowers it into the stable frontend build bundle.
     pub fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source(source)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// Builds the stable frontend bundle with resolved nominal dependency
@@ -628,7 +634,7 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
     ) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source_with_semantic_exports(source, imported_semantic_exports)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
@@ -650,7 +656,7 @@ impl ValkyrieCompiler {
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
             )?;
-            let output = FrontendBuildOutput::from_hir_module(hir_module);
+            let output = FrontendBuildOutput::from_hir_module(hir_module)?;
             let hir = output.hir_module();
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
@@ -678,7 +684,7 @@ impl ValkyrieCompiler {
     /// Parses a source file and lowers it into the stable frontend build bundle.
     pub fn compile_path_to_build_output(&self, path: &Path) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_path(path)?;
-        Ok(FrontendBuildOutput::from_hir_module(hir_module))
+        FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// Lowers parser output into a HIR module.

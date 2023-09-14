@@ -36,11 +36,7 @@ pub fn plan_artifacts_from_build_output(
     backend_registry: BackendRegistry,
     clr_suspend_strategy: ClrSuspendStrategy,
 ) -> Result<ArtifactPartitionPlan, PlanningError> {
-    let canonical = build_output.canonical_program().map_err(|error| PlanningError::SemanticContract {
-        module: build_output.neutral_plan().module_name.to_string(),
-        stage: nyar_types::CompileStage::ValidateMir,
-        detail: format!("CanonicalProgram 建立失败: {error:?}"),
-    })?;
+    let canonical = build_output.canonical_program();
     CanonicalRepresentationPlanner.plan(&canonical).map_err(|error| PlanningError::SemanticContract {
         module: build_output.neutral_plan().module_name.to_string(),
         stage: nyar_types::CompileStage::RepresentationPlan,
