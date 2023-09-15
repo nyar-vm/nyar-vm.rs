@@ -84,7 +84,7 @@ pub(crate) fn testing_build_clr_nominal_type_defs(
 }
 
 #[cfg(feature = "legacy-lanes")]
-pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> NyarModuleData {
+pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
     nyar_vm::lower_fragment_to_nyar_module(submission)
 }
 
@@ -294,12 +294,17 @@ pub(crate) fn lower_fragment_to_driver_input(
                 None
             }
             else {
-                Some(nyar_vm::lower_fragment_to_nyar_module(submission))
+                Some(nyar_vm::lower_fragment_to_nyar_module(submission)?)
             };
             Ok(DriverBackendInput::NyarVm(NyarVmBackendInput {
                 suspend_runtime: submission.suspend_runtime.clone(),
                 control_flow: submission.control_flow.clone(),
                 nyar_module,
+                library_public_exports: submission
+                    .exported_operations
+                    .iter()
+                    .filter_map(|operation| submission.wasm_export_names.get(operation).cloned())
+                    .collect(),
                 output_dir,
             }))
         }

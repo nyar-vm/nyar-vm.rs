@@ -11,6 +11,7 @@ use emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, t
 use nyar::Identifier;
 use nyar_language::{MirLowerer, ValkyrieCompiler, mir_function_to_executable, types::SourceID};
 use nyar_bytecode::{NyarHeadCode, NyarModuleData};
+use nyar_vm::{NyarVm, value::Value};
 
 /// 模块 imports 表是否声明指定宿主符号（`nyar.host`）。
 fn module_declares_host_import(module: &NyarModuleData, name: &str) -> bool {
@@ -30,9 +31,14 @@ fn lower_main_from_source(source: &str, version_id: u32) -> NyarModuleData {
     let operation = nyar::QualifiedName::new(vec![Identifier::new("main")]);
     let mut submission = FragmentSubmission::default();
     submission.aggregate_layouts = plan;
+    submission.exported_operations = vec![operation.clone()];
     submission.executable =
-        Some(Arc::new(MirFunctionMapProvider::new([(operation, mir_function_to_executable(main_symbol))].into_iter().collect())));
-    testing::lower_fragment_to_nyar_module(&submission)
+        Some(Arc::new(MirFunctionMapProvider::new(
+            [(operation, mir_function_to_executable(main_symbol, &mir.sum_types).expect("完整 MIR 模块必须提供 sum registry"))]
+                .into_iter()
+                .collect(),
+        )));
+    testing::lower_fragment_to_nyar_module(&submission).expect("Compiler-owned executable lowering")
 }
 
 #[test]
@@ -102,4 +108,72 @@ micro main() {
     );
     assert!(module_contains_opcode(&module, NyarHeadCode::FieldGet), "bytecode should contain FieldGet");
     assert!(!module_declares_host_import(&module, "record_get"), "FieldGet must not declare record_get");
+}
+
+#[test]
+fn nyar_vm_loop_preserves_entry_arguments() {
+    let module = lower_main_from_source(
+        r#"
+micro main(first: i64, second: i64) -> i64 {
+    let mut current = second;
+    let mut count = 0;
+    while count < 3 {
+        current = current + 1;
+        count = count + 1;
+    }
+    return first;
+}
+"#,
+        9710,
+    );
+    let bytes = nyar_bytecode::encode_module(&module);
+    let mut vm = NyarVm::new();
+    let loaded = vm.load(&bytes).expect("verify and load");
+    let result = vm.run(&loaded, "main", vec![Value::I32(41), Value::I32(7)]).expect("execute");
+    assert_eq!(result, Value::I32(41));
+}
+
+#[test]
+fn nyar_vm_loop_copies_parameters_in_parallel() {
+    let module = lower_main_from_source(
+        r#"
+micro main(first: i64, second: i64) -> i64 {
+    let mut left = first;
+    let mut right = second;
+    let mut count = 0;
+    while count < 3 {
+        let saved = left;
+        left = right;
+        right = saved;
+        count = count + 1;
+    }
+    return left * 10 + right;
+}
+"#,
+        9711,
+    );
+    let bytes = nyar_bytecode::encode_module(&module);
+    let mut vm = NyarVm::new();
+    let loaded = vm.load(&bytes).expect("verify and load");
+    let result = vm.run(&loaded, "main", vec![Value::I32(2), Value::I32(7)]).expect("execute");
+    assert_eq!(result, Value::I64(72));
+}
+
+#[test]
+fn nyar_vm_assignment_does_not_rebind_source_value() {
+    let module = lower_main_from_source(
+        r#"
+micro main(first: i64, second: i64) -> i64 {
+    let mut current = first;
+    current = second;
+    return first;
+}
+"#,
+        9712,
+    );
+    let bytes = nyar_bytecode::encode_module(&module);
+    let mut vm = NyarVm::new();
+    let loaded = vm.load(&bytes).expect("verify and load");
+    let result = vm.run(&loaded, "main", vec![Value::I32(41), Value::I32(7)]).expect("execute");
+    assert_eq!(result, Value::I32(41));
 }

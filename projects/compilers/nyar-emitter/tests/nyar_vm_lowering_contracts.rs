@@ -2,10 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nyar::{Identifier, QualifiedName, RewriteTheory, TheoryBundle};
 use nyar_emitter::{FragmentSubmission, testing::lower_fragment_to_nyar_module};
-use nyar_bytecode::encode_module;
-
 #[test]
-fn emits_nyar_module_with_exports() {
+fn rejects_edge_only_submission_without_compiler_owned_executable() {
     let operation = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("add_two")]);
     let submission = FragmentSubmission {
         module_name: "demo".to_string(),
@@ -26,14 +24,12 @@ fn emits_nyar_module_with_exports() {
         ..Default::default()
     };
 
-    let module = lower_fragment_to_nyar_module(&submission);
-    assert_eq!(module.exports.len(), 1);
-    assert_eq!(module.exports[0].symbol_name, "add_two");
-    assert!(!encode_module(&module).is_empty());
+    let error = lower_fragment_to_nyar_module(&submission).expect_err("edge-only submission must not be replayed");
+    assert!(error.to_string().contains("Compiler-owned executable functions"));
 }
 
 #[test]
-fn emits_nyar_export_alias_from_wasm_export_names() {
+fn rejects_edge_only_export_alias_submission() {
     let operation = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("pair_sum")]);
     let submission = FragmentSubmission {
         module_name: "demo".to_string(),
@@ -55,13 +51,12 @@ fn emits_nyar_export_alias_from_wasm_export_names() {
         ..Default::default()
     };
 
-    let module = lower_fragment_to_nyar_module(&submission);
-    assert_eq!(module.exports.len(), 1);
-    assert_eq!(module.exports[0].symbol_name, "pairSum");
+    let error = lower_fragment_to_nyar_module(&submission).expect_err("edge-only export must not be replayed");
+    assert!(error.to_string().contains("Compiler-owned executable functions"));
 }
 
 #[test]
-fn emits_nyar_export_alias_when_operation_key_shape_differs() {
+fn rejects_edge_only_noncanonical_export_key() {
     let canonical = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("container"), Identifier::new("max_area")]);
     let operation = QualifiedName::new(vec![Identifier::new("demo.container"), Identifier::new("max_area")]);
     let submission = FragmentSubmission {
@@ -84,7 +79,6 @@ fn emits_nyar_export_alias_when_operation_key_shape_differs() {
         ..Default::default()
     };
 
-    let module = lower_fragment_to_nyar_module(&submission);
-    assert_eq!(module.exports.len(), 1);
-    assert_eq!(module.exports[0].symbol_name, "maxArea");
+    let error = lower_fragment_to_nyar_module(&submission).expect_err("edge-only export must not be replayed");
+    assert!(error.to_string().contains("Compiler-owned executable functions"));
 }

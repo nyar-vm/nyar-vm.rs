@@ -174,7 +174,7 @@ pub mod testing {
 
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "legacy-lanes")]
-    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> NyarModuleData {
+    pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData, miette::Report> {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
 
@@ -800,6 +800,8 @@ pub struct NyarVmBackendInput {
     pub control_flow: Option<nyar::ControlFlowPayload>,
     /// Optional Nyar module payload to emit as `.nyar`.
     pub nyar_module: Option<nyar_bytecode::NyarModuleData>,
+    /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
+    pub library_public_exports: Vec<String>,
     /// Output directory.
     pub output_dir: PathBuf,
 }
