@@ -9,14 +9,18 @@ use nyar_types::{
 
 use crate::{
     MirBlock, MirBlockRef, MirConstant, MirEffectKind, MirFunction, MirInstruction, MirOperand, MirOperation, MirTerminator, MirValue,
-    MirValueOrigin, MirValueRef, concretize_type_lossy, mir::ssa::ArrayInitialization,
+    MirValueOrigin, MirValueRef, concretize_type, mir::ssa::ArrayInitialization,
 };
 
 /// Deep-convert a language [`MirFunction`] into a platform [`ExecutableFunction`].
 pub fn mir_function_to_executable(function: &MirFunction, sum_types: &[nyar_types::SumTypeLayout]) -> Result<ExecutableFunction, String> {
-    let return_type = concretize_type_lossy(&function.return_type);
-    let param_types = function.param_types.iter().map(concretize_type_lossy).collect();
-    let value_types = function.value_types.iter().map(|(key, ty)| (convert_value_ref(*key), concretize_type_lossy(ty))).collect();
+    let return_type = concrete_type(&function.return_type)?;
+    let param_types = function.param_types.iter().map(concrete_type).collect::<Result<Vec<_>, _>>()?;
+    let value_types = function
+        .value_types
+        .iter()
+        .map(|(key, ty)| concrete_type(ty).map(|ty| (convert_value_ref(*key), ty)))
+        .collect::<Result<_, _>>()?;
 
     // Semantic MirFunction 不再携带 suspend/frame/case God 元数据。
     #[allow(deprecated)]
@@ -68,8 +72,12 @@ fn convert_effect(effect: MirEffectKind) -> EffectKind {
     }
 }
 
-fn convert_optional_type(ty: &Option<crate::types::hir::ValkyrieType>) -> Option<NyarType> {
-    ty.as_ref().map(concretize_type_lossy)
+fn concrete_type(ty: &crate::types::hir::ValkyrieType) -> Result<NyarType, String> {
+    concretize_type(ty).map_err(|error| error.to_string())
+}
+
+fn convert_optional_type(ty: &Option<crate::types::hir::ValkyrieType>) -> Result<Option<NyarType>, String> {
+    ty.as_ref().map(concrete_type).transpose()
 }
 
 fn convert_constant(constant: &MirConstant) -> Constant {
@@ -111,11 +119,11 @@ fn convert_value(value: &MirValue) -> Value {
 
 fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTypeLayout]) -> Result<InstructionKind, String> {
     match kind {
-        MirOperation::LoadConstant { constant, ty } => Ok(InstructionKind::LoadConstant { constant: convert_constant(constant), ty: convert_optional_type(ty) }),
+        MirOperation::LoadConstant { constant, ty } => Ok(InstructionKind::LoadConstant { constant: convert_constant(constant), ty: convert_optional_type(ty)? }),
         MirOperation::LoadSymbol { path } => Ok(InstructionKind::LoadSymbol { path: path.clone() }),
         MirOperation::Copy { source } => Ok(InstructionKind::Copy { source: convert_operand(source) }),
         MirOperation::StoreVar { name, value, ty } => {
-            Ok(InstructionKind::StoreVar { name: name.clone(), value: convert_operand(value), ty: convert_optional_type(ty) })
+            Ok(InstructionKind::StoreVar { name: name.clone(), value: convert_operand(value), ty: convert_optional_type(ty)? })
         }
         MirOperation::Call { callee, arguments } => {
             Ok(InstructionKind::Call { callee: convert_operand(callee), arguments: arguments.iter().map(convert_operand).collect() })
@@ -134,21 +142,21 @@ fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTyp
         }
         MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload } => Ok(InstructionKind::SumNew {
             sum_type: sum_type.clone(),
-            type_args: type_args.iter().map(concretize_type_lossy).collect(),
+            type_args: type_args.iter().map(concrete_type).collect::<Result<Vec<_>, _>>()?,
             variant: declared_variant_name(sum_types, sum_type, *variant)?,
-            payload_type: payload_type.as_ref().map(concretize_type_lossy),
+            payload_type: payload_type.as_ref().map(concrete_type).transpose()?,
             payload: payload.as_ref().map(convert_operand),
         }),
         MirOperation::SumPayloadGet { sum_type, type_args, variant, payload_type, object } => Ok(InstructionKind::SumPayloadGet {
             sum_type: sum_type.clone(),
-            type_args: type_args.iter().map(concretize_type_lossy).collect(),
+            type_args: type_args.iter().map(concrete_type).collect::<Result<Vec<_>, _>>()?,
             variant: declared_variant_name(sum_types, sum_type, *variant)?,
-            payload_type: concretize_type_lossy(payload_type),
+            payload_type: concrete_type(payload_type)?,
             object: convert_operand(object),
         }),
         MirOperation::SumVariantIs { sum_type, type_args, variant, object } => Ok(InstructionKind::SumVariantIs {
             sum_type: sum_type.clone(),
-            type_args: type_args.iter().map(concretize_type_lossy).collect(),
+            type_args: type_args.iter().map(concrete_type).collect::<Result<Vec<_>, _>>()?,
             variant: declared_variant_name(sum_types, sum_type, *variant)?,
             object: convert_operand(object),
         }),
@@ -156,7 +164,7 @@ fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTyp
             Ok(InstructionKind::PatternMatch { value: convert_operand(value), pattern_debug: format!("{pattern:?}") })
         }
         MirOperation::ArrayNew { array_type, length, initialization } => Ok(InstructionKind::ArrayNew {
-            array_type: concretize_type_lossy(array_type),
+            array_type: concrete_type(array_type)?,
             length: convert_operand(length),
             initialization: match initialization {
                 ArrayInitialization::Default => nyar_types::executable::ArrayInitialization::Default,
@@ -164,7 +172,7 @@ fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTyp
             },
         }),
         MirOperation::ArrayFromElements { array_type, elements } => Ok(InstructionKind::ArrayFromElements {
-            array_type: concretize_type_lossy(array_type),
+            array_type: concrete_type(array_type)?,
             elements: elements.iter().map(convert_operand).collect(),
         }),
         MirOperation::ArrayGet { array, index } => Ok(InstructionKind::ArrayGet { array: convert_operand(array), index: convert_operand(index) }),
@@ -241,3 +249,62 @@ fn convert_block(block: &MirBlock, sum_types: &[nyar_types::SumTypeLayout]) -> R
 
 // suspend/frame/case/diagnostic God 转换器已随 Semantic MIR 瘦身删除。
 // mir_function_to_executable 产出空侧表；不得在此恢复 MirSuspendState / StateMachine。
+
+#[cfg(test)]
+mod executable_type_contract_tests {
+    use super::*;
+    use crate::types::hir::ValkyrieType;
+
+    fn function() -> MirFunction {
+        MirFunction {
+            symbol: "contract::identity".to_owned(),
+            return_type: ValkyrieType::Unit,
+            param_types: Vec::new(),
+            value_types: BTreeMap::new(),
+            entry: MirBlockRef(0),
+            values: Vec::new(),
+            blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn executable_rejects_unresolved_types_in_every_function_type_table() {
+        for unresolved in [ValkyrieType::AutoType, ValkyrieType::SelfType,
+            ValkyrieType::Array(Box::new(ValkyrieType::AutoType))] {
+            let mut input = function();
+            input.return_type = unresolved.clone();
+            assert!(mir_function_to_executable(&input, &[]).is_err());
+            input.return_type = ValkyrieType::Unit;
+            input.param_types.push(unresolved.clone());
+            assert!(mir_function_to_executable(&input, &[]).is_err());
+            input.param_types.clear();
+            input.value_types.insert(MirValueRef(0), unresolved);
+            assert!(mir_function_to_executable(&input, &[]).is_err());
+        }
+    }
+
+    #[test]
+    fn executable_rejects_unresolved_instruction_types() {
+        let operations = [
+            MirOperation::LoadConstant { constant: MirConstant::Int(1), ty: Some(ValkyrieType::AutoType) },
+            MirOperation::StoreVar { name: "value".to_owned(), value: MirOperand::Value(MirValueRef(0)), ty: Some(ValkyrieType::SelfType) },
+            MirOperation::ArrayFromElements { array_type: ValkyrieType::Array(Box::new(ValkyrieType::AutoType)), elements: Vec::new() },
+        ];
+        for operation in operations {
+            assert!(convert_instruction_kind(&operation, &[]).is_err());
+        }
+    }
+
+    #[test]
+    fn executable_preserves_resolved_function_types() {
+        let mut input = function();
+        let integer = ValkyrieType::Integer32 { signed: false };
+        input.return_type = integer.clone();
+        input.param_types.push(integer.clone());
+        input.value_types.insert(MirValueRef(0), integer);
+        let output = mir_function_to_executable(&input, &[]).expect("已代入类型必须原样保留");
+        assert_eq!(output.return_type, NyarType::Integer32 { signed: false });
+        assert_eq!(output.param_types, vec![NyarType::Integer32 { signed: false }]);
+        assert_eq!(output.value_types[&ValueRef(0)], NyarType::Integer32 { signed: false });
+    }
+}
