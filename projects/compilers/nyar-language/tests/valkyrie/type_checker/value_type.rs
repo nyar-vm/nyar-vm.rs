@@ -382,6 +382,7 @@ fn make_test_module(struct_def: HirStruct) -> HirModule {
 
 fn make_self_method(body: HirBlock) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("mutate"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -503,6 +504,7 @@ fn test_copy_semantics_validator_rejects_violation() {
         derives: vec![],
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("take_bad"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),

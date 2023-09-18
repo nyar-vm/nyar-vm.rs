@@ -286,6 +286,7 @@ mod tests {
             name: Identifier::new("HealthController"),
             methods: vec![HirFunction {
                 name: Identifier::new("get_health"),
+                where_constraints: Vec::new(),
                 declaring_namespace: NamePath::default(),
                 doc: HirDocumentation::default(),
                 annotations: vec![route_attr("get", "/api/health")],
@@ -315,6 +316,7 @@ mod tests {
             doc: HirDocumentation::from_lines(vec!["@route_prefix(\"/api\")".to_string()]),
             methods: vec![HirFunction {
                 name: Identifier::new("get_orders"),
+                where_constraints: Vec::new(),
                 declaring_namespace: NamePath::default(),
                 doc: HirDocumentation::default(),
                 annotations: vec![route_attr("get", "/orders")],

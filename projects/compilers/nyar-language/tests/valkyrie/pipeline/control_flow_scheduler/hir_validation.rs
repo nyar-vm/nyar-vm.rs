@@ -26,6 +26,7 @@ fn empty_module() -> HirModule {
 
 fn empty_function(name: &str, return_type: ValkyrieType, body_expr: HirExpr) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -52,6 +53,7 @@ fn rejects_resume_inside_catch_guard_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -214,6 +216,7 @@ fn rejects_block_inside_catch_guard_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -275,6 +278,7 @@ fn rejects_break_expr_without_value_loop_context_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -948,6 +952,7 @@ fn rejects_incompatible_return_expr_type_at_hir_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -999,6 +1004,7 @@ fn infers_typed_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -1063,6 +1069,7 @@ fn infers_await_result_type_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -1130,6 +1137,7 @@ fn infers_match_arm_pattern_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -1202,6 +1210,7 @@ fn infers_nested_tuple_match_arm_pattern_variable_for_return_expr_validation() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -1283,6 +1292,7 @@ fn rejects_case_fallthrough_when_next_arm_tries_to_reuse_previous_pattern_bindin
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
@@ -1361,6 +1371,7 @@ fn rejects_empty_return_for_non_unit_function() {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),

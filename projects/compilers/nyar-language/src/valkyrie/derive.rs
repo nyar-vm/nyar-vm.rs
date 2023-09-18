@@ -426,6 +426,7 @@ fn make_method(name: &str) -> HirFunction {
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
         annotations: Vec::<HirAttribute>::new(),
+        where_constraints: Vec::new(),
         generics: vec![],
         params: vec![],
         return_type: ValkyrieType::Unit,

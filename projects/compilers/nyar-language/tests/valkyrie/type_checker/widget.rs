@@ -25,6 +25,7 @@ fn create_test_widget(name: &str, methods: Vec<HirFunction>) -> HirWidget {
 
 fn create_render_method(return_type: ValkyrieType) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("render"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -56,6 +57,7 @@ fn create_render_method(return_type: ValkyrieType) -> HirFunction {
 
 fn create_event_handler_method(name: &str) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),

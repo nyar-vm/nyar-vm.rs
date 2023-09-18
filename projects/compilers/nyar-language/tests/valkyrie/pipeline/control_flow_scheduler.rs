@@ -258,6 +258,7 @@ fn demo_module(body_expr: HirExpr) -> HirModule {
         warnings: Vec::new(),
         submodules: Vec::new(),
         functions: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("main"),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),

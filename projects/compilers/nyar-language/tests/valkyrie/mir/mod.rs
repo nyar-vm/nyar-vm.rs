@@ -183,6 +183,7 @@ fn lowers_constant_string_literal_pattern_without_fallback() {
 #[test]
 fn returns_constant_false_for_anonymous_object_pattern_on_known_scalar_without_fallback() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -247,6 +248,7 @@ fn lowers_type_pattern_into_static_bool_when_operand_type_is_known() {
 #[test]
 fn lowers_qualified_name_pattern_into_static_bool_when_operand_type_is_known() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -309,6 +311,7 @@ fn lowers_object_pattern_into_field_get_and_compare_for_single_field() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -385,6 +388,7 @@ fn lowers_named_object_pattern_for_subtype_into_field_get_and_compare() {
         ..HirStruct::new(Identifier::new("Child"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -461,6 +465,7 @@ fn lowers_anonymous_object_pattern_for_inherited_field_into_field_get_and_compar
         ..HirStruct::new(Identifier::new("Child"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -532,6 +537,7 @@ fn lowers_constructor_pattern_into_extractor_call_and_payload_compare() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -622,6 +628,7 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
         ..HirStruct::new(Identifier::new("Point"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -689,6 +696,7 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
 #[test]
 fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -764,6 +772,7 @@ fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
 #[test]
 fn does_not_bind_unknown_layout_object_field_as_generic_field_get() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1107,6 +1116,7 @@ fn lowers_multi_field_object_pattern_into_logical_and() {
         ..HirStruct::new(Identifier::new("Pair"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1196,6 +1206,7 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
         ..HirStruct::new(Identifier::new("Pair"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1280,6 +1291,7 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
 #[test]
 fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1349,6 +1361,7 @@ fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
 #[test]
 fn lowers_or_pattern_into_logical_or_without_fallback() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1404,6 +1417,7 @@ fn lowers_or_pattern_into_logical_or_without_fallback() {
 #[test]
 fn lowers_range_pattern_into_compare_chain_without_fallback() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1470,6 +1484,7 @@ fn lowers_range_pattern_into_compare_chain_without_fallback() {
 #[test]
 fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
@@ -1572,6 +1587,7 @@ fn lowers_nested_object_pattern_with_array_extractor_call() {
         ..HirStruct::new(Identifier::new("Container"))
     };
     let function = HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),

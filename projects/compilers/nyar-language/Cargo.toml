@@ -29,6 +29,7 @@ katex-rs = { workspace = true }
 
 [dev-dependencies]
 nyar-bytecode = { workspace = true }
+nyar-vm = { workspace = true }
 
 [[test]]
 name = "format_parity"

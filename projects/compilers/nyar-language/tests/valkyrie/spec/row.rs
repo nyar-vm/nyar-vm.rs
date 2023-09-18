@@ -274,6 +274,7 @@ fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> H
 
 fn method_with_visibility(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType, visibility: HirVisibility) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: nyar_language::types::NamePath::default(),
         doc: HirDocumentation::default(),

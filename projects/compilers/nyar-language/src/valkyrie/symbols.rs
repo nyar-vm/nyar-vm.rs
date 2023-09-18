@@ -40,6 +40,7 @@ mod tests {
         let module = NamePath::new(vec![Identifier::new("main")]);
         let function = HirFunction {
             name: Identifier::new("answer"),
+            where_constraints: Vec::new(),
             declaring_namespace: NamePath::default(),
             doc: HirDocumentation::default(),
             annotations: Vec::new(),

@@ -60,6 +60,7 @@ fn health_controller() -> HirStruct {
         doc: HirDocumentation::from_lines(vec!["@route_prefix(\"/api\")".to_string()]),
         methods: vec![
             HirFunction {
+                where_constraints: Vec::new(),
                 name: Identifier::new("get_health"),
                 doc: HirDocumentation::default(),
                 annotations: vec![route_attr("get", "/health")],
@@ -78,6 +79,7 @@ fn health_controller() -> HirStruct {
         export_spec: None,
             },
             HirFunction {
+                where_constraints: Vec::new(),
                 name: Identifier::new("get_live"),
                 doc: HirDocumentation::default(),
                 annotations: vec![route_attr("get", "/health/live")],

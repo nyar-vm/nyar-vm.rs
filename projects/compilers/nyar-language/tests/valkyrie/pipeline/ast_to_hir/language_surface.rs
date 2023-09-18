@@ -660,7 +660,7 @@ imply Point {
     assert_eq!(trait_impl.where_constraints.len(), 1);
     assert!(matches!(trait_impl.where_constraints[0].target, ValkyrieType::Named(ref name) if name.as_str() == "T"));
     assert_eq!(trait_impl.where_constraints[0].bounds.len(), 1);
-    assert_eq!(trait_impl.where_constraints[0].bounds[0].to_string(), "Display");
+    assert_eq!(trait_impl.where_constraints[0].bounds[0].trait_path.to_string(), "Display");
     assert_eq!(trait_impl.methods.len(), 1);
     assert_eq!(trait_impl.associated_type_impls.len(), 1);
     assert_eq!(trait_impl.associated_const_impls.len(), 1);

@@ -113,6 +113,7 @@ fn test_wire_injector_skips_manual_impl() {
         target: ValkyrieType::Named(Identifier::new("OrderSystem")),
         trait_path: Some(NamePath::new(vec![Identifier::new(WIREABLE_TRAIT)])),
         methods: vec![HirFunction {
+            where_constraints: Vec::new(),
             name: Identifier::new("apply_wire"),
             doc: HirDocumentation::default(),
             annotations: vec![],

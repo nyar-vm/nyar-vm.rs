@@ -36,6 +36,7 @@ fn create_property_class(name: &str, properties: Vec<HirProperty>, parents: Vec<
 
 fn create_getter(name: &str, ty: ValkyrieType, is_abstract: bool) -> HirFunction {
     HirFunction {
+        where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),
