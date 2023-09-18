@@ -415,8 +415,49 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     }
                 }
             }
-            if let MirOperation::Call { .. } = &instruction.kind {
+            if let MirOperation::Call { callee, arguments } = &instruction.kind {
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
+                if let MirOperand::Symbol(symbol) = callee {
+                    let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == symbol.to_string()).collect();
+                    if candidates.len() > 1 {
+                        return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
+                    }
+                    let external: Vec<_> = module.external_calls.iter().filter(|candidate| candidate.symbol == *symbol).collect();
+                    if external.len() > 1 {
+                        return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
+                    }
+                    if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
+                        if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
+                            return Err(error("SMIR007", location.clone(), "linked definition disagrees with external declaration signature".to_owned()));
+                        }
+                    }
+                    let signature = candidates.first().map(|target| (&target.param_types, &target.return_type))
+                        .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)));
+                    if let Some((parameter_types, return_type)) = signature {
+                        if arguments.len() != parameter_types.len() {
+                            return Err(error("SMIR007", location.clone(), "call arguments differ from declared signature arity".to_owned()));
+                        }
+                        for (argument, expected) in arguments.iter().zip(parameter_types) {
+                            let actual = value_type(argument).ok_or_else(|| error(
+                                "SMIR001", location.clone(), "call argument has no semantic type".to_owned()
+                            ))?;
+                            if actual != *expected {
+                                return Err(error("SMIR007", location.clone(), format!(
+                                    "call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"
+                                )));
+                            }
+                        }
+                        let expected_results = usize::from(*return_type != ValkyrieType::Unit);
+                        if instruction.results.len() != expected_results {
+                            return Err(error("SMIR007", location.clone(), "call result count differs from declared signature".to_owned()));
+                        }
+                        if let Some(result) = instruction.results.first() {
+                            if function.value_types.get(result) != Some(return_type) {
+                                return Err(error("SMIR007", location.clone(), "call result type differs from declared signature".to_owned()));
+                            }
+                        }
+                    }
+                }
             }
         }
         let location = format!("block {} terminator", block.id.0);
@@ -1031,6 +1072,40 @@ mod semantic_contract_tests {
     }
 
     #[test]
+    fn semantic_contract_checks_local_call_arguments_and_results() {
+        let mut module = module_with_static_call(NamePath::new(vec![Identifier::new("target")]));
+        let mut target = module.functions[0].clone();
+        target.symbol = "target".to_owned();
+        target.return_type = ValkyrieType::Unit;
+        target.blocks[0].instructions.clear();
+        target.blocks[0].terminator = MirTerminator::Return { value: None };
+        module.functions.push(target);
+        validate_semantic_module(&module).expect("exact zero-argument unit call");
+        module.functions[1].param_types.push(ValkyrieType::Boolean);
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+        if let MirOperation::Call { arguments, .. } = &mut module.functions[0].blocks[0].instructions[1].kind {
+            arguments.push(MirOperand::Constant(MirConstant::Unit));
+        }
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+        if let MirOperation::Call { arguments, .. } = &mut module.functions[0].blocks[0].instructions[1].kind {
+            arguments[0] = MirOperand::Constant(MirConstant::Bool(true));
+        }
+        validate_semantic_module(&module).expect("exact boolean argument");
+        module.functions[1].return_type = ValkyrieType::Boolean;
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+    }
+
+    #[test]
+    fn semantic_contract_rejects_duplicate_local_callable_identity() {
+        let mut module = module_with_static_call(NamePath::new(vec![Identifier::new("target")]));
+        let mut target = module.functions[0].clone();
+        target.symbol = "target".to_owned();
+        module.functions.push(target.clone());
+        module.functions.push(target);
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR003");
+    }
+
+    #[test]
     fn semantic_contract_accepts_language_operator_call_without_registry_entry() {
         let module = module_with_static_call(NamePath::new(vec![Identifier::new("primitive"), Identifier::new("infix +")]));
         validate_semantic_module(&module).unwrap();
@@ -1047,5 +1122,31 @@ mod semantic_contract_tests {
         });
 
         validate_semantic_module(&module).unwrap();
+        module.external_calls[0].parameter_types.push(ValkyrieType::Boolean);
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+        if let MirOperation::Call { arguments, .. } = &mut module.functions[0].blocks[0].instructions[1].kind {
+            arguments.push(MirOperand::Constant(MirConstant::Bool(true)));
+        }
+        validate_semantic_module(&module).expect("exact external argument contract");
+        let mut definition = module.functions[0].clone();
+        definition.symbol = module.external_calls[0].symbol.to_string();
+        definition.param_types = vec![ValkyrieType::Boolean];
+        definition.return_type = ValkyrieType::Unit;
+        definition.blocks[0].instructions.clear();
+        definition.blocks[0].terminator = MirTerminator::Return { value: None };
+        module.functions.push(definition);
+        validate_semantic_module(&module).expect("matching linked declaration and definition");
+        module.functions[1].param_types.clear();
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+        module.functions.pop();
+        let dependency = module.clone();
+        let before = module.clone();
+        assert!(crate::valkyrie::assembly::link_reachable_dependency_mir(&mut module, &[dependency.clone(), dependency]).is_err());
+        assert_eq!(module, before);
+        module.external_calls[0].return_type = ValkyrieType::Boolean;
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");
+        module.external_calls[0].return_type = ValkyrieType::Unit;
+        module.external_calls.push(module.external_calls[0].clone());
+        assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR003");
     }
 }

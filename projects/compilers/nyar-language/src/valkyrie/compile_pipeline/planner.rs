@@ -57,6 +57,9 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         CanonicalOperation::Copy { .. }
                         | CanonicalOperation::AggregateCopy { .. }
                         | CanonicalOperation::LoadConstant { .. }
+                        | CanonicalOperation::SumNew { .. }
+                        | CanonicalOperation::SumPayloadGet { .. }
+                        | CanonicalOperation::SumVariantIs { .. }
                         | CanonicalOperation::FieldGet { .. }
                         | CanonicalOperation::FieldSet { .. }
                         | CanonicalOperation::ArrayGet { .. }
