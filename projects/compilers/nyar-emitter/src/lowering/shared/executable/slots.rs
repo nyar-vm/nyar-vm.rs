@@ -125,17 +125,22 @@ impl ExecutableSlotPlan {
     /// Nyar VM locals are single-slot (`LoadLocal`/`StoreLocal`); do not use JVM `i64` double-width.
     pub fn plan_nyar(ctx: &ExecutableLoweringContext<'_>, function: &ExecutableFunction) -> Self {
         let mut plan = Self::empty();
-        for block in &function.blocks {
+        let entry = function.blocks.iter().find(|block| block.id == function.entry).expect("validated entry block");
+        for block in std::iter::once(entry).chain(function.blocks.iter().filter(|block| block.id != function.entry)) {
             for (index, parameter) in block.parameters.iter().enumerate() {
-                let ty = function.value_types.get(parameter).cloned().unwrap_or(NyarType::Unit);
-                let local = plan.alloc_local(ctx, &ty, ExecutableStorageKind::Value);
+                let ty = function.value_types.get(parameter).expect("validated block parameter type");
+                let local = plan.alloc_local(ctx, ty, ExecutableStorageKind::Value);
                 plan.block_param_locals.insert((block.id, index), local);
                 plan.value_locals.insert(*parameter, local);
             }
         }
         for block in &function.blocks {
             for instruction in &block.instructions {
-                plan.collect_instruction(ctx, function, instruction);
+                for output in &instruction.results {
+                    let ty = function.value_types.get(output).expect("validated instruction result type");
+                    let local = plan.alloc_local(ctx, ty, ExecutableStorageKind::Value);
+                    assert!(plan.value_locals.insert(*output, local).is_none(), "duplicate SSA definition");
+                }
             }
         }
         plan

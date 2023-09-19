@@ -12,11 +12,15 @@ use crate::{
     nyar_backend_wasi::{WasmPackageKind, WasmBinaryModule, WasmSection},
 };
 use std_data::binary::wasm::{
-    VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_I64, WasmExternalKind, WasmOpcode, encode_array_get, encode_local_get, encode_ref_cast_type_index,
-    encode_return, encode_struct_get,
+    VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_I64, WasmExternalKind, WasmOpcode, encode_array_get, encode_i64_const, encode_local_get,
+    encode_local_tee, encode_ref_cast_type_index, encode_ref_is_null, encode_return, encode_struct_get,
 };
 
-use super::{ExecutableLoweringContext, FragmentSubmission, LayoutId, type_registry::wasm_array_element_type_key};
+use super::{
+    ExecutableLoweringContext, FragmentSubmission, LayoutId,
+    representation::wasm_gc_field_type_byte_for_glue,
+    type_registry::wasm_array_element_type_key,
+};
 use crate::lowering::backends::wasm::{
     gc::wasm_gc_array_type,
     sections::{encode_uleb128, wasm_function_body, wasm_function_type},
@@ -27,7 +31,6 @@ const GLUE_LIST_PUSH: &str = "__nyar_glue.ArrayList.push";
 const GLUE_LIST_LENGTH: &str = "__nyar_glue.ArrayList.length";
 const GLUE_LIST_AT: &str = "__nyar_glue_list_i64_at";
 
-/// ABI kinds understood by the Node library `callExport` marshaller.
 fn abi_kind_for_type(ty: &NyarType) -> Option<&'static str> {
     if is_i64_type(ty) {
         return Some("i64");
@@ -52,19 +55,25 @@ fn is_array_list_of_i64(ty: &NyarType) -> bool {
     }
 }
 
-fn resolve_i64_array_type_index(gc_array_type_indices: &BTreeMap<String, u32>) -> Option<u32> {
-    for key in [
-        wasm_array_element_type_key(&NyarType::Named(nyar::Identifier::new("i64"))),
-        wasm_array_element_type_key(&NyarType::Named(nyar::Identifier::new("T"))),
-    ] {
-        if let Some(index) = gc_array_type_indices.get(&key) {
-            return Some(*index);
-        }
+fn array_element_type_from_field_ty(field_ty: &NyarType) -> Option<&NyarType> {
+    match field_ty {
+        NyarType::Array(element) | NyarType::FixedArray { element, .. } => Some(element.as_ref()),
+        _ => None,
     }
-    gc_array_type_indices
-        .iter()
-        .find(|(key, _)| key.contains("i64") || key.contains("Integer64"))
-        .map(|(_, index)| *index)
+}
+
+fn resolve_array_list_items_array_type(
+    ctx: &ExecutableLoweringContext,
+    gc_array_type_indices: &BTreeMap<String, u32>,
+    js_glue_utf8_as_anyref: bool,
+) -> Option<(u32, u8)> {
+    let layout = ctx.layout_by_type_name("ArrayList")?;
+    let items_field = layout.fields.iter().find(|field| field.name == "_items")?;
+    let element_type = array_element_type_from_field_ty(&items_field.ty)?;
+    let key = wasm_array_element_type_key(element_type);
+    let type_index = gc_array_type_indices.get(&key).copied()?;
+    let element_valtype = wasm_gc_field_type_byte_for_glue(element_type, js_glue_utf8_as_anyref);
+    Some((type_index, element_valtype))
 }
 
 fn resolve_array_list_struct_type_index(ctx: &ExecutableLoweringContext, gc_struct_type_indices: &BTreeMap<LayoutId, u32>) -> Option<u32> {
@@ -80,21 +89,43 @@ fn resolve_array_list_struct_type_index(ctx: &ExecutableLoweringContext, gc_stru
         .and_then(|layout| gc_struct_type_indices.get(&layout.id).copied())
 }
 
-fn glue_list_i64_at_body(array_list_struct_type: u32, i64_array_type: u32) -> Vec<u8> {
+fn encode_unbox_i64_payload(box_type: u32, tmp_local: u32, body: &mut Vec<u8>) {
+    encode_local_tee(tmp_local, body);
+    encode_ref_is_null(body);
+    body.push(0x04);
+    body.push(VALTYPE_I64);
+    encode_i64_const(0, body);
+    body.push(0x05);
+    encode_local_get(tmp_local, body);
+    encode_ref_cast_type_index(box_type, body);
+    encode_struct_get(box_type, 0, body);
+    body.push(0x0B);
+}
+
+fn glue_list_i64_at_body(
+    array_list_struct_type: u32,
+    items_array_type: u32,
+    items_element_valtype: u8,
+    gc_i64_box_type_index: u32,
+) -> Vec<u8> {
     let mut body = Vec::new();
-    encode_uleb128(0, &mut body);
+    encode_uleb128(1, &mut body);
+    encode_uleb128(1, &mut body);
+    body.push(VALTYPE_ANYREF);
     encode_local_get(0, &mut body);
     encode_ref_cast_type_index(array_list_struct_type, &mut body);
     encode_struct_get(array_list_struct_type, 0, &mut body);
-    encode_ref_cast_type_index(i64_array_type, &mut body);
+    encode_ref_cast_type_index(items_array_type, &mut body);
     encode_local_get(1, &mut body);
-    encode_array_get(i64_array_type, &mut body);
+    encode_array_get(items_array_type, &mut body);
+    if items_element_valtype == VALTYPE_ANYREF {
+        encode_unbox_i64_payload(gc_i64_box_type_index, 2, &mut body);
+    }
     encode_return(&mut body);
     WasmOpcode::End.encode(&mut body);
     body
 }
 
-/// Append library glue exports, function bodies, and `nyar.library_invoke` metadata.
 pub(super) fn append_library_mode_glue(
     wasm_package_kind: WasmPackageKind,
     submission: &FragmentSubmission,
@@ -108,6 +139,8 @@ pub(super) fn append_library_mode_glue(
     function_index_by_name: &BTreeMap<String, u32>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
+    gc_i64_box_type_index: u32,
+    js_glue_utf8_as_anyref: bool,
 ) {
     if wasm_package_kind != WasmPackageKind::Library {
         return;
@@ -151,16 +184,22 @@ pub(super) fn append_library_mode_glue(
     }
 
     if let Some(array_list_struct_type) = resolve_array_list_struct_type_index(ctx, gc_struct_type_indices) {
-        let i64_array_type = resolve_i64_array_type_index(gc_array_type_indices).unwrap_or_else(|| {
-            let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-            type_indices.push(wasm_gc_array_type(VALTYPE_I64));
-            type_index
-        });
+        let (items_array_type, items_element_valtype) = resolve_array_list_items_array_type(ctx, gc_array_type_indices, js_glue_utf8_as_anyref)
+            .unwrap_or_else(|| {
+                let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+                type_indices.push(wasm_gc_array_type(VALTYPE_I64));
+                (type_index, VALTYPE_I64)
+            });
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[VALTYPE_ANYREF, VALTYPE_I32], &[VALTYPE_I64]));
         function_indices.push(type_index);
         let function_index = import_count + u32::try_from(code_bodies.len()).expect("function index overflow");
-        code_bodies.push(wasm_function_body(glue_list_i64_at_body(array_list_struct_type, i64_array_type)));
+        code_bodies.push(wasm_function_body(glue_list_i64_at_body(
+            array_list_struct_type,
+            items_array_type,
+            items_element_valtype,
+            gc_i64_box_type_index,
+        )));
         exports.push((GLUE_LIST_AT, WasmExternalKind::Func.as_u8(), function_index));
     }
 

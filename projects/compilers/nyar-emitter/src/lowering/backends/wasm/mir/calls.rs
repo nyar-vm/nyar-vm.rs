@@ -538,9 +538,10 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_i32_const(0);
             return;
         }
-        // i64 形参：anyref/i32 不得原样压栈（否?component/core 校验 expected i64, found anyref）?
+        // i64 形参：anyref 经 `[i64]` box 解箱；i32 走 extend。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
-            self.emit_i64_const(0);
+            self.emit_operand(operand);
+            self.emit_unbox_i64_payload();
             return;
         }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
@@ -555,7 +556,7 @@ impl<'a> WasmMirLowerer<'a> {
             return;
         }
         if expected == WASM_GC_ANYREF && actual == VALTYPE_I64 {
-            self.emit_ref_null_anyref();
+            self.emit_box_i64_payload(operand);
             return;
         }
         if expected == VALTYPE_F64
@@ -1292,8 +1293,10 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_box_i32_payload(operand);
             return;
         }
-        // i64/f64 currently have no scalar payload boxing path; keep this
-        // fail-closed rather than silently inventing a representation.
+        if actual == VALTYPE_I64 {
+            self.emit_box_i64_payload(operand);
+            return;
+        }
         self.emit_ref_null_anyref();
     }
 
@@ -1326,6 +1329,35 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
         self.code.push(0x0B); // end
+    }
+
+    /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
+    fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
+        let box_ty = self.gc_i64_box_type_index;
+        self.emit_struct_new_default(box_ty);
+        let tmp = self.alloc_anyref_local();
+        self.emit_local_set(tmp);
+        self.emit_local_get(tmp);
+        self.emit_ref_cast_struct(box_ty);
+        self.emit_operand(operand);
+        self.emit_struct_set(box_ty, 0);
+        self.emit_local_get(tmp);
+    }
+
+    /// 栈顶 anyref（i64 box）→ i64；null → 0。
+    pub(super) fn emit_unbox_i64_payload(&mut self) {
+        let box_ty = self.gc_i64_box_type_index;
+        let tmp = self.alloc_anyref_local();
+        self.emit_local_tee(tmp);
+        WasmOpcode::RefIsNull.encode(&mut self.code);
+        self.code.push(0x04);
+        self.code.push(VALTYPE_I64);
+        self.emit_i64_const(0);
+        self.code.push(0x05);
+        self.emit_local_get(tmp);
+        self.emit_ref_cast_struct(box_ty);
+        self.emit_struct_get(box_ty, 0);
+        self.code.push(0x0B);
     }
 
     /// p3 `write-via-stream`：utf8 线性句?→?`stream.new` / write / drop →?宿主?

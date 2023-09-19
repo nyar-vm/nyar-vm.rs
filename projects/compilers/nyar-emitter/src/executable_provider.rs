@@ -85,6 +85,7 @@ pub trait ExecutableProvider: Send + Sync {
     /// Returns the function view for the given exported operation.
     fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView>;
 
+
     /// Finds a function by its internal symbol string.
     fn find_by_symbol(&self, symbol: &str) -> Option<FunctionView>;
 
@@ -104,9 +105,9 @@ impl MirFunctionMapProvider {
     }
 }
 
-/// Resolve a static `Call` callee symbol to the exact local [`QualifiedName`] operation.
+/// 将静态调用的已解析身份映射到精确的本地操作。
 ///
-/// Aligns Semantic MIR (`SMIR003`) and physical planning (`BPHYS004`): callers must`r`n/// provide the already-resolved qualified identity.
+/// Semantic MIR 与表示规划共同拒绝通过唯一短名猜测调用目标。
 pub(crate) fn resolve_static_callee_operation(
     executable: &dyn ExecutableProvider,
     path: &NamePath,
@@ -146,6 +147,7 @@ impl ExecutableProvider for MirFunctionMapProvider {
     fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
         self.functions.get(operation).cloned().map(|function| FunctionView { function })
     }
+
 
     fn find_by_symbol(&self, symbol: &str) -> Option<FunctionView> {
         self.functions.values().find(|function| function.symbol == symbol).cloned().map(|function| FunctionView { function })

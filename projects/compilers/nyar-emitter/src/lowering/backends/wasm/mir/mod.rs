@@ -655,6 +655,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_indices.push(wasm_gc_struct_type(&[VALTYPE_I32]));
         type_index
     };
+    let gc_i64_box_type_index = {
+        let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
+        type_indices.push(wasm_gc_struct_type(&[VALTYPE_I64]));
+        type_index
+    };
     // 函数类型?structtype/arraytype/sumtype 之后开始追加?
     // type_indices 当前?[main_type, structtype_1, ..., structtype_N]?
     // 第一个函数类型应放在 N+1 处，对应 type_index = type_indices.len()?
@@ -799,6 +804,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &gc_array_type_indices,
             &gc_sum_type_indices,
             gc_i32_box_type_index,
+            gc_i64_box_type_index,
             &callee_import_index,
             &host_imports,
             &string_literal_index,
@@ -848,6 +854,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 &gc_array_type_indices,
                 &gc_sum_type_indices,
                 gc_i32_box_type_index,
+                gc_i64_box_type_index,
                 &callee_import_index,
                 &host_imports,
                 &string_literal_index,
@@ -880,6 +887,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 &gc_array_type_indices,
                 &gc_sum_type_indices,
                 gc_i32_box_type_index,
+                gc_i64_box_type_index,
                 &callee_import_index,
                 &host_imports,
                 &string_literal_index,
@@ -1087,6 +1095,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         &function_index_by_name,
         &gc_struct_type_indices,
         &gc_array_type_indices,
+        gc_i64_box_type_index,
+        js_glue_utf8_as_anyref,
     );
 
     module.sections.push(type_section_bytes(type_indices));
@@ -1416,6 +1426,7 @@ fn lower_mir_function_to_wasm_bytes(
     gc_array_type_indices: &BTreeMap<String, u32>,
     gc_sum_type_indices: &BTreeMap<String, u32>,
     gc_i32_box_type_index: u32,
+    gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<String, u32>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
@@ -1444,6 +1455,7 @@ fn lower_mir_function_to_wasm_bytes(
         gc_array_type_indices,
         gc_sum_type_indices,
         gc_i32_box_type_index,
+        gc_i64_box_type_index,
         callee_import_index,
         host_imports,
         string_literal_index,
@@ -1497,6 +1509,8 @@ struct WasmMirLowerer<'a> {
     gc_sum_type_indices: &'a BTreeMap<String, u32>,
     /// Fine/Fail ?unite 标量 payload（utf8/bool/i32）装箱用 structtype [i32]?
     gc_i32_box_type_index: u32,
+    /// 泛型 `T` 数组槽中的 i64 装箱用 structtype `[i64]`。
+    gc_i64_box_type_index: u32,
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
     gc_array_type_indices: &'a BTreeMap<String, u32>,
     callee_import_index: &'a BTreeMap<String, u32>,
@@ -1536,6 +1550,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_array_type_indices: &'a BTreeMap<String, u32>,
         gc_sum_type_indices: &'a BTreeMap<String, u32>,
         gc_i32_box_type_index: u32,
+        gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<String, u32>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
@@ -1580,6 +1595,7 @@ impl<'a> WasmMirLowerer<'a> {
             gc_array_type_indices,
             gc_sum_type_indices,
             gc_i32_box_type_index,
+            gc_i64_box_type_index,
             callee_import_index,
             host_imports,
             string_literal_index,
@@ -2654,7 +2670,7 @@ impl<'a> WasmMirLowerer<'a> {
             );
         }
         let type_index = element_type.as_ref().and_then(|ty| self.resolve_gc_array_type_index(ty));
-        let element_stack_ty =
+        let mut element_stack_ty =
             element_type.as_ref().map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref)).unwrap_or(VALTYPE_I32);
         // ?arraytype 时禁止先?receiver ?`ref.cast`：receiver 常为误分?i32?
         // 会触?`expected anyref, found i32`（func564 嵌套 ArrayGet）?
@@ -2669,6 +2685,14 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_operand(&arguments[1]);
         self.emit_array_get(type_index);
         if let Some(output) = output {
+            let wants_i64 = self.mir_fn.value_types.get(&output).is_some_and(|ty| {
+                matches!(ty, NyarType::Integer64 { .. } | NyarType::Integer128 { .. })
+                    || matches!(ty, NyarType::Named(name) if name.as_str() == "i64")
+            });
+            if element_stack_ty == WASM_GC_ANYREF && wants_i64 {
+                self.emit_unbox_i64_payload();
+                element_stack_ty = VALTYPE_I64;
+            }
             // 栈顶类型?arraytype 元素决定（i32 / anyref），必须?output ?valtype 一致；
             // 禁止 `array.get`→i32 ?`local.set` ?plan 阶段误分?anyref 槽?
             self.force_output_local_for_stack_type(output, element_stack_ty);

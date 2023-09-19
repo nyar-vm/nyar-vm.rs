@@ -66,6 +66,7 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
         }
 
         if let Some(module) = input.nyar_module.as_ref() {
+            let entries = resolve_entry_symbols(module, &input.library_public_exports)?;
             let nyar_name = format!("{}.nyar", request.artifact_name);
             let nyar_path = input.output_dir.join(&nyar_name);
             emit_nyar_module(module, &nyar_path)?;
@@ -77,32 +78,36 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
                 lane: TargetLane::Vm,
             });
 
-            let entry = resolve_entry_symbol(module);
-            entry_symbol = Some(entry.clone());
-            run_contracts.push(nyar_vm_run_contract(request.artifact_name, &entry));
+            entry_symbol = entries.first().cloned();
+            for entry in entries {
+                run_contracts.push(nyar_vm_run_contract(request.artifact_name, &entry));
+            }
         }
 
         Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts })
     }
 }
 
-fn resolve_entry_symbol(module: &NyarModuleData) -> String {
-    // Prefer an explicit `main` export/function over the first table entry so
-    // helper symbols lowered earlier do not steal the run contract entry.
-    let is_main = |name: &str| {
-        name == "main"
-            || name.rsplit_once('.').is_some_and(|(_, tail)| tail == "main")
-            || name.rsplit_once("::").is_some_and(|(_, tail)| tail == "main")
+fn resolve_entry_symbols(module: &NyarModuleData, library_public_exports: &[String]) -> Result<Vec<String>> {
+    let entries = if library_public_exports.is_empty() {
+        vec!["main".to_owned()]
+    } else {
+        library_public_exports.to_vec()
     };
-    module
-        .exports
-        .iter()
-        .find(|export| export.kind == NyarExportKind::Function && is_main(&export.symbol_name))
-        .or_else(|| module.exports.iter().find(|export| export.kind == NyarExportKind::Function))
-        .map(|export| export.symbol_name.clone())
-        .or_else(|| module.functions.iter().find(|function| is_main(&function.name)).map(|function| function.name.clone()))
-        .or_else(|| module.functions.first().map(|function| function.name.clone()))
-        .unwrap_or_else(|| "main".to_string())
+    for entry in &entries {
+        let matches: Vec<_> = module.exports.iter().filter(|export| {
+            export.kind == NyarExportKind::Function && export.symbol_name == *entry
+        }).collect();
+        if matches.len() != 1 {
+            return Err(miette!("Nyar 入口 `{entry}` 必须对应唯一明确函数导出"));
+        }
+        let index = usize::try_from(matches[0].function_index)
+            .map_err(|_| miette!("Nyar 入口 `{entry}` 的函数索引无效"))?;
+        if module.functions.get(index).is_none() {
+            return Err(miette!("Nyar 入口 `{entry}` 的函数索引越界"));
+        }
+    }
+    Ok(entries)
 }
 
 fn nyar_vm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
@@ -111,5 +116,61 @@ fn nyar_vm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
         physical_entry: format!("{artifact_name}.nyar"),
         invocation: "nyar-vm".to_string(),
         validate: format!("nyar-vm run {artifact_name}.nyar --entry {entry}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar_bytecode::{NyarExport, NyarFunction};
+
+    fn module() -> NyarModuleData {
+        NyarModuleData {
+            version: 2,
+            name: "test".to_owned(),
+            constants: Vec::new(),
+            functions: vec![NyarFunction {
+                name: "owner::main".to_owned(), arity: 0, local_count: 0,
+                code_offset: 0, code_length: 1,
+            }],
+            imports: Vec::new(),
+            exports: vec![NyarExport {
+                kind: NyarExportKind::Function,
+                symbol_name: "owner::main".to_owned(), function_index: 0,
+            }],
+            witness_entries: Vec::new(), code_bytes: vec![0x05],
+            globals: Vec::new(), init_function_indices: Vec::new(), layouts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn entry_contract_rejects_suffix_and_unexported_function() {
+        let mut module = module();
+        assert!(resolve_entry_symbols(&module, &[]).is_err());
+        assert_eq!(resolve_entry_symbols(&module, &["owner::main".to_owned()]).unwrap(), vec!["owner::main"]);
+        module.exports.clear();
+        assert!(resolve_entry_symbols(&module, &["owner::main".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn entry_contract_rejects_ambiguous_and_invalid_exports() {
+        let mut module = module();
+        module.exports.push(module.exports[0].clone());
+        assert!(resolve_entry_symbols(&module, &["owner::main".to_owned()]).is_err());
+        module.exports.pop();
+        module.exports[0].function_index = -1;
+        assert!(resolve_entry_symbols(&module, &["owner::main".to_owned()]).is_err());
+        module.exports[0].function_index = 1;
+        assert!(resolve_entry_symbols(&module, &["owner::main".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn entry_contract_preserves_all_declared_library_exports() {
+        let mut module = module();
+        module.exports.push(NyarExport {
+            kind: NyarExportKind::Function, symbol_name: "second".to_owned(), function_index: 0,
+        });
+        let entries = vec!["second".to_owned(), "owner::main".to_owned()];
+        assert_eq!(resolve_entry_symbols(&module, &entries).unwrap(), entries);
     }
 }

@@ -35,6 +35,7 @@ fn writes_suspend_runtime_sidecar_with_function_symbols() {
     let symbol = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("async_fn")]);
     let options = vm_options();
     let input = LoweredBackendInput::nyar_vm(NyarVmBackendInput {
+        library_public_exports: Vec::new(),
         suspend_runtime: Some(SuspendRuntimePayload {
             functions: vec![SuspendRuntimeFunctionArtifact {
                 symbol: symbol.clone(),
@@ -79,7 +80,7 @@ fn emits_nyar_module_with_run_contract() {
         constants: vec![NyarConstant::Integer32(0)],
         functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: 5 }],
         imports: Vec::new(),
-        exports: Vec::new(),
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_owned(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: vec![0x10, 0x00, 0x00, 0x00, 0x30],
         globals: Vec::new(),
@@ -87,6 +88,7 @@ fn emits_nyar_module_with_run_contract() {
         layouts: Vec::new(),
     };
     let input = LoweredBackendInput::nyar_vm(NyarVmBackendInput {
+        library_public_exports: Vec::new(),
         suspend_runtime: None,
         control_flow: None,
         nyar_module: Some(module),
@@ -127,6 +129,7 @@ fn prefers_main_export_over_earlier_helper_symbol() {
         layouts: Vec::new(),
     };
     let input = LoweredBackendInput::nyar_vm(NyarVmBackendInput {
+        library_public_exports: Vec::new(),
         suspend_runtime: None,
         control_flow: None,
         nyar_module: Some(module),

@@ -213,10 +213,14 @@ fn build_function_plan(
                     "static call target is not an exact local semantic function",
                 )
             })?;
-            let callee_param_types = executable
-                .get_function(&callee)
-                .map(|view| view.function.param_types.clone())
-                .unwrap_or_default();
+            let callee_param_types = executable.get_function(&callee).ok_or_else(|| {
+                PhysicalPlanError::new(
+                    "BPHYS004",
+                    function,
+                    location.clone(),
+                    "exact static call target disappeared before physical planning",
+                )
+            })?.function.param_types.clone();
             let parameters = arguments
                 .iter()
                 .enumerate()
@@ -474,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn language_operator_calls_skip_physical_call_registry() {
+    fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
         let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
         let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
         let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
@@ -482,7 +486,7 @@ mod tests {
         caller.value_types.insert(value, NyarType::Integer64 { signed: true });
         caller.blocks[0].instructions.push(instr(
             InstructionKind::Call {
-                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
+                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("main"), Identifier::new("answer")])),
                 arguments: vec![],
             },
             vec![value],
@@ -506,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn bare_module_helper_call_plans_through_unique_suffix_match() {
+    fn bare_module_helper_call_is_rejected_without_exact_identity() {
         let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
         let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
         let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
@@ -522,10 +526,8 @@ mod tests {
             (answer_op.clone(), function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
             (main_op, caller),
         ]);
-        let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("bare helper must resolve like SMIR003");
-        let caller_plan = plans.iter().find(|plan| plan.symbol == "main::main").expect("caller plan");
-        assert_eq!(caller_plan.calls.len(), 1);
-        assert_eq!(caller_plan.calls.values().next().expect("call contract").callee, answer_op);
+        let error = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect_err("bare helper must fail before physical planning");
+        assert_eq!(error.code, "BPHYS004");
     }
 
     #[test]
