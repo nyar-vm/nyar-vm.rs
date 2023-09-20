@@ -9,7 +9,9 @@
         "build:napi": "node scripts/build.mjs napi",
         "build:wasm": "node scripts/build.mjs wasm",
         "build:native": "npx tsx scripts/build.ts",
-        "format": "biome format --write .",
+        "fmt": "nifty format",
+        "fmt:check": "nifty format --check",
+        "format": "nifty format",
         "lint": "biome check --apply .",
         "check": "cargo cry",
         "check:doc": "cargo-cry doc",
@@ -18,6 +20,7 @@
     },
     "devDependencies": {
         "@biomejs/biome": "^1.0.0",
+        "@doki-land/nifty": "^0.0.3",
         "typescript": "^5.0.0"
     },
     "packageManager": "pnpm@9.15.4"
