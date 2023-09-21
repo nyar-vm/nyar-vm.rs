@@ -9,6 +9,7 @@
         "build:napi": "node scripts/build.mjs napi",
         "build:wasm": "node scripts/build.mjs wasm",
         "build:native": "npx tsx scripts/build.ts",
+        "migrate:compiler-flow": "node scripts/reshape-compiler-flow.mjs",
         "fmt": "nifty format",
         "fmt:check": "nifty format --check",
         "format": "nifty format",
