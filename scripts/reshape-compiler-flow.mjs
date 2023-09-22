@@ -26,10 +26,6 @@ const moves = [
     "projects/compilers/nyar-language/src/valkyrie/compile_pipeline/planner.rs",
     "projects/compilers/nyar-language/src/valkyrie/compile_pipeline/representation.rs",
   ],
-  [
-    "projects/compilers/nyar-language/src/valkyrie/assembly",
-    "projects/compilers/nyar-language/src/valkyrie/compile_pipeline/artifact",
-  ],
 ];
 
 const rewrites = [
@@ -37,9 +33,6 @@ const rewrites = [
   ["mod planner;", "mod representation;"],
   ["pub use producer::", "pub use canonical::"],
   ["pub use planner::", "pub use representation::"],
-  ["pub mod assembly;", ""],
-  ["crate::valkyrie::assembly::", "crate::valkyrie::compile_pipeline::artifact::"],
-  ["valkyrie::assembly::", "valkyrie::compile_pipeline::artifact::"],
 ];
 
 const forbiddenProductionSymbols = [
