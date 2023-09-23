@@ -3,7 +3,11 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId, VariantId};
+use crate::semantic_ids::{
+    layout_choice::RepresentationPlan,
+    EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
+    SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
+};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -882,6 +886,62 @@ impl CanonicalProgram {
     }
 }
 
+/// 编译处理阶段的唯一成功载荷。
+///
+/// 该类型只允许把已验证的 Canonical Semantic MIR 与对应的稀疏表示计划
+/// 一起交给后续阶段。它不包含 HIR、字符串 callable、旧 executable 或
+/// `FragmentSubmission` 字段；后端若需要这些信息，说明上游合同仍未闭合。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledProgram {
+    canonical: CanonicalProgram,
+    representation: RepresentationPlan,
+}
+
+/// `CompiledProgram` 构造时发现的跨阶段合同错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompiledProgramError {
+    /// Canonical Semantic MIR 尚未通过 M2 验证。
+    Canonical(CanonicalMirError),
+    /// 某个 Semantic MIR 值没有对应表示选择。
+    MissingValueRepresentation { function: ItemInstanceId, value: MirValueId },
+    /// 某条调用指令没有对应调用表示选择。
+    MissingInvokeRepresentation { instruction: InstructionId },
+}
+
+impl CompiledProgram {
+    /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
+    pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
+        canonical.validate().map_err(CompiledProgramError::Canonical)?;
+        for function in canonical.mir.functions.values() {
+            for value in function.value_types.keys() {
+                if !representation.value_reps.contains_key(&ValueIdentity::new(function.instance, *value)) {
+                    return Err(CompiledProgramError::MissingValueRepresentation { function: function.instance, value: *value });
+                }
+            }
+            for block in function.blocks.values() {
+                for instruction in &block.instructions {
+                    if matches!(&instruction.operation, CanonicalOperation::Invoke { .. })
+                        && !representation.invoke_lowerings.contains_key(&instruction.id)
+                    {
+                        return Err(CompiledProgramError::MissingInvokeRepresentation { instruction: instruction.id });
+                    }
+                }
+            }
+        }
+        Ok(Self { canonical, representation })
+    }
+
+    /// 返回 Compiler 产生的 Canonical Semantic MIR。
+    pub fn canonical(&self) -> &CanonicalProgram {
+        &self.canonical
+    }
+
+    /// 返回与 CanonicalProgram 同步生成的表示计划。
+    pub fn representation(&self) -> &RepresentationPlan {
+        &self.representation
+    }
+}
+
 /// One-way compile stream orchestration points (no God parallel authorities).
 ///
 /// Implementations live in `nyar-language` / `nyar-emitter`; this module only
@@ -1109,6 +1169,32 @@ mod tests {
             arguments.clear();
         }
         assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
+    }
+
+    #[test]
+    fn compiled_program_requires_complete_representation_plan() {
+        let program = typed_call_program();
+        let error = CompiledProgram::new(program, RepresentationPlan::default()).expect_err("缺少值表示必须在处理边界失败");
+        assert!(matches!(error, CompiledProgramError::MissingValueRepresentation { .. }));
+    }
+
+    #[test]
+    fn compiled_program_keeps_canonical_and_representation_as_one_success_value() {
+        let program = typed_call_program();
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let argument = MirValueId::from_index(0).unwrap();
+        let result = MirValueId::from_index(1).unwrap();
+        let mut representation = RepresentationPlan::default();
+        for value in [argument, result] {
+            representation.value_reps.insert(
+                ValueIdentity::new(caller, value),
+                crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+            );
+        }
+        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        let compiled = CompiledProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
+        assert_eq!(compiled.canonical(), &program);
+        assert_eq!(compiled.representation(), &representation);
     }
 
     #[test]

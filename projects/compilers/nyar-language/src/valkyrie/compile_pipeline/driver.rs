@@ -3,8 +3,7 @@
 //! BackendPrivatePlan / Emit remain intentionally unwired here (backend crates).
 
 use nyar_types::{
-    CanonicalProgram, LinkedSemanticProgram, StageResult,
-    layout_choice::RepresentationPlan,
+    CanonicalProgram, CompiledProgram, LinkedSemanticProgram, StageResult,
     pipeline::{LinkStage, RepresentationPlanStage, ValidateMirStage},
 };
 
@@ -22,10 +21,8 @@ pub struct AnalysisOutcome {
 /// Processing-stream success through sparse representation planning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessingOutcome {
-    /// Canonical program (owned copy for downstream private plan).
-    pub program: CanonicalProgram,
-    /// Sparse layout / invoke / evidence choices keyed by stable ids.
-    pub representation: RepresentationPlan,
+    /// Canonical 与 RepresentationPlan 的不可拆分成功载荷。
+    pub artifact: CompiledProgram,
 }
 
 /// One-way driver over stage contracts from `nyar_types::pipeline`.
@@ -67,7 +64,16 @@ where
             );
         }
         let representation = self.planner.plan(program)?;
-        Ok(ProcessingOutcome { program: program.clone(), representation })
+        let artifact = CompiledProgram::new(program.clone(), representation).map_err(|error| {
+            fail_stage::<()>(
+                nyar_types::CompileStage::RepresentationPlan,
+                "PIPE005",
+                &program.mir.module_name,
+                format!("CanonicalProgram 与 RepresentationPlan 合同不一致: {error:?}"),
+            )
+            .expect_err("fail_stage 必须返回结构化错误")
+        })?;
+        Ok(ProcessingOutcome { artifact })
     }
 
     /// 先跑分析，再进入稀疏 representation planning。

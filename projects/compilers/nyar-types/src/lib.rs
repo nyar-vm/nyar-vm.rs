@@ -5,7 +5,7 @@
 pub use self::{
     canonical_program::{
         CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
-        CanonicalOperand, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CompileStage, DiagnosticRecord, EvidenceRecord,
+        CanonicalOperand, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CompiledProgram, CompiledProgramError, CompileStage, DiagnosticRecord, EvidenceRecord,
         FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, CanonicalPrimitiveType,
         CanonicalTypeKind, pipeline,
     },
