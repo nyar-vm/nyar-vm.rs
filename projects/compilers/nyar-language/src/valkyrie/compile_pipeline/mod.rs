@@ -12,15 +12,15 @@
 mod diagnostics;
 mod driver;
 mod envelope_checks;
-mod producer;
-mod planner;
+mod canonical;
+mod representation;
 mod stubs;
 
 pub use diagnostics::{diagnostic, fail_stage};
 pub use driver::{AnalysisOutcome, CompilePipeline, ProcessingOutcome};
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
-pub use producer::canonical_program_from_semantic_mir;
-pub use planner::CanonicalRepresentationPlanner;
+pub use canonical::canonical_program_from_semantic_mir;
+pub use representation::CanonicalRepresentationPlanner;
 pub use stubs::{FailClosedLinker, FailClosedPlanner, FailClosedValidator};
 
 use nyar_types::CompileStage;

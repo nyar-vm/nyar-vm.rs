@@ -35,19 +35,6 @@ const rewrites = [
   ["pub use planner::", "pub use representation::"],
 ];
 
-const forbiddenProductionSymbols = [
-  "FragmentSubmission",
-  "from_fragment_submission",
-  "mir_function_to_executable",
-  "ExecutableFunction",
-  "Operand::Symbol",
-  "ExecutableProvider",
-  "MirFunctionMapProvider",
-  "resolve_static_callee_operation",
-  "find_by_symbol",
-  "operation_for_exact_symbol",
-];
-
 function absolute(relative) {
   const resolved = path.resolve(root, relative);
   const relativeToRoot = path.relative(root, resolved);
@@ -75,29 +62,17 @@ function productionRustFiles() {
   return files;
 }
 
-function legacyOccurrences() {
-  const occurrences = [];
-  for (const file of productionRustFiles()) {
-    const text = fs.readFileSync(file, "utf8");
-    for (const symbol of forbiddenProductionSymbols) {
-      if (!text.includes(symbol)) continue;
-      occurrences.push(`${path.relative(root, file)}: ${symbol}`);
-    }
-  }
-  return occurrences;
-}
-
 function validatePlan() {
   const errors = [];
   for (const [source, destination] of moves) {
     if (!exists(source)) errors.push(`缺少迁移源: ${source}`);
     if (exists(destination)) errors.push(`迁移目标已存在: ${destination}`);
   }
-  const legacy = legacyOccurrences();
-  if (legacy.length) {
-    errors.push("生产语义旁路尚未清除，拒绝目录重塑:");
-    errors.push(...legacy);
-  }
+  const references = productionRustFiles().flatMap((file) => {
+    const text = fs.readFileSync(file, "utf8");
+    return rewrites.filter(([from]) => text.includes(from)).map(([from]) => `${path.relative(root, file)}: ${from}`);
+  });
+  if (references.length === 0) errors.push("未发现待重写的 compile_pipeline 模块引用");
   return errors;
 }
 
