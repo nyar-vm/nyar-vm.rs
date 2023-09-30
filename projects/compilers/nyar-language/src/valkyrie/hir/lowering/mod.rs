@@ -336,7 +336,7 @@ pub struct FrontendBuildOutput {
     hir_module: HirModule,
     neutral_plan: FrontendNeutralPlan,
     semantic_mir: crate::valkyrie::mir::MirModule,
-    canonical_program: nyar_types::CanonicalProgram,
+    compiled_program: nyar_types::CompiledProgram,
 }
 
 impl FrontendBuildOutput {
@@ -346,7 +346,14 @@ impl FrontendBuildOutput {
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
         let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
             .map_err(|error| ParseError::invalid(format!("CanonicalProgram 生产失败: {error:?}")))?;
-        Ok(Self { hir_module, neutral_plan, semantic_mir, canonical_program })
+        let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
+            &crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner,
+            &canonical_program,
+        )
+            .map_err(|error| ParseError::invalid(format!("RepresentationPlan 生产失败: {error:?}")))?;
+        let compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
+            .map_err(|error| ParseError::invalid(format!("CompiledProgram 合同失败: {error:?}")))?;
+        Ok(Self { hir_module, neutral_plan, semantic_mir, compiled_program })
     }
 
     /// 返回 lowering 后的 HIR 模块。
@@ -366,7 +373,12 @@ impl FrontendBuildOutput {
 
     /// 返回 Compiler 已验证的 CanonicalProgram；消费者不得重新生产。
     pub fn canonical_program(&self) -> &nyar_types::CanonicalProgram {
-        &self.canonical_program
+        self.compiled_program.canonical()
+    }
+
+    /// 返回 Compiler 生成的不可拆分成功载荷。
+    pub fn compiled_program(&self) -> &nyar_types::CompiledProgram {
+        &self.compiled_program
     }
 
     /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
@@ -376,8 +388,15 @@ impl FrontendBuildOutput {
     /// signature contracts.
     pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
         crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)?;
-        self.canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
             .map_err(|error| ParseError::invalid(format!("依赖链接后的 CanonicalProgram 生产失败: {error:?}")))?;
+        let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
+            &crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner,
+            &canonical_program,
+        )
+        .map_err(|error| ParseError::invalid(format!("依赖链接后的 RepresentationPlan 生产失败: {error:?}")))?;
+        self.compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
+            .map_err(|error| ParseError::invalid(format!("依赖链接后的 CompiledProgram 合同失败: {error:?}")))?;
         Ok(())
     }
 
