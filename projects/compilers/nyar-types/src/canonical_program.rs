@@ -906,27 +906,43 @@ pub enum CompiledProgramError {
     MissingValueRepresentation { function: ItemInstanceId, value: MirValueId },
     /// 某条调用指令没有对应调用表示选择。
     MissingInvokeRepresentation { instruction: InstructionId },
+    /// 表示计划包含不属于该程序的值键。
+    ExtraValueRepresentation { function: ItemInstanceId, value: MirValueId },
+    /// 表示计划包含不属于该程序的调用键。
+    ExtraInvokeRepresentation { instruction: InstructionId },
 }
 
 impl CompiledProgram {
     /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
     pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
         canonical.validate().map_err(CompiledProgramError::Canonical)?;
+        let mut expected_values = std::collections::BTreeSet::new();
+        let mut expected_invokes = std::collections::BTreeSet::new();
         for function in canonical.mir.functions.values() {
             for value in function.value_types.keys() {
-                if !representation.value_reps.contains_key(&ValueIdentity::new(function.instance, *value)) {
+                let identity = ValueIdentity::new(function.instance, *value);
+                expected_values.insert(identity);
+                if !representation.value_reps.contains_key(&identity) {
                     return Err(CompiledProgramError::MissingValueRepresentation { function: function.instance, value: *value });
                 }
             }
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
                     if matches!(&instruction.operation, CanonicalOperation::Invoke { .. })
-                        && !representation.invoke_lowerings.contains_key(&instruction.id)
                     {
-                        return Err(CompiledProgramError::MissingInvokeRepresentation { instruction: instruction.id });
+                        expected_invokes.insert(instruction.id);
+                        if !representation.invoke_lowerings.contains_key(&instruction.id) {
+                            return Err(CompiledProgramError::MissingInvokeRepresentation { instruction: instruction.id });
+                        }
                     }
                 }
             }
+        }
+        if let Some(identity) = representation.value_reps.keys().find(|identity| !expected_values.contains(identity)) {
+            return Err(CompiledProgramError::ExtraValueRepresentation { function: identity.function, value: identity.value });
+        }
+        if let Some(instruction) = representation.invoke_lowerings.keys().find(|instruction| !expected_invokes.contains(instruction)) {
+            return Err(CompiledProgramError::ExtraInvokeRepresentation { instruction: *instruction });
         }
         Ok(Self { canonical, representation })
     }
@@ -1195,6 +1211,45 @@ mod tests {
         let compiled = CompiledProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
         assert_eq!(compiled.canonical(), &program);
         assert_eq!(compiled.representation(), &representation);
+    }
+
+    #[test]
+    fn compiled_program_rejects_representation_for_unknown_value() {
+        let program = typed_call_program();
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let mut representation = RepresentationPlan::default();
+        representation.value_reps.insert(
+            ValueIdentity::new(caller, MirValueId::from_index(0).unwrap()),
+            crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        );
+        representation.value_reps.insert(
+            ValueIdentity::new(caller, MirValueId::from_index(1).unwrap()),
+            crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        );
+        representation.value_reps.insert(
+            ValueIdentity::new(caller, MirValueId::from_index(2).unwrap()),
+            crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+        );
+        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        let error = CompiledProgram::new(program, representation).expect_err("未知值不得进入后端");
+        assert!(matches!(error, CompiledProgramError::ExtraValueRepresentation { .. }));
+    }
+
+    #[test]
+    fn compiled_program_rejects_representation_for_unknown_instruction() {
+        let program = typed_call_program();
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let mut representation = RepresentationPlan::default();
+        for value in [MirValueId::from_index(0).unwrap(), MirValueId::from_index(1).unwrap()] {
+            representation.value_reps.insert(
+                ValueIdentity::new(caller, value),
+                crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
+            );
+        }
+        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        representation.invoke_lowerings.insert(InstructionId::from_index(1).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        let error = CompiledProgram::new(program, representation).expect_err("未知调用指令不得进入后端");
+        assert!(matches!(error, CompiledProgramError::ExtraInvokeRepresentation { .. }));
     }
 
     #[test]
