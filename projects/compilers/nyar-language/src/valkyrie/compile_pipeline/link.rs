@@ -1,21 +1,23 @@
-//! Link reachable dependency MIR bodies into a consumer package MIR.
+//! Compiler 内部的依赖 MIR 闭包链接。
 //!
-//! Semantic-group builds keep only the consumer HIR/MIR; dependency packages
-//! contribute SPI signatures (`MirExternalCallContract`) but not bodies.
-//! Emitter SMIR003 requires those bodies in the executable registry (or a host
-//! import). This module pulls reachable Valkyrie→Valkyrie callees from retained
-//! dependency MIR modules — the minimal Stage1 link step toward
-//! `LinkedSemanticProgram`. Host FFI stays on `external_import_links`.
+//! 模块局部身份在最终闭包内冻结；装配层不得调用此阶段或修改语义事实。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
     types::{Identifier, NamePath, hir::ValkyrieType},
-    valkyrie::mir::{LayoutId, MirFunction, MirModule, MirOperand, MirOperation, MirValue, MirValueOrigin, MirValueRef, merge_aggregate_layout_plan},
+    valkyrie::mir::{MirFunction, MirModule, MirOperand, MirOperation, MirValue, MirValueOrigin, MirValueRef, merge_aggregate_layout_plan},
 };
 
 /// 只沿完整调用符号链接依赖函数及其支撑元数据，不推断泛型或改写调用语义。
-pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
+pub(crate) fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
+    let mut linked = consumer.clone();
+    link_dependency_closure(&mut linked, dependency_mirs)?;
+    *consumer = linked;
+    Ok(())
+}
+
+fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
     if !dependency_mirs.is_empty() {
         // 完整身份必须唯一；依赖顺序不得决定语义绑定。
         let mut pool: BTreeMap<String, (usize, MirFunction)> = BTreeMap::new();
@@ -61,11 +63,6 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
             }
 
             if !linked_symbols.is_empty() {
-                // 支撑元数据按贡献依赖划分。布局 id 是模块局部的：
-                // 重分配冲突后，只改写该依赖的已链接函数体
-                // （SMIR010：Option.tag FieldGet 不得解析到消费方 FunctionAnalysis id）。
-                // Semantic MIR 操作不再携带 layout_id；remap 仍作用于侧表 plan，
-                // 并对已链接函数体保留空操作遍历以备后用。
                 for (dep_index, symbols) in &linked_by_dep {
                     let dep = &dependency_mirs[*dep_index];
                     for layout in &dep.aggregate_layouts.layouts {
@@ -81,14 +78,7 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
                             }
                         }
                     }
-                    let remap = merge_aggregate_layout_plan(&mut consumer.aggregate_layouts, &dep.aggregate_layouts);
-                    if !remap.is_empty() {
-                        for function in &mut consumer.functions {
-                            if symbols.contains(&function.symbol) {
-                                remap_function_layout_ids(function, &remap);
-                            }
-                        }
-                    }
+                    merge_aggregate_layout_plan(&mut consumer.aggregate_layouts, &dep.aggregate_layouts);
                     for sum in &dep.sum_types {
                         if let Some(existing) = consumer.sum_types.iter().find(|existing| existing.name == sum.name) {
                             if existing != sum {
@@ -135,9 +125,6 @@ pub fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: 
     Ok(())
 }
 
-fn remap_function_layout_ids(_function: &mut MirFunction, _remap: &BTreeMap<LayoutId, LayoutId>) {
-    // 聚合指令不再在 Semantic MIR 操作上携带 layout_id。
-}
 
 fn relocate_variant_ids(
     function: &mut MirFunction,

@@ -344,6 +344,14 @@ impl FrontendBuildOutput {
     pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
         let neutral_plan = hir_module_to_frontend_neutral_plan(&hir_module);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
+        Self::from_hir_and_semantic_mir(hir_module, neutral_plan, semantic_mir)
+    }
+
+    fn from_hir_and_semantic_mir(
+        hir_module: HirModule,
+        neutral_plan: FrontendNeutralPlan,
+        semantic_mir: crate::valkyrie::mir::MirModule,
+    ) -> Result<Self, ParseError> {
         let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
             .map_err(|error| ParseError::invalid(format!("CanonicalProgram 生产失败: {error:?}")))?;
         let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
@@ -386,17 +394,20 @@ impl FrontendBuildOutput {
     /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
     /// requires those bodies in the executable registry (SMIR003), not only SPI
     /// signature contracts.
-    pub fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
-        crate::valkyrie::assembly::link_reachable_dependency_mir(&mut self.semantic_mir, dependency_mirs)?;
-        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&self.semantic_mir)
+    fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
+        let mut semantic_mir = self.semantic_mir.clone();
+        crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut semantic_mir, dependency_mirs)?;
+        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
             .map_err(|error| ParseError::invalid(format!("依赖链接后的 CanonicalProgram 生产失败: {error:?}")))?;
         let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
             &crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner,
             &canonical_program,
         )
         .map_err(|error| ParseError::invalid(format!("依赖链接后的 RepresentationPlan 生产失败: {error:?}")))?;
-        self.compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
+        let compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
             .map_err(|error| ParseError::invalid(format!("依赖链接后的 CompiledProgram 合同失败: {error:?}")))?;
+        self.semantic_mir = semantic_mir;
+        self.compiled_program = compiled_program;
         Ok(())
     }
 
@@ -663,7 +674,8 @@ impl ValkyrieCompiler {
     pub fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut dependency_mirs = Vec::new();
-        let mut final_output = None;
+        let mut final_hir = None;
+        let mut final_mir = None;
         for group in groups {
             let dependency_exports = group
                 .direct_dependencies
@@ -675,29 +687,31 @@ impl ValkyrieCompiler {
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
             )?;
-            let output = FrontendBuildOutput::from_hir_module(hir_module)?;
-            let hir = output.hir_module();
+            let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
-                functions: hir.functions.clone(),
-                structs: hir.structs.clone(),
-                enums: hir.enums.clone(),
-                traits: hir.traits.clone(),
-                type_aliases: hir.type_aliases.clone(),
-                impls: hir.impls.clone(),
+                functions: hir_module.functions.clone(),
+                structs: hir_module.structs.clone(),
+                enums: hir_module.enums.clone(),
+                traits: hir_module.traits.clone(),
+                type_aliases: hir_module.type_aliases.clone(),
+                impls: hir_module.impls.clone(),
             };
             if exports.insert(group.dependency_key.clone(), export).is_some() {
                 return Err(ParseError::invalid(format!("semantic dependency export identity collision for `{}`", group.dependency_key)));
             }
-            if let Some(previous) = final_output.replace(output) {
-                dependency_mirs.push(previous.semantic_mir().clone());
+            if let Some(previous) = final_mir.replace(semantic_mir) {
+                dependency_mirs.push(previous);
             }
+            final_hir = Some(hir_module);
         }
-        let mut final_output = final_output.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        let final_hir = final_hir.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        let mut final_mir = final_mir.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         if !dependency_mirs.is_empty() {
-            final_output.link_dependency_mir_modules(&dependency_mirs)?;
+            crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &dependency_mirs)?;
         }
-        Ok(final_output)
+        let neutral_plan = hir_module_to_frontend_neutral_plan(&final_hir);
+        FrontendBuildOutput::from_hir_and_semantic_mir(final_hir, neutral_plan, final_mir)
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.

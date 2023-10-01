@@ -1141,7 +1141,7 @@ mod semantic_contract_tests {
         module.functions.pop();
         let dependency = module.clone();
         let before = module.clone();
-        assert!(crate::valkyrie::assembly::link_reachable_dependency_mir(&mut module, &[dependency.clone(), dependency]).is_err());
+        assert!(crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut module, &[dependency.clone(), dependency]).is_err());
         assert_eq!(module, before);
         module.external_calls[0].return_type = ValkyrieType::Boolean;
         assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR007");

@@ -43,7 +43,7 @@ pub use valkyrie::{
         hir_module_to_object_algebraic_program, hir_module_to_program_facts, mir_function_to_executable, mir_functions_to_executable_map,
     },
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, FrontendBuildOutput, ValkyrieCompiler, compute_nominal_layouts},
-    link_reachable_dependency_mir, lir, mir,
+    lir, mir,
     mir::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,
         MirEffectKind, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValue,

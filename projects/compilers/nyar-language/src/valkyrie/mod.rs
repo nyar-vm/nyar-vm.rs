@@ -28,7 +28,7 @@ pub mod validation;
 pub use assembly::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
     assemble_fragment, assemble_fragment_submission, build_first_class_suspend_payload, build_state_machine_suspend_payload,
-    link_reachable_dependency_mir, plan_artifacts_from_build_output, plan_artifacts_from_neutral_plan,
+    plan_artifacts_from_build_output, plan_artifacts_from_neutral_plan,
 };
 pub use frontend_contract::{
     ConcretizeError, FrontendNeutralPlan, NyarPlanningContract, concretize_mir_function_types, concretize_mir_function_types_lossy,

@@ -13,6 +13,7 @@ mod diagnostics;
 mod driver;
 mod envelope_checks;
 mod canonical;
+mod link;
 mod representation;
 mod stubs;
 
@@ -20,6 +21,7 @@ pub use diagnostics::{diagnostic, fail_stage};
 pub use driver::{AnalysisOutcome, CompilePipeline, ProcessingOutcome};
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use canonical::canonical_program_from_semantic_mir;
+pub(crate) use link::link_reachable_dependency_mir;
 pub use representation::CanonicalRepresentationPlanner;
 pub use stubs::{FailClosedLinker, FailClosedPlanner, FailClosedValidator};
 

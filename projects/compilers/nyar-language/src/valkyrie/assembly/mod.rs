@@ -4,7 +4,6 @@
 //! Shared ABI (`AssembledFragment`) lives in `nyar`; the driver only wraps it.
 
 mod executable_closure;
-mod link;
 mod nullable;
 mod suspend_payload;
 
@@ -20,7 +19,6 @@ use crate::{
     FrontendBuildOutput, FrontendNeutralPlan, collect_singleton_instance_plans,
 };
 
-pub use link::link_reachable_dependency_mir;
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
 pub use suspend_payload::{build_first_class_suspend_payload, build_state_machine_suspend_payload};
@@ -33,7 +31,6 @@ pub fn plan_artifacts_from_build_output(
     backend_registry: BackendRegistry,
     clr_suspend_strategy: ClrSuspendStrategy,
 ) -> Result<ArtifactPartitionPlan, PlanningError> {
-    let _compiled_program = build_output.compiled_program();
     build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
 }
 
