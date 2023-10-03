@@ -12,12 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use emitter::fragment_submission_from_assembled;
 use miette::{Result as MietteResult, miette};
 use nyar::{
-    ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError, ProjectionPolicy,
+    ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
     QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, projection_policy_for_target_profile,
     suspend_consumption_model_for_lane,
 };
 use crate::{
-    FrontendBuildOutput, FrontendNeutralPlan, collect_singleton_instance_plans,
+    FrontendBuildOutput, collect_singleton_instance_plans,
 };
 
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
@@ -135,17 +135,6 @@ pub fn assemble_fragment_submission(
 ) -> MietteResult<emitter::FragmentSubmission> {
     let payload = assemble_fragment(build_output, plan, partition_index)?;
     Ok(fragment_submission_from_assembled(payload))
-}
-
-/// Plan artifacts from a `FrontendNeutralPlan` (for callers that only have the neutral plan).
-pub fn plan_artifacts_from_neutral_plan(
-    neutral_plan: &FrontendNeutralPlan,
-    target: CanonicalTarget,
-    projection_policy: ProjectionPolicy,
-    backend_registry: BackendRegistry,
-    clr_suspend_strategy: ClrSuspendStrategy,
-) -> Result<ArtifactPartitionPlan, PlanningError> {
-    neutral_plan.artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
 }
 
 fn merge_program_external_import_links(
