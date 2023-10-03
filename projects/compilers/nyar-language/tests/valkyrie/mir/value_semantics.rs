@@ -213,8 +213,7 @@ micro main() {
     let target_profile = target.to_profile(None);
     let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");
     let backend_registry = clr_bundled_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
-    let artifact_plan =
-        plan_artifacts_from_build_output(&build_output, target, projection_policy, backend_registry, ClrSuspendStrategy::default())
+    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
             .expect("artifact plan");
     let fragment = assemble_fragment(&build_output, &artifact_plan, 0).expect("backend fragment");
     assert_eq!(

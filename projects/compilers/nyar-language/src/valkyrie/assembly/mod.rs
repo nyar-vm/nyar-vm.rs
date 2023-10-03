@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use emitter::fragment_submission_from_assembled;
 use miette::{Result as MietteResult, miette};
 use nyar::{
-    ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
-    ProjectionPolicy, QualifiedName, SuspendConsumptionModel, TargetProfile, TheoryBundle, VmSuspendStrategy,
+    ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError, ProjectionPolicy,
+    QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, projection_policy_for_target_profile,
     suspend_consumption_model_for_lane,
 };
 use crate::{
@@ -23,15 +23,6 @@ use crate::{
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
 pub use suspend_payload::{build_first_class_suspend_payload, build_state_machine_suspend_payload};
-
-/// 由 Compiler 持有的语义片段生成目标 backend registry。
-pub fn backend_registry_for_build_output(
-    build_output: &FrontendBuildOutput,
-    target_profile: &TargetProfile,
-    projection_policy: &ProjectionPolicy,
-) -> BackendRegistry {
-    emitter::bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, target_profile, projection_policy)
-}
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
 pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize, usize) {
@@ -43,10 +34,15 @@ pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize
 pub fn plan_artifacts_from_build_output(
     build_output: &FrontendBuildOutput,
     target: CanonicalTarget,
-    projection_policy: ProjectionPolicy,
-    backend_registry: BackendRegistry,
     clr_suspend_strategy: ClrSuspendStrategy,
 ) -> Result<ArtifactPartitionPlan, PlanningError> {
+    let target_profile = target.to_profile(None);
+    let projection_policy = projection_policy_for_target_profile(&target_profile).map_err(|error| PlanningError::SemanticContract {
+        module: build_output.neutral_plan().module_name.to_string(),
+        stage: nyar_types::CompileStage::RepresentationPlan,
+        detail: format!("目标 projection 合同失败: {error:?}"),
+    })?;
+    let backend_registry = emitter::bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
     build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
 }
 

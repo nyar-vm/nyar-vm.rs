@@ -103,10 +103,7 @@ fn feature_matrix_test_bundle_clr_types_have_unique_names() {
     let option_sum = sum_types.iter().find(|item| item.name == "Option");
     assert!(option_sum.is_some_and(|item| item.is_unite), "Option sum type should be unite");
     let target = CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");
-    let target_profile = target.to_profile(None);
-    let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");
-    let registry = bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
-    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, projection_policy, registry, ClrSuspendStrategy::default())
+    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
         .expect("artifact plan");
     let submission = assemble_fragment_submission(&build_output, &artifact_plan, 0).expect("fragment");
     let mut module = lower_fragment_to_clr_msil(&submission).expect("CLR lowering");
@@ -171,10 +168,7 @@ micro main() -> i64 {
     let build_output =
         ValkyrieCompiler::new(SourceID { version_id: 9700 }).compile_source_to_build_output(source).expect("compile singleton bundle");
     let target = CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");
-    let target_profile = target.to_profile(None);
-    let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");
-    let registry = bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
-    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, projection_policy, registry, ClrSuspendStrategy::default())
+    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
         .expect("artifact plan");
     let submission = assemble_fragment_submission(&build_output, &artifact_plan, 0).expect("fragment");
     let mut module = lower_fragment_to_clr_msil(&submission).expect("CLR lowering");

@@ -19,10 +19,7 @@ fn compile_source_to_clr_module(source: &str, version_id: u32) -> MsilModule {
         .compile_source_to_build_output(source)
         .unwrap_or_else(|error| panic!("compile source failed: {error:?}"));
     let target = CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");
-    let target_profile = target.to_profile(None);
-    let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");
-    let registry = bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
-    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, projection_policy, registry, ClrSuspendStrategy::default())
+    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
         .expect("artifact plan");
     let submission = assemble_fragment_submission(&build_output, &artifact_plan, 0).expect("fragment");
     lower_fragment_to_clr_msil(&submission).expect("CLR lowering")
