@@ -866,13 +866,9 @@ impl<'a> WasmMirLowerer<'a> {
         true
     }
 
-    /// Lookup unite sum wasm-gc type_index by exact name, then simple-name fallback.
+    /// Lookup unite sum wasm-gc type_index by its resolved owner name.
     fn resolve_gc_sum_type_index(&self, sum_name: &str) -> Option<u32> {
-        if let Some(&idx) = self.gc_sum_type_indices.get(sum_name) {
-            return Some(idx);
-        }
-        let simple = simple_name_of(sum_name);
-        self.gc_sum_type_indices.iter().find(|(k, _)| simple_name_of(k) == simple).map(|(_, &v)| v)
+        self.gc_sum_type_indices.get(sum_name).copied()
     }
 
     /// Resolve Fine/Fail/Object/-?/ EndOfFile/StringLiteral-?variant ctor -?
@@ -1037,13 +1033,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     fn sum_name_matches(&self, sum_name: &str, hint: &str) -> bool {
-        let sum_simple = simple_name_of(sum_name);
-        let hint_simple = simple_name_of(hint);
         sum_name == hint
-            || sum_simple == hint
-            || sum_simple == hint_simple
-            || sum_name.ends_with(&format!("::{hint}"))
-            || sum_name.ends_with(&format!("::{hint_simple}"))
     }
 
     /// `None()` →?ref.null anyref；`Some(x)` →?x as anyref?

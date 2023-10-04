@@ -16,10 +16,6 @@ use crate::lowering::features::semantic_mir_contract::is_option_shaped;
 use std::collections::{BTreeMap, BTreeSet};
 use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 
-pub(super) fn simple_name_of(name: &str) -> &str {
-    name.rsplit("::").next().unwrap_or(name).rsplit('.').next().unwrap_or(name)
-}
-
 /// 扫描 MIR：登记 wasm-gc structtype 所需的 layout_id。
 ///
 /// - `StructNew`：仅 `storage == Reference`

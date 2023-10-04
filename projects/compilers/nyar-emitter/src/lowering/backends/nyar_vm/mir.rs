@@ -219,70 +219,20 @@ fn build_nyar_function_entry_arities(
     map
 }
 
-/// 登记别名；短名冲突时保留先注册者，禁止 `new`/`push` 等覆盖。
-fn nyar_alias_key_or_insert(map: &mut BTreeMap<String, i32>, key: String, dense: i32) {
-    if let Some(&existing) = map.get(&key) {
-        if existing == dense {
-            return;
-        }
-        return;
-    }
-    map.insert(key, dense);
-}
-
 fn build_nyar_function_index_map(
-    submission: &FragmentSubmission,
+    _submission: &FragmentSubmission,
     exec: &dyn crate::executable_provider::ExecutableProvider,
     operations: &[QualifiedName],
 ) -> BTreeMap<String, i32> {
     let mut map = BTreeMap::new();
-    let mut ambiguous_simple = BTreeSet::<String>::new();
     for (index, operation) in operations.iter().enumerate() {
         let dense = index as i32;
-        let parts = operation.parts();
-        nyar_alias_key_or_insert(&mut map, operation.to_string(), dense);
+        map.insert(operation.to_string(), dense);
         if let Some(view) = exec.get_function(operation) {
-            nyar_alias_key_or_insert(&mut map, view.function.symbol.clone(), dense);
-            let dotted = view.function.symbol.replace('.', "::");
-            nyar_alias_key_or_insert(&mut map, dotted, dense);
-        }
-        for start in 0..parts.len() {
-            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-            nyar_alias_key_or_insert(&mut map, suffix, dense);
-        }
-        if parts.len() >= 2 {
-            let owner = parts[parts.len() - 2].as_str();
-            let method = parts[parts.len() - 1].as_str();
-            for alias in [format!("{owner}::{method}"), format!("{owner}.{method}")] {
-                match map.get(&alias) {
-                    Some(&existing) if existing == dense => {}
-                    Some(_) => {
-                        map.remove(&alias);
-                    }
-                    None => {
-                        map.insert(alias, dense);
-                    }
-                }
+            let symbol = view.function.symbol;
+            if symbol != operation.to_string() {
+                map.insert(symbol, dense);
             }
-        }
-        if let Some(last) = operation.parts().last() {
-            let simple = last.as_str();
-            if ambiguous_simple.contains(simple) {
-                continue;
-            }
-            match map.get(simple) {
-                Some(&existing) if existing == dense => {}
-                Some(_) => {
-                    ambiguous_simple.insert(simple.to_string());
-                    map.remove(simple);
-                }
-                None => {
-                    map.insert(simple.to_string(), dense);
-                }
-            }
-        }
-        if let Some(public_name) = submission.wasm_export_names.get(operation) {
-            nyar_alias_key_or_insert(&mut map, public_name.clone(), dense);
         }
     }
     map
@@ -1057,71 +1007,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         true
     }
 
-    fn resolve_function_index(&self, path: &nyar::NamePath, arguments: &[MirOperand]) -> Option<i32> {
-        let receiver_type = self.call_receiver_nyar_type(arguments);
+    fn resolve_function_index(&self, path: &nyar::NamePath, _arguments: &[MirOperand]) -> Option<i32> {
         if let Some(exec) = &self.submission.executable {
             if let Some(operation) = resolve_static_callee_operation(exec.as_ref(), path) {
                 return self.function_index_for_operation(&operation);
             }
-        if path.parts().len() == 1 {
-            // 接收者类型已知时，直接按 `Type.method` 查稠密表（闭包已收录 SwissTable.* 时生效）。
-            if let Some(receiver_ty) = &receiver_type {
-                if let Some(type_name) = nyar_type_layout_name(receiver_ty) {
-                    let simple = path.parts()[0].as_str();
-                    for key in [
-                        format!("{type_name}.{simple}"),
-                        format!("{type_name}::{simple}"),
-                        format!("std.collection.{type_name}.{simple}"),
-                        format!("std::collection::{type_name}::{simple}"),
-                    ] {
-                        if let Some(index) = self.function_index_by_name.get(&key) {
-                            return Some(*index);
-                        }
-                    }
-                }
-            }
-            return None;
-        }
-        }
-        if path.parts().len() == 2 {
-            let field = path.parts()[0].as_str();
-            let method = path.parts()[1].as_str();
-            if let Some(self_ty) = self.mir_fn.param_types.first() {
-                let owner = nyar_type_layout_name(self_ty).unwrap_or_default();
-                if let Some(field_ty) = self.ctx.field_type(None, owner.as_str(), field) {
-                    if let Some(type_name) = nyar_type_layout_name(&field_ty) {
-                        for key in [format!("{type_name}.{method}"), format!("{type_name}::{method}")] {
-                            if let Some(index) = self.function_index_by_name.get(&key) {
-                                return Some(*index);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let parts = path.parts();
         if let Some(index) = self.function_index_by_name.get(&path.to_string()) {
             return Some(*index);
         }
         let colon_path = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
         if colon_path != path.to_string() {
             if let Some(index) = self.function_index_by_name.get(&colon_path) {
-                return Some(*index);
-            }
-        }
-        for start in 0..parts.len() {
-            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-            // 禁止 `_impl.contains_key` → `contains_key` 这类裸方法后缀误绑定。
-            if !suffix.contains("::") {
-                continue;
-            }
-            if let Some(index) = self.function_index_by_name.get(&suffix) {
-                return Some(*index);
-            }
-        }
-        if parts.len() == 2 {
-            let export_name = nyar_singleton_method_export_name(parts[0].as_str(), parts[1].as_str());
-            if let Some(index) = self.function_index_by_name.get(&export_name) {
                 return Some(*index);
             }
         }
@@ -1172,13 +1068,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if let Some(index) = self.function_index_by_name.get(&dotted) {
                     return Some(*index);
                 }
-            }
-        }
-        let parts = operation.parts();
-        for start in 0..parts.len() {
-            let suffix = parts[start..].iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-            if let Some(index) = self.function_index_by_name.get(&suffix) {
-                return Some(*index);
             }
         }
         None

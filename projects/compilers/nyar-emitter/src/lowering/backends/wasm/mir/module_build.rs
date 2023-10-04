@@ -112,7 +112,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut type_index_by_name: BTreeMap<String, u32> = BTreeMap::new();
     let mut param_types_by_function_index: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
-    let mut ambiguous_simple: BTreeSet<String> = BTreeSet::new();
     for (dense, (operation, mir_fn)) in mir_operations.iter().enumerate() {
         let full = operation.to_string();
         let wasm_idx = base_function_index + dense as u32;
@@ -123,47 +122,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_name.insert(full.clone(), wasm_idx);
         type_index_by_name.insert(full.clone(), type_idx);
-        if full.contains("::") {
-            let dotted_alias = full.replace("::", ".");
-            function_index_by_name.entry(dotted_alias.clone()).or_insert(wasm_idx);
-            type_index_by_name.entry(dotted_alias).or_insert(type_idx);
-        }
-        let parts = operation.parts();
-        if parts.len() >= 2 {
-            let owner = parts[parts.len() - 2].as_str();
-            let method = parts[parts.len() - 1].as_str();
-            for alias in [format!("{owner}::{method}"), format!("{owner}.{method}")] {
-                match function_index_by_name.get(&alias) {
-                    Some(&existing) if existing == wasm_idx => {}
-                    Some(_) => {
-                        function_index_by_name.remove(&alias);
-                        type_index_by_name.remove(&alias);
-                    }
-                    None => {
-                        function_index_by_name.insert(alias.clone(), wasm_idx);
-                        type_index_by_name.insert(alias, type_idx);
-                    }
-                }
-            }
-        }
-        if let Some(last) = operation.parts().last() {
-            let simple = last.as_str();
-            if ambiguous_simple.contains(simple) {
-                continue;
-            }
-            match function_index_by_name.get(simple) {
-                Some(&existing) if existing == wasm_idx => {}
-                Some(_) => {
-                    ambiguous_simple.insert(simple.to_string());
-                    function_index_by_name.remove(simple);
-                    type_index_by_name.remove(simple);
-                }
-                None => {
-                    function_index_by_name.insert(simple.to_string(), wasm_idx);
-                    type_index_by_name.insert(simple.to_string(), type_idx);
-                }
-            }
-        }
     }
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
     let param_types_by_name = build_param_types_by_name(&ctx, submission, &operations, &gc_struct_type_indices, js_glue_utf8_as_anyref);

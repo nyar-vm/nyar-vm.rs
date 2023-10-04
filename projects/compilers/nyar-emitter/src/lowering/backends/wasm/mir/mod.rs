@@ -458,20 +458,6 @@ fn wasm_function_type_result_byte(type_bytes: &[u8]) -> Option<u8> {
 }
 
 /// 在完整路?map 中按「简单名 / `::简单名`」唯一匹配；多名碰撞则 `None`（fail-closed）?
-fn unique_simple_name_match<'a, V>(map: &'a BTreeMap<String, V>, simple: &str) -> Option<&'a V> {
-    let suffix = format!("::{simple}");
-    let mut found: Option<&V> = None;
-    for (name, value) in map {
-        if name.as_str() == simple || name.ends_with(&suffix) {
-            if found.is_some() {
-                return None;
-            }
-            found = Some(value);
-        }
-    }
-    found
-}
-
 /// Lookup registry keys for a MIR [`NamePath`]（`.`）against [`QualifiedName`]（`::`）maps.
 fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> Option<&'a V> {
     if parts.is_empty() {
@@ -479,22 +465,7 @@ fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> 
     }
     let colon = parts.join("::");
     let dotted = parts.join(".");
-    map.get(&colon)
-        .or_else(|| map.get(&dotted))
-        .or_else(|| (parts.len() == 1).then(|| map.get(parts[0])).flatten())
-        .or_else(|| {
-            // MIR 常带命名空间前缀（`std.collection.SwissTable.new`），注册表键多为 `SwissTable::new`。
-            if parts.len() >= 2 {
-                let owner = parts[parts.len() - 2];
-                let method = parts[parts.len() - 1];
-                let suffix_colon = format!("{owner}::{method}");
-                let suffix_dot = format!("{owner}.{method}");
-                map.get(&suffix_colon).or_else(|| map.get(&suffix_dot))
-            } else {
-                None
-            }
-        })
-        .or_else(|| unique_simple_name_match(map, parts[parts.len() - 1]))
+    map.get(&colon).or_else(|| map.get(&dotted))
 }
 
 fn build_param_types_by_name(
@@ -688,7 +659,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut type_index_by_name: BTreeMap<String, u32> = BTreeMap::new();
     let mut param_types_by_function_index: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
-    let mut ambiguous_simple: BTreeSet<String> = BTreeSet::new();
     for (dense, (operation, mir_fn)) in mir_operations.iter().enumerate() {
         let full = operation.to_string();
         let wasm_idx = base_function_index + dense as u32;
@@ -699,50 +669,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_name.insert(full.clone(), wasm_idx);
         type_index_by_name.insert(full.clone(), type_idx);
-        // MIR callee 多为 NamePath（`.`）；同步注册点号拼写，避免 `ArrayList.push` 查不到 `ArrayList::push`。
-        if full.contains("::") {
-            let dotted_alias = full.replace("::", ".");
-            function_index_by_name.entry(dotted_alias.clone()).or_insert(wasm_idx);
-            type_index_by_name.entry(dotted_alias).or_insert(type_idx);
-        }
-        // 短名 `Owner::method` / `Owner.method`：MIR 常省略 `std.collection` 等命名空间前缀。
-        let parts = operation.parts();
-        if parts.len() >= 2 {
-            let owner = parts[parts.len() - 2].as_str();
-            let method = parts[parts.len() - 1].as_str();
-            for alias in [format!("{owner}::{method}"), format!("{owner}.{method}")] {
-                match function_index_by_name.get(&alias) {
-                    Some(&existing) if existing == wasm_idx => {}
-                    Some(_) => {
-                        // 同名短后缀碰撞（极少见）→ 删除别名，强制走完整路径。
-                        function_index_by_name.remove(&alias);
-                        type_index_by_name.remove(&alias);
-                    }
-                    None => {
-                        function_index_by_name.insert(alias.clone(), wasm_idx);
-                        type_index_by_name.insert(alias, type_idx);
-                    }
-                }
-            }
-        }
-        if let Some(last) = operation.parts().last() {
-            let simple = last.as_str();
-            if ambiguous_simple.contains(simple) {
-                continue;
-            }
-            match function_index_by_name.get(simple) {
-                Some(&existing) if existing == wasm_idx => {}
-                Some(_) => {
-                    ambiguous_simple.insert(simple.to_string());
-                    function_index_by_name.remove(simple);
-                    type_index_by_name.remove(simple);
-                }
-                None => {
-                    function_index_by_name.insert(simple.to_string(), wasm_idx);
-                    type_index_by_name.insert(simple.to_string(), type_idx);
-                }
-            }
-        }
     }
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
     let param_types_by_name = build_param_types_by_name(&ctx, submission, &operations, &gc_struct_type_indices, js_glue_utf8_as_anyref);
