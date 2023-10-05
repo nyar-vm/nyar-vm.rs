@@ -1,6 +1,6 @@
 //! NyarVM bytecode lowering from semantic MIR.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::{
     contracts::{EffectKind, ValueOrigin, instruction_primary_result},
@@ -19,7 +19,7 @@ use nyar_bytecode::{
 
 use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-    nyar_vm::{nyar_public_export_name, operation_short_name},
+    nyar_vm::nyar_public_export_name,
     singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
 use crate::{
@@ -1012,6 +1012,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             if let Some(operation) = resolve_static_callee_operation(exec.as_ref(), path) {
                 return self.function_index_for_operation(&operation);
             }
+        }
         if let Some(index) = self.function_index_by_name.get(&path.to_string()) {
             return Some(*index);
         }

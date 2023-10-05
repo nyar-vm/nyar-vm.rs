@@ -468,6 +468,31 @@ fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> 
     map.get(&colon).or_else(|| map.get(&dotted))
 }
 
+#[cfg(test)]
+mod callable_lookup_tests {
+    use super::*;
+
+    #[test]
+    fn callable_lookup_preserves_full_owner() {
+        let indices = BTreeMap::from([
+            ("first::Owner::method".to_owned(), 3),
+            ("second::Owner::method".to_owned(), 7),
+        ]);
+        assert_eq!(lookup_by_path_parts(&indices, &["first", "Owner", "method"]), Some(&3));
+        assert_eq!(lookup_by_path_parts(&indices, &["second", "Owner", "method"]), Some(&7));
+        assert_eq!(lookup_by_path_parts(&indices, &["Owner", "method"]), None);
+        assert_eq!(lookup_by_path_parts(&indices, &["method"]), None);
+        assert_eq!(lookup_by_path_parts(&indices, &["third", "Owner", "method"]), None);
+    }
+
+    #[test]
+    fn callable_lookup_does_not_infer_unique_suffix() {
+        let indices = BTreeMap::from([("namespace::Owner::method".to_owned(), 3)]);
+        assert_eq!(lookup_by_path_parts(&indices, &["Owner", "method"]), None);
+        assert_eq!(lookup_by_path_parts(&indices, &["method"]), None);
+    }
+}
+
 fn build_param_types_by_name(
     ctx: &ExecutableLoweringContext,
     submission: &FragmentSubmission,

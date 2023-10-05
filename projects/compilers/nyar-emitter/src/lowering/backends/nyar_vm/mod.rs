@@ -38,19 +38,28 @@ fn empty_module(submission: &FragmentSubmission) -> NyarModuleData {
     }
 }
 
-pub(crate) fn operation_short_name(operation: &QualifiedName) -> String {
-    operation.parts().last().map(|part| part.as_str().to_string()).unwrap_or_else(|| sanitize_symbol(&operation.to_string()))
-}
-
-/// Resolve the public `.nyar` export symbol for a stable operation.
+/// 仅按完整操作身份读取公开导出名；未指定公开名时保留完整身份。
 pub(crate) fn nyar_public_export_name(submission: &FragmentSubmission, operation: &QualifiedName) -> String {
     if let Some(public_name) = submission.wasm_export_names.get(operation) {
         return public_name.clone();
     }
-    let short = operation_short_name(operation);
-    if let Some((_, public_name)) = submission.wasm_export_names.iter().find(|(key, _)| operation_short_name(key) == short) {
-        return public_name.clone();
+    operation.to_string()
+}
+
+#[cfg(test)]
+mod export_identity_tests {
+    use super::*;
+
+    #[test]
+    fn export_identity_does_not_borrow_another_owners_public_name() {
+        let first = QualifiedName::new(vec![nyar::Identifier::new("first"), nyar::Identifier::new("method")]);
+        let second = QualifiedName::new(vec![nyar::Identifier::new("second"), nyar::Identifier::new("method")]);
+        let submission = FragmentSubmission {
+            wasm_export_names: std::collections::BTreeMap::from([(first.clone(), "public_method".to_owned())]),
+            ..Default::default()
+        };
+        assert_eq!(nyar_public_export_name(&submission, &first), "public_method");
+        assert_eq!(nyar_public_export_name(&submission, &second), second.to_string());
     }
-    operation_short_name(operation)
 }
 
