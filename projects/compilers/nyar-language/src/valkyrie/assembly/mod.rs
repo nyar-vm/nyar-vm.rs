@@ -26,8 +26,8 @@ pub use suspend_payload::{build_first_class_suspend_payload, build_state_machine
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
 pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize, usize) {
-    let facts = &build_output.neutral_plan().program_facts;
-    (facts.exports.len(), facts.entries.len())
+    let linked = &build_output.compiled_program().canonical().linked;
+    (linked.exports.len(), linked.entries.len())
 }
 
 /// Plan artifacts from `FrontendBuildOutput` using injected target and projection policy.
@@ -166,6 +166,25 @@ fn merge_program_external_import_links(
 #[cfg(test)]
 mod import_contract_tests {
     use super::*;
+
+    #[test]
+    fn compiler_surface_counts_consume_verified_canonical_exports() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "[export(name: \"first\")] [main] micro first() -> unit { return }\n[export(name: \"second\")] micro second() -> unit { return }",
+        ).expect("多导出源码必须形成完整成功载荷");
+        assert_eq!(build_output_surface_counts(&output), (2, 1));
+        let linked = &output.compiled_program().canonical().linked;
+        assert_eq!(linked.exports.len(), 2);
+        assert!(linked.exports.keys().all(|instance| output.compiled_program().canonical().mir.functions.contains_key(instance)));
+    }
+
+    #[test]
+    fn compiler_surface_rejects_duplicate_public_names_before_assembly() {
+        let error = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "[export(name: \"same\")] micro first() -> unit { return }\n[export(name: \"same\")] micro second() -> unit { return }",
+        ).expect_err("重复公开名不能进入装配");
+        assert!(error.to_string().contains("DuplicateExportName"), "{error}");
+    }
 
     #[test]
     fn unresolved_host_contract_does_not_select_similarly_named_ffi() {

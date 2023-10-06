@@ -445,6 +445,10 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
+    /// 公开导出或程序入口未指向本闭包中的函数体。
+    MissingSurfaceBody { function: ItemInstanceId },
+    /// 不同 callable 使用了同一公开导出名。
+    DuplicateExportName { name: String },
     /// effect 终结符缺少语义 payload。
     MissingEffectPayload { function: ItemInstanceId, block: CanonicalBlockId },
     /// 状态分发值不是整数类型。
@@ -523,6 +527,20 @@ impl CanonicalSemanticMir {
     /// 在进入 RepresentationPlan 前验证 stable-ID、链接和 SSA 合同。
     pub fn validate(&self, linked: &LinkedSemanticProgram) -> Result<(), CanonicalMirError> {
         linked.validate_types()?;
+        let mut export_names = std::collections::BTreeSet::new();
+        for (function, export) in &linked.exports {
+            if !linked.item_instances.contains_key(function) || !self.functions.contains_key(function) {
+                return Err(CanonicalMirError::MissingSurfaceBody { function: *function });
+            }
+            if !export_names.insert(&export.exported_name) {
+                return Err(CanonicalMirError::DuplicateExportName { name: export.exported_name.clone() });
+            }
+        }
+        for function in linked.entries.keys() {
+            if !linked.item_instances.contains_key(function) || !self.functions.contains_key(function) {
+                return Err(CanonicalMirError::MissingSurfaceBody { function: *function });
+            }
+        }
         for (key, function) in &self.functions {
             if key != &function.instance {
                 return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
@@ -1185,6 +1203,40 @@ mod tests {
             arguments.clear();
         }
         assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_surface_requires_a_body_for_each_export_and_entry() {
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let external = ItemInstanceId::from_index(1).unwrap();
+        let mut program = typed_call_program();
+        program.linked.exports.insert(caller, ExportRecord { exported_name: "public_answer".into() });
+        program.linked.entries.insert(caller, EntryRecord);
+        program.validate().expect("完整公开合同");
+        program.linked.exports.insert(external, ExportRecord { exported_name: "external_answer".into() });
+        assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: external }));
+        program.linked.exports.remove(&external);
+        program.linked.entries.insert(external, EntryRecord);
+        assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: external }));
+        program.linked.entries.remove(&external);
+        let unknown = ItemInstanceId::from_index(9).unwrap();
+        program.linked.entries.insert(unknown, EntryRecord);
+        assert_eq!(program.validate(), Err(CanonicalMirError::MissingSurfaceBody { function: unknown }));
+    }
+
+    #[test]
+    fn canonical_surface_rejects_duplicate_public_names_but_allows_multiple_exports() {
+        let caller = ItemInstanceId::from_index(0).unwrap();
+        let other = ItemInstanceId::from_index(1).unwrap();
+        let mut program = typed_call_program();
+        let mut function = program.mir.functions[&caller].clone();
+        function.instance = other;
+        program.mir.functions.insert(other, function);
+        program.linked.exports.insert(caller, ExportRecord { exported_name: "first_answer".into() });
+        program.linked.exports.insert(other, ExportRecord { exported_name: "second_answer".into() });
+        program.validate().expect("多导出完整合同");
+        program.linked.exports.get_mut(&other).unwrap().exported_name = "first_answer".into();
+        assert_eq!(program.validate(), Err(CanonicalMirError::DuplicateExportName { name: "first_answer".into() }));
     }
 
     #[test]
