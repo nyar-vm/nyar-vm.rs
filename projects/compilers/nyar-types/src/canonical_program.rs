@@ -119,13 +119,24 @@ pub struct ItemInstanceRecord {
     pub return_type: TypeId,
 }
 
-/// Placeholder nominal instance row.
+/// 名义类型声明的值语义；由语言前端决定，不是目标物理布局。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NominalValueSemantics {
+    /// 复制聚合值，不共享对象身份。
+    Value,
+    /// 复制引用，保留对象身份。
+    Reference,
+}
+
+/// 完成实例化的名义类型合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NominalInstanceRecord {
     /// 名义类型声明身份。
     pub declaration: TypeId,
     /// 完成代入后的类型实例身份。
     pub substitution: SubstitutionId,
+    /// 声明决定的值/引用语义，不能由字段数量或目标布局推断。
+    pub semantics: NominalValueSemantics,
     /// 该实例声明的全部字段，顺序为语言声明顺序。
     pub fields: Vec<FieldId>,
 }
@@ -253,6 +264,35 @@ impl LinkedSemanticProgram {
             for referenced in references {
                 if !self.types.contains_key(&referenced) {
                     return Err(CanonicalMirError::UnknownTypeReference { owner: *owner, referenced });
+                }
+            }
+        }
+        let mut nominal_semantics = BTreeMap::new();
+        let mut declared_fields = std::collections::BTreeSet::new();
+        for (nominal, record) in &self.nominal_instances {
+            if !matches!(self.types.get(&record.declaration).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration) {
+                return Err(CanonicalMirError::InvalidNominalDeclaration { nominal: *nominal, declaration: record.declaration });
+            }
+            if let Some(previous) = nominal_semantics.insert(record.declaration, record.semantics) {
+                if previous != record.semantics {
+                    return Err(CanonicalMirError::ConflictingNominalSemantics { declaration: record.declaration });
+                }
+            }
+            for field in &record.fields {
+                if !declared_fields.insert(*field) || !self.fields.get(field).is_some_and(|row| row.owner == *nominal && self.types.contains_key(&row.ty)) {
+                    return Err(CanonicalMirError::InvalidNominalField { nominal: *nominal, field: *field });
+                }
+            }
+        }
+        for (field, record) in &self.fields {
+            if !declared_fields.contains(field) {
+                return Err(CanonicalMirError::InvalidNominalField { nominal: record.owner, field: *field });
+            }
+        }
+        for record in self.types.values() {
+            if let CanonicalTypeKind::Nominal { declaration, .. } = &record.kind {
+                if !nominal_semantics.contains_key(declaration) {
+                    return Err(CanonicalMirError::MissingNominalSemantics { declaration: *declaration });
                 }
             }
         }
@@ -445,6 +485,14 @@ pub struct CanonicalSemanticMir {
 /// Canonical MIR 合同失败的确定性原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanonicalMirError {
+    /// 名义类型没有来自声明的值/引用语义。
+    MissingNominalSemantics { declaration: TypeId },
+    /// 名义实例没有对应的名义声明类型。
+    InvalidNominalDeclaration { nominal: NominalInstanceId, declaration: TypeId },
+    /// 同一声明的实例携带了互相矛盾的值/引用语义。
+    ConflictingNominalSemantics { declaration: TypeId },
+    /// 字段清单重复、缺失或与 owner/类型合同不一致。
+    InvalidNominalField { nominal: NominalInstanceId, field: FieldId },
     /// 公开导出或程序入口未指向本闭包中的函数体。
     MissingSurfaceBody { function: ItemInstanceId },
     /// 不同 callable 使用了同一公开导出名。
@@ -918,6 +966,10 @@ pub struct CompiledProgram {
 /// `CompiledProgram` 构造时发现的跨阶段合同错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompiledProgramError {
+    /// 已链接的名义实例缺少表示选择。
+    MissingAdtRepresentation { nominal: NominalInstanceId },
+    /// 表示计划引用了程序之外的名义实例。
+    ExtraAdtRepresentation { nominal: NominalInstanceId },
     /// Canonical Semantic MIR 尚未通过 M2 验证。
     Canonical(CanonicalMirError),
     /// 某个 Semantic MIR 值没有对应表示选择。
@@ -934,6 +986,14 @@ impl CompiledProgram {
     /// 只从完整 CanonicalProgram 与同一程序生成的 RepresentationPlan 构造。
     pub fn new(canonical: CanonicalProgram, representation: RepresentationPlan) -> Result<Self, CompiledProgramError> {
         canonical.validate().map_err(CompiledProgramError::Canonical)?;
+        for nominal in canonical.linked.nominal_instances.keys() {
+            if !representation.adt_reps.contains_key(nominal) {
+                return Err(CompiledProgramError::MissingAdtRepresentation { nominal: *nominal });
+            }
+        }
+        if let Some(nominal) = representation.adt_reps.keys().find(|nominal| !canonical.linked.nominal_instances.contains_key(nominal)) {
+            return Err(CompiledProgramError::ExtraAdtRepresentation { nominal: *nominal });
+        }
         let mut expected_values = std::collections::BTreeSet::new();
         let mut expected_invokes = std::collections::BTreeSet::new();
         for function in canonical.mir.functions.values() {
@@ -1193,6 +1253,79 @@ mod tests {
             linked,
             mir: CanonicalSemanticMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) },
         }
+    }
+
+    fn nominal_program() -> CanonicalProgram {
+        let declaration = TypeId::from_index(0).unwrap();
+        let field_type = TypeId::from_index(1).unwrap();
+        let nominal = NominalInstanceId::from_index(0).unwrap();
+        let field = FieldId::from_index(0).unwrap();
+        let mut program = CanonicalProgram { linked: LinkedSemanticProgram::default(), mir: CanonicalSemanticMir::default() };
+        program.linked.types.insert(declaration, TypeRecord {
+            declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() },
+        });
+        program.linked.types.insert(field_type, TypeRecord {
+            declaration: field_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool),
+        });
+        program.linked.nominal_instances.insert(nominal, NominalInstanceRecord {
+            declaration, substitution: SubstitutionId::from_index(0).unwrap(),
+            semantics: NominalValueSemantics::Reference, fields: vec![field],
+        });
+        program.linked.fields.insert(field, FieldRecord { owner: nominal, ty: field_type });
+        program
+    }
+
+    #[test]
+    fn canonical_nominal_contract_validates_the_entire_field_closure() {
+        let program = nominal_program();
+        program.validate().expect("没有构造指令的名义声明仍须验证");
+        let nominal = NominalInstanceId::from_index(0).unwrap();
+        let field = FieldId::from_index(0).unwrap();
+        let mut invalid = program.clone();
+        invalid.linked.nominal_instances.get_mut(&nominal).unwrap().fields.push(field);
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+        let mut invalid = program.clone();
+        invalid.linked.fields.get_mut(&field).unwrap().owner = NominalInstanceId::from_index(1).unwrap();
+        assert!(matches!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { .. })));
+        let mut invalid = program.clone();
+        invalid.linked.fields.get_mut(&field).unwrap().ty = TypeId::from_index(9).unwrap();
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+        let mut invalid = program.clone();
+        invalid.linked.nominal_instances.get_mut(&nominal).unwrap().fields.clear();
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::InvalidNominalField { nominal, field }));
+        let mut invalid = program.clone();
+        invalid.linked.nominal_instances.clear();
+        invalid.linked.fields.clear();
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::MissingNominalSemantics { declaration: TypeId::from_index(0).unwrap() }));
+        let mut invalid = program;
+        invalid.linked.nominal_instances.get_mut(&nominal).unwrap().declaration = TypeId::from_index(1).unwrap();
+        assert!(matches!(invalid.validate(), Err(CanonicalMirError::InvalidNominalDeclaration { .. })));
+    }
+
+    #[test]
+    fn canonical_nominal_instances_cannot_disagree_on_declaration_semantics() {
+        let mut program = nominal_program();
+        let mut other = program.linked.nominal_instances.values().next().unwrap().clone();
+        other.fields.clear();
+        other.substitution = SubstitutionId::from_index(1).unwrap();
+        let instance = NominalInstanceId::from_index(1).unwrap();
+        program.linked.nominal_instances.insert(instance, other.clone());
+        program.validate().expect("同一声明不同实例保持共同值语义");
+        program.linked.nominal_instances.get_mut(&instance).unwrap().semantics = NominalValueSemantics::Value;
+        assert_eq!(program.validate(), Err(CanonicalMirError::ConflictingNominalSemantics { declaration: other.declaration }));
+    }
+
+    #[test]
+    fn compiled_program_requires_exact_nominal_representation_coverage() {
+        let program = nominal_program();
+        let nominal = NominalInstanceId::from_index(0).unwrap();
+        let mut plan = RepresentationPlan::default();
+        assert_eq!(CompiledProgram::new(program.clone(), plan.clone()), Err(CompiledProgramError::MissingAdtRepresentation { nominal }));
+        plan.adt_reps.insert(nominal, crate::layout_choice::AdtRepresentation::TypedAggregate);
+        CompiledProgram::new(program.clone(), plan.clone()).expect("名义表示完整");
+        let extra = NominalInstanceId::from_index(9).unwrap();
+        plan.adt_reps.insert(extra, crate::layout_choice::AdtRepresentation::TypedAggregate);
+        assert_eq!(CompiledProgram::new(program, plan), Err(CompiledProgramError::ExtraAdtRepresentation { nominal: extra }));
     }
 
     #[test]

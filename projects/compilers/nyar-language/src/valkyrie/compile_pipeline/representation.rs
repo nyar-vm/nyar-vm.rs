@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use nyar_types::{
     pipeline::RepresentationPlanStage,
     layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, ValueRepresentation},
-    CanonicalOperation, CanonicalProgram, StageResult, ValueIdentity,
+    CanonicalOperation, CanonicalProgram, CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
 };
 
 use super::diagnostics::fail_stage;
@@ -28,10 +28,23 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
         })?;
 
         let mut plan = RepresentationPlan::default();
+        for nominal in program.linked.nominal_instances.keys() {
+            plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
+        }
+        let nominal_semantics = program.linked.nominal_instances.values()
+            .map(|record| (record.declaration, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
         let mut instruction_ids = BTreeSet::new();
         for function in program.mir.functions.values() {
             for value in function.value_types.keys() {
-                plan.value_reps.insert(ValueIdentity::new(function.instance, *value), value_representation(function, *value));
+                let ty = &program.linked.types[&function.value_types[value]].kind;
+                let representation = match ty {
+                    CanonicalTypeKind::Nominal { declaration, .. } => match nominal_semantics[declaration] {
+                        NominalValueSemantics::Value => ValueRepresentation::Specialized,
+                        NominalValueSemantics::Reference => ValueRepresentation::Reified,
+                    },
+                    _ => ValueRepresentation::Specialized,
+                };
+                plan.value_reps.insert(ValueIdentity::new(function.instance, *value), representation);
             }
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
@@ -51,10 +64,8 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                             };
                             plan.invoke_lowerings.insert(instruction.id, lowering);
                         }
-                        CanonicalOperation::StructNew { nominal, .. } => {
-                            plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
-                        }
-                        CanonicalOperation::Copy { .. }
+                        CanonicalOperation::StructNew { .. }
+                        | CanonicalOperation::Copy { .. }
                         | CanonicalOperation::AggregateCopy { .. }
                         | CanonicalOperation::LoadConstant { .. }
                         | CanonicalOperation::SumNew { .. }
@@ -76,15 +87,56 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
     }
 }
 
-fn value_representation(function: &nyar_types::CanonicalFunction, value: nyar_types::MirValueId) -> ValueRepresentation {
-    let _ = function.value_types.get(&value);
-    ValueRepresentation::Specialized
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use nyar_types::{CanonicalProgram, CanonicalSemanticMir};
+
+    #[test]
+    fn source_aggregate_semantics_reach_the_representation_plan_without_construction() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "structure Point { value: i32 } class Node { value: i32 } \
+             micro value_identity(value: Point) -> Point { return value } \
+             micro reference_identity(value: Node) -> Node { return value }",
+        ).expect("声明与参数源码必须完成编译，不依赖构造指令补布局");
+        let program = output.canonical_program();
+        let plan = output.compiled_program().representation();
+        assert_eq!(program.linked.nominal_instances.len(), 2);
+        assert_eq!(plan.adt_reps.len(), 2);
+        for aggregate in &output.semantic_mir().structs {
+            let ty = crate::valkyrie::types::hir::ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&aggregate.name));
+            let declaration = output.semantic_mir().type_identities[&ty];
+            let record = program.linked.nominal_instances.values().find(|record| record.declaration == declaration).unwrap();
+            let expected = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
+            assert_eq!(record.semantics, expected);
+        }
+        let mut observed = BTreeSet::new();
+        for function in program.mir.functions.values() {
+            let (value, ty) = function.parameters[0];
+            let CanonicalTypeKind::Nominal { declaration, .. } = &program.linked.types[&ty].kind else {
+                panic!("源码参数必须保留名义类型");
+            };
+            let nominal = program.linked.nominal_instances.values().find(|record| record.declaration == *declaration).unwrap();
+            let representation = &plan.value_reps[&ValueIdentity::new(function.instance, value)];
+            match nominal.semantics {
+                NominalValueSemantics::Value => {
+                    assert_eq!(*representation, ValueRepresentation::Specialized);
+                    observed.insert("value");
+                }
+                NominalValueSemantics::Reference => {
+                    assert_eq!(*representation, ValueRepresentation::Reified);
+                    observed.insert("reference");
+                }
+            }
+        }
+        assert_eq!(observed, BTreeSet::from(["value", "reference"]));
+        let mut invalid = program.clone();
+        invalid.linked.nominal_instances.clear();
+        invalid.linked.fields.clear();
+        let error = CanonicalRepresentationPlanner.plan(&invalid).expect_err("缺名义声明语义不能默认成值聚合");
+        assert_eq!(error.records[0].code, "PLAN001");
+        assert_eq!(error.records[0].stage, nyar_types::CompileStage::ValidateMir);
+    }
 
     #[test]
     fn planner_accepts_only_validated_canonical_program() {

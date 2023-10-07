@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalCallee, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
-    ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord,
+    ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord, NominalValueSemantics,
     FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
 };
 use nyar_types::canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord};
@@ -29,9 +29,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
     }
-    for (name, (nominal, declaration)) in &nominals {
+    for (name, (nominal, declaration, semantics)) in &nominals {
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
-        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), fields: nominal_fields });
+        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
         let _ = name;
     }
     linked.fields = field_records;
@@ -86,7 +86,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     Ok(program)
 }
 
-type AggregateIdentity = (NominalInstanceId, TypeId);
+type AggregateIdentity = (NominalInstanceId, TypeId, NominalValueSemantics);
 
 fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
@@ -98,7 +98,8 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
         let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&aggregate.name));
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
         let nominal = NominalInstanceId::from_index(index as u32).ok_or_else(|| error_without_module("CAN019", "nominal identity 溢出"))?;
-        if nominals.insert(qualified.clone(), (nominal, declaration)).is_some() {
+        let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
+        if nominals.insert(qualified.clone(), (nominal, declaration, semantics)).is_some() {
             return Err(error_without_module("CAN020", format!("聚合 identity 重复: {qualified}")));
         }
         for field in &aggregate.fields {
@@ -259,7 +260,7 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
         MirOperation::StructNew { type_name, fields: values } => {
-            let (nominal, _) = nominals.get(&type_name.to_string()).copied().ok_or_else(|| error_without_module("CAN023", format!("未解析聚合 owner: {type_name}")))?;
+            let (nominal, _, _) = nominals.get(&type_name.to_string()).copied().ok_or_else(|| error_without_module("CAN023", format!("未解析聚合 owner: {type_name}")))?;
             let fields = values.iter().map(|(field, operand)| {
                 let field_id = fields.get(&(type_name.to_string(), field.to_string())).copied().ok_or_else(|| error_without_module("CAN024", format!("未解析字段 owner: {type_name}.{field}")))?;
                 Ok((field_id, value(operand)?))
