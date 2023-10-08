@@ -1,10 +1,10 @@
 //! 从完整 MIR 模块中为分区 executable 构建可达 callee 闭包。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use miette::{Result, miette};
 use nyar::{Identifier, QualifiedName};
-use nyar_types::ExecutableFunction;
+use nyar_types::{ExecutableFunction, ItemInstanceId};
 
 use crate::{MirFunction, MirModule, MirOperand, MirOperation, mir::AggregateLayoutPlan, mir_function_to_executable};
 
@@ -29,28 +29,33 @@ pub(crate) fn build_reachable_mir_functions(
     seed_operations: &[QualifiedName],
     mir: &MirModule,
 ) -> Result<BTreeMap<QualifiedName, ExecutableFunction>> {
-    let mut mir_by_operation = BTreeMap::new();
+    let mut mir_by_identity = BTreeMap::new();
+    let mut identity_by_operation = BTreeMap::new();
     for function in &mir.functions {
+        let identity = *mir.callable_identities.get(&function.symbol)
+            .ok_or_else(|| miette!("MIR function `{}` is missing its Compiler callable identity", function.symbol))?;
         let operation = qualified_name_from_mir_symbol(&function.symbol);
-        if mir_by_operation.insert(operation.clone(), function).is_some() {
+        if identity_by_operation.insert(operation.clone(), identity).is_some() || mir_by_identity.insert(identity, (function, operation.clone())).is_some() {
             return Err(miette!("MIR callable identity collision for `{operation}`"));
         }
     }
     let mut result = BTreeMap::new();
-    let mut queue = seed_operations.to_vec();
+    let mut queue = Vec::new();
+    let mut discovered = BTreeSet::new();
+    for operation in seed_operations {
+        let identity = *identity_by_operation.get(operation).ok_or_else(|| miette!("executable seed `{operation}` has no MIR definition"))?;
+        if discovered.insert(identity) { queue.push(identity); }
+    }
     let mut index = 0usize;
 
     while index < queue.len() {
-        let operation = queue[index].clone();
+        let identity = queue[index];
         index += 1;
-        let mir_fn = mir_by_operation.get(&operation).copied().ok_or_else(|| miette!("executable seed `{operation}` has no MIR definition"))?;
-        if result.contains_key(&operation) {
-            continue;
-        }
+        let (mir_fn, operation) = &mir_by_identity[&identity];
         let executable = mir_function_to_executable(mir_fn, &mir.sum_types).map_err(|error| miette!("MIR backend-private conversion failed: {error}"))?;
-        result.insert(operation, executable);
-        for callee in collect_mir_callee_operations(mir_fn, mir, &mir_by_operation)? {
-            if !queue.iter().any(|existing| existing == &callee) {
+        result.insert(operation.clone(), executable);
+        for callee in collect_mir_callee_instances(mir_fn, mir, &mir_by_identity)? {
+            if discovered.insert(callee) {
                 queue.push(callee);
             }
         }
@@ -59,22 +64,23 @@ pub(crate) fn build_reachable_mir_functions(
     Ok(result)
 }
 
-fn collect_mir_callee_operations(
+fn collect_mir_callee_instances(
     mir_fn: &MirFunction,
     mir: &MirModule,
-    mir_by_operation: &BTreeMap<QualifiedName, &MirFunction>,
-) -> Result<Vec<QualifiedName>> {
+    mir_by_identity: &BTreeMap<ItemInstanceId, (&MirFunction, QualifiedName)>,
+) -> Result<Vec<ItemInstanceId>> {
     let mut callees = Vec::new();
     for block in &mir_fn.blocks {
         for instruction in &block.instructions {
-            let MirOperation::Call { callee, arguments, .. } = &instruction.kind
+            let MirOperation::Call { callee, .. } = &instruction.kind
             else {
                 continue;
             };
             let MirOperand::Symbol(path) = callee else { continue };
-            let operation = QualifiedName::new(path.parts().to_vec());
-            if mir_by_operation.contains_key(&operation) {
-                callees.push(operation);
+            let identity = *mir.callable_identities.get(&path.to_string())
+                .ok_or_else(|| miette!("MIR call `{path}` has neither a Compiler callable identity nor an explicit import contract"))?;
+            if mir_by_identity.contains_key(&identity) {
+                callees.push(identity);
             }
             else if !mir.external_calls.iter().any(|external| &external.symbol == path) {
                 return Err(miette!("MIR call `{path}` has neither a local definition nor an explicit import contract"));
@@ -87,6 +93,33 @@ fn collect_mir_callee_operations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_recursive_closure_visits_each_compiler_identity_once() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "micro recursive(value: i32) -> i32 { return recursive(value) }",
+        ).expect("递归调用由 Compiler 解析并验证");
+        let mir = output.semantic_mir();
+        let seed = qualified_name_from_mir_symbol(&mir.functions[0].symbol);
+        let reachable = build_reachable_mir_functions(&[seed.clone(), seed], mir).expect("递归和重复种子不扩张闭包");
+        assert_eq!(reachable.len(), 1);
+    }
+
+    #[test]
+    fn source_closure_rejects_missing_or_colliding_compiler_identities() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "micro left() -> i32 { return 1 } micro right() -> i32 { return 2 }",
+        ).expect("当前源码形成声明身份表");
+        let mir = output.semantic_mir();
+        let seed = qualified_name_from_mir_symbol(&mir.functions[0].symbol);
+        let mut invalid = mir.clone();
+        invalid.callable_identities.clear();
+        assert!(build_reachable_mir_functions(&[seed.clone()], &invalid).unwrap_err().to_string().contains("Compiler callable identity"));
+        let mut invalid = mir.clone();
+        let identity = invalid.callable_identities[&mir.functions[0].symbol];
+        invalid.callable_identities.insert(mir.functions[1].symbol.clone(), identity);
+        assert!(build_reachable_mir_functions(&[seed], &invalid).unwrap_err().to_string().contains("identity collision"));
+    }
 
     #[test]
     fn instance_method_symbol_round_trips_through_qualified_name() {
@@ -148,7 +181,7 @@ mod tests {
                 terminator: MirTerminator::Return { value: None },
             }],
         };
-        let mir = MirModule {
+        let mut mir = MirModule {
             name: String::new(),
             functions: vec![caller, helper],
             structs: Vec::new(),
@@ -164,6 +197,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("nyar::nyar_emitter::wasi::wasi_encode_command_adapt_module_with_mir");
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut mir);
         let reachable = build_reachable_mir_functions(&[seed], &mir).expect("exact MIR seed must resolve");
         assert!(
             reachable.keys().any(|op| op.parts().last().is_some_and(|part| part.as_str() == "wasm_i32_types")),
@@ -214,7 +248,7 @@ mod tests {
                 terminator: MirTerminator::Return { value: None },
             }],
         };
-        let mir = MirModule {
+        let mut mir = MirModule {
             name: String::new(),
             functions: vec![caller, helper],
             structs: Vec::new(),
@@ -230,6 +264,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("std.collection.SwissTable.new");
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut mir);
         let error = match build_reachable_mir_functions(&[seed], &mir) {
             Ok(_) => panic!("an unqualified helper call must not be linked by its unique short name"),
             Err(error) => error.to_string(),
@@ -272,13 +307,13 @@ mod tests {
                 label: "entry".into(),
                 parameters: Vec::new(),
                 instructions: vec![MirInstruction::from_operation(MirOperation::Call {
-                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("main"), Identifier::new("answer")])),
+                    callee: MirOperand::Symbol(crate::NamePath::new(vec![Identifier::new("main::answer")])),
                     arguments: Vec::new(),
                 })],
                 terminator: MirTerminator::Return { value: None },
             }],
         };
-        let mir = MirModule {
+        let mut mir = MirModule {
             name: String::new(),
             functions: vec![caller, answer],
             structs: Vec::new(),
@@ -294,6 +329,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("main::main");
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut mir);
         let reachable = build_reachable_mir_functions(&[seed], &mir).expect("qualified call must resolve exactly");
         let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
         assert!(
@@ -344,7 +380,7 @@ mod tests {
                 terminator: MirTerminator::Return { value: None },
             }],
         };
-        let mir = MirModule {
+        let mut mir = MirModule {
             name: String::new(),
             functions: vec![caller, tui_new],
             structs: Vec::new(),
@@ -360,6 +396,7 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("demo.two_sum");
+        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut mir);
         let error = match build_reachable_mir_functions(&[seed], &mir) {
             Ok(_) => panic!("an unresolved bare constructor must fail closure construction"),
             Err(error) => error.to_string(),
