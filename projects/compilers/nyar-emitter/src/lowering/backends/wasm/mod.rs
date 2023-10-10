@@ -1,25 +1,11 @@
-//! Wasm / WASI backend: Semantic MIR → Wasm physical module (GC required), plus host shells.
+//! Wasm / WASI 目标的 executable 物理编码与 GC 布局。
 //!
-//! Do **not** call this layer “Wasm MIR”. MIR is a Valkyrie frontend concept.
-//! Backend ownership is prepare/encode toward a `WasmModuleModel` (physical module
-//! structure), not another language IR.
-//!
-//! Layout (directory `mir/` is a **historical path name** only):
-//! - [`mir`] — Semantic MIR → Wasm prepare/emit facade
-//! - [`mir::control`] — CFG → Wasm structured control (`pc_local` / `loop` / `br_table`)
-//! - [`mir::representation`] — language type/layout → unique Wasm physical storage/value type
-//! - [`mir::type_registry`] — GC struct/array/sum type-index registration
-//! - [`mir::calls`] — resolved calls → Wasm call forms
-//! - [`cabi`] — shared linear bump heap (`cabi_realloc` + alloc)
-//! - [`gc`] — struct/array type builders
-//! - [`sections`] — binary section codecs
-//! - [`suspend`] — CPS suspend/witness shells
-//! - [`host`] — WasmJsGlue string interop + WasiComponent packaging shells
+//! `mir/` 是尚未迁移的历史目录名，不是另一份语言 MIR。
+//! 正式入口只能消费 Compiler 的函数体；宿主包装只属于产物层，
+//! 不得由调用摘要生成可执行语义。`suspend` 保留显式参数驱动的底层控制流编码。
 
 mod cabi;
 mod gc;
-mod host;
-mod host_imports;
 pub(crate) mod mir;
 mod sections;
 mod suspend;
@@ -57,14 +43,18 @@ pub(crate) fn lower_fragment_to_wasm_module(
 
 /// Lower a fragment for a wasm host boundary with an explicit WASI package train.
 ///
-/// Ideal path: executable MIR + no witness → [`mir`] with mandatory GC.
-/// Otherwise: host shell ([`host`]) for packaging / suspend / string interop.
+/// 只编码 Compiler 提交的 executable；调用边摘要与宿主包装不得替代函数体。
 pub(crate) fn lower_fragment_to_wasm_module_for(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
     wasi_preview: WasiPreview,
     wasm_package_kind: WasmPackageKind,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
+    let boundary_entry_name = match host_boundary {
+        HostProjectionBoundary::WasmJsGlue => "main",
+        HostProjectionBoundary::WasiComponent => "_start",
+        other => return Err(miette!("WASM host boundary is not supported: {other:?}")),
+    };
     crate::lowering::features::semantic_mir_contract::validate_submission(submission).map_err(|error| {
         miette::miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
     })?;
@@ -78,46 +68,33 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     })?;
     validate_text_encoding_projection(submission, host_boundary)?;
     let has_executable = submission.executable.as_ref().is_some_and(|exec| !exec.operations().is_empty());
+    if !has_executable {
+        return Err(miette!("WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"));
+    }
+    if !submission.witness_calls.is_empty() {
+        return Err(miette!("WASM witness calls require Compiler-resolved executable dispatch; witness summaries cannot supply method bodies"));
+    }
+    let executable = submission.executable.as_ref().expect("已验证 executable 存在");
+    for operation in submission.wasm_export_names.keys().chain(submission.entry_operation.iter()) {
+        if executable.get_function(operation).is_none() {
+            return Err(miette!("WASM callable `{operation}` has no Compiler-owned executable body"));
+        }
+    }
     if wasm_package_kind == WasmPackageKind::Library {
         if submission.wasm_export_names.is_empty() {
             return Err(miette::miette!("library wasm package requires at least one `[export]` symbol"));
         }
-        if !has_executable {
-            return Err(miette::miette!("library wasm package has no executable MIR for exported operations"));
-        }
     }
-    // Node string-output host imports (`emit_byte`) still require the js_glue shell until MIR
-    // collects those imports. This is a host-interop gap, not a GC escape hatch.
-    let needs_js_host_string_interop = match host_boundary {
-        HostProjectionBoundary::WasmJsGlue => !host_imports::collect_string_output_for_wasm_host(submission).is_empty(),
-        _ => false,
-    };
-    let use_mir_path = has_executable && submission.witness_calls.is_empty() && !needs_js_host_string_interop;
-    let (mut module, imports) = if use_mir_path {
-        let export_name = if !submission.wasm_export_names.is_empty() {
-            submission
-                .wasm_export_names
-                .values()
-                .next()
-                .map(String::as_str)
-                .unwrap_or("main")
-        }
-        else {
-            match host_boundary {
-                HostProjectionBoundary::WasmJsGlue => "main",
-                HostProjectionBoundary::WasiComponent => "_start",
-                other => unreachable!("unexpected wasm host boundary: {:?}", other),
-            }
-        };
-        mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind)
+    let export_name = if let Some(name) = submission.wasm_export_names.values().next() {
+        name.as_str()
     }
     else {
-        match host_boundary {
-            HostProjectionBoundary::WasmJsGlue => host::lower_fragment_to_js_glue_module(submission),
-            HostProjectionBoundary::WasiComponent => host::lower_fragment_to_wasi_cm_module_for(submission, wasi_preview),
-            other => unreachable!("unexpected wasm host boundary: {:?}", other),
+        if submission.entry_operation.is_none() {
+            return Err(miette!("WASM binary package requires a Compiler-resolved entry"));
         }
+        boundary_entry_name
     };
+    let (mut module, imports) = mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind);
 
     prepend_nyar_custom_sections(&mut module, submission);
     super::singleton::append_singleton_metadata_sections(&mut module, submission);
