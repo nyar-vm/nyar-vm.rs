@@ -29,13 +29,9 @@ impl<'a> WasmMirLowerer<'a> {
         if let Some(ReceiverPassingKind::ByAddress) = receiver_kind {
             // Confirm the receiver exists as the first argument; it is emitted below.
         }
-        let mut callee_return = None;
-        let mut value_already_on_stack = false;
+        let callee_return;
         match dispatch {
             MirDispatchKind::Static => {
-                if self.try_emit_format_runtime_stub(callee, arguments, output) {
-                    return;
-                }
                 if self.try_emit_i32_primitive_call(callee, arguments, output) {
                     return;
                 }
@@ -47,7 +43,6 @@ impl<'a> WasmMirLowerer<'a> {
                     let param_types = self.resolve_callee_param_types(callee, Some(import_index));
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(import_index);
-                    value_already_on_stack = callee_return.is_some();
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
                     callee_return = self
@@ -63,7 +58,6 @@ impl<'a> WasmMirLowerer<'a> {
                         .unwrap_or_else(|| self.resolve_callee_param_types(callee, None));
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(function_index);
-                    value_already_on_stack = callee_return.is_some();
                 }
                 else if self.try_emit_sum_variant_ctor(callee, arguments, output) {
                     return;
@@ -81,9 +75,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return;
                 }
                 else {
-                    eprintln!("[wasm::mir] unresolved static call in `{}`: callee={:?}", self.mir_fn.symbol, callee);
-                    self.emit_unresolved_call_placeholder(arguments, output);
-                    value_already_on_stack = output.is_some();
+                    panic!("WASM 调用缺少已解析目标: {} callee={callee:?}", self.mir_fn.symbol);
                 }
             }
             MirDispatchKind::Witness => {
@@ -95,361 +87,42 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_operand(witness_operand);
                 }
                 else {
-                    eprintln!("[wasm::mir] missing witness operand in `{}`: callee={:?}", self.mir_fn.symbol, callee);
-                    self.emit_unresolved_call_placeholder(arguments, output);
-                    value_already_on_stack = output.is_some();
-                    self.emit_store_call_output(output, callee_return, value_already_on_stack);
-                    return;
+                    panic!("WASM witness 调用缺少显式分派操作数: {}", self.mir_fn.symbol);
                 }
                 let type_index = self.resolve_callee_type_index(callee);
                 self.emit_call_indirect(type_index, 0);
-                value_already_on_stack = callee_return.is_some();
             }
             MirDispatchKind::Indirect => {
-                eprintln!("[wasm::mir] unsupported Indirect dispatch in `{}`: callee={:?}", self.mir_fn.symbol, callee);
-                self.emit_unresolved_call_placeholder(arguments, output);
-                value_already_on_stack = output.is_some();
+                panic!("WASM 缺少类型化间接调用计划: {}", self.mir_fn.symbol);
             }
         }
-        self.emit_store_call_output(output, callee_return, value_already_on_stack);
+        self.emit_store_call_output(output, callee_return);
     }
 
-    fn emit_store_call_output(&mut self, output: Option<MirValueRef>, callee_return: Option<u8>, value_already_on_stack: bool) {
+    fn emit_store_call_output(&mut self, output: Option<MirValueRef>, callee_return: Option<u8>) {
         match output {
             Some(output) => {
-                // Type-driven aggregate ABI trace; keep parser/library names
-                // out of the diagnostic so this remains a reusable contract.
-                if let Some(semantic_ty) = self.mir_fn.value_types.get(&output) {
-                    if matches!(semantic_ty, NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Named(_) | NyarType::Union(_))
-                        && callee_return.is_some()
-                    {
-                        eprintln!(
-                            "[wasm::aggregate-call-output] fn={} output={} semantic={semantic_ty:?} callee_return={callee_return:?} value_already_on_stack={} refs={} values={} scalars={}",
-                            self.mir_fn.symbol,
-                            output.0,
-                            value_already_on_stack,
-                            self.reference_locals.contains_key(&output),
-                            self.value_locals.contains_key(&output),
-                            self.scalar_locals.contains_key(&output),
-                        );
-                    }
-                }
-                // 根据 callee 的真?wasm 返回类型预分?output local?
-                // 防止 MIR 类型推断（storage_for_type / wasm_gc_field_type_byte?
-                // ?wasm 类型段中 callee 的返回类型不一致导?local.set 类型不匹配?
-                self.ensure_call_output_local(output, callee_return);
-                if value_already_on_stack {
-                    self.coerce_call_result_for_output(output, callee_return);
-                }
-                else if callee_return.is_none() {
-                    self.emit_placeholder_for_output(output);
-                }
+                let return_type = callee_return.expect("WASM 有 SSA 结果的调用缺少返回合同");
+                self.validate_output_slot_type(output, return_type);
                 self.assign_output_local(output);
             }
-            None => {
-                if callee_return.is_some() {
-                    WasmOpcode::Drop.encode(&mut self.code);
-                }
-            }
+            None if callee_return.is_some() => WasmOpcode::Drop.encode(&mut self.code),
+            None => {}
         }
     }
 
-    /// 根据 callee 的真?wasm 返回类型确保 output local 已分配到正确?map?
-    ///
-    /// `callee_return` 来自 wasm 类型段，?MIR 类型推断更可靠：
-    /// - 返回 anyref/externref 时，output 应在 `reference_locals`
-    /// - 返回 i32/i64/f64 时，output 应在 `scalar_locals`
-    /// 若已分配到错误的 map，清理旧条目后重新分配?
-    fn ensure_call_output_local(&mut self, output: MirValueRef, callee_return: Option<u8>) {
-        let Some(return_type) = callee_return
-        else {
-            return;
-        };
-        let needs_anyref = return_type == WASM_GC_ANYREF || return_type == WASM_GC_EXTERNREF;
-        let needs_scalar = return_type == VALTYPE_I32 || return_type == VALTYPE_I64 || return_type == VALTYPE_F64;
-        if needs_anyref && !self.reference_locals.contains_key(&output) {
-            self.value_locals.remove(&output);
-            self.scalar_locals.remove(&output);
-            let local = self.alloc_anyref_local();
-            self.reference_locals.insert(output, local);
-        }
-        else if needs_scalar && !self.value_locals.contains_key(&output) && !self.scalar_locals.contains_key(&output) {
-            self.reference_locals.remove(&output);
-            let local = self.alloc_scalar_local_for_stack_type(return_type);
-            self.scalar_locals.insert(output, local);
-        }
-        else if needs_scalar {
-            // 已有标量槽但 valtype ?callee 返回不一致（常见：plan ?i32，call 返回 i64）?
-            if let Some(local) = self.value_locals.get(&output).copied().or_else(|| self.scalar_locals.get(&output).copied()) {
-                let ty = self.wasm_local_value_type(local);
-                if ty != return_type && matches!(return_type, VALTYPE_I32 | VALTYPE_I64 | VALTYPE_F64) {
-                    self.value_locals.remove(&output);
-                    self.scalar_locals.remove(&output);
-                    self.reference_locals.remove(&output);
-                    let new_local = self.alloc_scalar_local_for_stack_type(return_type);
-                    self.scalar_locals.insert(output, new_local);
-                }
-            }
-        }
-    }
-
-    /// ?call 返回值类型与 output local 类型不一致时，在栈顶做强制转换?
-    fn coerce_call_result_for_output(&mut self, output: MirValueRef, callee_return: Option<u8>) {
-        let Some(return_type) = callee_return
-        else {
-            return;
-        };
-        let output_is_anyref = self.reference_locals.contains_key(&output)
-            || (!self.value_locals.contains_key(&output)
-                && !self.scalar_locals.contains_key(&output)
-                && self
-                    .mir_fn
-                    .value_types
-                    .get(&output)
-                    .map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref) == WASM_GC_ANYREF)
-                    .unwrap_or(false));
-        if return_type == VALTYPE_I32 && output_is_anyref {
-            WasmOpcode::Drop.encode(&mut self.code);
-            self.emit_ref_null_anyref();
-        }
-        else if return_type == VALTYPE_I64 && (self.value_locals.contains_key(&output) || self.scalar_locals.contains_key(&output)) {
-            // 仅当输出槽仍?i32 ?wrap；i64 槽保持原值（ensure_call_output_local 应已对齐）?
-            if let Some(local) = self.value_locals.get(&output).copied().or_else(|| self.scalar_locals.get(&output).copied()) {
-                if self.wasm_local_value_type(local) == VALTYPE_I32 {
-                    WasmOpcode::I32WrapI64.encode(&mut self.code);
-                }
-            }
-        }
-        else if return_type == VALTYPE_F64 && (self.value_locals.contains_key(&output) || self.scalar_locals.contains_key(&output)) {
-            WasmOpcode::I32TruncF64S.encode(&mut self.code);
-        }
-        else if (return_type == WASM_GC_ANYREF || return_type == WASM_GC_EXTERNREF)
-            && (self.value_locals.contains_key(&output) || self.scalar_locals.contains_key(&output))
-        {
-            WasmOpcode::Drop.encode(&mut self.code);
-            self.emit_i32_const(0);
-        }
-        else if return_type == WASM_GC_EXTERNREF && output_is_anyref {
-            WasmOpcode::Drop.encode(&mut self.code);
-            self.emit_ref_null_anyref();
-        }
-        else if return_type == WASM_GC_EXTERNREF && (self.value_locals.contains_key(&output) || self.scalar_locals.contains_key(&output)) {
-            WasmOpcode::Drop.encode(&mut self.code);
-            self.emit_i32_const(0);
-        }
-        else if (return_type == WASM_GC_ANYREF || return_type == WASM_GC_EXTERNREF)
-            && (self.value_locals.contains_key(&output) || self.scalar_locals.contains_key(&output))
-        {
-            // 计划阶段误分配到 i32 local，但 callee 实际返回 anyref：迁?output local?
-            // 保留栈顶宿主字符串，避免 drop + i32.const 0 抹掉 cli_get_* 返回值?
-            self.value_locals.remove(&output);
-            self.scalar_locals.remove(&output);
-            let local = self.alloc_anyref_local();
-            self.reference_locals.insert(output, local);
-        }
-    }
-
-    /// 确保 `output` ?local ?valtype 与即?`local.set` 的栈顶类型一致?
-    ///
-    /// 解决 plan 阶段?`value_types` 误分?i32、emit 却压 anyref（或相反）时?
-    /// `local.set expected i32, found anyref` / 反向错误?
-    pub(super) fn force_output_local_for_stack_type(&mut self, output: MirValueRef, stack_ty: u8) {
-        let want_ref = stack_ty == WASM_GC_ANYREF || stack_ty == WASM_GC_EXTERNREF;
-        if want_ref {
-            if let Some(local) = self.reference_locals.get(&output).copied() {
-                let ty = self.wasm_local_value_type(local);
-                if (ty == WASM_GC_ANYREF || ty == WASM_GC_EXTERNREF) && !self.wasm_local_is_typed_ref(local) {
-                    return;
-                }
-            }
-            if let Some(local) = self.value_locals.get(&output).copied().or_else(|| self.scalar_locals.get(&output).copied()) {
-                if self.wasm_local_value_type(local) == WASM_GC_ANYREF || self.wasm_local_value_type(local) == WASM_GC_EXTERNREF {
-                    self.value_locals.remove(&output);
-                    self.scalar_locals.remove(&output);
-                    self.reference_locals.insert(output, local);
-                    return;
-                }
-            }
-            self.value_locals.remove(&output);
-            self.scalar_locals.remove(&output);
-            self.reference_locals.remove(&output);
-            let local = self.alloc_anyref_local();
-            self.reference_locals.insert(output, local);
-        }
-        else {
-            // 标量栈：?valtype 必须与栈顶精确一致（i32≠i64≠f64）?
-            // 旧逻辑把任意非 ref 标量都当匹配，导?Copy/jump?
-            // `local.get`(i64 param) →?`local.set`(i32) →?expected i32, found i64?
-            let want_scalar = match stack_ty {
-                VALTYPE_I64 | VALTYPE_F64 => stack_ty,
-                _ => VALTYPE_I32,
-            };
-            if let Some(local) = self.value_locals.get(&output).copied().or_else(|| self.scalar_locals.get(&output).copied()) {
-                let ty = self.wasm_local_value_type(local);
-                if ty == want_scalar {
-                    self.reference_locals.remove(&output);
-                    return;
-                }
-                self.value_locals.remove(&output);
-                self.scalar_locals.remove(&output);
-                self.reference_locals.remove(&output);
-                let new_local = self.alloc_scalar_local_for_stack_type(want_scalar);
-                self.value_locals.insert(output, new_local);
-                return;
-            }
-            if self.reference_locals.contains_key(&output) {
-                self.reference_locals.remove(&output);
-                self.value_locals.remove(&output);
-                self.scalar_locals.remove(&output);
-                let local = self.alloc_scalar_local_for_stack_type(want_scalar);
-                self.value_locals.insert(output, local);
-            }
-            else if !self.value_locals.contains_key(&output) && !self.scalar_locals.contains_key(&output) {
-                let local = self.alloc_scalar_local_for_stack_type(want_scalar);
-                self.value_locals.insert(output, local);
-            }
-        }
+    /// 编码阶段只验证预规划槽，不改变 SSA 表示。
+    pub(super) fn validate_output_slot_type(&self, output: MirValueRef, stack_ty: u8) {
+        let local = self.planned_value_local(output);
+        assert_eq!(self.wasm_local_value_type(local), stack_ty, "WASM 编码结果与预规划槽冲突: %{} in {}", output.0, self.mir_fn.symbol);
     }
 
     pub(super) fn assign_output_local(&mut self, output: MirValueRef) {
-        if let Some(local) = self.reference_locals.get(&output).copied() {
-            if self.wasm_local_is_typed_ref(local) {
-                eprintln!(
-                    "[wasm::ref-local] symbol={} value={} local={} local_ty={} planned_ty={:?}",
-                    self.mir_fn.symbol,
-                    output.0,
-                    local,
-                    self.wasm_local_value_type(local),
-                    self.mir_fn.value_types.get(&output),
-                );
-            }
-            self.emit_local_set(local);
-        }
-        else if let Some(local) = self.scalar_locals.get(&output).copied() {
-            // 误挂 anyref ?scalar 槽：按真?valtype 分流，禁?i32.set →?anyref?
-            if self.wasm_local_value_type(local) == WASM_GC_ANYREF || self.wasm_local_value_type(local) == WASM_GC_EXTERNREF {
-                self.scalar_locals.remove(&output);
-                self.value_locals.remove(&output);
-                self.reference_locals.insert(output, local);
-                self.emit_local_set(local);
-                return;
-            }
-            self.emit_local_set(local);
-        }
-        else if let Some(local) = self.value_locals.get(&output).copied() {
-            if self.wasm_local_value_type(local) == WASM_GC_ANYREF || self.wasm_local_value_type(local) == WASM_GC_EXTERNREF {
-                // 栈顶是标量却误挂 anyref：丢弃栈顶并?null，禁?`local.set expected anyref, found i32`?
-                // 正确路径应先?force_output_local_for_stack_type 迁到 i32；此处为 fail-closed 兜底?
-                WasmOpcode::Drop.encode(&mut self.code);
-                self.emit_ref_null_anyref();
-                self.value_locals.remove(&output);
-                self.reference_locals.insert(output, local);
-                self.emit_local_set(local);
-                return;
-            }
-            self.emit_local_set(local);
-        }
-        else {
-            // 使用 wasm_gc_field_type_byte 判断 wasm 实际栈类型，
-            // 而非 storage_for_type——后者对 value-type Named 返回 Value(i32)?
-            // ?wasm 类型段中 Named ?valtype ?anyref(VALTYPE_ANYREF)?
-            let ty = self.mir_fn.value_types.get(&output);
-            let is_anyref = ty.map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref) == WASM_GC_ANYREF).unwrap_or(false);
-            if is_anyref {
-                let local = self.alloc_anyref_local();
-                self.reference_locals.insert(output, local);
-                self.emit_local_set(local);
-            }
-            else {
-                let local = self.alloc_i32_local();
-                self.scalar_locals.insert(output, local);
-                self.emit_local_set(local);
-            }
-        }
+        let local = self.planned_value_local(output);
+        self.emit_local_set(local);
     }
 
-    fn emit_placeholder_for_output(&mut self, output: MirValueRef) {
-        if self.reference_locals.contains_key(&output) {
-            self.emit_ref_null_anyref();
-            return;
-        }
-        if let Some(local) = self.value_locals.get(&output).copied().or_else(|| self.scalar_locals.get(&output).copied()) {
-            match self.wasm_local_value_type(local) {
-                VALTYPE_I64 => self.emit_i64_const(0),
-                VALTYPE_F64 => self.emit_f64_const(0.0),
-                WASM_GC_ANYREF | WASM_GC_EXTERNREF => self.emit_ref_null_anyref(),
-                _ => self.emit_i32_const(0),
-            }
-            return;
-        }
-        let is_anyref = self
-            .mir_fn
-            .value_types
-            .get(&output)
-            .map(|ty| wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref) == WASM_GC_ANYREF)
-            .unwrap_or(false);
-        if is_anyref {
-            self.emit_ref_null_anyref();
-        }
-        else if self
-            .mir_fn
-            .value_types
-            .get(&output)
-            .map(|ty| matches!(ty, NyarType::Integer64 { .. } | NyarType::Integer128 { .. }))
-            .unwrap_or(false)
-        {
-            self.emit_i64_const(0);
-        }
-        else {
-            self.emit_i32_const(0);
-        }
-    }
 
-    /// 为未解析的调用发射占位返回?替代 `unreachable` (0x00)?
-    ///
-    /// 旧实现对未解析的静态调用和 EffectHandler 陷阱发射 `unreachable`,
-    /// 依赖 WASM 多态栈让后?`local.set` 通过验证。但 V8 在多态栈上下文中
-    /// ?`local.get X (anyref)` →?`local.set Y (i32)` 仍做类型一致性检?
-    /// 即使规范允许在多态栈?pop 任意类型,导致自举链路阻断?
-    ///
-    /// 替代方案:弹出已压入的参数(`drop` × N),再压入与 output local 类型匹配?
-    /// 占位?`ref.null anyref` ?`i32.const 0`),使后?`local.set` 类型一致?
-    /// 占位值类型由 output 已分配的 local 类型决定;若未分配,?`value_types` 推断?
-    /// 未解析静态调用：参数从未压栈，禁止 `drop`×N（否则 BPHYS 已过后仍会在空栈 `drop` 上挂掉）。
-    /// 有 output 时压与槽位匹配的占位；无 output（unit Call）则为空操作。
-    fn emit_unresolved_call_placeholder(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) {
-        let _ = arguments;
-        if let Some(output) = output {
-            self.emit_placeholder_for_output(output);
-        }
-    }
-
-    /// Lower the injected `format` runtime stub on WASM/Node.
-    ///
-    /// The host-independent bootstrap only needs a deterministic UTF-8 handle
-    /// here.  Consume the template/value operands and return the null handle
-    /// through the scalar output local instead of treating `format` as an
-    /// unresolved static function (which leaves large self-hosting partitions
-    /// in the unresolved-call path).
-    fn try_emit_format_runtime_stub(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
-        let MirOperand::Symbol(path) = callee
-        else {
-            return false;
-        };
-        if path.parts().len() != 1 || path.parts().first().map(|part| part.as_str()) != Some("format") {
-            return false;
-        }
-        for argument in arguments {
-            self.emit_operand(argument);
-            WasmOpcode::Drop.encode(&mut self.code);
-        }
-        if let Some(output) = output {
-            self.emit_i32_const(0);
-            self.force_output_local_for_stack_type(output, VALTYPE_I32);
-            self.assign_output_local(output);
-        }
-        true
-    }
 
     pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> Vec<u8> {
         if let Some(index) = import_index {
@@ -477,32 +150,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {
         match operand {
-            MirOperand::Value(vref) => {
-                // 已分?local 时一律以槽位真实 valtype 为准?
-                // ArrayGet 等会?Named 元素落到 i32 槽（`array (mut i32)` / utf8 句柄），
-                // 若仍?value_types ?Reference/Named→anyref 分类，jump/Copy ?
-                // `local.get`(i32) →?`local.set`(anyref)（func29：expected anyref, found i32）?
-                if let Some(local) = self.reference_locals.get(vref).copied() {
-                    return self.wasm_local_value_type(local);
-                }
-                if let Some(local) = self.value_locals.get(vref).copied().or_else(|| self.scalar_locals.get(vref).copied()) {
-                    // 入口 anyref 参数若被误写?value_locals：wasm_local_value_type 仍返?anyref?
-                    return self.wasm_local_value_type(local);
-                }
-                if let Some(ty) = self.mir_fn.value_types.get(vref) {
-                    if type_is_wasm_gc_heap_reference(ty) {
-                        return WASM_GC_ANYREF;
-                    }
-                    if self.js_glue_utf8_as_anyref && is_js_glue_host_string_type(ty) {
-                        return WASM_GC_ANYREF;
-                    }
-                    if self.storage_for_type(ty) == StorageKind::Reference {
-                        return WASM_GC_ANYREF;
-                    }
-                    return wasm_param_value_type(self.ctx, ty, self.js_glue_utf8_as_anyref);
-                }
-                WASM_GC_ANYREF
-            }
+            MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
             MirOperand::Constant(constant) => match constant {
                 MirConstant::Utf8(_) => VALTYPE_I32,
                 MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
@@ -510,9 +158,7 @@ impl<'a> WasmMirLowerer<'a> {
                 MirConstant::Float64(_) => VALTYPE_F64,
                 MirConstant::Int(_) | MirConstant::Bool(_) => VALTYPE_I32,
             },
-            MirOperand::Symbol(path) => {
-                self.var_locals.get(&path.to_string()).copied().map(|local| self.wasm_local_value_type(local)).unwrap_or(WASM_GC_ANYREF)
-            }
+            MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
         }
     }
 
@@ -631,7 +277,7 @@ impl<'a> WasmMirLowerer<'a> {
             if self.operand_is_wasi_utf8_handle(&arguments[0]) && self.operand_is_wasi_utf8_handle(&arguments[1]) {
                 self.emit_wasi_utf8_content_compare(&arguments[0], &arguments[1], op == builtin_operator::infix_ne());
                 if let Some(output) = output {
-                    self.force_output_local_for_stack_type(output, VALTYPE_I32);
+                    self.validate_output_slot_type(output, VALTYPE_I32);
                     self.store_scalar(output);
                 }
                 return true;
@@ -644,7 +290,7 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_i32_operand(&arguments[0]);
             WasmOpcode::I32Eqz.encode(&mut self.code);
             if let Some(output) = output {
-                self.force_output_local_for_stack_type(output, VALTYPE_I32);
+                self.validate_output_slot_type(output, VALTYPE_I32);
                 self.store_scalar(output);
             }
             return true;
@@ -686,7 +332,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_operand(&arguments[1]);
         opcode.encode(&mut self.code);
         if let Some(output) = output {
-            self.force_output_local_for_stack_type(output, VALTYPE_I32);
+            self.validate_output_slot_type(output, VALTYPE_I32);
             self.store_scalar(output);
         }
         true
@@ -860,7 +506,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_struct_set(type_index, 1); // field 1 = payload
         if let Some(out) = output {
             self.emit_local_get(tmp);
-            self.force_output_local_for_stack_type(out, VALTYPE_ANYREF);
+            self.validate_output_slot_type(out, VALTYPE_ANYREF);
             self.assign_output_local(out);
         }
         true
@@ -1050,7 +696,7 @@ impl<'a> WasmMirLowerer<'a> {
             "None" if arguments.is_empty() => {
                 self.emit_ref_null_anyref();
                 if let Some(out) = output {
-                    self.force_output_local_for_stack_type(out, VALTYPE_ANYREF);
+                    self.validate_output_slot_type(out, VALTYPE_ANYREF);
                     self.assign_output_local(out);
                 }
                 true
@@ -1058,7 +704,7 @@ impl<'a> WasmMirLowerer<'a> {
             "Some" if arguments.len() == 1 => {
                 self.emit_operand_coerced(&arguments[0], VALTYPE_ANYREF);
                 if let Some(out) = output {
-                    self.force_output_local_for_stack_type(out, VALTYPE_ANYREF);
+                    self.validate_output_slot_type(out, VALTYPE_ANYREF);
                     self.assign_output_local(out);
                 }
                 true
@@ -1100,7 +746,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_struct_get(type_index, field_index);
                 if let Some(out) = output {
                     let stack_ty = wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref);
-                    self.force_output_local_for_stack_type(out, stack_ty);
+                    self.validate_output_slot_type(out, stack_ty);
                     self.assign_output_local(out);
                 }
                 else {
@@ -1120,7 +766,7 @@ impl<'a> WasmMirLowerer<'a> {
             let field_is_value_type = self.storage_for_type(&field.ty) == StorageKind::Value;
             if let Some(out) = output {
                 if field_is_value_type {
-                    self.force_output_local_for_stack_type(out, VALTYPE_I32);
+                    self.validate_output_slot_type(out, VALTYPE_I32);
                     self.assign_output_local(out);
                 }
                 else {
@@ -1130,7 +776,7 @@ impl<'a> WasmMirLowerer<'a> {
                         NyarType::Integer64 { .. } => VALTYPE_I64,
                         _ => VALTYPE_I32,
                     };
-                    self.force_output_local_for_stack_type(out, store_ty);
+                    self.validate_output_slot_type(out, store_ty);
                     self.assign_output_local(out);
                 }
             }
@@ -1179,7 +825,7 @@ impl<'a> WasmMirLowerer<'a> {
             // value_types 缺失时：若栈类型已是 anyref，仍允许?tag/payload?
             match object {
                 MirOperand::Value(v) => {
-                    let local = self.value_locals.get(v).copied().or_else(|| self.scalar_locals.get(v).copied())?;
+                    let local = self.value_locals.get(v).copied()?;
                     let ty = self.wasm_local_value_type(local);
                     if ty == WASM_GC_ANYREF || ty == WASM_GC_EXTERNREF { Some(local) } else { None }
                 }
@@ -1191,13 +837,13 @@ impl<'a> WasmMirLowerer<'a> {
             // MIR 仍可能发 FieldGet(tag)；若 object 已是 i32，则 tag 即自身?
             if is_tag {
                 if let Some(local) = self.operand_address_local(object).or_else(|| match object {
-                    MirOperand::Value(v) => self.value_locals.get(v).copied().or_else(|| self.scalar_locals.get(v).copied()),
+                    MirOperand::Value(v) => self.value_locals.get(v).copied(),
                     _ => None,
                 }) {
                     if self.wasm_local_value_type(local) == VALTYPE_I32 {
                         self.emit_local_get(local);
                         if let Some(out) = output {
-                            self.force_output_local_for_stack_type(out, VALTYPE_I32);
+                            self.validate_output_slot_type(out, VALTYPE_I32);
                             self.assign_output_local(out);
                         }
                         else {
@@ -1218,7 +864,7 @@ impl<'a> WasmMirLowerer<'a> {
         if is_tag {
             self.emit_struct_get(type_index, 0);
             if let Some(out) = output {
-                self.force_output_local_for_stack_type(out, VALTYPE_I32);
+                self.validate_output_slot_type(out, VALTYPE_I32);
                 self.assign_output_local(out);
             }
             else {
@@ -1232,10 +878,10 @@ impl<'a> WasmMirLowerer<'a> {
             let wants_i32 = self.mir_fn.value_types.get(&out).is_some_and(|ty| self.unite_payload_wants_i32_unbox(ty));
             if wants_i32 {
                 self.emit_unbox_i32_payload();
-                self.force_output_local_for_stack_type(out, VALTYPE_I32);
+                self.validate_output_slot_type(out, VALTYPE_I32);
             }
             else {
-                self.force_output_local_for_stack_type(out, VALTYPE_ANYREF);
+                self.validate_output_slot_type(out, VALTYPE_ANYREF);
             }
             self.assign_output_local(out);
         }
@@ -1461,7 +1107,7 @@ impl<'a> WasmMirLowerer<'a> {
 
         if let Some(out) = output {
             // console write →?unit；void≠unit，用 anyref null 占位?
-            self.force_output_local_for_stack_type(out, VALTYPE_ANYREF);
+            self.validate_output_slot_type(out, VALTYPE_ANYREF);
             self.emit_ref_null_anyref();
             self.assign_output_local(out);
         }
@@ -1540,7 +1186,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_operand_coerced(&arguments[0], VALTYPE_ANYREF);
         WasmOpcode::RefIsNull.encode(&mut self.code);
         if let Some(out) = output {
-            self.force_output_local_for_stack_type(out, VALTYPE_I32);
+            self.validate_output_slot_type(out, VALTYPE_I32);
             self.assign_output_local(out);
         }
         else {

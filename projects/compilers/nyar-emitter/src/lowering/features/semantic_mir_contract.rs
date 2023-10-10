@@ -910,13 +910,33 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                 }
             }
         }
-        crate::contracts::Terminator::Branch { condition, .. } if value_type(condition).as_ref() != Some(&NyarType::Boolean) => {
+        crate::contracts::Terminator::Return { value: None } if !matches!(function.return_type, NyarType::Unit | NyarType::Bottom) => {
             return Err(SemanticMirContractError {
                 code: "SMIR007",
                 function: function.symbol.clone(),
                 location,
-                detail: "branch condition must be bool".to_string(),
+                detail: "non-unit return requires a typed SSA result".to_string(),
             });
+        }
+        crate::contracts::Terminator::Branch { condition, then_target, else_target } => {
+            if value_type(condition).as_ref() != Some(&NyarType::Boolean) {
+                return Err(SemanticMirContractError {
+                    code: "SMIR007",
+                    function: function.symbol.clone(),
+                    location,
+                    detail: "branch condition must be bool".to_string(),
+                });
+            }
+            for target in [then_target, else_target] {
+                if !function.blocks.iter().any(|block| block.id == *target && block.parameters.is_empty()) {
+                    return Err(SemanticMirContractError {
+                        code: "SMIR007",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: "branch requires an existing target without block parameters".to_string(),
+                    });
+                }
+            }
         }
         _ => {}
     }

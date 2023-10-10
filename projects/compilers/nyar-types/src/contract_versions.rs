@@ -7,7 +7,7 @@
 pub const IDENTITY_SCHEMA_VERSION: u32 = 1;
 
 /// Semantic MIR 合同版本（调用 / 类型 / 布局侧表形状）。
-pub const MIR_CONTRACT_VERSION: u32 = 5;
+pub const MIR_CONTRACT_VERSION: u32 = 6;
 
 /// RepresentationPlan / layout 侧表合同版本。
 pub const LAYOUT_PLAN_VERSION: u32 = 3;

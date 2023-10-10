@@ -72,6 +72,48 @@ fn wasm_source_calls_keep_the_executable_route() {
 }
 
 #[test]
+fn wasm_source_i64_return_preserves_the_declared_width() {
+    for source in [
+        "[main] micro entry() -> i64 { return 4294967297 }",
+        "micro identity(value: i64) -> i64 { return value } [main] micro entry() -> i64 { return identity(4294967297) }",
+    ] {
+        let submission = source_submission(source);
+        let (module, _) = lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue).expect("宽整数源码必须编码真实结果");
+        assert_eq!(run_in_node(&module.to_bytes().unwrap(), "main"), serde_json::json!({ "result": "4294967297", "recorded": [] }));
+    }
+}
+
+#[test]
+fn wasm_loop_block_arguments_use_parallel_assignment() {
+    use std::{collections::BTreeMap, sync::Arc};
+    use nyar_emitter::{contracts::{Block, BlockRef, Instruction, InstructionKind, Operand, Terminator, ValueRef}, executable_provider::MirFunctionMapProvider};
+    let mut submission = source_submission("[main] micro entry() -> i32 { return 23 }");
+    let entry = submission.entry_operation.clone().unwrap();
+    let provider = submission.executable.as_ref().unwrap();
+    let mut function = provider.get_function(&entry).unwrap().function.clone();
+    let integer = nyar::NyarType::Integer32 { signed: true };
+    function.value_types = BTreeMap::from([(ValueRef(0), integer.clone()), (ValueRef(1), integer.clone()), (ValueRef(2), nyar::NyarType::Boolean), (ValueRef(3), nyar::NyarType::Boolean), (ValueRef(4), integer.clone()), (ValueRef(5), integer.clone()), (ValueRef(6), nyar::NyarType::Boolean)]);
+    let literals = [(ValueRef(4), nyar_emitter::contracts::Constant::Int(17), integer.clone()), (ValueRef(5), nyar_emitter::contracts::Constant::Int(29), integer), (ValueRef(6), nyar_emitter::contracts::Constant::Bool(true), nyar::NyarType::Boolean)].into_iter().enumerate().map(|(index, (result, constant, ty))| {
+        let mut instruction = Instruction::from_kind(InstructionKind::LoadConstant { constant, ty: Some(ty) });
+        instruction.id = nyar_types::InstructionId::from_index(index as u32).unwrap();
+        instruction.results = vec![result];
+        instruction
+    }).collect();
+    let mut condition = Instruction::from_kind(InstructionKind::LoadConstant { constant: nyar_emitter::contracts::Constant::Bool(false), ty: Some(nyar::NyarType::Boolean) });
+    condition.results = vec![ValueRef(3)];
+    condition.id = nyar_types::InstructionId::from_index(3).unwrap();
+    function.blocks = vec![
+        Block { id: BlockRef(0), label: "entry".into(), parameters: vec![], instructions: literals, terminator: Terminator::Jump { target: BlockRef(1), arguments: vec![Operand::Value(ValueRef(4)), Operand::Value(ValueRef(5)), Operand::Value(ValueRef(6))] } },
+        Block { id: BlockRef(1), label: "loop".into(), parameters: vec![ValueRef(0), ValueRef(1), ValueRef(2)], instructions: vec![], terminator: Terminator::Branch { condition: Operand::Value(ValueRef(2)), then_target: BlockRef(2), else_target: BlockRef(3) } },
+        Block { id: BlockRef(2), label: "swap".into(), parameters: vec![], instructions: vec![condition], terminator: Terminator::Jump { target: BlockRef(1), arguments: vec![Operand::Value(ValueRef(1)), Operand::Value(ValueRef(0)), Operand::Value(ValueRef(3))] } },
+        Block { id: BlockRef(3), label: "done".into(), parameters: vec![], instructions: vec![], terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) } },
+    ];
+    submission.executable = Some(Arc::new(MirFunctionMapProvider::new(BTreeMap::from([(entry, function)]))));
+    let (module, _) = lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue).expect("已验证 CFG 必须保持并行复制");
+    assert_eq!(run_in_node(&module.to_bytes().unwrap(), "main"), serde_json::json!({ "result": "17", "recorded": [] }));
+}
+
+#[test]
 fn wasm_missing_executable_never_synthesizes_an_empty_entry() {
     for boundary in [HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent] {
         let error = lower_fragment_to_wasm_module(&FragmentSubmission::default(), boundary).expect_err("缺函数体不能生成成功空壳");
@@ -97,4 +139,17 @@ fn wasm_declared_entry_must_have_an_exact_executable_body() {
     submission.entry_operation = Some(QualifiedName::new(vec![Identifier::new("other"), Identifier::new("entry")]));
     let error = lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue).expect_err("入口缺体不能借用同名函数");
     assert!(error.to_string().contains("BPHYS008") && error.to_string().contains("no exact semantic function"), "{error}");
+}
+
+#[test]
+fn wasm_missing_return_value_fails_at_the_semantic_boundary() {
+    use std::{collections::BTreeMap, sync::Arc};
+    use nyar_emitter::{contracts::Terminator, executable_provider::MirFunctionMapProvider};
+    let mut submission = source_submission("[main] micro entry() -> i32 { return 23 }");
+    let entry = submission.entry_operation.clone().unwrap();
+    let mut function = submission.executable.as_ref().unwrap().get_function(&entry).unwrap().function.clone();
+    function.blocks[0].terminator = Terminator::Return { value: None };
+    submission.executable = Some(Arc::new(MirFunctionMapProvider::new(BTreeMap::from([(entry, function)]))));
+    let error = lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue).expect_err("缺返回值不能补零");
+    assert!(error.to_string().contains("SMIR007") && error.to_string().contains("non-unit return"), "{error}");
 }
