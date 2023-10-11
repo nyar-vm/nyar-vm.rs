@@ -569,6 +569,14 @@ pub enum CanonicalMirError {
     UnknownVariant { function: ItemInstanceId, variant: VariantId },
     /// sum variant payload 与声明合同不一致。
     VariantPayloadMismatch { function: ItemInstanceId, variant: VariantId },
+    /// 结构操作的结果类型与其声明合同不一致。
+    OperationResultTypeMismatch { function: ItemInstanceId, instruction: InstructionId },
+    /// 结构操作的输入类型与其声明合同不一致。
+    OperationOperandTypeMismatch { function: ItemInstanceId, instruction: InstructionId, value: MirValueId },
+    /// 结构操作的结果个数与其语义合同不一致。
+    OperationResultArityMismatch { function: ItemInstanceId, instruction: InstructionId },
+    /// 结构操作的输入个数与其类型合同不一致。
+    OperationOperandArityMismatch { function: ItemInstanceId, instruction: InstructionId },
 }
 
 impl CanonicalSemanticMir {
@@ -754,6 +762,18 @@ impl CanonicalSemanticMir {
                         let Some(record) = linked.variants.get(variant) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
                         };
+                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        };
+                        let result_type = instruction.results.first().and_then(|value| function.value_types.get(value));
+                        let result_is_owner = result_type.is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration));
+                        if instruction.results.len() != 1 || !result_is_owner {
+                            return Err(if instruction.results.len() == 1 {
+                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                            } else {
+                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                            });
+                        }
                         match (record.payload_type, payload) {
                             (Some(expected), Some(value)) if function.value_types.get(value) == Some(&expected) => vec![*value],
                             (None, None) => Vec::new(),
@@ -767,11 +787,44 @@ impl CanonicalSemanticMir {
                         if record.payload_type.is_none() {
                             return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
                         }
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != record.payload_type.as_ref() {
+                            return Err(if instruction.results.len() == 1 {
+                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                            } else {
+                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                            });
+                        }
+                        let Some(object_type) = function.value_types.get(object) else {
+                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                        };
+                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        };
+                        if !matches!(linked.types.get(object_type).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration) {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
+                        }
                         vec![*object]
                     }
                     CanonicalOperation::SumVariantIs { variant, object } => {
-                        if !linked.variants.contains_key(variant) {
+                        let Some(record) = linked.variants.get(variant) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
+                        };
+                        let bool_result = instruction.results.len() == 1 && instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
+                        if !bool_result {
+                            return Err(if instruction.results.len() == 1 {
+                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                            } else {
+                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                            });
+                        }
+                        let Some(object_type) = function.value_types.get(object) else {
+                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                        };
+                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        };
+                        if !matches!(linked.types.get(object_type).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration) {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
                         }
                         vec![*object]
                     }
@@ -798,6 +851,13 @@ impl CanonicalSemanticMir {
                             if !seen.contains(field) {
                                 return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
                             }
+                        }
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)).is_none_or(|ty| !matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == nominal_record.declaration)) {
+                            return Err(if instruction.results.len() == 1 {
+                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                            } else {
+                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                            });
                         }
                         fields.iter().map(|(_, value)| *value).collect()
                     }
@@ -839,15 +899,66 @@ impl CanonicalSemanticMir {
                         }
                         vec![*object, *value]
                     }
-                    CanonicalOperation::ArrayGet { array, index } => vec![*array, *index],
-                    CanonicalOperation::ArrayNew { length, initialization, .. } => match initialization {
-                        CanonicalArrayInitialization::Default => vec![*length],
-                        CanonicalArrayInitialization::Fill(value) => vec![*length, *value],
-                    },
-                    CanonicalOperation::ArrayFromElements { elements, .. } => elements.clone(),
-                    CanonicalOperation::ArraySet { array, index, value } => vec![*array, *index, *value],
-                    CanonicalOperation::ArrayLength { array } => vec![*array],
-                    CanonicalOperation::TupleNew { fields, .. } => fields.clone(),
+                    CanonicalOperation::ArrayGet { array, index } => {
+                        let Some(CanonicalTypeKind::Array { element, .. }) = function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind) else {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array });
+                        };
+                        let index_is_integer = function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
+                        if !index_is_integer {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *index });
+                        }
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(element) {
+                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
+                        }
+                        vec![*array, *index]
+                    }
+                    CanonicalOperation::ArrayNew { array_type, length, initialization } => {
+                        let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind) else {
+                            return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
+                        };
+                        let length_is_integer = function.value_types.get(length).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
+                        let fill_is_valid = match initialization {
+                            CanonicalArrayInitialization::Default => true,
+                            CanonicalArrayInitialization::Fill(value) => function.value_types.get(value) == Some(element),
+                        };
+                        if !length_is_integer || !fill_is_valid {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *length });
+                        }
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type) {
+                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
+                        }
+                        match initialization { CanonicalArrayInitialization::Default => vec![*length], CanonicalArrayInitialization::Fill(value) => vec![*length, *value] }
+                    }
+                    CanonicalOperation::ArrayFromElements { array_type, elements } => {
+                        let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind) else { return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }); };
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type) { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
+                        if elements.iter().any(|value| function.value_types.get(value) != Some(element)) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *elements.iter().find(|value| function.value_types.get(value) != Some(element)).unwrap() }); }
+                        elements.clone()
+                    }
+                    CanonicalOperation::ArraySet { array, index, value } => {
+                        let Some(CanonicalTypeKind::Array { element, .. }) = function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind) else { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array }); };
+                        let index_is_integer = function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
+                        if !index_is_integer || function.value_types.get(value) != Some(element) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: if !index_is_integer { *index } else { *value } }); }
+                        if !instruction.results.is_empty() { return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }); }
+                        vec![*array, *index, *value]
+                    }
+                    CanonicalOperation::ArrayLength { array } => {
+                        if !matches!(function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind), Some(CanonicalTypeKind::Array { .. })) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array }); }
+                        let result_is_integer = instruction.results.len() == 1 && instruction.results.first().and_then(|value| function.value_types.get(value)).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
+                        if !result_is_integer { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
+                        vec![*array]
+                    }
+                    CanonicalOperation::TupleNew { element_types, fields } => {
+                        let Some(result) = instruction.results.first().and_then(|value| function.value_types.get(value)) else { return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }); };
+                        if instruction.results.len() != 1 || !matches!(linked.types.get(result).map(|row| &row.kind), Some(CanonicalTypeKind::Tuple(members)) if members == element_types) { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
+                        if fields.len() != element_types.len() {
+                            return Err(CanonicalMirError::OperationOperandArityMismatch { function: *key, instruction: instruction.id });
+                        }
+                        if let Some((value, _)) = fields.iter().zip(element_types).find(|(value, expected)| function.value_types.get(value) != Some(expected)) {
+                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *value });
+                        }
+                        fields.clone()
+                    }
                     };
                     if uses.iter().any(|value| !block_defined.contains(value)) {
                         let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();
@@ -1150,6 +1261,51 @@ mod tests {
     #[test]
     fn structured_diagnostic_set_rejects_empty() {
         assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
+    }
+
+    #[test]
+    fn canonical_array_contract_checks_inputs_and_results_before_planning() {
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let integer = TypeId::from_index(0).unwrap();
+        let boolean = TypeId::from_index(1).unwrap();
+        let array_type = TypeId::from_index(2).unwrap();
+        let array = MirValueId::from_index(0).unwrap();
+        let index = MirValueId::from_index(1).unwrap();
+        let result = MirValueId::from_index(2).unwrap();
+        let instruction = InstructionId::from_index(0).unwrap();
+        let mut linked = LinkedSemanticProgram::default();
+        for (ty, kind) in [
+            (integer, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true })),
+            (boolean, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool)),
+            (array_type, CanonicalTypeKind::Array { element: integer, length: None }),
+        ] {
+            linked.types.insert(ty, TypeRecord { declaration: ty, kind });
+        }
+        linked.item_instances.insert(instance, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(), substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: vec![array_type, integer], return_type: integer,
+        });
+        let function = CanonicalFunction {
+            instance, parameters: vec![(array, array_type), (index, integer)], return_type: integer,
+            value_types: BTreeMap::from([(array, array_type), (index, integer), (result, integer)]),
+            entry: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
+                id: CanonicalBlockId(0), parameters: Vec::new(),
+                instructions: vec![CanonicalInstruction { id: instruction, results: vec![result], operation: CanonicalOperation::ArrayGet { array, index } }],
+                terminator: CanonicalTerminator::Return { value: Some(result) },
+            })]),
+        };
+        let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "array".into(), functions: BTreeMap::from([(instance, function)]) } };
+        program.validate().expect("完整数组读取合同");
+        let mut invalid = program.clone();
+        invalid.mir.functions.get_mut(&instance).unwrap().value_types.insert(result, boolean);
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationResultTypeMismatch { function: instance, instruction }));
+        let mut invalid = program.clone();
+        invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].results.clear();
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationResultArityMismatch { function: instance, instruction }));
+        let mut invalid = program;
+        invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation = CanonicalOperation::ArrayGet { array: index, index };
+        assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { function: instance, instruction, value: index }));
     }
 
     #[test]
