@@ -716,6 +716,10 @@ impl CanonicalSemanticMir {
                                         return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: *callee, value: *result });
                                     }
                                 }
+                                let returns_unit = matches!(linked.types.get(&callee_record.return_type).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void)));
+                                if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
+                                    return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                                }
                                 }
                                 CanonicalCallee::Value(callee) => {
                                 let Some(callee_type) = function.value_types.get(callee) else {
@@ -737,6 +741,10 @@ impl CanonicalSemanticMir {
                                         return Err(CanonicalMirError::ValueCalleeResultTypeMismatch { function: *key, value: *callee, result: *result });
                                     }
                                 }
+                                let returns_unit = matches!(linked.types.get(return_type).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void)));
+                                if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
+                                    return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                                }
                                 }
                             }
                             let mut uses = arguments.clone();
@@ -745,7 +753,12 @@ impl CanonicalSemanticMir {
                             }
                             uses
                         }
-                    CanonicalOperation::Copy { source } => vec![*source],
+                    CanonicalOperation::Copy { source } => {
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != function.value_types.get(source) {
+                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
+                        }
+                        vec![*source]
+                    }
                     CanonicalOperation::AggregateCopy { source, destination } => {
                         let source_type = function.value_types.get(source);
                         let destination_type = function.value_types.get(destination);
@@ -757,7 +770,12 @@ impl CanonicalSemanticMir {
                         }
                         vec![*source]
                     }
-                    CanonicalOperation::LoadConstant { .. } => Vec::new(),
+                    CanonicalOperation::LoadConstant { .. } => {
+                        if instruction.results.len() != 1 {
+                            return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                        }
+                        Vec::new()
+                    }
                     CanonicalOperation::SumNew { variant, payload } => {
                         let Some(record) = linked.variants.get(variant) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
@@ -881,6 +899,9 @@ impl CanonicalSemanticMir {
                         vec![*object]
                     }
                     CanonicalOperation::FieldSet { object, field, value } => {
+                        if !instruction.results.is_empty() {
+                            return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                        }
                         let Some(record) = linked.fields.get(field) else {
                             return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
                         };
