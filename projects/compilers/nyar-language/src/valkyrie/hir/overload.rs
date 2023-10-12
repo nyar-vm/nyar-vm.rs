@@ -2001,161 +2001,23 @@ fn try_resolve_constructor(
     else {
         args.to_vec()
     };
-    let inferred_actual_types = bound_values.iter().map(|arg| infer_expr_type(arg, locals)).collect::<Option<Vec<_>>>();
-    // A named aggregate initializer is allowed to obtain an expected type
-    // from one unique declared field layout.  This is a constraint from the
-    // constructor contract itself, not recovery from the enclosing return
-    // type, a symbol name, or a backend representation.  Ambiguous layouts
-    // remain unresolved and are rejected at the Semantic MIR boundary.
-    if inferred_actual_types.is_none() {
-        let unknown_layouts = candidates
-            .iter()
-            .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-            .filter(|candidate| candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == name))
-            .filter(|candidate| candidate.signature.params.len() == bound_values.len())
-            .collect::<Vec<_>>();
-        // Generic unite constructors (`Fine`/`Fail`/`Some`) often appear once per
-        // imported/local specialize; argument types from `f(value)` may still be
-        // Auto. Prefer a unique match, otherwise take the first same-arity layout
-        // so SMIR003 does not block core Option/Result (bootstrap Stage1).
-        let Some(candidate) = unknown_layouts.first()
-        else {
-            return None;
-        };
-        return Some(HirResolvedCall {
-            symbol: candidate.symbol.clone(),
-            domain: HirCallableDomain::Constructor,
-            return_type: candidate.signature.return_type.clone(),
-            parameter_types: candidate.signature.params.clone(),
-            has_receiver: false,
-            extractor_payload_type: None,
-        });
-    }
-    let actual_types = inferred_actual_types.clone().expect("checked above");
+    let arguments = HirCallArgument::from_exprs(bound_values);
     let filtered = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == name))
-        .filter_map(|candidate| {
-            let candidate_actual_types = inferred_actual_types.clone().or_else(|| {
-                bound_values
-                    .iter()
-                    .zip(candidate.signature.params.iter())
-                    .map(|(arg, expected)| infer_constructor_argument_type(arg, expected, locals))
-                    .collect::<Option<Vec<_>>>()
-            })?;
-            let candidate_actual_types = specialize_constructor_literals(&bound_values, &candidate_actual_types, &candidate.signature.params);
-            let match_kind = compute_call_match_kind(type_relations, &candidate_actual_types, &candidate.signature.params)?;
-            Some(OverloadCandidate::new(
-                candidate.symbol.clone(),
-                candidate.domain.clone(),
-                candidate.signature.params.clone(),
-                candidate.signature.return_type.clone(),
-                match_kind,
-            ))
-        })
+        .filter_map(|candidate| match_call_candidate(candidate, &arguments, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
-    let resolved = match resolve_overload(&filtered) {
-        Ok(resolved) => resolved,
-        Err(_) => {
-            // 泛型模式载荷类型（`error: E`）常无法与构造器参数精确匹配；
-            // 仅在**唯一**时接受同元数的按名匹配。
-            // 禁止在多个同拼写构造器中 first-wins。
-            let fallback_candidates = candidates
-                .iter()
-                .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-                .filter(|candidate| candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == name))
-                .filter(|candidate| candidate.signature.params.len() == bound_values.len())
-                .collect::<Vec<_>>();
-            if fallback_candidates.len() != 1 {
-                return None;
-            }
-            let fallback = fallback_candidates[0];
-            return Some(HirResolvedCall {
-                symbol: fallback.symbol.clone(),
-                domain: HirCallableDomain::Constructor,
-                return_type: fallback.signature.return_type.clone(),
-                parameter_types: fallback.signature.params.clone(),
-                has_receiver: false,
-                extractor_payload_type: None,
-            });
-        }
-    };
-    let resolved_actual_types = bound_values
-        .iter()
-        .zip(resolved.signature.params.iter())
-        .map(|(arg, expected)| infer_constructor_argument_type(arg, expected, locals))
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_else(|| resolved.signature.params.clone());
-    let return_type = constructor_return_type(&resolved.signature.return_type, &resolved.signature.params, &resolved_actual_types);
-    let _ = actual_types;
+    let resolved = resolve_overload(&filtered).ok()?;
+    let matched = filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain)?;
     Some(HirResolvedCall {
-        symbol: resolved.symbol,
+        symbol: overload_symbol_path(matched),
         domain: HirCallableDomain::Constructor,
-        return_type,
+        return_type: resolved.signature.return_type,
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
     })
-}
-
-fn infer_constructor_argument_type(expr: &HirExpr, expected: &ValkyrieType, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
-    infer_expr_type(expr, locals).or_else(|| match (&expr.kind, expected) {
-        (HirExprKind::ArrayLiteral { items }, ValkyrieType::Array(element)) if items.is_empty() => Some(ValkyrieType::Array(element.clone())),
-        _ => None,
-    })
-}
-
-fn specialize_constructor_literals(args: &[HirExpr], actual: &[ValkyrieType], expected: &[ValkyrieType]) -> Vec<ValkyrieType> {
-    args.iter()
-        .zip(actual.iter().zip(expected.iter()))
-        .map(|(arg, (actual, expected))| match (&arg.kind, actual) {
-            // Numeric literals are polymorphic until a formal contract fixes
-            // their representation; the backend must not make this decision.
-            (HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)), _) => expected.clone(),
-            _ => actual.clone(),
-        })
-        .collect()
-}
-
-fn constructor_return_type(return_type: &ValkyrieType, param_types: &[ValkyrieType], arg_types: &[ValkyrieType]) -> ValkyrieType {
-    let mut substitutions = BTreeMap::new();
-    for (param, arg) in param_types.iter().zip(arg_types) {
-        unify_constructor_type_vars(param, arg, &mut substitutions);
-    }
-    if substitutions.is_empty() {
-        return return_type.clone();
-    }
-    substitute_type_vars(return_type, &substitutions)
-}
-
-fn unify_constructor_type_vars(param: &ValkyrieType, arg: &ValkyrieType, out: &mut BTreeMap<Identifier, ValkyrieType>) {
-    match param {
-        ValkyrieType::Named(name) => {
-            out.entry(name.clone()).or_insert_with(|| arg.clone());
-        }
-        ValkyrieType::Apply(param_base, param_args) => {
-            if let ValkyrieType::Apply(arg_base, arg_args) = arg {
-                if param_base == arg_base && param_args.len() == arg_args.len() {
-                    for (p, a) in param_args.iter().zip(arg_args.iter()) {
-                        unify_constructor_type_vars(p, a, out);
-                    }
-                }
-            }
-        }
-        ValkyrieType::Function(param_fn) => {
-            if let ValkyrieType::Function(arg_fn) = arg {
-                for (p, a) in param_fn.params.iter().zip(arg_fn.params.iter()) {
-                    unify_constructor_type_vars(p, a, out);
-                }
-                unify_constructor_type_vars(&param_fn.return_type, &arg_fn.return_type, out);
-            }
-        }
-        ValkyrieType::TypeLambda(param_lambda) => {
-            unify_constructor_type_vars(&param_lambda.body, arg, out);
-        }
-        _ => {}
-    }
 }
 
 fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual: &ValkyrieType) -> ValkyrieType {
@@ -3108,6 +2970,91 @@ fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
 mod identity_tests {
     use super::*;
     use crate::{ValkyrieCompiler, types::SourceID};
+
+    fn resolve_constructor_contract(candidates: &[OverloadCandidate], actual: &[Option<ValkyrieType>]) -> Option<HirResolvedCall> {
+        let mut locals = BTreeMap::new();
+        let arguments = actual.iter().enumerate().map(|(index, ty)| {
+            let name = Identifier::new(&format!("argument_{index}"));
+            let span = crate::types::SourceSpan::new(SourceID::default(), 0, 0);
+            if let Some(ty) = ty {
+                locals.insert(name.to_string(), ty.clone());
+            }
+            HirExpr {
+                kind: HirExprKind::Variable(HirIdentifier { name, shadow_index: 0, span: span.clone() }),
+                span,
+            }
+        }).collect::<Vec<_>>();
+        try_resolve_constructor(
+            &Identifier::new("Present"), &arguments, candidates,
+            &TypeRelationContext::from_module(&HirModule::default()), &locals,
+            &BTreeMap::new(), &BTreeSet::new(),
+        )
+    }
+
+    fn generic_constructor(owner: &str, parameters: Vec<ValkyrieType>) -> OverloadCandidate {
+        OverloadCandidate::new_method(
+            Identifier::new(owner), NamePath::new(vec![Identifier::new("Present")]),
+            OverloadDomain::Constructor, parameters,
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(owner))), vec![ValkyrieType::Named(Identifier::new("T"))]),
+            OverloadMatchKind::Row,
+        ).with_generic_binder(Identifier::new("T"))
+    }
+
+    #[test]
+    fn constructor_contract_instantiates_parameters_and_return_with_declared_owner() {
+        let candidate = generic_constructor("Envelope", vec![ValkyrieType::Named(Identifier::new("T"))]);
+        let resolved = resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8)]).expect("声明 binder 应完成代入");
+        assert_eq!(resolved.symbol, NamePath::new(vec![Identifier::new("Envelope"), Identifier::new("Present")]));
+        assert_eq!(resolved.parameter_types, vec![ValkyrieType::Utf8]);
+        assert_eq!(resolved.return_type, ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8]));
+        assert!(!resolved.has_receiver);
+    }
+
+    #[test]
+    fn constructor_contract_rejects_conflicting_repeated_binder() {
+        let parameter = ValkyrieType::Named(Identifier::new("T"));
+        let candidate = generic_constructor("Envelope", vec![parameter.clone(), parameter]);
+        assert!(resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8), Some(ValkyrieType::Boolean)]).is_none());
+    }
+
+    #[test]
+    fn constructor_contract_rejects_missing_argument_type_and_ambiguous_owner() {
+        let parameter = ValkyrieType::Named(Identifier::new("T"));
+        let candidates = vec![generic_constructor("Alpha", vec![parameter.clone()]), generic_constructor("Beta", vec![parameter])];
+        assert!(resolve_constructor_contract(&candidates[..1], &[None]).is_none());
+        assert!(resolve_constructor_contract(&candidates, &[None]).is_none());
+        assert!(resolve_constructor_contract(&candidates, &[Some(ValkyrieType::Utf8)]).is_none());
+    }
+
+    #[test]
+    fn constructor_contract_does_not_substitute_nominal_parameter_as_generic() {
+        let candidate = generic_constructor("Envelope", vec![ValkyrieType::Named(Identifier::new("DeclaredPayload"))]);
+        assert!(resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8)]).is_none());
+    }
+
+    #[test]
+    fn constructor_contract_from_source_preserves_generic_sum_signature() {
+        let hir = ValkyrieCompiler::new(SourceID { version_id: 5210 }).compile_source(r#"
+unite Envelope<T> {
+    Present { value: T },
+    Absent,
+}
+micro wrap(value: utf8) -> Envelope<utf8> {
+    let wrapped = Present { value: value }
+    return wrapped
+}
+"#).expect("当前源码中的构造声明应完成实例化");
+        let function = hir.functions.iter().find(|function| function.name.as_str() == "wrap").expect("wrap");
+        let HirStatementKind::Let { initializer: Some(initializer), .. } = &function.body.statements[0].kind else {
+            panic!("缺少构造表达式");
+        };
+        let HirExprKind::Construct { resolved: Some(resolved), .. } = &initializer.kind else {
+            panic!("构造身份未解析：{initializer:?}");
+        };
+        assert_eq!(resolved.symbol, NamePath::new(vec![Identifier::new("Envelope"), Identifier::new("Present")]));
+        assert_eq!(resolved.parameter_types, vec![ValkyrieType::Utf8]);
+        assert_eq!(resolved.return_type, ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8]));
+    }
 
     #[test]
     fn ambiguous_bare_new_does_not_resolve_via_simple_name_fallback() {
