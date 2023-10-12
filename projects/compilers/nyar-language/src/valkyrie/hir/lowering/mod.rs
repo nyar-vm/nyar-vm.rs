@@ -481,35 +481,7 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
             layouts.push(SumTypeLayout { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, tag_width: 4, variants });
         }
     }
-    ensure_language_result_option_sum_types(&mut layouts);
     layouts
-}
-
-/// Language Result/Option arms are always available, even when the defining
-/// `unite` lives in another package and was not re-exported into this HIR module.
-fn ensure_language_result_option_sum_types(layouts: &mut Vec<SumTypeLayout>) {
-    if !layouts.iter().any(|layout| layout.name == "Result") {
-        layouts.push(SumTypeLayout {
-            name: "Result".to_string(),
-            is_unite: true,
-            tag_width: 4,
-            variants: vec![
-                SumVariantLayout { name: "Fine".to_string(), tag: 0, payload_type: Some(NyarType::Named(nyar::Identifier::new("T"))) },
-                SumVariantLayout { name: "Fail".to_string(), tag: 1, payload_type: Some(NyarType::Named(nyar::Identifier::new("E"))) },
-            ],
-        });
-    }
-    if !layouts.iter().any(|layout| layout.name == "Option") {
-        layouts.push(SumTypeLayout {
-            name: "Option".to_string(),
-            is_unite: true,
-            tag_width: 4,
-            variants: vec![
-                SumVariantLayout { name: "Some".to_string(), tag: 0, payload_type: Some(NyarType::Named(nyar::Identifier::new("T"))) },
-                SumVariantLayout { name: "None".to_string(), tag: 1, payload_type: None },
-            ],
-        });
-    }
 }
 
 fn integer_literal_u32(expr: &HirExpr) -> Option<u32> {
@@ -1748,6 +1720,31 @@ mod sum_discriminator_tests {
 
     fn test_span() -> SourceSpan {
         SourceSpan::new(SourceID::default(), 0, 0)
+    }
+
+    #[test]
+    fn sum_layouts_are_not_synthesized_without_source_declarations() {
+        let output = ValkyrieCompiler::default()
+            .compile_source_to_build_output("[main] micro entry() -> i32 { return 23 }")
+            .expect("普通源码必须完成正式 Compiler 成功边界");
+        assert!(output.semantic_mir().sum_types.is_empty());
+        assert!(output.compiled_program().canonical().linked.variants.is_empty());
+    }
+
+    #[test]
+    fn familiar_sum_names_preserve_the_declared_variants() {
+        let module = ValkyrieCompiler::default()
+            .compile_source("enums Option { Declared = 7 } enums Result { Actual = 11 }")
+            .expect("sum 声明必须来自当前源码");
+        let (sums, _) = compute_nominal_layouts(&module);
+        assert_eq!(sums.len(), 2);
+        for (name, variant, tag) in [("Option", "Declared", 7), ("Result", "Actual", 11)] {
+            let sum = sums.iter().find(|sum| sum.name == name).expect("声明 owner");
+            assert_eq!(sum.variants.len(), 1);
+            assert_eq!(sum.variants[0].name, variant);
+            assert_eq!(sum.variants[0].tag, tag);
+            assert!(sum.variants[0].payload_type.is_none());
+        }
     }
 
     #[test]
