@@ -128,8 +128,8 @@ fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModul
 
 fn relocate_variant_ids(
     function: &mut MirFunction,
-    source: &[nyar_types::SumTypeLayout],
-    destination: &[nyar_types::SumTypeLayout],
+    source: &[crate::mir::MirSumDeclaration],
+    destination: &[crate::mir::MirSumDeclaration],
 ) -> Result<(), std_data::text::valkyrie::ParseError> {
     let mut destination_ids = BTreeMap::new();
     let mut index = 0u32;
@@ -497,14 +497,14 @@ mod tests {
 
     #[test]
     fn merges_dependency_sum_types_into_consumer() {
-        use nyar_types::{SumTypeLayout, SumVariantLayout};
+        use crate::mir::{MirSumDeclaration, MirSumVariant};
 
         let mut consumer = bare_module("legion", vec![call_fn("legion::clr_local_slot_bytes", "nyar.emitter::typed_instr")]);
-        consumer.sum_types.push(SumTypeLayout {
+        consumer.sum_types.push(MirSumDeclaration {
             name: "ConsumerSum".into(),
             is_unite: true,
-            tag_width: 1,
-            variants: vec![SumVariantLayout { name: "Existing".into(), tag: 0, payload_type: None }],
+            generics: Vec::new(),
+            variants: vec![MirSumVariant { name: "Existing".into(), tag: 0, fields: Vec::new(), result_type: None }],
         });
         let mut dep_fn = empty_fn("nyar.emitter::typed_instr");
         let out = MirValue { id: MirValueRef(0), origin: MirValueOrigin::Temporary };
@@ -527,11 +527,11 @@ mod tests {
             callable_identities: BTreeMap::new(),
             type_identities: BTreeMap::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
-            sum_types: vec![SumTypeLayout {
+            sum_types: vec![MirSumDeclaration {
                 name: "MsilOpcode".into(),
                 is_unite: false,
-                tag_width: 4,
-                variants: vec![SumVariantLayout { name: "Stloc0".into(), tag: 0, payload_type: None }],
+                generics: Vec::new(),
+                variants: vec![MirSumVariant { name: "Stloc0".into(), tag: 0, fields: Vec::new(), result_type: None }],
             }],
             flags_types: Vec::new(),
             diagnostics: Vec::new(),

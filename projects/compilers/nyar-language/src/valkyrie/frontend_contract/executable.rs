@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Deep-convert a language [`MirFunction`] into a platform [`ExecutableFunction`].
-pub fn mir_function_to_executable(function: &MirFunction, sum_types: &[nyar_types::SumTypeLayout]) -> Result<ExecutableFunction, String> {
+pub fn mir_function_to_executable(function: &MirFunction, sum_types: &[crate::mir::MirSumDeclaration]) -> Result<ExecutableFunction, String> {
     let return_type = concrete_type(&function.return_type)?;
     let param_types = function.param_types.iter().map(concrete_type).collect::<Result<Vec<_>, _>>()?;
     let value_types = function
@@ -46,7 +46,7 @@ pub fn mir_function_to_executable(function: &MirFunction, sum_types: &[nyar_type
 }
 
 /// Convert many MIR functions keyed by qualified name.
-pub fn mir_functions_to_executable_map<'a, I>(functions: I, sum_types: &[nyar_types::SumTypeLayout]) -> Result<BTreeMap<QualifiedName, ExecutableFunction>, String>
+pub fn mir_functions_to_executable_map<'a, I>(functions: I, sum_types: &[crate::mir::MirSumDeclaration]) -> Result<BTreeMap<QualifiedName, ExecutableFunction>, String>
 where
     I: IntoIterator<Item = (&'a QualifiedName, &'a MirFunction)>,
 {
@@ -117,7 +117,7 @@ fn convert_value(value: &MirValue) -> Value {
     Value { id: convert_value_ref(value.id), origin: convert_value_origin(&value.origin) }
 }
 
-fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTypeLayout]) -> Result<InstructionKind, String> {
+fn convert_instruction_kind(kind: &MirOperation, sum_types: &[crate::mir::MirSumDeclaration]) -> Result<InstructionKind, String> {
     match kind {
         MirOperation::LoadConstant { constant, ty } => Ok(InstructionKind::LoadConstant { constant: convert_constant(constant), ty: convert_optional_type(ty)? }),
         MirOperation::LoadSymbol { path } => Ok(InstructionKind::LoadSymbol { path: path.clone() }),
@@ -183,7 +183,7 @@ fn convert_instruction_kind(kind: &MirOperation, sum_types: &[nyar_types::SumTyp
     }
 }
 
-fn declared_variant_name(sum_types: &[nyar_types::SumTypeLayout], sum_type: &str, variant: nyar_types::VariantId) -> Result<String, String> {
+fn declared_variant_name(sum_types: &[crate::mir::MirSumDeclaration], sum_type: &str, variant: nyar_types::VariantId) -> Result<String, String> {
     let mut next = 0u32;
     for sum in sum_types {
         for declared in &sum.variants {
@@ -198,7 +198,7 @@ fn declared_variant_name(sum_types: &[nyar_types::SumTypeLayout], sum_type: &str
     Err(format!("未声明的 variant identity: {sum_type}::{variant}"))
 }
 
-fn convert_instruction(instruction: &MirInstruction, sum_types: &[nyar_types::SumTypeLayout]) -> Result<Instruction, String> {
+fn convert_instruction(instruction: &MirInstruction, sum_types: &[crate::mir::MirSumDeclaration]) -> Result<Instruction, String> {
     Ok(Instruction {
         id: instruction.id,
         results: instruction.results.iter().copied().map(convert_value_ref).collect(),
@@ -237,7 +237,7 @@ fn convert_terminator(terminator: &MirTerminator) -> Terminator {
     }
 }
 
-fn convert_block(block: &MirBlock, sum_types: &[nyar_types::SumTypeLayout]) -> Result<Block, String> {
+fn convert_block(block: &MirBlock, sum_types: &[crate::mir::MirSumDeclaration]) -> Result<Block, String> {
     Ok(Block {
         id: convert_block_ref(block.id),
         label: block.label.clone(),

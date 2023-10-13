@@ -8,7 +8,7 @@ use crate::{
         hir::ValkyrieType,
     },
 };
-use nyar_types::{NyarType, builtin_operator};
+use nyar_types::builtin_operator;
 use std_data::text::valkyrie::ParseError;
 
 use crate::mir::{
@@ -86,7 +86,6 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
         for (index, instruction) in block.instructions.iter().enumerate() {
             if let MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let _ = type_args;
                 let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
                 else {
                     return Err(SemanticMirContractError {
@@ -105,17 +104,22 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: "sum construction references an undeclared variant".to_string(),
                     });
                 };
+                let expected_payload = sum.instantiate_payload(declared, type_args).ok_or_else(|| SemanticMirContractError {
+                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    detail: "sum 实例的类型实参数量与声明不一致".to_string(),
+                })?;
+                let expected_result = sum.instantiate_result(declared, type_args);
                 let payload_value_type = match payload {
-                    Some(MirOperand::Value(value)) => function.value_types.get(value).and_then(|type_| concretize_type(type_).ok()),
+                    Some(MirOperand::Value(value)) => function.value_types.get(value),
                     Some(_) => None,
                     None => None,
                 };
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
-                if output_type.is_none_or(|output_ty| !type_matches_sum_owner_valkyrie(output_ty, sum_type))
-                    || !payload_type_compatible_valkyrie(payload_type.as_ref(), declared.payload_type.as_ref())
-                    || match (&declared.payload_type, payload, payload_value_type.as_ref()) {
+                if output_type != expected_result.as_ref()
+                    || payload_type != &expected_payload
+                    || match (&expected_payload, payload, payload_value_type) {
                         (None, None, _) => false,
-                        (Some(expected), Some(MirOperand::Value(_)), Some(actual)) => !payload_type_slot_compatible_nyar(expected, actual),
+                        (Some(expected), Some(MirOperand::Value(_)), Some(actual)) => expected != actual,
                         _ => true,
                     }
                 {
@@ -130,7 +134,6 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
             }
             if let MirOperation::SumPayloadGet { sum_type, type_args, variant, payload_type, object } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let _ = type_args;
                 let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
                 else {
                     return Err(SemanticMirContractError {
@@ -140,7 +143,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: format!("sum payload extraction references undeclared sum `{sum_type}`"),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant).and_then(|candidate| candidate.payload_type.as_ref())
+                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -154,10 +157,11 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                     _ => None,
                 };
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
-                let declared_payload = concretize_type(payload_type).ok();
-                if !declared_payload.as_ref().is_some_and(|actual| payload_type_slot_compatible_nyar(declared, actual))
+                let expected_payload = sum.instantiate_payload(declared, type_args).flatten();
+                let expected_receiver = sum.instantiate_result(declared, type_args);
+                if expected_payload.as_ref() != Some(payload_type)
                     || output_type != Some(payload_type)
-                    || receiver_type.is_none_or(|ty| !type_matches_sum_owner_valkyrie(ty, sum_type))
+                    || receiver_type != expected_receiver.as_ref()
                 {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -179,43 +183,24 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: format!("SumVariantIs references undeclared sum `{sum_type}`"),
                     });
                 };
-                if declared_variant(&module.sum_types, sum_type, *variant).is_none() {
+                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant) else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
                         detail: format!("SumVariantIs unknown variant `{sum_type}::{variant}`"),
                     });
-                }
+                };
                 let receiver_type = match object {
                     MirOperand::Value(value) => function.value_types.get(value),
                     _ => None,
                 };
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
-                if let Some(ValkyrieType::Apply(base, apply_args)) = receiver_type {
-                    if matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == sum_type.as_str())
-                        && type_args.as_slice() != apply_args.as_slice()
-                    {
-                        return Err(SemanticMirContractError {
-                            code: "SMIR006",
-                            function: function.symbol.clone(),
-                            location,
-                            detail: format!("SumVariantIs type_args disagree with receiver NominalInstanceKey (sum={sum_type})"),
-                        });
-                    }
-                    if matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str() == sum_type.as_str())
-                        && !apply_args.is_empty()
-                        && type_args.is_empty()
-                    {
-                        return Err(SemanticMirContractError {
-                            code: "SMIR006",
-                            function: function.symbol.clone(),
-                            location,
-                            detail: format!("SumVariantIs missing type arguments for generic sum instance `{sum_type}`"),
-                        });
-                    }
-                }
-                if output_type != Some(&ValkyrieType::Boolean) || receiver_type.is_none_or(|ty| !type_matches_sum_owner_valkyrie(ty, sum_type))
+                let expected_receiver = sum.instantiate_result(declared, type_args).ok_or_else(|| SemanticMirContractError {
+                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    detail: "sum 判别的类型实参数量与声明不一致".to_string(),
+                })?;
+                if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver)
                 {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -231,7 +216,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
     Ok(())
 }
 
-fn declared_variant<'a>(sum_types: &'a [nyar_types::SumTypeLayout], sum_type: &str, variant: nyar_types::VariantId) -> Option<&'a nyar_types::SumVariantLayout> {
+fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], sum_type: &str, variant: nyar_types::VariantId) -> Option<&'a crate::mir::MirSumVariant> {
     let mut next = 0u32;
     for sum in sum_types {
         for declared in &sum.variants {
@@ -242,29 +227,6 @@ fn declared_variant<'a>(sum_types: &'a [nyar_types::SumTypeLayout], sum_type: &s
         }
     }
     None
-}
-
-fn type_matches_sum_owner_valkyrie(ty: &ValkyrieType, sum_type: &str) -> bool {
-    match ty {
-        ValkyrieType::Named(name) => {
-            name.as_str() == sum_type
-                || (sum_type == "Result" && name.as_str().ends_with("Result"))
-                || (sum_type == "Option" && matches!(name.as_str(), "Option" | "Nullable"))
-        }
-        ValkyrieType::Apply(base, _) => type_matches_sum_owner_valkyrie(base, sum_type),
-        ValkyrieType::Nullable(_) => sum_type == "Option",
-        _ => false,
-    }
-}
-
-fn is_type_parameter_nyar(ty: &NyarType) -> bool {
-    match ty {
-        NyarType::Named(name) => {
-            let text = name.as_str();
-            !text.is_empty() && text.chars().all(|ch| ch.is_ascii_uppercase())
-        }
-        _ => false,
-    }
 }
 
 /// Return/operand SMIR007: accept equal Valkyrie shapes or the same concretized
@@ -318,31 +280,35 @@ fn result_or_option_alias_compatible(actual: &ValkyrieType, expected: &ValkyrieT
             || (is_option_shaped_valkyrie(actual) && is_option_shaped_valkyrie(expected)))
 }
 
-fn payload_type_slot_compatible_nyar(declared: &NyarType, actual: &NyarType) -> bool {
-    declared == actual || is_type_parameter_nyar(declared)
-}
-
-fn payload_type_compatible_valkyrie(actual: Option<&ValkyrieType>, declared: Option<&NyarType>) -> bool {
-    match (actual, declared) {
-        (None, None) => true,
-        (Some(actual), Some(declared)) => {
-            concretize_type(actual).ok().is_some_and(|actual| payload_type_slot_compatible_nyar(declared, &actual))
-        }
-        _ => false,
-    }
-}
-
 fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractError> {
-    for sum in &module.sum_types {
-        if sum.name.is_empty() || sum.variants.is_empty() || sum.tag_width == 0 {
+    for (sum_index, sum) in module.sum_types.iter().enumerate() {
+        if module.sum_types[..sum_index].iter().any(|prior| prior.name == sum.name)
+            || sum.generics.iter().enumerate().any(|(index, generic)| {
+                sum.generics[..index].iter().any(|prior| prior.name == generic.name)
+            })
+        {
+            return Err(SemanticMirContractError {
+                code: "SMIR006", function: sum.name.clone(), location: "sum declaration".to_string(),
+                detail: "sum 声明或泛型 binder 重复".to_string(),
+            });
+        }
+        if sum.name.is_empty() || sum.variants.is_empty() {
             return Err(SemanticMirContractError {
                 code: "SMIR006",
                 function: sum.name.clone(),
                 location: "sum layout".to_string(),
-                detail: "nominal sum layout requires a name, tag width, and at least one variant".to_string(),
+                detail: "sum 声明必须有名称与 variant".to_string(),
             });
         }
         for (index, variant) in sum.variants.iter().enumerate() {
+            if variant.fields.iter().enumerate().any(|(index, field)| {
+                field.name.is_empty() || variant.fields[..index].iter().any(|prior| prior.name == field.name)
+            }) {
+                return Err(SemanticMirContractError {
+                    code: "SMIR006", function: sum.name.clone(), location: "sum variant".to_string(),
+                    detail: "variant 字段身份必须非空且唯一".to_string(),
+                });
+            }
             if variant.name.is_empty() {
                 return Err(SemanticMirContractError {
                     code: "SMIR006",
@@ -1014,7 +980,7 @@ fn ensure_target_exists(
 mod semantic_contract_tests {
     use super::*;
     use crate::{
-        mir::{MirInstruction, MirOperand, MirOperation, SumTypeLayout, SumVariantLayout, ssa::MirExternalCallContract},
+        mir::{MirInstruction, MirOperand, MirOperation, MirSumDeclaration, MirSumVariant, ssa::MirExternalCallContract},
         types::{Identifier, NamePath, hir::HirExprKind},
     };
 
@@ -1023,13 +989,13 @@ mod semantic_contract_tests {
     }
 
     #[test]
-    fn semantic_contract_rejects_nominal_sum_without_tag_layout() {
+    fn semantic_contract_rejects_nominal_sum_without_variants() {
         let mut module = empty_module();
-        module.sum_types.push(SumTypeLayout {
+        module.sum_types.push(MirSumDeclaration {
             name: "Choice".to_string(),
             is_unite: true,
-            tag_width: 0,
-            variants: vec![SumVariantLayout { name: "First".to_string(), tag: 0, payload_type: None }],
+            generics: Vec::new(),
+            variants: Vec::new(),
         });
 
         assert_eq!(validate_semantic_module(&module).unwrap_err().code, "SMIR006");
@@ -1038,13 +1004,13 @@ mod semantic_contract_tests {
     #[test]
     fn semantic_contract_rejects_duplicate_nominal_sum_variant_tag() {
         let mut module = empty_module();
-        module.sum_types.push(SumTypeLayout {
+        module.sum_types.push(MirSumDeclaration {
             name: "Choice".to_string(),
             is_unite: false,
-            tag_width: 32,
+            generics: Vec::new(),
             variants: vec![
-                SumVariantLayout { name: "First".to_string(), tag: 0, payload_type: None },
-                SumVariantLayout { name: "Second".to_string(), tag: 0, payload_type: None },
+                MirSumVariant { name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant { name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
             ],
         });
 

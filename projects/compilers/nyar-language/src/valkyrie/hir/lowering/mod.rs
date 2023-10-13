@@ -2,7 +2,6 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     frontend_contract::{
-        concretize_type_lossy,
         planning::{FrontendNeutralPlan, hir_module_to_frontend_neutral_plan},
     },
     hir::{
@@ -10,7 +9,7 @@ use crate::{
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
-    mir::{FlagsLayout, MirLowerer, SumTypeLayout, SumVariantLayout},
+    mir::{FlagsLayout, MirLowerer, MirSumDeclaration, MirSumVariant, SumTypeLayout},
     types::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
@@ -419,20 +418,14 @@ impl FrontendBuildOutput {
 
 /// Collect sum-type and flags layouts from a lowered HIR module.
 pub fn compute_nominal_layouts(module: &HirModule) -> (Vec<SumTypeLayout>, Vec<FlagsLayout>) {
-    (collect_sum_type_layouts(module), collect_flags_layouts(module))
+    (collect_sum_declarations(module).iter().map(MirSumDeclaration::physical_layout).collect(), collect_flags_layouts(module))
 }
 
-fn variant_payload_type_from_fields(fields: &[HirField]) -> Option<ValkyrieType> {
-    if fields.is_empty() {
-        return None;
-    }
-    if fields.len() == 1 {
-        return Some(fields[0].ty.clone());
-    }
-    Some(ValkyrieType::Tuple(fields.iter().map(|field| field.ty.clone()).collect()))
+pub(crate) fn compute_nominal_declarations(module: &HirModule) -> (Vec<MirSumDeclaration>, Vec<FlagsLayout>) {
+    (collect_sum_declarations(module), collect_flags_layouts(module))
 }
 
-fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
+fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
     let mut layouts = module
         .enums
         .iter()
@@ -446,14 +439,15 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
                     // `enums`: `= N` or auto-increment after the last explicit / implicit tag.
                     let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
-                    SumVariantLayout {
+                    MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        payload_type: variant_payload_type_from_fields(&variant.fields).as_ref().map(concretize_type_lossy),
+                        fields: variant.fields.iter().map(|field| crate::mir::MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        result_type: variant.result_type.clone(),
                     }
                 })
                 .collect();
-            SumTypeLayout { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, tag_width: 4, variants }
+            MirSumDeclaration { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants }
         })
         .collect::<Vec<_>>();
     // Dependency packages may define `Result` / `Option` without copying the
@@ -461,9 +455,6 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
     // sum metadata for SumNew / SumPayloadGet contract checks.
     for export in &module.imported_semantic_exports {
         for enum_def in &export.enums {
-            if layouts.iter().any(|layout| layout.name == enum_def.name.as_str()) {
-                continue;
-            }
             let mut next_implicit = 0u32;
             let variants = enum_def
                 .variants
@@ -471,14 +462,18 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
                 .map(|variant| {
                     let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
-                    SumVariantLayout {
+                    MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        payload_type: variant_payload_type_from_fields(&variant.fields).as_ref().map(concretize_type_lossy),
+                        fields: variant.fields.iter().map(|field| crate::mir::MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        result_type: variant.result_type.clone(),
                     }
                 })
                 .collect();
-            layouts.push(SumTypeLayout { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, tag_width: 4, variants });
+            let declaration = MirSumDeclaration { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants };
+            if !layouts.contains(&declaration) {
+                layouts.push(declaration);
+            }
         }
     }
     layouts

@@ -2036,7 +2036,7 @@ fn substitute_type_parameters(ty: &ValkyrieType, receiver: &ValkyrieType, actual
     substitute_type_vars(ty, &substitutions)
 }
 
-fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
+pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<Identifier, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Named(name) => substitutions.get(name).cloned().unwrap_or_else(|| ty.clone()),
         ValkyrieType::Generic(generic) => substitutions.get(&generic.name).cloned().unwrap_or_else(|| ty.clone()),

@@ -4,7 +4,6 @@ use crate::types::{
     Identifier, NamePath,
     hir::{HirExpr, HirExprKind, HirExtractorPattern, HirLiteral, HirPattern, HirResolvedCall, ValkyrieType},
 };
-use nyar_types::NyarType;
 
 use super::{
     MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
@@ -430,23 +429,9 @@ impl MirBuilder {
                 return None;
             }
             let variant = sum.variants.iter().find(|variant| variant.name == variant_simple)?;
-            let payload_ty = variant.payload_type.as_ref().and_then(sum_payload_to_valkyrie)?;
+            let payload_ty = sum.instantiate_payload(variant, &super::expr_lowering::type_args_from_sum_shaped(actual_type))??;
             Some((sum.name.clone(), payload_ty))
         })?;
-        let payload_ty = match actual_type {
-            ValkyrieType::Apply(_, args) if matches!(variant_simple, "Fine" | "Some" | "Left" | "Ok") => {
-                args.first().cloned().unwrap_or(payload_ty)
-            }
-            ValkyrieType::Apply(_, args) if matches!(variant_simple, "Fail" | "Right" | "Err") => {
-                if args.len() >= 2 {
-                    args.get(1).cloned().unwrap_or(payload_ty)
-                }
-                else {
-                    payload_ty
-                }
-            }
-            _ => payload_ty,
-        };
         let variant_id = self.variant_id(&canonical_sum_name, variant_simple)?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
@@ -1299,30 +1284,6 @@ impl MirBuilder {
 fn extractor_resolved_call(extractor: &HirExtractorPattern) -> Option<&HirResolvedCall> {
     match extractor {
         HirExtractorPattern::Constructor { resolved, .. } | HirExtractorPattern::Array { resolved, .. } => resolved.as_ref(),
-    }
-}
-
-/// Map sum-variant `NyarType` payload back to a MIR `ValkyrieType` for SSA typing.
-fn sum_payload_to_valkyrie(ty: &NyarType) -> Option<ValkyrieType> {
-    match ty {
-        NyarType::Named(name) => Some(ValkyrieType::Named(Identifier::new(name.as_str()))),
-        NyarType::Utf8 => Some(ValkyrieType::Utf8),
-        NyarType::Utf16 => Some(ValkyrieType::Utf16),
-        NyarType::Boolean => Some(ValkyrieType::Boolean),
-        NyarType::Unit => Some(ValkyrieType::Unit),
-        NyarType::Integer32 { signed } => Some(ValkyrieType::Integer32 { signed: *signed }),
-        NyarType::Integer64 { signed } => Some(ValkyrieType::Integer64 { signed: *signed }),
-        NyarType::Integer16 { signed } => Some(ValkyrieType::Integer16 { signed: *signed }),
-        NyarType::Integer8 { signed } => Some(ValkyrieType::Integer8 { signed: *signed }),
-        NyarType::Float32 => Some(ValkyrieType::Float32),
-        NyarType::Float64 => Some(ValkyrieType::Float64),
-        NyarType::Character => Some(ValkyrieType::Character),
-        NyarType::Array(inner) => Some(ValkyrieType::Array(Box::new(sum_payload_to_valkyrie(inner)?))),
-        NyarType::Tuple(items) => {
-            let mapped = items.iter().map(sum_payload_to_valkyrie).collect::<Option<Vec<_>>>()?;
-            Some(ValkyrieType::Tuple(mapped))
-        }
-        _ => None,
     }
 }
 

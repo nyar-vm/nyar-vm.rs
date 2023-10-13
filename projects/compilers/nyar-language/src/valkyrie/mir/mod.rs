@@ -4,6 +4,8 @@ pub mod singleton;
 /// `SSA`-based `MIR` main representation.
 pub mod ssa;
 pub mod validation;
+mod sum;
+pub use sum::{MirSumDeclaration, MirSumVariant};
 
 use std_data::text::valkyrie::{AstParser, ParseError, ValkyrieRoot};
 

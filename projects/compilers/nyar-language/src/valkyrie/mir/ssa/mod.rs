@@ -52,6 +52,7 @@ use nyar_types::{ItemInstanceId, VariantId};
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, named_type_name};
 use expr_lowering::lower_literal;
+use super::MirSumDeclaration;
 
 /// `MIR` lowering 阶段产生的编译期诊断。
 ///
@@ -111,12 +112,9 @@ pub struct MirModule {
     pub type_identities: BTreeMap<ValkyrieType, nyar_types::TypeId>,
     /// Value/reference aggregate inline layout plan.
     pub aggregate_layouts: value_semantics::AggregateLayoutPlan,
-    /// Canonical nominal-sum registry.  This is language semantic metadata:
-    /// nullable `T?` is represented by `ValkyrieType::Nullable`, while a
-    /// declared sum such as `Option<T>` is represented here with its tags and
-    /// payload contracts.  Backends may project either form differently, but
-    /// must not reconstruct either from names or host string representations.
-    pub sum_types: Vec<SumTypeLayout>,
+    /// Compiler 保留的 sum 声明、泛型 binder、字段类型与 variant refinement。
+    /// nullable 类型不冒充名义 sum；物理布局不能成为本表的事实来源。
+    pub sum_types: Vec<MirSumDeclaration>,
     /// `MIR` 阶段确定的 flags 名义布局；装配和后端不得从 HIR 重新收集。
     pub flags_types: Vec<FlagsLayout>,
     /// `MIR` lowering 过程中收集的编译期诊断，由校验层转化为编译错误。
@@ -663,7 +661,7 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
+        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
         let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
@@ -737,7 +735,7 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
+        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
         let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
@@ -1170,7 +1168,7 @@ fn lower_function_semantic(
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
-    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_layouts(module);
+    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
         struct_field_layouts.clone(),
@@ -1295,8 +1293,8 @@ struct MirBuilder {
     struct_parent_index: BTreeMap<String, Vec<String>>,
     struct_is_value_type: BTreeMap<String, bool>,
     aggregate_layouts: AggregateLayoutPlan,
-    /// Unite/enum layouts for nullary variant `tag` compares (`case LeftBrace:`).
-    sum_types: Vec<SumTypeLayout>,
+    /// sum 的语义声明；实例化使用声明 binder，不以布局恢复类型。
+    sum_types: Vec<MirSumDeclaration>,
     singleton_accessors: BTreeMap<String, String>,
     static_bindings: BTreeMap<String, HirExpr>,
     terminator: Option<MirTerminator>,

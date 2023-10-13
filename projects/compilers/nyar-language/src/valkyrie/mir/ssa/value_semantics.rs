@@ -256,7 +256,7 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str
 }
 
 /// Ensure every unite in `sum_types` has a tagged aggregate layout for FieldGet contracts.
-pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: &[SumTypeLayout]) {
+pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: &[super::MirSumDeclaration]) {
     for sum in sum_types {
         if sum.is_unite {
             ensure_unite_tagged_layout(plan, &sum.name);

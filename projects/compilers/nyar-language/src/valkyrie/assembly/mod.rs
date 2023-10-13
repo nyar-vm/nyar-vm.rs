@@ -116,7 +116,7 @@ pub fn assemble_fragment(
         control_flow,
         suspend_runtime,
         aggregate_layouts: mir.aggregate_layouts.clone(),
-        sum_types: mir.sum_types.clone(),
+        sum_types: mir.sum_types.iter().map(crate::mir::MirSumDeclaration::physical_layout).collect(),
         flags_types: mir.flags_types.clone(),
         executable_functions,
         singleton_instances: collect_singleton_instance_plans(hir_module),

@@ -1147,7 +1147,7 @@ impl MirBuilder {
                             .iter()
                             .find(|sum| sum.name.as_str() == sum_type)
                             .and_then(|sum| sum.variants.iter().find(|variant| variant.name == name.as_str()))
-                            .and_then(|variant| variant.payload_type.as_ref().and_then(Self::nyar_field_type))
+                            .and_then(|variant| variant.payload_type())
                     });
                     let payload = match field_values.len() {
                         0 => None,
@@ -1352,7 +1352,7 @@ impl MirBuilder {
                     .iter()
                     .find(|sum| {
                         preferred_owner.is_some_and(|owner| sum.name.as_str() == owner)
-                            && sum.variants.iter().any(|variant| variant.name == variant_name && variant.payload_type.is_none())
+                            && sum.variants.iter().any(|variant| variant.name == variant_name && variant.fields.is_empty())
                     })
                     .map(|sum| preferred_owner.map(str::to_string).unwrap_or_else(|| sum.name.clone()))
             })
@@ -1360,7 +1360,7 @@ impl MirBuilder {
                 let matches: Vec<String> = self
                     .sum_types
                     .iter()
-                    .filter(|sum| sum.variants.iter().any(|variant| variant.name == variant_name && variant.payload_type.is_none()))
+                    .filter(|sum| sum.variants.iter().any(|variant| variant.name == variant_name && variant.fields.is_empty()))
                     .map(|sum| sum.name.clone())
                     .collect();
                 (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
@@ -1563,7 +1563,7 @@ fn payload_type_for_variant(sum_type: &ValkyrieType, variant: &str) -> Option<Va
 fn sum_new_parts_from_constructor(
     call: &HirResolvedCall,
     arguments: &[MirOperand],
-    sum_types: &[nyar_types::SumTypeLayout],
+    sum_types: &[super::MirSumDeclaration],
 ) -> Option<(String, Vec<ValkyrieType>, String, Option<ValkyrieType>, Option<MirOperand>)> {
     let variant = call.symbol.parts().last()?.to_string();
     let (sum_type, type_args) = match &call.return_type {
