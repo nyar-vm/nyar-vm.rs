@@ -4,7 +4,6 @@
 mod artifacts;
 mod assembly;
 mod backend;
-mod backend_plan;
 pub mod contracts;
 mod driver;
 pub mod executable_provider;
@@ -42,7 +41,6 @@ use crate::{
 };
 
 pub use assembly::fragment_submission_from_assembled;
-pub use backend_plan::{BackendPlanError, BackendPrivatePlan, prepare_backend_plan};
 pub use executable_provider::{ExecutableProvider, FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 pub use nullable_profiles::{
