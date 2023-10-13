@@ -1,84 +1,71 @@
-//! Compile pipeline driver: link → validate → sparse representation plan.
-//!
-//! BackendPrivatePlan / Emit remain intentionally unwired here (backend crates).
+//! Compiler 在依赖闭包完成后生产唯一的已验证成功载荷。
 
-use nyar_types::{
-    CanonicalProgram, CompiledProgram, LinkedSemanticProgram, StageResult,
-    pipeline::{LinkStage, RepresentationPlanStage, ValidateMirStage},
-};
+use nyar_types::{CompiledProgram, CompileStage, StageResult, pipeline::RepresentationPlanStage};
 
-use super::diagnostics::fail_stage;
+use crate::valkyrie::mir::{MirModule, validation::validate_semantic_module};
 
-/// Analysis-stream success through M2.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnalysisOutcome {
-    /// Closed linked program.
-    pub linked: LinkedSemanticProgram,
-    /// Validated canonical bundle.
-    pub program: CanonicalProgram,
+use super::{CanonicalRepresentationPlanner, canonical_program_from_semantic_mir, fail_stage};
+
+pub(crate) fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledProgram> {
+    if let Err(error) = validate_semantic_module(module) {
+        return fail_stage(
+            CompileStage::ValidateMir,
+            "PIPE004",
+            &module.name,
+            format!("Semantic MIR 合同失败: {error:?}"),
+        );
+    }
+    let canonical = canonical_program_from_semantic_mir(module)?;
+    let representation = CanonicalRepresentationPlanner.plan(&canonical)?;
+    match CompiledProgram::new(canonical, representation) {
+        Ok(program) => Ok(program),
+        Err(error) => fail_stage(
+            CompileStage::RepresentationPlan,
+            "PIPE005",
+            &module.name,
+            format!("CanonicalProgram 与 RepresentationPlan 合同不一致: {error:?}"),
+        ),
+    }
 }
 
-/// Processing-stream success through sparse representation planning.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessingOutcome {
-    /// Canonical 与 RepresentationPlan 的不可拆分成功载荷。
-    pub artifact: CompiledProgram,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ValkyrieCompiler, mir::{MirLowerer, MirOperation}};
 
-/// One-way driver over stage contracts from `nyar_types::pipeline`.
-///
-/// Does not accept `FrontendNeutralPlan` or `FragmentSubmission` as inputs.
-#[derive(Debug, Clone)]
-pub struct CompilePipeline<L, V, P> {
-    linker: L,
-    validator: V,
-    planner: P,
-}
-
-impl<L, V, P> CompilePipeline<L, V, P>
-where
-    L: LinkStage,
-    V: ValidateMirStage,
-    P: RepresentationPlanStage,
-{
-    /// Construct a pipeline from stage implementations.
-    pub fn new(linker: L, validator: V, planner: P) -> Self {
-        Self { linker, validator, planner }
+    #[test]
+    fn source_calls_and_branch_values_reach_the_success_contract() {
+        let output = ValkyrieCompiler::default().compile_source_to_build_output(
+            "micro identity(value: i32) -> i32 { return value } \
+             micro choose(flag: bool, value: i32) -> i32 { \
+                 if flag { return identity(value) } else { return value } }",
+        ).expect("当前源码经过真实构建入口完成语义与表示合同");
+        let program = output.compiled_program();
+        assert_eq!(program.canonical().mir.functions.len(), 2);
+        assert_eq!(program.representation().invoke_lowerings.len(), 1);
+        assert_eq!(
+            program.representation().value_reps.len(),
+            program.canonical().mir.functions.values().map(|function| function.value_types.len()).sum::<usize>(),
+        );
     }
 
-    /// Run analysis half: link → validate → [`CanonicalProgram`].
-    pub fn run_analysis(&self) -> StageResult<AnalysisOutcome> {
-        let linked = self.linker.link()?;
-        let program = self.validator.validate(&linked)?;
-        Ok(AnalysisOutcome { linked, program })
-    }
-
-    /// Run processing half starting from an already-validated program.
-    pub fn run_processing(&self, program: &CanonicalProgram) -> StageResult<ProcessingOutcome> {
-        if let Err(error) = program.validate() {
-            return fail_stage(
-                nyar_types::CompileStage::ValidateMir,
-                "PIPE004",
-                &program.mir.module_name,
-                format!("canonical Semantic MIR contract failed: {error:?}"),
-            );
-        }
-        let representation = self.planner.plan(program)?;
-        let artifact = CompiledProgram::new(program.clone(), representation).map_err(|error| {
-            fail_stage::<()>(
-                nyar_types::CompileStage::RepresentationPlan,
-                "PIPE005",
-                &program.mir.module_name,
-                format!("CanonicalProgram 与 RepresentationPlan 合同不一致: {error:?}"),
-            )
-            .expect_err("fail_stage 必须返回结构化错误")
-        })?;
-        Ok(ProcessingOutcome { artifact })
-    }
-
-    /// 先跑分析，再进入稀疏 representation planning。
-    pub fn run_through_representation_plan(&self) -> StageResult<ProcessingOutcome> {
-        let analysis = self.run_analysis()?;
-        self.run_processing(&analysis.program)
+    #[test]
+    fn semantic_call_failure_stops_before_canonical_and_representation() {
+        let hir = ValkyrieCompiler::default().compile_source(
+            "micro identity(value: i32) -> i32 { return value } \
+             micro use_identity(value: i32) -> i32 { return identity(value) }",
+        ).expect("当前源码解析调用");
+        let mut mir = MirLowerer::lower_module_semantic(&hir);
+        let arguments = mir.functions.iter_mut()
+            .flat_map(|function| &mut function.blocks)
+            .flat_map(|block| &mut block.instructions)
+            .find_map(|instruction| match &mut instruction.kind {
+                MirOperation::Call { arguments, .. } => Some(arguments),
+                _ => None,
+            }).expect("源码普通调用");
+        arguments.clear();
+        let error = compile_linked_semantic_mir(&mir).expect_err("不能绕过 Semantic MIR 实参合同");
+        assert_eq!(error.records[0].stage, CompileStage::ValidateMir);
+        assert_eq!(error.records[0].code, "PIPE004");
     }
 }

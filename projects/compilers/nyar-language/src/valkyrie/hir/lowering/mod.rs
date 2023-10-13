@@ -351,15 +351,8 @@ impl FrontendBuildOutput {
         neutral_plan: FrontendNeutralPlan,
         semantic_mir: crate::valkyrie::mir::MirModule,
     ) -> Result<Self, ParseError> {
-        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
-            .map_err(|error| ParseError::invalid(format!("CanonicalProgram 生产失败: {error:?}")))?;
-        let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
-            &crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner,
-            &canonical_program,
-        )
-            .map_err(|error| ParseError::invalid(format!("RepresentationPlan 生产失败: {error:?}")))?;
-        let compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
-            .map_err(|error| ParseError::invalid(format!("CompiledProgram 合同失败: {error:?}")))?;
+        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
+            .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
         Ok(Self { hir_module, neutral_plan, semantic_mir, compiled_program })
     }
 
@@ -386,28 +379,6 @@ impl FrontendBuildOutput {
     /// 返回 Compiler 生成的不可拆分成功载荷。
     pub fn compiled_program(&self) -> &nyar_types::CompiledProgram {
         &self.compiled_program
-    }
-
-    /// Link reachable Valkyrie dependency MIR bodies into this consumer's semantic MIR.
-    ///
-    /// Semantic-group compilation retains dependency MIR separately; Stage1 emit
-    /// requires those bodies in the executable registry (SMIR003), not only SPI
-    /// signature contracts.
-    fn link_dependency_mir_modules(&mut self, dependency_mirs: &[crate::valkyrie::mir::MirModule]) -> Result<(), ParseError> {
-        let mut semantic_mir = self.semantic_mir.clone();
-        crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut semantic_mir, dependency_mirs)?;
-        let canonical_program = crate::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&semantic_mir)
-            .map_err(|error| ParseError::invalid(format!("依赖链接后的 CanonicalProgram 生产失败: {error:?}")))?;
-        let representation = nyar_types::pipeline::RepresentationPlanStage::plan(
-            &crate::valkyrie::compile_pipeline::CanonicalRepresentationPlanner,
-            &canonical_program,
-        )
-        .map_err(|error| ParseError::invalid(format!("依赖链接后的 RepresentationPlan 生产失败: {error:?}")))?;
-        let compiled_program = nyar_types::CompiledProgram::new(canonical_program, representation)
-            .map_err(|error| ParseError::invalid(format!("依赖链接后的 CompiledProgram 合同失败: {error:?}")))?;
-        self.semantic_mir = semantic_mir;
-        self.compiled_program = compiled_program;
-        Ok(())
     }
 
     /// 返回 `HIR` 函数数量，供装配层做调试输出。

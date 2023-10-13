@@ -7,7 +7,8 @@
 //!
 //! 本模块只负责编排。不得复活并行权威
 //! （`FrontendNeutralPlan`、`FragmentSubmission` 体旁路、God Call 字段）。
-//! 在 CanonicalProgram + 稳定 ID 成为唯一成功路径之前，禁止接通 Invoke / ItemInstance。
+//! 依赖闭包完成后，由同一入口校验 Semantic MIR 并生产表示规划成功载荷。
+//! 目标 preparation 与旧装配成功链的替换尚未完成。
 
 mod diagnostics;
 mod driver;
@@ -15,15 +16,13 @@ mod envelope_checks;
 mod canonical;
 mod link;
 mod representation;
-mod stubs;
 
 pub use diagnostics::{diagnostic, fail_stage};
-pub use driver::{AnalysisOutcome, CompilePipeline, ProcessingOutcome};
+pub(crate) use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use canonical::canonical_program_from_semantic_mir;
 pub(crate) use link::link_reachable_dependency_mir;
 pub use representation::CanonicalRepresentationPlanner;
-pub use stubs::{FailClosedLinker, FailClosedPlanner, FailClosedValidator};
 
 use nyar_types::CompileStage;
 
