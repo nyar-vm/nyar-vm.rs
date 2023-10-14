@@ -10,7 +10,7 @@ use crate::types::{
 
 use super::{
     AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirFunction, MirInstruction, MirModule, MirOperand, MirSuspendPoint, MirValue,
-    MirValueRef, lower_function, lower_literal,
+    MirValueRef, lower_function_semantic, lower_literal,
 };
 
 /// `MIR` 集成测试使用的只读构建器包装。
@@ -142,7 +142,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         statements: Vec::new(),
         type_aliases: Vec::new(),
     };
-    lower_function(
+    lower_function_semantic(
         &module,
         &function,
         &BTreeMap::new(),
@@ -158,7 +158,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
 
 /// 构造一个最小模块并降低为 `MIR`。
 pub fn lower_test_module(functions: Vec<HirFunction>, structs: Vec<HirStruct>) -> MirModule {
-    super::MirLowerer::lower_module(&HirModule {
+    super::MirLowerer::lower_module_semantic(&HirModule {
         name: NamePath::new(vec![Identifier::new("demo")]),
         doc: HirDocumentation::default(),
         imports: Vec::new(),

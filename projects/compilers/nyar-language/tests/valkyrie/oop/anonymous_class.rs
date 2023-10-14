@@ -46,7 +46,7 @@ micro make_point(radius: f64) {
 }
 "#;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9301 }).compile_source(source).expect("compile");
-    let mir = MirLowerer::lower_module(&hir);
+    let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { .. })))
     }));

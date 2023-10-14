@@ -36,7 +36,7 @@ fn qualified_symbol_from_string(symbol: &str) -> QualifiedName {
 
 /// 从 `HirModule` 提取所有 `MirFunction`，构造 `mir_functions` 映射供 `FragmentSubmission` 携带。
 fn extract_mir_functions(hir: &nyar_language::types::hir::HirModule) -> BTreeMap<QualifiedName, ExecutableFunction> {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     mir.functions.iter().map(|function| (qualified_symbol_from_string(&function.symbol), function.clone().into())).collect()
 }
 
@@ -108,7 +108,7 @@ fn suspend_submission(
     witness_tables: Vec<WitnessSubmission>,
     capabilities: Vec<CapabilityTag>,
 ) -> FragmentSubmission {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     let function = mir
         .functions
         .iter()
@@ -131,7 +131,7 @@ fn suspend_submission(
 /// 断言前端 `SuspendLoweringPlan` descriptor 与 backend `SuspendFunctionArtifact` 的 state_id / effect /
 /// resume_parameter_count / frame_carrier / continuation_index / spill_fields 一致（Task 7.3 跨层一致性）。
 fn assert_cross_layer_consistency(hir: &nyar_language::types::hir::HirModule, function_name: &str) {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     let function = mir.functions.iter().find(|f| f.symbol.contains(function_name)).expect("suspend function");
     let plan = function.suspend_plan.as_ref().expect("suspend plan");
     assert_eq!(plan.states.len(), 1, "expected single suspend state in frontend plan");

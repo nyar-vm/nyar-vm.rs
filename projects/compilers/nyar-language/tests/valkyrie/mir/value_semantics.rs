@@ -20,7 +20,7 @@ micro main() {
 "#,
         )
         .expect("compile");
-    let mir = MirLowerer::lower_module(&hir);
+    let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.structs.iter().any(|item| item.name == "Point" && item.is_value_type));
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
@@ -46,7 +46,7 @@ micro main() {
 "#,
         )
         .expect("compile");
-    let mir = MirLowerer::lower_module(&hir);
+    let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.structs.iter().any(|item| item.name == "Node" && !item.is_value_type));
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
@@ -88,7 +88,7 @@ micro main() {
 "#,
         )
         .expect("compile");
-    let mir = MirLowerer::lower_module(&hir);
+    let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.functions.iter().any(|function| {
         function.blocks.iter().any(|block| {
             block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::StructNew { .. }))

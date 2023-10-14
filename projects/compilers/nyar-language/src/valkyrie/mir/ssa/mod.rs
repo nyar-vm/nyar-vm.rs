@@ -37,6 +37,8 @@ mod singleton_tests;
 #[cfg(test)]
 mod call_type_contract_tests;
 #[cfg(test)]
+mod declaration_contract_tests;
+#[cfg(test)]
 mod workload_phase_tests;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
@@ -670,7 +672,7 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let mut functions = Vec::new();
         let mut diagnostics = Vec::new();
-        for function in &module.functions {
+        for function in module.functions.iter().filter(|function| !function.is_abstract) {
             functions.push(lower_function_semantic(
                 module,
                 function,
@@ -723,79 +725,6 @@ impl MirLowerer {
             diagnostics,
         };
         result
-    }
-
-    pub fn lower_module(module: &HirModule) -> MirModule {
-        let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
-        crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
-        merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
-        let singleton_accessors = crate::valkyrie::mir::singleton_accessor_map(module);
-        let mut struct_parent_index = collect_struct_parent_index(&module.structs);
-        merge_imported_struct_parent_index(module, &mut struct_parent_index);
-        let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
-        merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
-        let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
-        value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
-        let effectful_resume_map = collect_effectful_resume_map(module);
-        let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
-        let imports = module.imports.iter().map(|import| import.path.to_string()).collect();
-        let external_calls = collect_external_call_contracts(module);
-        let (exports, entries) = collect_surface_contracts(module);
-        let mut functions = Vec::new();
-        let mut diagnostics = Vec::new();
-        for function in &module.functions {
-            functions.push(lower_function(
-                module,
-                function,
-                &struct_field_layouts,
-                &struct_parent_index,
-                &struct_is_value_type,
-                &mut aggregate_layouts,
-                &singleton_accessors,
-                &effectful_resume_map,
-                None,
-                &mut diagnostics,
-            ));
-        }
-        functions.extend(lower_singleton_method_functions(
-            module,
-            &struct_field_layouts,
-            &struct_parent_index,
-            &struct_is_value_type,
-            &mut aggregate_layouts,
-            &singleton_accessors,
-            &effectful_resume_map,
-            &mut diagnostics,
-        ));
-        functions.extend(lower_impl_method_functions(
-            module,
-            &struct_field_layouts,
-            &struct_parent_index,
-            &struct_is_value_type,
-            &mut aggregate_layouts,
-            &singleton_accessors,
-            &effectful_resume_map,
-            &mut diagnostics,
-        ));
-        // MirFunction 不再携带 per-function diagnostics。
-        let callable_identities = callable_identity_table(&functions, &external_calls);
-        let type_identities = type_identity_table(&functions, &external_calls, &structs);
-        MirModule {
-            name: module.name.to_string(),
-            functions,
-            structs,
-            imports,
-            external_calls,
-            exports,
-            entries,
-            callable_identities,
-            type_identities,
-            aggregate_layouts,
-            sum_types,
-            flags_types,
-            diagnostics,
-        }
     }
 
 }
@@ -1126,33 +1055,6 @@ fn merge_imported_struct_is_value_type(module: &HirModule, is_value_type: &mut B
             is_value_type.entry(name).or_insert(value);
         }
     }
-}
-
-fn lower_function(
-    module: &HirModule,
-    function: &HirFunction,
-    struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
-    struct_parent_index: &BTreeMap<String, Vec<String>>,
-    struct_is_value_type: &BTreeMap<String, bool>,
-    aggregate_layouts: &mut AggregateLayoutPlan,
-    singleton_accessors: &BTreeMap<String, String>,
-    effectful_resume_map: &BTreeMap<String, ValkyrieType>,
-    impl_owner_type: Option<ValkyrieType>,
-    diagnostics: &mut Vec<MirDiagnostic>,
-) -> MirFunction {
-    let mut function = lower_function_semantic(
-        module,
-        function,
-        struct_field_layouts,
-        struct_parent_index,
-        struct_is_value_type,
-        aggregate_layouts,
-        singleton_accessors,
-        effectful_resume_map,
-        impl_owner_type,
-        diagnostics,
-    );
-    function
 }
 
 fn lower_function_semantic(

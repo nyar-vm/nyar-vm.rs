@@ -35,13 +35,13 @@ fn qualified_symbol_from_string(symbol: &str) -> QualifiedName {
 
 /// 从 `HirModule` 提取所有 `MirFunction`，构造 `mir_functions` 映射供 `FragmentSubmission` 携带。
 fn extract_mir_functions(hir: &nyar_language::types::hir::HirModule) -> BTreeMap<QualifiedName, ExecutableFunction> {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     mir.functions.iter().map(|function| (qualified_symbol_from_string(&function.symbol), function.clone().into())).collect()
 }
 
 /// 从 `HirModule` 中查找指定后缀的函数符号，返回其 `QualifiedName`。
 fn find_function_symbol(hir: &nyar_language::types::hir::HirModule, function_suffix: &str) -> QualifiedName {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     let function = mir
         .functions
         .iter()

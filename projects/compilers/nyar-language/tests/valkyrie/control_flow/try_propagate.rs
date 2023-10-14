@@ -59,7 +59,7 @@ micro main() -> Result<utf8, utf8> {
         }
     }));
 
-    let mir = MirLowerer::lower_module(&hir);
+    let mir = MirLowerer::lower_module_semantic(&hir);
     let main_mir = mir.functions.iter().find(|f| f.symbol.contains("main")).expect("main mir");
     assert!(!main_mir.blocks.is_empty());
 }

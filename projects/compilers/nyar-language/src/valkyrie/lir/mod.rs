@@ -48,7 +48,7 @@ impl ValkyrieCompiler {
     pub fn lower_root_to_lir(&self, root: &ValkyrieRoot) -> Result<LirModule, ParseError> {
         let hir = self.lower_root(root)?;
         ControlFlowScheduler::validate_hir_module(&hir)?;
-        let mir = MirLowerer::lower_module(&hir);
+        let mir = MirLowerer::lower_module_semantic(&hir);
         ControlFlowScheduler::validate_mir_module(&mir)?;
         let lir = LirLowerer::lower_mir_module(&hir, &mir);
         validation::validate_module(&lir)?;

@@ -87,7 +87,7 @@ pub fn compile_fixture(source: &str) -> nyar_language::types::hir::HirModule {
 /// by `function.symbol == operation`, where `function_symbol` prefixes the function name with
 /// the module name, so callers must pass the fully-qualified symbol rather than the bare name.
 fn qualified_symbol_from_mir(hir: &nyar_language::types::hir::HirModule, function_suffix: &str) -> QualifiedName {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     let function = mir
         .functions
         .iter()
@@ -106,7 +106,7 @@ pub fn assert_return_mir_shape(hir: &nyar_language::types::hir::HirModule) {
 
 /// Assert `fetch()?` lowers to `try_propagate_ok` and `try_propagate_early_exit` blocks.
 pub fn assert_nullable_try_mir_shape(hir: &nyar_language::types::hir::HirModule) {
-    let mir = MirLowerer::lower_module(hir);
+    let mir = MirLowerer::lower_module_semantic(hir);
     let function = mir.functions.iter().find(|f| f.symbol.ends_with("::main")).expect("main function");
     assert!(function.blocks.iter().any(|block| block.label.contains("try_propagate_ok")), "expected try_propagate_ok block");
     assert!(function.blocks.iter().any(|block| block.label.contains("try_propagate_early_exit")), "expected try_propagate_early_exit block");

@@ -17,7 +17,7 @@ micro main() -> ExitCode {
 }
 "#;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 }).compile_source(source).expect("compile");
-    let module = MirLowerer::lower_module(&hir);
+    let module = MirLowerer::lower_module_semantic(&hir);
     let mut out = String::new();
     for function in &module.functions {
         out.push_str(&format!("=== Function: {} ===\n", function.symbol));
