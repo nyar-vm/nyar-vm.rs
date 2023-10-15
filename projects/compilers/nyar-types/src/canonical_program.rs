@@ -133,6 +133,8 @@ pub enum NominalValueSemantics {
 pub struct NominalInstanceRecord {
     /// 名义类型声明身份。
     pub declaration: TypeId,
+    /// 完成泛型代入的完整实例类型；不同实参不得共用字段或 variant 合同。
+    pub ty: TypeId,
     /// 完成代入后的类型实例身份。
     pub substitution: SubstitutionId,
     /// 声明决定的值/引用语义，不能由字段数量或目标布局推断。
@@ -268,10 +270,17 @@ impl LinkedSemanticProgram {
             }
         }
         let mut nominal_semantics = BTreeMap::new();
+        let mut nominal_types = std::collections::BTreeSet::new();
         let mut declared_fields = std::collections::BTreeSet::new();
         for (nominal, record) in &self.nominal_instances {
             if !matches!(self.types.get(&record.declaration).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration) {
                 return Err(CanonicalMirError::InvalidNominalDeclaration { nominal: *nominal, declaration: record.declaration });
+            }
+            if !matches!(self.types.get(&record.ty).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration) {
+                return Err(CanonicalMirError::InvalidNominalInstanceType { nominal: *nominal, ty: record.ty });
+            }
+            if !nominal_types.insert(record.ty) {
+                return Err(CanonicalMirError::DuplicateNominalInstanceType { ty: record.ty });
             }
             if let Some(previous) = nominal_semantics.insert(record.declaration, record.semantics) {
                 if previous != record.semantics {
@@ -489,6 +498,10 @@ pub enum CanonicalMirError {
     MissingNominalSemantics { declaration: TypeId },
     /// 名义实例没有对应的名义声明类型。
     InvalidNominalDeclaration { nominal: NominalInstanceId, declaration: TypeId },
+    /// 实例类型未知、非名义类型或不属于该声明。
+    InvalidNominalInstanceType { nominal: NominalInstanceId, ty: TypeId },
+    /// 同一完整实例类型被重复登记为不同名义实例。
+    DuplicateNominalInstanceType { ty: TypeId },
     /// 同一声明的实例携带了互相矛盾的值/引用语义。
     ConflictingNominalSemantics { declaration: TypeId },
     /// 字段清单重复、缺失或与 owner/类型合同不一致。
@@ -784,7 +797,7 @@ impl CanonicalSemanticMir {
                             return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
                         };
                         let result_type = instruction.results.first().and_then(|value| function.value_types.get(value));
-                        let result_is_owner = result_type.is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration));
+                        let result_is_owner = result_type == Some(&owner.ty);
                         if instruction.results.len() != 1 || !result_is_owner {
                             return Err(if instruction.results.len() == 1 {
                                 CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
@@ -818,7 +831,7 @@ impl CanonicalSemanticMir {
                         let Some(owner) = linked.nominal_instances.get(&record.owner) else {
                             return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
                         };
-                        if !matches!(linked.types.get(object_type).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration) {
+                        if *object_type != owner.ty {
                             return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
                         }
                         vec![*object]
@@ -841,7 +854,7 @@ impl CanonicalSemanticMir {
                         let Some(owner) = linked.nominal_instances.get(&record.owner) else {
                             return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
                         };
-                        if !matches!(linked.types.get(object_type).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == owner.declaration) {
+                        if *object_type != owner.ty {
                             return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
                         }
                         vec![*object]
@@ -870,7 +883,7 @@ impl CanonicalSemanticMir {
                                 return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
                             }
                         }
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)).is_none_or(|ty| !matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == nominal_record.declaration)) {
+                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&nominal_record.ty) {
                             return Err(if instruction.results.len() == 1 {
                                 CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
                             } else {
@@ -886,12 +899,11 @@ impl CanonicalSemanticMir {
                         let Some(object_ty) = function.value_types.get(object) else {
                             return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
                         };
-                        let Some(CanonicalTypeKind::Nominal { declaration, .. }) = linked.types.get(object_ty).map(|record| &record.kind) else {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
                         };
-                        let nominal = linked.nominal_instances.iter().find_map(|(id, instance)| (instance.declaration == *declaration).then_some(*id));
-                        if nominal != Some(record.owner) {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: nominal.unwrap_or(record.owner) });
+                        if *object_ty != owner.ty {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
                         }
                         if instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&record.ty) {
                             return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: instruction.results.first().copied().unwrap_or(*object) });
@@ -908,12 +920,11 @@ impl CanonicalSemanticMir {
                         let Some(object_ty) = function.value_types.get(object) else {
                             return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
                         };
-                        let Some(CanonicalTypeKind::Nominal { declaration, .. }) = linked.types.get(object_ty).map(|record| &record.kind) else {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
                         };
-                        let nominal = linked.nominal_instances.iter().find_map(|(id, instance)| (instance.declaration == *declaration).then_some(*id));
-                        if nominal != Some(record.owner) {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: nominal.unwrap_or(record.owner) });
+                        if *object_ty != owner.ty {
+                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
                         }
                         if function.value_types.get(value) != Some(&record.ty) {
                             return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
@@ -1445,7 +1456,7 @@ mod tests {
             declaration: field_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool),
         });
         program.linked.nominal_instances.insert(nominal, NominalInstanceRecord {
-            declaration, substitution: SubstitutionId::from_index(0).unwrap(),
+            declaration, ty: declaration, substitution: SubstitutionId::from_index(0).unwrap(),
             semantics: NominalValueSemantics::Reference, fields: vec![field],
         });
         program.linked.fields.insert(field, FieldRecord { owner: nominal, ty: field_type });
@@ -1485,6 +1496,11 @@ mod tests {
         let mut other = program.linked.nominal_instances.values().next().unwrap().clone();
         other.fields.clear();
         other.substitution = SubstitutionId::from_index(1).unwrap();
+        other.ty = TypeId::from_index(2).unwrap();
+        program.linked.types.insert(other.ty, TypeRecord {
+            declaration: other.declaration,
+            kind: CanonicalTypeKind::Nominal { declaration: other.declaration, arguments: vec![TypeId::from_index(1).unwrap()] },
+        });
         let instance = NominalInstanceId::from_index(1).unwrap();
         program.linked.nominal_instances.insert(instance, other.clone());
         program.validate().expect("同一声明不同实例保持共同值语义");
@@ -1503,6 +1519,109 @@ mod tests {
         let extra = NominalInstanceId::from_index(9).unwrap();
         plan.adt_reps.insert(extra, crate::layout_choice::AdtRepresentation::TypedAggregate);
         assert_eq!(CompiledProgram::new(program, plan), Err(CompiledProgramError::ExtraAdtRepresentation { nominal: extra }));
+    }
+
+    fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_type: Option<TypeId>) -> CanonicalProgram {
+        let mut program = nominal_program();
+        let declaration = TypeId::from_index(0).unwrap();
+        let boolean = TypeId::from_index(1).unwrap();
+        let first_type = TypeId::from_index(2).unwrap();
+        let second_type = TypeId::from_index(3).unwrap();
+        let integer = TypeId::from_index(4).unwrap();
+        program.linked.types.insert(integer, TypeRecord {
+            declaration: integer, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }),
+        });
+        for (ty, argument) in [(first_type, boolean), (second_type, integer)] {
+            program.linked.types.insert(ty, TypeRecord {
+                declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: vec![argument] },
+            });
+        }
+        let first = NominalInstanceId::from_index(0).unwrap();
+        let second = NominalInstanceId::from_index(1).unwrap();
+        program.linked.nominal_instances.get_mut(&first).unwrap().ty = first_type;
+        let second_field = FieldId::from_index(1).unwrap();
+        program.linked.nominal_instances.insert(second, NominalInstanceRecord {
+            declaration, ty: second_type, substitution: SubstitutionId::from_index(1).unwrap(),
+            semantics: NominalValueSemantics::Reference, fields: vec![second_field],
+        });
+        program.linked.fields.insert(second_field, FieldRecord { owner: second, ty: boolean });
+        for (index, owner) in [(0, first), (1, second)] {
+            program.linked.variants.insert(VariantId::from_index(index).unwrap(), VariantRecord { owner, payload_type: Some(boolean) });
+        }
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let object = MirValueId::from_index(0).unwrap();
+        let payload = MirValueId::from_index(1).unwrap();
+        let result = MirValueId::from_index(2).unwrap();
+        let return_type = result_type.unwrap_or(boolean);
+        program.linked.item_instances.insert(instance, ItemInstanceRecord {
+            declaration: ItemId::from_index(0).unwrap(), substitution: SubstitutionId::from_index(0).unwrap(),
+            parameter_types: vec![first_type, boolean], return_type,
+        });
+        let mut value_types = BTreeMap::from([(object, first_type), (payload, boolean)]);
+        if let Some(ty) = result_type {
+            value_types.insert(result, ty);
+        }
+        let entry = CanonicalBlockId(0);
+        program.mir.functions.insert(instance, CanonicalFunction {
+            instance, parameters: vec![(object, first_type), (payload, boolean)], return_type,
+            value_types, entry, blocks: BTreeMap::from([(entry, CanonicalBlock {
+                id: entry, parameters: Vec::new(),
+                instructions: vec![CanonicalInstruction {
+                    id: InstructionId::from_index(0).unwrap(), results: result_type.map(|_| vec![result]).unwrap_or_default(), operation,
+                }],
+                terminator: CanonicalTerminator::Return { value: Some(if result_type.is_some() { result } else { payload }) },
+            })]),
+        });
+        program
+    }
+
+    #[test]
+    fn canonical_structure_operations_use_exact_instantiated_owner_types() {
+        let first = NominalInstanceId::from_index(0).unwrap();
+        let second = NominalInstanceId::from_index(1).unwrap();
+        let first_field = FieldId::from_index(0).unwrap();
+        let second_field = FieldId::from_index(1).unwrap();
+        let first_variant = VariantId::from_index(0).unwrap();
+        let second_variant = VariantId::from_index(1).unwrap();
+        let object = MirValueId::from_index(0).unwrap();
+        let payload = MirValueId::from_index(1).unwrap();
+        let boolean = TypeId::from_index(1).unwrap();
+        let first_type = TypeId::from_index(2).unwrap();
+        let cases = [
+            (CanonicalOperation::StructNew { nominal: first, fields: vec![(first_field, payload)] },
+             CanonicalOperation::StructNew { nominal: second, fields: vec![(second_field, payload)] }, Some(first_type)),
+            (CanonicalOperation::FieldGet { object, field: first_field },
+             CanonicalOperation::FieldGet { object, field: second_field }, Some(boolean)),
+            (CanonicalOperation::FieldSet { object, field: first_field, value: payload },
+             CanonicalOperation::FieldSet { object, field: second_field, value: payload }, None),
+            (CanonicalOperation::SumNew { variant: first_variant, payload: Some(payload) },
+             CanonicalOperation::SumNew { variant: second_variant, payload: Some(payload) }, Some(first_type)),
+            (CanonicalOperation::SumPayloadGet { variant: first_variant, object },
+             CanonicalOperation::SumPayloadGet { variant: second_variant, object }, Some(boolean)),
+            (CanonicalOperation::SumVariantIs { variant: first_variant, object },
+             CanonicalOperation::SumVariantIs { variant: second_variant, object }, Some(boolean)),
+        ];
+        for (valid, wrong_owner, result_type) in cases {
+            instantiated_nominal_operation_program(valid, result_type).validate().expect("同一声明的不同泛型实例可独立持有结构合同");
+            let error = instantiated_nominal_operation_program(wrong_owner, result_type).validate().expect_err("字段形状相同不能掩盖泛型实例错位");
+            assert!(matches!(error,
+                CanonicalMirError::FieldOwnerMismatch { .. }
+                | CanonicalMirError::OperationResultTypeMismatch { .. }
+                | CanonicalMirError::OperationOperandTypeMismatch { .. }
+            ), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn canonical_nominal_instance_type_is_required_and_unique() {
+        let nominal = NominalInstanceId::from_index(0).unwrap();
+        let mut program = nominal_program();
+        let unknown = TypeId::from_index(9).unwrap();
+        program.linked.nominal_instances.get_mut(&nominal).unwrap().ty = unknown;
+        assert_eq!(program.validate(), Err(CanonicalMirError::InvalidNominalInstanceType { nominal, ty: unknown }));
+        let mut program = nominal_program();
+        program.linked.nominal_instances.insert(NominalInstanceId::from_index(1).unwrap(), program.linked.nominal_instances[&nominal].clone());
+        assert_eq!(program.validate(), Err(CanonicalMirError::DuplicateNominalInstanceType { ty: TypeId::from_index(0).unwrap() }));
     }
 
     #[test]

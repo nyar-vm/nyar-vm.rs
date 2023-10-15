@@ -31,7 +31,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     for (name, (nominal, declaration, semantics)) in &nominals {
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
-        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
+        linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, ty: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
         let _ = name;
     }
     linked.fields = field_records;

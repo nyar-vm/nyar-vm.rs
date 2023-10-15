@@ -109,6 +109,7 @@ mod tests {
             let record = program.linked.nominal_instances.values().find(|record| record.declaration == declaration).unwrap();
             let expected = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
             assert_eq!(record.semantics, expected);
+            assert_eq!(record.ty, declaration);
         }
         let mut observed = BTreeSet::new();
         for function in program.mir.functions.values() {
