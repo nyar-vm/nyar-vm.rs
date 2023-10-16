@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    concretize_type,
     mir::ssa::builtin_helpers::resolve_intrinsic_id,
     types::{
         NamePath,
@@ -229,57 +228,6 @@ fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], sum_type
     None
 }
 
-/// Return/operand SMIR007: accept equal Valkyrie shapes or the same concretized
-/// platform type (`Utf16` ≡ `Named(Utf16Text)`, `usize` ≡ `i32`, …), and
-/// Result/Option alias spelling (`VonParseResult<T>` ≡ `Result<T, E>`).
-fn mir_return_types_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    if actual == expected {
-        return true;
-    }
-    if result_or_option_alias_compatible(actual, expected) {
-        return true;
-    }
-    match (concretize_type(actual), concretize_type(expected)) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => false,
-    }
-}
-
-fn sum_owner_name_valkyrie(ty: &ValkyrieType) -> Option<&str> {
-    match ty {
-        ValkyrieType::Named(name) => Some(name.as_str()),
-        ValkyrieType::Apply(base, _) => sum_owner_name_valkyrie(base),
-        _ => None,
-    }
-}
-
-fn is_result_shaped_valkyrie(ty: &ValkyrieType) -> bool {
-    sum_owner_name_valkyrie(ty).is_some_and(|name| name == "Result" || name.ends_with("Result"))
-}
-
-fn is_option_shaped_valkyrie(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Nullable(_) => true,
-        _ => sum_owner_name_valkyrie(ty).is_some_and(|name| matches!(name, "Option" | "Nullable")),
-    }
-}
-
-fn result_or_option_alias_compatible(actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
-    let fine_payload = |ty: &ValkyrieType| -> Option<ValkyrieType> {
-        match ty {
-            ValkyrieType::Apply(_, args) => args.first().cloned(),
-            _ => None,
-        }
-    };
-    let payloads_match = match (fine_payload(actual), fine_payload(expected)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    };
-    payloads_match
-        && ((is_result_shaped_valkyrie(actual) && is_result_shaped_valkyrie(expected))
-            || (is_option_shaped_valkyrie(actual) && is_option_shaped_valkyrie(expected)))
-}
-
 fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (sum_index, sum) in module.sum_types.iter().enumerate() {
         if module.sum_types[..sum_index].iter().any(|prior| prior.name == sum.name)
@@ -433,7 +381,7 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                 else {
                     return Err(error("SMIR001", location, "return operand has no SSA type".to_string()));
                 };
-                if !mir_return_types_compatible(&actual, &function.return_type) {
+                if actual != function.return_type {
                     return Err(error(
                         "SMIR007",
                         location,
@@ -459,7 +407,7 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     let Some(expected) = function.value_types.get(parameter) else {
                         return Err(error("SMIR001", location.clone(), "jump target block parameter has no SSA type".to_string()));
                     };
-                    if !mir_return_types_compatible(&actual, expected) {
+                    if actual != *expected {
                         return Err(error(
                             "SMIR007",
                             location,
@@ -986,6 +934,68 @@ mod semantic_contract_tests {
 
     fn empty_module() -> MirModule {
         crate::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new())
+    }
+
+    fn source_identity_module(actual: &ValkyrieType, expected: &ValkyrieType) -> MirModule {
+        let hir = crate::ValkyrieCompiler::default().compile_source(
+            "micro identity(value: bool) -> bool { return value }",
+        ).expect("当前源码解析后构造类型合同负向输入");
+        let mut module = crate::MirLowerer::lower_module_semantic(&hir);
+        let function = &mut module.functions[0];
+        function.param_types = vec![actual.clone()];
+        for ty in function.value_types.values_mut() {
+            *ty = actual.clone();
+        }
+        function.return_type = expected.clone();
+        module
+    }
+
+    fn mismatched_nominal_contracts() -> Vec<(ValkyrieType, ValkyrieType)> {
+        let applied = |name, arguments| ValkyrieType::Apply(
+            Box::new(ValkyrieType::Named(Identifier::new(name))), arguments,
+        );
+        vec![
+            (applied("FirstResult", vec![ValkyrieType::Boolean]), applied("SecondResult", vec![ValkyrieType::Boolean])),
+            (applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
+             applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf16])),
+            (applied("Option", vec![ValkyrieType::Boolean]), applied("Nullable", vec![ValkyrieType::Boolean])),
+            (ValkyrieType::Integer32 { signed: true }, ValkyrieType::Named(Identifier::new("usize"))),
+            (ValkyrieType::Utf16, ValkyrieType::Named(Identifier::new("Utf16Text"))),
+        ]
+    }
+
+    #[test]
+    fn semantic_return_requires_exact_resolved_type_without_name_or_carrier_recovery() {
+        validate_semantic_module(&source_identity_module(&ValkyrieType::Boolean, &ValkyrieType::Boolean))
+            .expect("当前源码的完整 bool 返回合同");
+        for (actual, expected) in mismatched_nominal_contracts() {
+            let error = validate_semantic_module(&source_identity_module(&actual, &expected))
+                .expect_err("同名模式、首个 payload 或物理表示相同都不能替代类型合同");
+            assert_eq!(error.code, "SMIR007");
+            assert!(error.detail.starts_with("return operand type"));
+        }
+    }
+
+    #[test]
+    fn semantic_jump_requires_exact_resolved_block_parameter_type() {
+        for (actual, expected) in mismatched_nominal_contracts() {
+            let mut module = source_identity_module(&actual, &actual);
+            let function = &mut module.functions[0];
+            let source = function.blocks[0].parameters[0];
+            let parameter = MirValueRef(function.value_types.keys().map(|value| value.0).max().unwrap() + 1);
+            function.return_type = ValkyrieType::Unit;
+            function.value_types.insert(parameter, expected);
+            function.blocks[0].terminator = MirTerminator::Jump {
+                target: MirBlockRef(1), arguments: vec![MirOperand::Value(source)],
+            };
+            function.blocks.push(MirBlock {
+                id: MirBlockRef(1), label: "destination".into(), parameters: vec![parameter], instructions: Vec::new(),
+                terminator: MirTerminator::Return { value: None },
+            });
+            let error = validate_semantic_module(&module).expect_err("块参数不能按名称或物理类型恢复");
+            assert_eq!(error.code, "SMIR007");
+            assert!(error.detail.starts_with("jump argument type"));
+        }
     }
 
     #[test]
