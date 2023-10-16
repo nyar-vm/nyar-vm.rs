@@ -7,7 +7,7 @@ use crate::{
         hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
-use nyar_types::{IntrinsicId, NyarType};
+use nyar_types::IntrinsicId;
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
@@ -410,102 +410,12 @@ impl MirBuilder {
     }
 
     fn field_type_for_semantic_type(&self, ty: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
-        match ty {
-            ValkyrieType::Named(name) => self
-                .lookup_struct_field_type(name.as_str(), field)
-                .or_else(|| self.field_type_from_layout(layout_id_for_type(ty, &self.aggregate_layouts), field)),
-            ValkyrieType::Apply(base, arguments) => self
-                .field_type_for_semantic_type(base, field)
-                .or_else(|| arguments.iter().find_map(|argument| self.field_type_for_semantic_type(argument, field))),
-            ValkyrieType::Tuple(elements) => {
-                let mut result = None;
-                for element in elements {
-                    let Some(candidate) = self.field_type_for_semantic_type(element, field)
-                    else {
-                        continue;
-                    };
-                    if let Some(existing) = &result {
-                        if existing != &candidate {
-                            return None;
-                        }
-                    }
-                    else {
-                        result = Some(candidate);
-                    }
-                }
-                result
-            }
-            _ => None,
-        }
-    }
-
-    pub(super) fn field_type_from_layout(&self, layout_id: Option<super::LayoutId>, field: &str) -> Option<ValkyrieType> {
-        let layout = self.aggregate_layouts.layouts.iter().find(|layout| Some(layout.id) == layout_id)?;
-        let field = layout.fields.iter().find(|field_layout| field_layout.name == field)?;
-        match &field.ty {
-            NyarType::Unit => Some(ValkyrieType::Unit),
-            NyarType::Boolean => Some(ValkyrieType::Boolean),
-            NyarType::Utf8 => Some(ValkyrieType::Utf8),
-            NyarType::Utf16 => Some(ValkyrieType::Utf16),
-            NyarType::Integer8 { signed } => Some(ValkyrieType::Integer8 { signed: *signed }),
-            NyarType::Integer16 { signed } => Some(ValkyrieType::Integer16 { signed: *signed }),
-            NyarType::Integer32 { signed } => Some(ValkyrieType::Integer32 { signed: *signed }),
-            NyarType::Integer64 { signed } => Some(ValkyrieType::Integer64 { signed: *signed }),
-            NyarType::Float32 => Some(ValkyrieType::Float32),
-            NyarType::Float64 => Some(ValkyrieType::Float64),
-            NyarType::Named(name) => Some(ValkyrieType::Named(Identifier::new(name.as_str()))),
-            NyarType::Integer128 { signed } => Some(ValkyrieType::Integer128 { signed: *signed }),
-            NyarType::Character => Some(ValkyrieType::Character),
-            NyarType::Array(item) => Some(ValkyrieType::Array(Box::new(Self::nyar_field_type(item)?))),
-            NyarType::FixedArray { element, length } => {
-                Some(ValkyrieType::FixedArray { element: Box::new(Self::nyar_field_type(element)?), length: *length })
-            }
-            NyarType::Tuple(items) => Some(ValkyrieType::Tuple(items.iter().map(Self::nyar_field_type).collect::<Option<Vec<_>>>()?)),
-            NyarType::Apply(base, args) => Some(ValkyrieType::Apply(
-                Box::new(Self::nyar_field_type(base)?),
-                args.iter().map(Self::nyar_field_type).collect::<Option<Vec<_>>>()?,
-            )),
-            _ => None,
-        }
-    }
-
-    fn nyar_field_type(ty: &NyarType) -> Option<ValkyrieType> {
-        match ty {
-            NyarType::Unit => Some(ValkyrieType::Unit),
-            NyarType::Boolean => Some(ValkyrieType::Boolean),
-            NyarType::Utf8 => Some(ValkyrieType::Utf8),
-            NyarType::Utf16 => Some(ValkyrieType::Utf16),
-            NyarType::Character => Some(ValkyrieType::Character),
-            NyarType::Integer8 { signed } => Some(ValkyrieType::Integer8 { signed: *signed }),
-            NyarType::Integer16 { signed } => Some(ValkyrieType::Integer16 { signed: *signed }),
-            NyarType::Integer32 { signed } => Some(ValkyrieType::Integer32 { signed: *signed }),
-            NyarType::Integer64 { signed } => Some(ValkyrieType::Integer64 { signed: *signed }),
-            NyarType::Integer128 { signed } => Some(ValkyrieType::Integer128 { signed: *signed }),
-            NyarType::Float32 => Some(ValkyrieType::Float32),
-            NyarType::Float64 => Some(ValkyrieType::Float64),
-            NyarType::Named(name) => Some(ValkyrieType::Named(Identifier::new(name.as_str()))),
-            NyarType::Array(item) => Some(ValkyrieType::Array(Box::new(Self::nyar_field_type(item)?))),
-            NyarType::FixedArray { element, length } => {
-                Some(ValkyrieType::FixedArray { element: Box::new(Self::nyar_field_type(element)?), length: *length })
-            }
-            NyarType::Tuple(items) => Some(ValkyrieType::Tuple(items.iter().map(Self::nyar_field_type).collect::<Option<Vec<_>>>()?)),
-            NyarType::Apply(base, args) => Some(ValkyrieType::Apply(
-                Box::new(Self::nyar_field_type(base)?),
-                args.iter().map(Self::nyar_field_type).collect::<Option<Vec<_>>>()?,
-            )),
-            _ => None,
-        }
-    }
-
-    fn struct_name_for_operand(&self, operand: &MirOperand) -> Option<String> {
-        infer_builder_operand_type(operand, &self.value_types).and_then(|ty| match ty {
-            ValkyrieType::Named(name) => Some(name.to_string()),
-            ValkyrieType::Apply(base, _) => match base.as_ref() {
-                ValkyrieType::Named(name) => Some(name.to_string()),
-                _ => None,
-            },
-            _ => None,
-        })
+        let base = match ty { ValkyrieType::Apply(base, _) => base.as_ref(), other => other };
+        let ValkyrieType::Named(owner) = base else { return None; };
+        let mut declarations = self.field_declarations.iter().filter(|declaration| declaration.qualified_name() == owner.as_str());
+        let declaration = declarations.next()?;
+        if declarations.next().is_some() { return None; }
+        declaration.instantiate_field(ty, field)
     }
 
     /// Resolve `Nyar`/`Valkyrie` function type for a call callee (Value or named Symbol).
@@ -550,12 +460,6 @@ impl MirBuilder {
         infer_builder_operand_type(operand, &self.value_types).map(|ty| self.storage_for_type(&ty)).unwrap_or(MirStorageKind::Reference)
     }
 
-    fn storage_for_layout_id(&self, layout_id: Option<super::LayoutId>, fallback: MirStorageKind) -> MirStorageKind {
-        layout_id
-            .and_then(|id| self.aggregate_layouts.layouts.iter().find(|layout| layout.id == id).map(|layout| layout.storage))
-            .unwrap_or(fallback)
-    }
-
     fn layout_id_for_type(&mut self, ty: &ValkyrieType) -> Option<super::LayoutId> {
         if let Some(id) = layout_id_for_type(ty, &self.aggregate_layouts) {
             return Some(id);
@@ -584,100 +488,7 @@ impl MirBuilder {
 
     pub(super) fn field_type_for_object_operand(&self, object_operand: &MirOperand, field: &Identifier) -> Option<ValkyrieType> {
         let object_ty = infer_builder_operand_type(object_operand, &self.value_types)?;
-        match object_ty {
-            ValkyrieType::Utf8 if field.as_str() == "_repr" => Some(ValkyrieType::Array(Box::new(ValkyrieType::Integer8 { signed: false }))),
-            ValkyrieType::Utf16 if field.as_str() == "_repr" => Some(ValkyrieType::Array(Box::new(ValkyrieType::Integer16 { signed: false }))),
-            ValkyrieType::Named(name) => self.lookup_struct_field_type(name.as_str(), field.as_str()),
-            ValkyrieType::Apply(base, arguments) => match base.as_ref() {
-                ValkyrieType::Named(name) => self
-                    .lookup_struct_field_type(name.as_str(), field.as_str())
-                    .map(|field_ty| Self::substitute_first_generic(field_ty, arguments.as_slice()))
-                    .or_else(|| arguments.iter().find_map(|argument| self.field_type_for_semantic_type(argument, field.as_str()))),
-                _ => arguments.iter().find_map(|argument| self.field_type_for_semantic_type(argument, field.as_str())),
-            },
-            // A nominal structure can arrive from the HIR normalizer wrapped in
-            // a one-element tuple. It is still the same semantic aggregate for
-            // field lookup; do not make each backend rediscover this shape.
-            ValkyrieType::Tuple(elements) if elements.len() == 1 => match &elements[0] {
-                ValkyrieType::Named(name) => self
-                    .lookup_struct_field_type(name.as_str(), field.as_str())
-                    .or_else(|| self.field_type_from_layout(layout_id_for_type(&elements[0], &self.aggregate_layouts), field.as_str())),
-                ValkyrieType::Apply(base, arguments) => match base.as_ref() {
-                    ValkyrieType::Named(name) => self
-                        .lookup_struct_field_type(name.as_str(), field.as_str())
-                        .map(|field_ty| Self::substitute_first_generic(field_ty, arguments.as_slice()))
-                        .or_else(|| self.field_type_from_layout(layout_id_for_type(&elements[0], &self.aggregate_layouts), field.as_str())),
-                    _ => None,
-                },
-                _ => None,
-            },
-            ValkyrieType::Tuple(elements) => {
-                let mut candidate = None;
-                for element in elements {
-                    let field_type = match element {
-                        ValkyrieType::Named(name) => self.lookup_struct_field_type(name.as_str(), field.as_str()),
-                        ValkyrieType::Apply(base, _) => match base.as_ref() {
-                            ValkyrieType::Named(name) => self.lookup_struct_field_type(name.as_str(), field.as_str()),
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-                    let Some(field_type) = field_type
-                    else {
-                        continue;
-                    };
-                    if let Some(existing) = &candidate {
-                        if existing != &field_type {
-                            return None;
-                        }
-                    }
-                    else {
-                        candidate = Some(field_type);
-                    }
-                }
-                candidate
-            }
-            _ => None,
-        }
-    }
-
-    pub(super) fn unique_struct_field_type(&self, field: &str) -> Option<ValkyrieType> {
-        let mut candidate: Option<ValkyrieType> = None;
-        for fields in self.struct_field_layouts.values() {
-            for (name, ty) in fields {
-                if name != field {
-                    continue;
-                }
-                match &candidate {
-                    None => candidate = Some(ty.clone()),
-                    Some(existing) if existing == ty => {}
-                    Some(_) => return None,
-                }
-            }
-        }
-        candidate
-    }
-
-    fn substitute_first_generic(ty: ValkyrieType, arguments: &[ValkyrieType]) -> ValkyrieType {
-        let Some(first) = arguments.first()
-        else {
-            return ty;
-        };
-        match ty {
-            ValkyrieType::Generic(_) => first.clone(),
-            ValkyrieType::Array(item) => ValkyrieType::Array(Box::new(Self::substitute_first_generic(*item, arguments))),
-            ValkyrieType::FixedArray { element, length } => {
-                ValkyrieType::FixedArray { element: Box::new(Self::substitute_first_generic(*element, arguments)), length }
-            }
-            ValkyrieType::Apply(base, args) => ValkyrieType::Apply(
-                Box::new(Self::substitute_first_generic(*base, arguments)),
-                args.into_iter().map(|arg| Self::substitute_first_generic(arg, arguments)).collect(),
-            ),
-            ValkyrieType::Tuple(items) => {
-                ValkyrieType::Tuple(items.into_iter().map(|item| Self::substitute_first_generic(item, arguments)).collect())
-            }
-            other => other,
-        }
+        self.field_type_for_semantic_type(&object_ty, field.as_str())
     }
 
     pub(super) fn lower_expr_to_operand(&mut self, expr: &HirExpr) -> MirOperand {
@@ -856,12 +667,8 @@ impl MirBuilder {
                 // instead of treating the field name as a static method symbol.
                 if let HirExprKind::FieldAccess { object, field } = &callee.kind {
                     let receiver_operand = self.lower_expr_to_operand(object);
-                    let layout_id = self.layout_id_for_object_operand(&receiver_operand);
-                    let field_ty = self
-                        .field_type_for_object_operand(&receiver_operand, field)
-                        .or_else(|| self.field_type_from_layout(layout_id, field.as_str()));
+                    let field_ty = self.field_type_for_object_operand(&receiver_operand, field);
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
-                        let storage = self.storage_for_layout_id(layout_id, self.storage_for_object_operand(&receiver_operand));
                         let callee_value = self.next_value(MirValueOrigin::Temporary);
                         self.push_instruction(
                             MirOperation::FieldGet {
@@ -1219,30 +1026,14 @@ impl MirBuilder {
                         return operand;
                     }
                 }
-                if let Some(struct_name) = self.struct_name_for_operand(&object_operand) {
-                    let has_field = self.lookup_struct_field_type(&struct_name, field.as_str()).is_some();
-                    if field.as_str() != "length" || has_field {
-                        return self.lower_object_field_operand(object_operand, &struct_name, field);
-                    }
-                }
-                let layout_id = self.layout_id_for_object_operand(&object_operand);
-                let storage = self.storage_for_layout_id(layout_id, self.storage_for_object_operand(&object_operand));
-                let field_ty = self.field_type_for_object_operand(&object_operand, field);
-                let value = self.next_value(MirValueOrigin::Temporary);
-                // 必须绑定 results：空 results 会让后端把 FieldGet 结果 Pop 掉，后续 `.length` / Call 读到假值。
-                self.push_instruction(MirOperation::FieldGet { object: object_operand, field: field.clone() }, vec![value]);
-                if let Some(field_ty) = field_ty
-                    .or_else(|| self.field_type_from_layout(layout_id, field.as_str()))
-                {
-                    self.value_types.insert(value, field_ty);
-                }
-                MirOperand::Value(value)
+                self.lower_object_field_operand(object_operand, field)
             }
             HirExprKind::StoreField { object, field, value } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 let storage = self.storage_for_object_operand(&object_operand);
                 let layout_id = self.layout_id_for_object_operand(&object_operand);
-                let value_operand = self.lower_expr_to_operand(value);
+                let field_type = self.field_type_for_object_operand(&object_operand, field);
+                let value_operand = self.lower_expr_to_operand_with_hint(value, field_type.as_ref());
                 self.instructions.push(MirInstruction::from_operation(MirOperation::FieldSet {
                     object: object_operand,
                     field: field.clone(),

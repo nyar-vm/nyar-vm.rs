@@ -51,6 +51,7 @@ fn observation_site(location: &str) -> &'static str {
 
 pub fn validate_semantic_module(module: &MirModule) -> Result<(), SemanticMirContractError> {
     validate_nominal_sums(module)?;
+    validate_nominal_structs(module)?;
     for layout in &module.aggregate_layouts.layouts {
         if layout.name.is_empty() || layout.align == 0 || layout.size == 0 {
             return Err(SemanticMirContractError {
@@ -83,6 +84,32 @@ pub fn validate_semantic_module(module: &MirModule) -> Result<(), SemanticMirCon
 fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction) -> Result<(), SemanticMirContractError> {
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
+            let field_operation = match &instruction.kind {
+                MirOperation::FieldGet { object, field } => Some((object, field, None)),
+                MirOperation::FieldSet { object, field, value } => Some((object, field, Some(value))),
+                _ => None,
+            };
+            if let Some((object, field, stored)) = field_operation {
+                let location = format!("block {} instruction {index}", block.id.0);
+                let failure = |detail: &str| SemanticMirContractError {
+                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(), detail: detail.to_string(),
+                };
+                let owner = infer_operand_static_type(function, object).ok_or_else(|| failure("字段对象缺少完整语义类型"))?;
+                let base = match &owner { ValkyrieType::Apply(base, _) => base.as_ref(), other => other };
+                let ValkyrieType::Named(name) = base else { return Err(failure("字段对象不是已解析名义实例")); };
+                let declaration = module.structs.iter().find(|declaration| declaration.qualified_name() == name.as_str())
+                    .ok_or_else(|| failure("字段对象没有声明合同"))?;
+                let expected = declaration.instantiate_field(&owner, field.as_str())
+                    .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?;
+                if let Some(stored) = stored {
+                    if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
+                        return Err(failure("字段写入值或结果数量与声明不一致"));
+                    }
+                } else if instruction.results.len() != 1 || function.value_types.get(&instruction.results[0]) != Some(&expected) {
+                    return Err(failure("字段读取结果与完整实例声明不一致"));
+                }
+                continue;
+            }
             if let MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
                 let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
@@ -210,6 +237,21 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 }
                 continue;
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContractError> {
+    for (index, declaration) in module.structs.iter().enumerate() {
+        let duplicate_owner = module.structs[..index].iter().any(|prior| prior.qualified_name() == declaration.qualified_name());
+        let duplicate_binder = declaration.generics.iter().enumerate().any(|(index, generic)| declaration.generics[..index].iter().any(|prior| prior.name == generic.name));
+        let invalid_field = declaration.fields.iter().enumerate().any(|(index, field)| field.name.is_empty() || declaration.fields[..index].iter().any(|prior| prior.name == field.name));
+        if declaration.name.is_empty() || duplicate_owner || duplicate_binder || invalid_field {
+            return Err(SemanticMirContractError {
+                code: "SMIR006", function: declaration.qualified_name(), location: "struct declaration".to_string(),
+                detail: "结构声明、泛型 binder 与字段身份必须完整且唯一".to_string(),
+            });
         }
     }
     Ok(())

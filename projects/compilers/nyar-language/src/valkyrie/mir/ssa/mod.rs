@@ -39,6 +39,8 @@ mod call_type_contract_tests;
 #[cfg(test)]
 mod declaration_contract_tests;
 #[cfg(test)]
+mod field_contract_tests;
+#[cfg(test)]
 mod workload_phase_tests;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
@@ -163,11 +165,38 @@ pub struct MirStruct {
     pub name: String,
     /// 结构体命名空间（点分路径，例如 `core.text`），用于稳定符号与布局查找。
     pub namespace: String,
+    pub generics: Vec<crate::types::hir::GenericType>,
     /// 字段列表。
     pub fields: Vec<MirField>,
     /// 是否为值类型：`true` 表示 `structure` 等按值布局的聚合；
     /// `false` 表示引用类型，例如 `class` 等按引用布局的聚合。
     pub is_value_type: bool,
+}
+
+impl MirStruct {
+    pub fn qualified_name(&self) -> String {
+        if self.namespace.is_empty() { self.name.clone() } else { format!("{}.{}", self.namespace, self.name) }
+    }
+
+    pub fn instantiate_field(&self, owner: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
+        let (base, arguments) = match owner {
+            ValkyrieType::Named(_) => (owner, &[][..]),
+            ValkyrieType::Apply(base, arguments) => (base.as_ref(), arguments.as_slice()),
+            _ => return None,
+        };
+        let ValkyrieType::Named(name) = base else { return None; };
+        if name.as_str() != self.qualified_name() || arguments.len() != self.generics.len() {
+            return None;
+        }
+        let substitutions = self.generics.iter().zip(arguments)
+            .map(|(generic, argument)| (generic.name.clone(), argument.clone())).collect::<BTreeMap<_, _>>();
+        if substitutions.len() != self.generics.len() { return None; }
+        let mut matching = self.fields.iter().filter(|candidate| candidate.name == field);
+        let declared = matching.next()?;
+        if matching.next().is_some() { return None; }
+        let ty = crate::valkyrie::hir::overload::substitute_type_vars(&declared.ty, &substitutions);
+        Some(resolve_self_type_with_owner(&ty, Some(owner)))
+    }
 }
 
 /// `MIR` 结构体字段定义。
@@ -666,7 +695,7 @@ impl MirLowerer {
         let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
-        let structs: Vec<MirStruct> = module.structs.iter().map(lower_struct).collect();
+        let structs = collect_field_declarations(module);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let (exports, entries) = collect_surface_contracts(module);
@@ -776,6 +805,7 @@ fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalC
         collect(&mut types, &contract.return_type);
     }
     for structure in structs {
+        collect(&mut types, &ValkyrieType::Named(Identifier::new(&structure.qualified_name())));
         for field in &structure.fields { collect(&mut types, &field.ty); }
     }
     types.into_iter().enumerate().map(|(index, ty)| (ty, nyar_types::TypeId::from_index(index as u32).expect("type identity overflow"))).collect()
@@ -985,7 +1015,31 @@ fn lower_impl_method_functions(
 fn lower_struct(hir_struct: &crate::types::hir::HirStruct) -> MirStruct {
     let fields = hir_struct.fields.iter().map(|field| MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
-    MirStruct { name: hir_struct.name.to_string(), namespace, fields, is_value_type: hir_struct.is_value_type }
+    MirStruct { name: hir_struct.name.to_string(), namespace, generics: hir_struct.generics.clone(), fields, is_value_type: hir_struct.is_value_type }
+}
+
+fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
+    let mut declarations = module.structs.iter().map(lower_struct).collect::<Vec<_>>();
+    for singleton in &module.singletons {
+        declarations.push(MirStruct {
+            name: singleton.name.to_string(),
+            namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
+            generics: singleton.generics.clone(),
+            fields: singleton.fields.iter().map(|field| MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+            is_value_type: false,
+        });
+    }
+    for export in &module.imported_semantic_exports {
+        declarations.extend(export.structs.iter().map(lower_struct));
+    }
+    for submodule in &module.submodules {
+        declarations.extend(collect_field_declarations(submodule));
+    }
+    let mut unique = Vec::new();
+    for declaration in declarations {
+        if !unique.contains(&declaration) { unique.push(declaration); }
+    }
+    unique
 }
 
 /// Replace `Self` / `Named("Self")` with the imply/struct owner type.
@@ -994,12 +1048,15 @@ fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&ValkyrieType>)
         (ValkyrieType::SelfType, Some(owner)) => owner.clone(),
         (ValkyrieType::Named(name), Some(owner)) if name.as_str() == "Self" => owner.clone(),
         (ValkyrieType::Array(inner), _) => ValkyrieType::Array(Box::new(resolve_self_type_with_owner(inner, owner))),
+        (ValkyrieType::FixedArray { element, length }, _) => ValkyrieType::FixedArray { element: Box::new(resolve_self_type_with_owner(element, owner)), length: *length },
+        (ValkyrieType::Nullable(inner), _) => ValkyrieType::Nullable(Box::new(resolve_self_type_with_owner(inner, owner))),
         (ValkyrieType::Apply(base, args), _) => ValkyrieType::Apply(
             Box::new(resolve_self_type_with_owner(base, owner)),
             args.iter().map(|arg| resolve_self_type_with_owner(arg, owner)).collect(),
         ),
         (ValkyrieType::Tuple(items), _) => ValkyrieType::Tuple(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
         (ValkyrieType::Union(items), _) => ValkyrieType::Union(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
+        (ValkyrieType::Intersection(items), _) => ValkyrieType::Intersection(items.iter().map(|item| resolve_self_type_with_owner(item, owner)).collect()),
         (ValkyrieType::Function(func), _) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
             params: func.params.iter().map(|param| resolve_self_type_with_owner(param, owner)).collect(),
             return_type: resolve_self_type_with_owner(&func.return_type, owner),
@@ -1083,6 +1140,7 @@ fn lower_function_semantic(
         impl_owner_type.clone(),
     );
     builder.sum_types = sum_types;
+    builder.field_declarations = collect_field_declarations(module);
     // Imply/struct methods declare `: Self`; keep MIR return/params on the owner
     // so SMIR007 compares against `isize`/`i32` (etc.), not unsubstituted `Self`.
     let resolved_return_type = resolve_self_type_with_owner(&function.return_type, impl_owner_type.as_ref());
@@ -1192,6 +1250,7 @@ struct MirBuilder {
     bindings: BTreeMap<String, MirOperand>,
     value_types: BTreeMap<MirValueRef, ValkyrieType>,
     struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
+    field_declarations: Vec<MirStruct>,
     struct_parent_index: BTreeMap<String, Vec<String>>,
     struct_is_value_type: BTreeMap<String, bool>,
     aggregate_layouts: AggregateLayoutPlan,
@@ -1281,6 +1340,7 @@ impl MirBuilder {
             bindings: BTreeMap::new(),
             value_types: BTreeMap::new(),
             struct_field_layouts,
+            field_declarations: Vec::new(),
             struct_parent_index,
             struct_is_value_type,
             aggregate_layouts,

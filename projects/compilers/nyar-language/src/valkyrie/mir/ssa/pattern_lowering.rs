@@ -644,7 +644,7 @@ impl MirBuilder {
             if !self.struct_has_field(struct_name, field_name.as_str()) {
                 return MirOperand::Constant(MirConstant::Bool(false));
             }
-            let field_operand = self.lower_object_field_operand(value.clone(), struct_name, field_name);
+            let field_operand = self.lower_object_field_operand(value.clone(), field_name);
             let field_match = self.lower_pattern_match_operand(field_pattern, field_operand);
             accumulated = Some(self.merge_pattern_match_operands(accumulated, field_match));
         }
@@ -801,11 +801,6 @@ impl MirBuilder {
         self.lower_logical_not_operand(MirOperand::Value(is_null))
     }
 
-    fn lower_class_payload_operand(&mut self, handle: MirOperand) -> MirOperand {
-        let value = self.lower_static_call("__ref_deref", vec![handle], MirValueOrigin::Temporary);
-        MirOperand::Value(value)
-    }
-
     fn lower_extractor_matched_operand(&mut self, nullable: MirOperand) -> MirOperand {
         self.lower_nullable_some_operand(nullable)
     }
@@ -848,31 +843,11 @@ impl MirBuilder {
         }
     }
 
-    pub(super) fn lower_object_field_operand(&mut self, value: MirOperand, struct_name: &str, field_name: &Identifier) -> MirOperand {
-        let fallback_storage = storage_kind_for_named_type(struct_name, &self.struct_is_value_type);
-        let object = if self.struct_is_value_type.get(struct_name) == Some(&false) { self.lower_class_payload_operand(value) } else { value };
+    pub(super) fn lower_object_field_operand(&mut self, object: MirOperand, field_name: &Identifier) -> MirOperand {
+        let field_type = self.field_type_for_object_operand(&object, field_name);
         let output = self.next_value(MirValueOrigin::Temporary);
-        let ty = ValkyrieType::Named(Identifier::new(struct_name));
-        let layout_id = layout_id_for_type(&ty, &self.aggregate_layouts).or_else(|| {
-            if matches!(struct_name, "any" | "null" | "object" | "Self" | "__auto" | "__opaque") {
-                return None;
-            }
-            // Imported / late-discovered structs: materialize layout from field table.
-            let fields = self.struct_field_layouts.get(struct_name)?;
-            if fields.is_empty() {
-                return None;
-            }
-            Some(ensure_named_aggregate_layout(&mut self.aggregate_layouts, struct_name, fallback_storage, fields))
-        });
-        let storage = layout_id
-            .and_then(|id| self.aggregate_layouts.layouts.iter().find(|layout| layout.id == id).map(|layout| layout.storage))
-            .unwrap_or(fallback_storage);
-        // 必须绑定 results：空 results 会让后端 FieldGet 后 Pop，后续 ArrayLength/Call 读到假值。
         self.push_instruction(MirOperation::FieldGet { object, field: field_name.clone() }, vec![output]);
-        if let Some(field_type) = self
-            .lookup_struct_field_type(struct_name, field_name.as_str())
-            .or_else(|| self.field_type_from_layout(layout_id, field_name.as_str()))
-        {
+        if let Some(field_type) = field_type {
             self.value_types.insert(output, field_type);
         }
         MirOperand::Value(output)
@@ -1028,33 +1003,6 @@ impl MirBuilder {
             return Some(field_type);
         }
 
-        // Imported/generated HIR can retain a qualified struct key while the
-        // operand carries only its nominal tail. Resolve that identity only
-        // when the suffix is unique and structurally agrees; never infer from
-        // the field name alone.
-        let suffix = format!(".{struct_name}");
-        let mut qualified_match = None;
-        for (candidate_name, fields) in &self.struct_field_layouts {
-            if !candidate_name.ends_with(&suffix) {
-                continue;
-            }
-            if let Some((field_name, field_type)) = fields.iter().find(|(name, _)| name == field_name) {
-                if let Some((existing_name, existing_type)) = &qualified_match {
-                    if existing_type != field_type || existing_name != candidate_name {
-                        qualified_match = None;
-                        break;
-                    }
-                }
-                else {
-                    qualified_match = Some((candidate_name.clone(), field_type.clone()));
-                }
-            }
-        }
-        if let Some((_, field_type)) = qualified_match {
-            visiting.remove(struct_name);
-            return Some(field_type);
-        }
-
         let result = self
             .struct_parent_index
             .get(struct_name)
@@ -1192,7 +1140,7 @@ impl MirBuilder {
                 continue;
             }
 
-            let extracted = self.lower_object_field_operand(operand.clone(), struct_name, field_name);
+            let extracted = self.lower_object_field_operand(operand.clone(), field_name);
             self.bind_pattern_from_operand(field_pattern, extracted, None);
         }
         if let Some(rest) = rest {

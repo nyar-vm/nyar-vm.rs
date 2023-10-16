@@ -95,7 +95,7 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
     let mut next_field = 0u32;
     for (index, aggregate) in module.structs.iter().enumerate() {
         let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
-        let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&aggregate.name));
+        let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&qualified));
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
         let nominal = NominalInstanceId::from_index(index as u32).ok_or_else(|| error_without_module("CAN019", "nominal identity 溢出"))?;
         let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };

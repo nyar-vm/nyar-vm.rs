@@ -278,7 +278,7 @@ mod tests {
         use crate::valkyrie::mir::MirStruct;
         let structure = MirStruct {
             name: "Item".to_owned(), namespace: "first".to_owned(),
-            fields: Vec::new(), is_value_type: true,
+            generics: Vec::new(), fields: Vec::new(), is_value_type: true,
         };
         let mut consumer = bare_module("consumer", vec![call_fn("caller", "dependency.helper")]);
         consumer.structs.push(structure.clone());
