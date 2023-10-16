@@ -32,13 +32,13 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
             plan.adt_reps.insert(*nominal, AdtRepresentation::TypedAggregate);
         }
         let nominal_semantics = program.linked.nominal_instances.values()
-            .map(|record| (record.declaration, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
+            .map(|record| (record.ty, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
         let mut instruction_ids = BTreeSet::new();
         for function in program.mir.functions.values() {
             for value in function.value_types.keys() {
                 let ty = &program.linked.types[&function.value_types[value]].kind;
                 let representation = match ty {
-                    CanonicalTypeKind::Nominal { declaration, .. } => match nominal_semantics[declaration] {
+                    CanonicalTypeKind::Nominal { .. } => match nominal_semantics[&function.value_types[value]] {
                         NominalValueSemantics::Value => ValueRepresentation::Specialized,
                         NominalValueSemantics::Reference => ValueRepresentation::Reified,
                     },
@@ -135,6 +135,51 @@ mod tests {
         invalid.linked.nominal_instances.clear();
         invalid.linked.fields.clear();
         let error = CanonicalRepresentationPlanner.plan(&invalid).expect_err("缺名义声明语义不能默认成值聚合");
+        assert_eq!(error.records[0].code, "PLAN001");
+        assert_eq!(error.records[0].stage, nyar_types::CompileStage::ValidateMir);
+    }
+
+    #[test]
+    fn planner_requires_each_complete_nominal_type_before_representation() {
+        use nyar_types::{NominalInstanceId, SubstitutionId, TypeId, TypeRecord};
+
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "class Node {} micro first(value: Node, tag: bool) -> Node { return value } \
+             micro second(value: Node, tag: i32) -> Node { return value }",
+        ).expect("源码声明与函数合同必须完成编译");
+        let mut program = output.canonical_program().clone();
+        let original = program.linked.nominal_instances.values().next().unwrap().clone();
+        let functions = program.mir.functions.keys().copied().collect::<Vec<_>>();
+        let mut instantiated_types = Vec::new();
+        for (index, function_id) in functions.iter().enumerate() {
+            let ty = TypeId::from_index(100 + index as u32).unwrap();
+            let nominal = NominalInstanceId::from_index(100 + index as u32).unwrap();
+            let function = program.mir.functions.get_mut(function_id).unwrap();
+            let argument = function.parameters[1].1;
+            program.linked.types.insert(ty, TypeRecord {
+                declaration: original.declaration,
+                kind: CanonicalTypeKind::Nominal { declaration: original.declaration, arguments: vec![argument] },
+            });
+            let mut record = original.clone();
+            record.ty = ty;
+            record.substitution = SubstitutionId::from_index(100 + index as u32).unwrap();
+            program.linked.nominal_instances.insert(nominal, record);
+            function.parameters[0].1 = ty;
+            function.return_type = ty;
+            function.value_types.insert(function.parameters[0].0, ty);
+            let signature = program.linked.item_instances.get_mut(function_id).unwrap();
+            signature.parameter_types[0] = ty;
+            signature.return_type = ty;
+            instantiated_types.push((nominal, ty));
+        }
+        let plan = CanonicalRepresentationPlanner.plan(&program).expect("完整实例夹具独立规划，非泛型源码生产证明");
+        for (function_id, (nominal, _)) in functions.iter().zip(&instantiated_types) {
+            let value = program.mir.functions[function_id].parameters[0].0;
+            assert_eq!(plan.value_reps[&ValueIdentity::new(*function_id, value)], ValueRepresentation::Reified);
+            assert!(plan.adt_reps.contains_key(nominal));
+        }
+        program.linked.nominal_instances.remove(&instantiated_types[1].0);
+        let error = CanonicalRepresentationPlanner.plan(&program).expect_err("同声明另一个实例不能代替缺失的完整实例");
         assert_eq!(error.records[0].code, "PLAN001");
         assert_eq!(error.records[0].stage, nyar_types::CompileStage::ValidateMir);
     }

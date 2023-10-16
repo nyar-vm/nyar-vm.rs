@@ -305,6 +305,40 @@ impl LinkedSemanticProgram {
                 }
             }
         }
+        for (ty, record) in &self.types {
+            let references = match &record.kind {
+                CanonicalTypeKind::Nominal { declaration, arguments } => {
+                    if ty != declaration || !arguments.is_empty() {
+                        self.validate_nominal_value_type(*ty, &nominal_types)?;
+                    }
+                    arguments.clone()
+                }
+                CanonicalTypeKind::Tuple(members)
+                | CanonicalTypeKind::Union(members)
+                | CanonicalTypeKind::Intersection(members) => members.clone(),
+                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => vec![*element],
+                CanonicalTypeKind::Function { parameters, return_type } => {
+                    parameters.iter().copied().chain(std::iter::once(*return_type)).collect()
+                }
+                CanonicalTypeKind::Primitive(_) => Vec::new(),
+            };
+            for referenced in references {
+                self.validate_nominal_value_type(referenced, &nominal_types)?;
+            }
+        }
+        for record in self.item_instances.values() {
+            for ty in record.parameter_types.iter().chain(std::iter::once(&record.return_type)) {
+                self.validate_nominal_value_type(*ty, &nominal_types)?;
+            }
+        }
+        for field in self.fields.values() {
+            self.validate_nominal_value_type(field.ty, &nominal_types)?;
+        }
+        for variant in self.variants.values() {
+            if let Some(ty) = variant.payload_type {
+                self.validate_nominal_value_type(ty, &nominal_types)?;
+            }
+        }
         for import in self.imports.values() {
             let Some(callee) = self.item_instances.get(&import.callee) else {
                 return Err(CanonicalMirError::UnknownFunction { function: import.callee });
@@ -317,6 +351,15 @@ impl LinkedSemanticProgram {
                     return Err(CanonicalMirError::UnknownType { function: import.callee, ty: *ty });
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn validate_nominal_value_type(&self, ty: TypeId, nominal_types: &std::collections::BTreeSet<TypeId>) -> Result<(), CanonicalMirError> {
+        if matches!(self.types.get(&ty).map(|record| &record.kind), Some(CanonicalTypeKind::Nominal { .. }))
+            && !nominal_types.contains(&ty)
+        {
+            return Err(CanonicalMirError::MissingNominalInstance { ty });
         }
         Ok(())
     }
@@ -496,6 +539,8 @@ pub struct CanonicalSemanticMir {
 pub enum CanonicalMirError {
     /// 名义类型没有来自声明的值/引用语义。
     MissingNominalSemantics { declaration: TypeId },
+    /// 值类型没有对应完整 TypeId 的名义实例合同。
+    MissingNominalInstance { ty: TypeId },
     /// 名义实例没有对应的名义声明类型。
     InvalidNominalDeclaration { nominal: NominalInstanceId, declaration: TypeId },
     /// 实例类型未知、非名义类型或不属于该声明。
@@ -596,6 +641,7 @@ impl CanonicalSemanticMir {
     /// 在进入 RepresentationPlan 前验证 stable-ID、链接和 SSA 合同。
     pub fn validate(&self, linked: &LinkedSemanticProgram) -> Result<(), CanonicalMirError> {
         linked.validate_types()?;
+        let nominal_types = linked.nominal_instances.values().map(|record| record.ty).collect();
         let mut export_names = std::collections::BTreeSet::new();
         for (function, export) in &linked.exports {
             if !linked.item_instances.contains_key(function) || !self.functions.contains_key(function) {
@@ -626,6 +672,7 @@ impl CanonicalSemanticMir {
                 if !linked.types.contains_key(ty) {
                     return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
                 }
+                linked.validate_nominal_value_type(*ty, &nominal_types)?;
             }
             let mut defined = std::collections::BTreeSet::new();
             for (value, ty) in &function.parameters {
@@ -1610,6 +1657,60 @@ mod tests {
                 | CanonicalMirError::OperationOperandTypeMismatch { .. }
             ), "{error:?}");
         }
+    }
+
+    #[test]
+    fn canonical_nominal_instance_coverage_precedes_operations() {
+        let field = FieldId::from_index(0).unwrap();
+        let boolean = TypeId::from_index(1).unwrap();
+        let object = MirValueId::from_index(0).unwrap();
+        let program = instantiated_nominal_operation_program(CanonicalOperation::FieldGet { object, field }, Some(boolean));
+        program.validate().expect("两个完整实例均有独立合同");
+        let mut missing = program.clone();
+        missing.linked.nominal_instances.remove(&NominalInstanceId::from_index(1).unwrap());
+        missing.linked.fields.remove(&FieldId::from_index(1).unwrap());
+        missing.linked.variants.remove(&VariantId::from_index(1).unwrap());
+        assert_eq!(missing.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: TypeId::from_index(3).unwrap() }));
+
+        let declaration = TypeId::from_index(0).unwrap();
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        let mut signature = program.clone();
+        signature.linked.item_instances.get_mut(&instance).unwrap().parameter_types[0] = declaration;
+        assert_eq!(signature.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+        let mut value = program.clone();
+        value.mir.functions.get_mut(&instance).unwrap().value_types.insert(object, declaration);
+        assert_eq!(value.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+        let mut field_type = program.clone();
+        field_type.linked.fields.get_mut(&field).unwrap().ty = declaration;
+        assert_eq!(field_type.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+        let mut payload = program.clone();
+        payload.linked.variants.get_mut(&VariantId::from_index(0).unwrap()).unwrap().payload_type = Some(declaration);
+        assert_eq!(payload.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+
+        let wrapper = TypeId::from_index(9).unwrap();
+        let shapes = [
+            CanonicalTypeKind::Array { element: declaration, length: None },
+            CanonicalTypeKind::Array { element: declaration, length: Some(2) },
+            CanonicalTypeKind::Tuple(vec![declaration]),
+            CanonicalTypeKind::Nullable(declaration),
+            CanonicalTypeKind::Union(vec![declaration, boolean]),
+            CanonicalTypeKind::Intersection(vec![declaration, boolean]),
+            CanonicalTypeKind::Function { parameters: vec![declaration], return_type: boolean },
+            CanonicalTypeKind::Function { parameters: vec![boolean], return_type: declaration },
+        ];
+        for kind in shapes {
+            let mut nested = program.clone();
+            nested.linked.types.insert(wrapper, TypeRecord { declaration: wrapper, kind });
+            assert_eq!(nested.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
+        }
+    }
+
+    #[test]
+    fn canonical_recursive_nominal_contract_does_not_expand_types() {
+        let mut program = nominal_program();
+        let declaration = TypeId::from_index(0).unwrap();
+        program.linked.fields.get_mut(&FieldId::from_index(0).unwrap()).unwrap().ty = declaration;
+        program.validate().expect("递归字段只验证现有闭包，不递归实例化或展开布局");
     }
 
     #[test]
