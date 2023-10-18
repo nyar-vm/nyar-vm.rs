@@ -11,7 +11,6 @@ pub mod derive;
 pub mod frontend_contract;
 pub mod highlight;
 pub mod hir;
-pub mod lir;
 pub mod meta_reactive;
 pub mod mir;
 pub mod module;
@@ -22,7 +21,7 @@ pub mod type_checker;
 pub mod types;
 /// Typing helpers such as linearization and semantic inheritance analysis.
 pub mod typing;
-/// 跨 `HIR / MIR / LIR` 的编译器一致性校验入口。
+/// 跨 HIR 与 Semantic MIR 的编译器一致性校验入口。
 pub mod validation;
 
 pub use assembly::{
