@@ -1663,6 +1663,36 @@ mod tests {
     }
 
     #[test]
+    fn canonical_sum_declaration_variant_has_independent_instance_payloads() {
+        let first = NominalInstanceId::from_index(0).unwrap();
+        let second = NominalInstanceId::from_index(1).unwrap();
+        let variant = VariantId::from_index(0).unwrap();
+        let object = MirValueId::from_index(0).unwrap();
+        let boolean = TypeId::from_index(1).unwrap();
+        let integer = TypeId::from_index(4).unwrap();
+        let operation = CanonicalOperation::SumPayloadGet { nominal: first, variant, object };
+        let mut program = instantiated_nominal_operation_program(operation, Some(boolean));
+        program.linked.variants.remove(&(second, VariantId::from_index(1).unwrap()));
+        program.linked.variants.insert((second, variant), VariantRecord { payload_type: Some(integer) });
+        program.validate().expect("同一声明 variant 在两个实例中保留不同 payload，不覆盖第一实例");
+        assert_eq!(program.linked.variants[&(first, variant)].payload_type, Some(boolean));
+        assert_eq!(program.linked.variants[&(second, variant)].payload_type, Some(integer));
+        let instance = ItemInstanceId::from_index(0).unwrap();
+        program.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap()
+            .instructions[0].operation = CanonicalOperation::SumVariantIs { nominal: second, variant, object };
+        assert!(matches!(program.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { .. })));
+    }
+
+    #[test]
+    fn canonical_sum_registry_rejects_missing_owner_without_an_operation() {
+        let mut program = nominal_program();
+        let nominal = NominalInstanceId::from_index(9).unwrap();
+        let variant = VariantId::from_index(0).unwrap();
+        program.linked.variants.insert((nominal, variant), VariantRecord { payload_type: None });
+        assert_eq!(program.validate(), Err(CanonicalMirError::InvalidVariantOwner { nominal, variant }));
+    }
+
+    #[test]
     fn canonical_nominal_instance_coverage_precedes_operations() {
         let field = FieldId::from_index(0).unwrap();
         let boolean = TypeId::from_index(1).unwrap();
