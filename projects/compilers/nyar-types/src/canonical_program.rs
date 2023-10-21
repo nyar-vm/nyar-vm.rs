@@ -81,8 +81,8 @@ pub struct LinkedSemanticProgram {
     pub nominal_instances: BTreeMap<NominalInstanceId, NominalInstanceRecord>,
     /// 已解析字段身份及其 owner/类型合同。
     pub fields: BTreeMap<FieldId, FieldRecord>,
-    /// 已解析 sum variant 身份及其 owner/payload 合同。
-    pub variants: BTreeMap<VariantId, VariantRecord>,
+    /// 声明 variant 在具体名义实例中的 payload 合同；不同实例不得覆盖同一声明身份。
+    pub variants: BTreeMap<(NominalInstanceId, VariantId), VariantRecord>,
     /// Selected evidence bindings.
     pub evidence: BTreeMap<EvidenceId, EvidenceRecord>,
     /// 已绑定的外部导入槽；执行层只消费 `ImportIndex`。
@@ -155,8 +155,6 @@ pub struct FieldRecord {
 /// 已解析 sum variant 的 owner 与 payload 合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariantRecord {
-    /// 所属名义实例。
-    pub owner: NominalInstanceId,
     /// 单 payload 类型；无 payload 时为空。
     pub payload_type: Option<TypeId>,
 }
@@ -334,7 +332,10 @@ impl LinkedSemanticProgram {
         for field in self.fields.values() {
             self.validate_nominal_value_type(field.ty, &nominal_types)?;
         }
-        for variant in self.variants.values() {
+        for ((nominal, variant_id), variant) in &self.variants {
+            if !self.nominal_instances.contains_key(nominal) {
+                return Err(CanonicalMirError::InvalidVariantOwner { nominal: *nominal, variant: *variant_id });
+            }
             if let Some(ty) = variant.payload_type {
                 self.validate_nominal_value_type(ty, &nominal_types)?;
             }
@@ -405,11 +406,11 @@ pub enum CanonicalOperation {
     /// 加载语言常量。
     LoadConstant { constant: CanonicalConstant },
     /// 构造已解析的 sum variant。
-    SumNew { variant: VariantId, payload: Option<MirValueId> },
+    SumNew { nominal: NominalInstanceId, variant: VariantId, payload: Option<MirValueId> },
     /// 提取已解析 variant 的 payload。
-    SumPayloadGet { variant: VariantId, object: MirValueId },
+    SumPayloadGet { nominal: NominalInstanceId, variant: VariantId, object: MirValueId },
     /// 检查 sum 值是否为已解析 variant。
-    SumVariantIs { variant: VariantId, object: MirValueId },
+    SumVariantIs { nominal: NominalInstanceId, variant: VariantId, object: MirValueId },
     /// 构造名义聚合。
     StructNew { nominal: NominalInstanceId, fields: Vec<(FieldId, MirValueId)> },
     /// 读取已解析字段。
@@ -625,6 +626,8 @@ pub enum CanonicalMirError {
     DuplicateStructField { function: ItemInstanceId, nominal: NominalInstanceId, field: FieldId },
     /// sum variant 身份未知。
     UnknownVariant { function: ItemInstanceId, variant: VariantId },
+    /// sum variant 的具体名义 owner 不存在。
+    InvalidVariantOwner { nominal: NominalInstanceId, variant: VariantId },
     /// sum variant payload 与声明合同不一致。
     VariantPayloadMismatch { function: ItemInstanceId, variant: VariantId },
     /// 结构操作的结果类型与其声明合同不一致。
@@ -836,12 +839,12 @@ impl CanonicalSemanticMir {
                         }
                         Vec::new()
                     }
-                    CanonicalOperation::SumNew { variant, payload } => {
-                        let Some(record) = linked.variants.get(variant) else {
+                    CanonicalOperation::SumNew { nominal, variant, payload } => {
+                        let Some(record) = linked.variants.get(&(*nominal, *variant)) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
                         };
-                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        let Some(owner) = linked.nominal_instances.get(nominal) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
                         };
                         let result_type = instruction.results.first().and_then(|value| function.value_types.get(value));
                         let result_is_owner = result_type == Some(&owner.ty);
@@ -858,8 +861,8 @@ impl CanonicalSemanticMir {
                             _ => return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant }),
                         }
                     }
-                    CanonicalOperation::SumPayloadGet { variant, object } => {
-                        let Some(record) = linked.variants.get(variant) else {
+                    CanonicalOperation::SumPayloadGet { nominal, variant, object } => {
+                        let Some(record) = linked.variants.get(&(*nominal, *variant)) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
                         };
                         if record.payload_type.is_none() {
@@ -875,16 +878,16 @@ impl CanonicalSemanticMir {
                         let Some(object_type) = function.value_types.get(object) else {
                             return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
                         };
-                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        let Some(owner) = linked.nominal_instances.get(nominal) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
                         };
                         if *object_type != owner.ty {
                             return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
                         }
                         vec![*object]
                     }
-                    CanonicalOperation::SumVariantIs { variant, object } => {
-                        let Some(record) = linked.variants.get(variant) else {
+                    CanonicalOperation::SumVariantIs { nominal, variant, object } => {
+                        let Some(_record) = linked.variants.get(&(*nominal, *variant)) else {
                             return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
                         };
                         let bool_result = instruction.results.len() == 1 && instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
@@ -898,8 +901,8 @@ impl CanonicalSemanticMir {
                         let Some(object_type) = function.value_types.get(object) else {
                             return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
                         };
-                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                        let Some(owner) = linked.nominal_instances.get(nominal) else {
+                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
                         };
                         if *object_type != owner.ty {
                             return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
@@ -1593,7 +1596,7 @@ mod tests {
         });
         program.linked.fields.insert(second_field, FieldRecord { owner: second, ty: boolean });
         for (index, owner) in [(0, first), (1, second)] {
-            program.linked.variants.insert(VariantId::from_index(index).unwrap(), VariantRecord { owner, payload_type: Some(boolean) });
+            program.linked.variants.insert((owner, VariantId::from_index(index).unwrap()), VariantRecord { payload_type: Some(boolean) });
         }
         let instance = ItemInstanceId::from_index(0).unwrap();
         let object = MirValueId::from_index(0).unwrap();
@@ -1641,12 +1644,12 @@ mod tests {
              CanonicalOperation::FieldGet { object, field: second_field }, Some(boolean)),
             (CanonicalOperation::FieldSet { object, field: first_field, value: payload },
              CanonicalOperation::FieldSet { object, field: second_field, value: payload }, None),
-            (CanonicalOperation::SumNew { variant: first_variant, payload: Some(payload) },
-             CanonicalOperation::SumNew { variant: second_variant, payload: Some(payload) }, Some(first_type)),
-            (CanonicalOperation::SumPayloadGet { variant: first_variant, object },
-             CanonicalOperation::SumPayloadGet { variant: second_variant, object }, Some(boolean)),
-            (CanonicalOperation::SumVariantIs { variant: first_variant, object },
-             CanonicalOperation::SumVariantIs { variant: second_variant, object }, Some(boolean)),
+            (CanonicalOperation::SumNew { nominal: first, variant: first_variant, payload: Some(payload) },
+             CanonicalOperation::SumNew { nominal: second, variant: second_variant, payload: Some(payload) }, Some(first_type)),
+            (CanonicalOperation::SumPayloadGet { nominal: first, variant: first_variant, object },
+             CanonicalOperation::SumPayloadGet { nominal: second, variant: second_variant, object }, Some(boolean)),
+            (CanonicalOperation::SumVariantIs { nominal: first, variant: first_variant, object },
+             CanonicalOperation::SumVariantIs { nominal: second, variant: second_variant, object }, Some(boolean)),
         ];
         for (valid, wrong_owner, result_type) in cases {
             instantiated_nominal_operation_program(valid, result_type).validate().expect("同一声明的不同泛型实例可独立持有结构合同");
@@ -1669,7 +1672,7 @@ mod tests {
         let mut missing = program.clone();
         missing.linked.nominal_instances.remove(&NominalInstanceId::from_index(1).unwrap());
         missing.linked.fields.remove(&FieldId::from_index(1).unwrap());
-        missing.linked.variants.remove(&VariantId::from_index(1).unwrap());
+        missing.linked.variants.remove(&(NominalInstanceId::from_index(1).unwrap(), VariantId::from_index(1).unwrap()));
         assert_eq!(missing.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: TypeId::from_index(3).unwrap() }));
 
         let declaration = TypeId::from_index(0).unwrap();
@@ -1684,7 +1687,7 @@ mod tests {
         field_type.linked.fields.get_mut(&field).unwrap().ty = declaration;
         assert_eq!(field_type.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
         let mut payload = program.clone();
-        payload.linked.variants.get_mut(&VariantId::from_index(0).unwrap()).unwrap().payload_type = Some(declaration);
+        payload.linked.variants.get_mut(&(NominalInstanceId::from_index(0).unwrap(), VariantId::from_index(0).unwrap())).unwrap().payload_type = Some(declaration);
         assert_eq!(payload.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
 
         let wrapper = TypeId::from_index(9).unwrap();

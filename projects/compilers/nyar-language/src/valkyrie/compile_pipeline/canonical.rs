@@ -24,7 +24,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     let type_values = collect_types(module)?;
     let symbols = collect_symbols(module)?;
-    let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
+    let (nominals, fields, field_records, variants) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
@@ -35,6 +35,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let _ = name;
     }
     linked.fields = field_records;
+    linked.variants = variants;
     for function in &module.functions {
         let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
@@ -79,7 +80,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
         let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
-        Ok((instance, lower_function(function, instance, &symbols, &type_values, &nominals, &fields, &mut next_instruction)?))
+        Ok((instance, lower_function(function, instance, &symbols, &type_values, &nominals, &fields, &linked.variants, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
@@ -88,10 +89,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
 
 type AggregateIdentity = (NominalInstanceId, TypeId, NominalValueSemantics);
 
-fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
+fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>, BTreeMap<FieldId, FieldRecord>, BTreeMap<(NominalInstanceId, nyar_types::VariantId), nyar_types::VariantRecord>), StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
     let mut fields = BTreeMap::new();
     let mut field_records = BTreeMap::new();
+    let mut variants = BTreeMap::new();
     let mut next_field = 0u32;
     for (index, aggregate) in module.structs.iter().enumerate() {
         let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
@@ -111,7 +113,35 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
             field_records.insert(id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? });
         }
     }
-    Ok((nominals, fields, field_records))
+    let mut next_variant = 0u32;
+    for aggregate in &module.sum_types {
+        let declaration_variant_ids = aggregate.variants.iter().map(|_| {
+            let id = nyar_types::VariantId::from_index(next_variant)
+                .ok_or_else(|| error_without_module("CAN021", "variant identity 溢出"));
+            next_variant = next_variant.checked_add(1).ok_or_else(|| error_without_module("CAN021", "variant identity 溢出"))?;
+            id
+        }).collect::<Result<Vec<_>, _>>()?;
+        if !aggregate.generics.is_empty() {
+            continue;
+        }
+        let qualified = aggregate.name.clone();
+        let declaration = types.get(&ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&qualified)))
+            .copied()
+            .ok_or_else(|| error_without_module("CAN018", format!("sum `{qualified}` 缺少类型事实")))?;
+        let nominal = NominalInstanceId::from_index(nominals.len() as u32)
+            .ok_or_else(|| error_without_module("CAN019", "nominal identity 溢出"))?;
+        if nominals.insert(qualified.clone(), (nominal, declaration, NominalValueSemantics::Value)).is_some() {
+            return Err(error_without_module("CAN020", format!("聚合 identity 重复: {qualified}")));
+        }
+        for (variant, variant_id) in aggregate.variants.iter().zip(declaration_variant_ids) {
+            let payload = aggregate.instantiate_payload(variant, &[])
+                .ok_or_else(|| error_without_module("CAN022", format!("sum `{qualified}` variant `{}` 缺少完整代入", variant.name)))?
+                .map(|ty| type_id(types, &ty))
+                .transpose()?;
+            variants.insert((nominal, variant_id), nyar_types::VariantRecord { payload_type: payload });
+        }
+    }
+    Ok((nominals, fields, field_records, variants))
 }
 
 fn collect_symbols(module: &MirModule) -> Result<BTreeMap<String, ItemInstanceId>, StructuredDiagnosticSet> {
@@ -182,7 +212,7 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
     })
 }
 
-fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, variants: &BTreeMap<(NominalInstanceId, nyar_types::VariantId), nyar_types::VariantRecord>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let parameters = canonical_entry_parameters(function, ids)?;
     let blocks = function.blocks.iter().map(|block| {
@@ -196,7 +226,7 @@ fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BT
         let instructions = block.instructions.iter().map(|instruction| {
             let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
             *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, symbols, ids, nominals, fields)? })
+            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, symbols, ids, nominals, fields, variants)? })
         }).collect::<Result<_, StructuredDiagnosticSet>>()?;
         Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
@@ -226,7 +256,7 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
     }).collect()
 }
 
-fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, variants: &BTreeMap<(NominalInstanceId, nyar_types::VariantId), nyar_types::VariantRecord>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
         MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
@@ -237,6 +267,30 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
             destination: value(dest)?,
         }),
         MirOperation::LoadConstant { constant, .. } => Ok(CanonicalOperation::LoadConstant { constant: lower_constant(constant)? }),
+        MirOperation::SumNew { sum_type, variant, payload, .. } => {
+            let (nominal, _, _) = nominals.get(sum_type).copied()
+                .ok_or_else(|| error_without_module("CAN040", format!("sum `{sum_type}` 缺少完整名义实例")))?;
+            if !variants.contains_key(&(nominal, *variant)) {
+                return Err(error_without_module("CAN041", format!("sum `{sum_type}` 的 variant `{variant}` 缺少 owner 合同")));
+            }
+            Ok(CanonicalOperation::SumNew { nominal, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
+        }
+        MirOperation::SumPayloadGet { sum_type, variant, object, .. } => {
+            let (nominal, _, _) = nominals.get(sum_type).copied()
+                .ok_or_else(|| error_without_module("CAN040", format!("sum `{sum_type}` 缺少完整名义实例")))?;
+            if !variants.contains_key(&(nominal, *variant)) {
+                return Err(error_without_module("CAN041", format!("sum `{sum_type}` 的 variant `{variant}` 缺少 owner 合同")));
+            }
+            Ok(CanonicalOperation::SumPayloadGet { nominal, variant: *variant, object: value(object)? })
+        }
+        MirOperation::SumVariantIs { sum_type, variant, object, .. } => {
+            let (nominal, _, _) = nominals.get(sum_type).copied()
+                .ok_or_else(|| error_without_module("CAN040", format!("sum `{sum_type}` 缺少完整名义实例")))?;
+            if !variants.contains_key(&(nominal, *variant)) {
+                return Err(error_without_module("CAN041", format!("sum `{sum_type}` 的 variant `{variant}` 缺少 owner 合同")));
+            }
+            Ok(CanonicalOperation::SumVariantIs { nominal, variant: *variant, object: value(object)? })
+        }
         MirOperation::ArrayGet { array, index } => Ok(CanonicalOperation::ArrayGet { array: value(array)?, index: value(index)? }),
         MirOperation::ArraySet { array, index, value: stored } => Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? }),
         MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
