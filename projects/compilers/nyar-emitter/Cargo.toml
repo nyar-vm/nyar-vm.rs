@@ -8,10 +8,8 @@ license.workspace = true
 
 [features]
 default = []
-# Nyar VM bytecode lane. Off by default so Node/Wasm seed builds stay slim.
-# `nyar-vm-lane` is the preferred consumer name; it enables the same gates as `legacy-lanes`.
-legacy-lanes = []
-nyar-vm-lane = ["legacy-lanes"]
+# 正式 Nyar 字节码编译与执行路径；Node/Wasm seed 默认不启用。
+nyar-vm-lane = []
 # Frozen CLR / JVM / native lowering (still on pre-ADR-0010 MIR shape; not required for nyar-vm).
 legacy-lanes-clr-jvm-native = []
 

@@ -4,7 +4,7 @@ pub(crate) use crate::lowering::{
     shared::{executable, interop, intrinsic_opcode, nullable, suspend_sm, suspend_witness, witness_abi},
 };
 
-#[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(any(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 #[path = "clr/types.rs"]
 pub(crate) mod clr_types;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
@@ -40,9 +40,9 @@ pub(crate) mod native;
 #[path = "native/witness.rs"]
 pub(crate) mod witness;
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 pub(crate) mod nyar_vm;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 #[path = "nyar_vm/mir.rs"]
 pub(crate) mod nyar_vm_mir;
 

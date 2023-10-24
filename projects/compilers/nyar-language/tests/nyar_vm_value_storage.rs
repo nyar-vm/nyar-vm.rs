@@ -3,7 +3,7 @@
 //! Lives here (not in `emitter` unit tests) so the driver crate stays free of
 //! `nyar-language` while still covering compiler → executable → VM bytecode.
 //!
-//! Requires `emitter/legacy-lanes`（nyar_vm bytecode 车道；见本仓 Cargo feature `nyar-vm-lane`）。
+//! 使用正式 `nyar-vm-lane` feature 验证字节码值存储合同。
 
 use std::sync::Arc;
 

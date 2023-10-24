@@ -13,13 +13,13 @@ use nyar::QualifiedName;
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 use nyar_bytecode::NyarModuleData;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use std_data::binary::{elf::NativeElfImageBuilder, pe::NativeImageBuilder};
 
 use crate::{DriverBackendInput, FragmentSubmission};
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 use crate::NyarVmBackendInput;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use crate::executable_provider::ExecutableFunction;
@@ -29,13 +29,13 @@ pub(crate) mod features;
 mod shared;
 mod tooling;
 
-#[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(any(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 pub(crate) use self::backends::clr_types;
 pub(crate) use self::features::pattern_matching_contract;
 
-#[cfg(not(feature = "legacy-lanes"))]
+#[cfg(not(feature = "nyar-vm-lane"))]
 use self::backends::wasm;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 use self::backends::{nyar_vm, wasm};
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 use self::{
@@ -83,7 +83,7 @@ pub(crate) fn testing_build_clr_nominal_type_defs(
     backends::clr_nominal::build_clr_nominal_type_defs(sum_types, flags_types)
 }
 
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
     nyar_vm::lower_fragment_to_nyar_module(submission)
 }
@@ -288,7 +288,7 @@ pub(crate) fn lower_fragment_to_driver_input(
             let (executable, entry_symbol) = native::lower_fragment_to_native_executable(submission, host_flavor)?;
             Ok(DriverBackendInput::Native(NativeBinaryBackendInput { executable, output_dir, entry_symbol }))
         }
-        #[cfg(feature = "legacy-lanes")]
+        #[cfg(feature = "nyar-vm-lane")]
         TargetBackendFamily::NyarVm => {
             let nyar_module = if submission.suspend_runtime.is_some() && submission.exported_operations.is_empty() {
                 None
@@ -309,7 +309,7 @@ pub(crate) fn lower_fragment_to_driver_input(
             }))
         }
         other => Err(miette!(
-            "`{other:?}` lane is frozen for 0.0.x Node/Wasm delivery; enable Cargo feature `legacy-lanes` to compile CLR/JVM/native/nyar_vm lowering"
+            "目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物"
         )),
     }
 }

@@ -3,13 +3,13 @@ use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
 
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 mod clr;
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 mod jvm;
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 mod native;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 mod nyar_vm;
 mod wasm;
 
@@ -34,17 +34,17 @@ impl DriverCompilerRegistration {
     }
 }
 
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 static CLR_COMPILER: clr::ClrFamilyCompiler = clr::ClrFamilyCompiler;
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 static JVM_COMPILER: jvm::JvmFamilyCompiler = jvm::JvmFamilyCompiler;
 static WASM_COMPILER: wasm::WasmFamilyCompiler = wasm::WasmFamilyCompiler;
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 static NATIVE_COMPILER: native::NativeFamilyCompiler = native::NativeFamilyCompiler;
-#[cfg(feature = "legacy-lanes")]
+#[cfg(feature = "nyar-vm-lane")]
 static NYAR_VM_COMPILER: nyar_vm::NyarVmFamilyCompiler = nyar_vm::NyarVmFamilyCompiler;
 
-#[cfg(all(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
     DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-binary", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
@@ -53,13 +53,13 @@ static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
     DriverCompilerRegistration { name: "nyar-vm", priority: 100, supports: nyar_vm::supports_requirement, compiler: &NYAR_VM_COMPILER },
 ];
 
-#[cfg(all(feature = "legacy-lanes", not(feature = "legacy-lanes-clr-jvm-native")))]
+#[cfg(all(feature = "nyar-vm-lane", not(feature = "legacy-lanes-clr-jvm-native")))]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 2] = [
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
     DriverCompilerRegistration { name: "nyar-vm", priority: 100, supports: nyar_vm::supports_requirement, compiler: &NYAR_VM_COMPILER },
 ];
 
-#[cfg(not(feature = "legacy-lanes"))]
+#[cfg(not(feature = "nyar-vm-lane"))]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 1] =
     [DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER }];
 

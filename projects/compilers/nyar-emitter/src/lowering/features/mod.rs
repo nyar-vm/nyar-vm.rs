@@ -1,6 +1,6 @@
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 pub(crate) use crate::lowering::backends::{clr_mir, jvm_mir};
-#[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(any(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 pub(crate) use crate::lowering::backends::clr_types;
 
 pub(crate) mod pattern_matching_contract;

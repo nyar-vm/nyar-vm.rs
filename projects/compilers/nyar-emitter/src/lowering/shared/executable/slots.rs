@@ -12,7 +12,7 @@ use crate::{
         shared::executable::{ExecutableLoweringContext, collect_reachable_blocks},
     },
 };
-#[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+#[cfg(any(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
 use crate::{
     lowering::clr_types::nyar_type_to_msil,
     nyar_backend_clr::MsilType,
@@ -103,7 +103,7 @@ impl ExecutableSlotPlan {
         found
     }
 
-    #[cfg(any(feature = "legacy-lanes", feature = "legacy-lanes-clr-jvm-native"))]
+    #[cfg(any(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
     fn alloc_local(&mut self, ctx: &ExecutableLoweringContext<'_>, ty: &NyarType, storage: ExecutableStorageKind) -> u16 {
         let _ = storage;
         let msil_ty = nyar_type_to_msil(ty, ctx.layouts);

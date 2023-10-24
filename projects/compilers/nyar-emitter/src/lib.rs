@@ -77,7 +77,7 @@ pub mod testing {
     use nyar_types::SingletonInstancePlan;
     #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "nyar-vm-lane")]
     use nyar_bytecode::NyarModuleData;
 
     /// Target profile used by normalized physical-contract observations.
@@ -173,7 +173,7 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to a Nyar VM module.
-    #[cfg(feature = "legacy-lanes")]
+    #[cfg(feature = "nyar-vm-lane")]
     pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData, miette::Report> {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
