@@ -112,31 +112,8 @@ pub(crate) fn resolve_static_callee_operation(
     executable: &dyn ExecutableProvider,
     path: &NamePath,
 ) -> Option<QualifiedName> {
-    let dotted = path.to_string();
-    if let Some(operation) = operation_for_exact_symbol(executable, &dotted) {
-        return Some(operation);
-    }
-    if path.parts().len() > 1 {
-        let via_colon = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-        if let Some(operation) = operation_for_exact_symbol(executable, &via_colon) {
-            return Some(operation);
-        }
-        let qualified = QualifiedName::new(path.parts().to_vec());
-        if executable.get_function(&qualified).is_some() {
-            return Some(qualified);
-        }
-    }
-    None
-}
-
-fn operation_for_exact_symbol(executable: &dyn ExecutableProvider, symbol: &str) -> Option<QualifiedName> {
-    if executable.find_by_symbol(symbol).is_none() {
-        return None;
-    }
-    executable
-        .operations()
-        .into_iter()
-        .find(|operation| executable.get_function(operation).is_some_and(|view| view.function.symbol == symbol))
+    let operation = QualifiedName::new(path.parts().to_vec());
+    executable.get_function(&operation).map(|_| operation)
 }
 
 impl ExecutableProvider for MirFunctionMapProvider {
