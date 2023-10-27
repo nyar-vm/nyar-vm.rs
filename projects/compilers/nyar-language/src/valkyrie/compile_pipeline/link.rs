@@ -18,6 +18,12 @@ pub(crate) fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency
 }
 
 fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
+    let external_symbols = consumer
+        .external_calls
+        .iter()
+        .chain(dependency_mirs.iter().flat_map(|module| module.external_calls.iter()))
+        .map(|contract| contract.symbol.to_string())
+        .collect::<BTreeSet<_>>();
     if !dependency_mirs.is_empty() {
         // 完整身份必须唯一；依赖顺序不得决定语义绑定。
         let mut pool: BTreeMap<String, (usize, MirFunction)> = BTreeMap::new();
@@ -43,9 +49,13 @@ fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModul
             let mut linked_symbols = BTreeSet::new();
             let mut linked_by_dep: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
             while let Some(need) = queue.pop_front() {
-                let Some((dep_index, mir_fn)) = pool.get(&need).map(|(index, function)| (*index, function))
-                else {
-                    continue;
+                let Some((dep_index, mir_fn)) = pool.get(&need).map(|(index, function)| (*index, function)) else {
+                    if external_symbols.contains(&need) {
+                        continue;
+                    }
+                    return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                        "未解析的静态 callable identity：`{need}`"
+                    )));
                 };
                 if linked_symbols.contains(&mir_fn.symbol) || local.contains(&mir_fn.symbol) {
                     continue;
@@ -250,12 +260,19 @@ mod tests {
     }
 
     #[test]
-    fn unqualified_callee_does_not_pull_unique_dependency_helper() {
+    fn unqualified_callee_is_rejected_at_link_time() {
         let mut consumer = bare_module("legion", vec![call_fn("legion::caller", "helper")]);
-        let original = consumer.clone();
         let dependency = bare_module("library", vec![empty_fn("library::helper")]);
-        link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
-        assert_eq!(consumer, original);
+        let error = link_reachable_dependency_mir(&mut consumer, &[dependency]).expect_err("未限定调用不能伪装为闭包外调用");
+        assert!(error.to_string().contains("未解析的静态 callable identity"));
+    }
+
+    #[test]
+    fn unknown_qualified_callee_is_rejected_instead_of_dropped() {
+        let mut consumer = bare_module("legion", vec![call_fn("legion::caller", "missing::helper")]);
+        let dependency = bare_module("library", vec![empty_fn("library::helper")]);
+        let error = link_reachable_dependency_mir(&mut consumer, &[dependency]).expect_err("未知限定调用必须在链接边界失败");
+        assert!(error.to_string().contains("未解析的静态 callable identity"));
     }
 
     #[test]
