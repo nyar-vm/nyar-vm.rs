@@ -611,9 +611,7 @@ impl ValkyrieCompiler {
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     pub fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
-        let mut dependency_mirs = Vec::new();
-        let mut final_hir = None;
-        let mut final_mir = None;
+        let mut hir_groups = Vec::with_capacity(groups.len());
         for group in groups {
             let dependency_exports = group
                 .direct_dependencies
@@ -625,7 +623,6 @@ impl ValkyrieCompiler {
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
             )?;
-            let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
                 functions: hir_module.functions.clone(),
@@ -638,15 +635,16 @@ impl ValkyrieCompiler {
             if exports.insert(group.dependency_key.clone(), export).is_some() {
                 return Err(ParseError::invalid(format!("semantic dependency export identity collision for `{}`", group.dependency_key)));
             }
-            if let Some(previous) = final_mir.replace(semantic_mir) {
-                dependency_mirs.push(previous);
-            }
-            final_hir = Some(hir_module);
+            hir_groups.push(hir_module);
         }
-        let final_hir = final_hir.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        let mut final_mir = final_mir.ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        if !dependency_mirs.is_empty() {
-            crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &dependency_mirs)?;
+        let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        let mir_groups = hir_groups
+            .iter()
+            .map(crate::valkyrie::mir::MirLowerer::lower_module_semantic)
+            .collect::<Vec<_>>();
+        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
+        if !mir_groups.is_empty() {
+            crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
         let neutral_plan = hir_module_to_frontend_neutral_plan(&final_hir);
         FrontendBuildOutput::from_hir_and_semantic_mir(final_hir, neutral_plan, final_mir)
