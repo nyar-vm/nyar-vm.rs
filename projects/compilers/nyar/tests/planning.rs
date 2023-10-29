@@ -10,6 +10,25 @@ fn qualified_name(parts: &[&str]) -> QualifiedName {
     QualifiedName::new(parts.iter().map(|part| Identifier::new(part)).collect())
 }
 
+fn semantic_fragment_from_dimension(dimension: &ObjectAlgebraicDimension) -> SemanticFragment {
+    SemanticFragment {
+        id: dimension.name.clone(),
+        exported_operations: dimension.exported_operations.clone(),
+        required_capabilities: dimension.required_capabilities.clone(),
+        reference_management_hint: dimension.reference_management_hint,
+        entry_operation: None,
+        external_import_links: Default::default(),
+        external_call_edges: Vec::new(),
+        internal_call_edges: Vec::new(),
+        operation_literal_returns: Default::default(),
+        operation_void_returns: Default::default(),
+        witness_tables: Vec::new(),
+        witness_calls: Vec::new(),
+        rewrite_theory: RewriteTheory::default(),
+        wasm_export_names: Default::default(),
+    }
+}
+
 fn backend_registry_for(target: CanonicalTarget, projection_family: FutamuraProjectionFamily, fragment_names: &[&str]) -> BackendRegistry {
     let mut registry = BackendRegistry::default();
     let binary_target: nyar::BinaryTarget = target.into();
@@ -39,6 +58,29 @@ fn backend_registry_for(target: CanonicalTarget, projection_family: FutamuraProj
         });
     }
     registry
+}
+
+#[test]
+fn planning_rejects_missing_compiler_semantic_fragments() {
+    let error = ArtifactPartitionPlan::from_input(PlanningInput {
+        module_name: qualified_name(&["demo"]),
+        target: CanonicalTarget::clr(),
+        program_facts: ProgramFacts::default(),
+        semantic_fragments: Vec::new(),
+        object_algebraic_program: ObjectAlgebraicProgram::default(),
+        rewrite_theory: RewriteTheory::default(),
+        projection_policy: ProjectionPolicy {
+            family: FutamuraProjectionFamily::Clr,
+            host_boundary: HostProjectionBoundary::Clr,
+            reference_management: ReferenceManagement::HostGc,
+            prefer_small_artifacts: false,
+            preserve_effect_boundaries: true,
+        },
+        backend_registry: BackendRegistry::default(),
+        clr_suspend_strategy: ClrSuspendStrategy::default(),
+    })
+    .expect_err("缺少 Compiler semantic fragment 不得回退到旧 object algebraic program");
+    assert!(format!("{error:?}").contains("禁止回退到 ObjectAlgebraicProgram"));
 }
 
 #[test]
@@ -78,7 +120,7 @@ fn planning_runs_optimizer_before_partitioning() {
         module_name,
         target: CanonicalTarget::clr(),
         program_facts,
-        semantic_fragments: Vec::new(),
+        semantic_fragments: object_algebraic_program.dimensions.iter().map(semantic_fragment_from_dimension).collect(),
         object_algebraic_program,
         rewrite_theory,
         projection_policy: ProjectionPolicy {
@@ -144,7 +186,7 @@ fn planning_can_promote_operation_level_reference_management_hint() {
         module_name,
         target: CanonicalTarget::clr(),
         program_facts,
-        semantic_fragments: Vec::new(),
+        semantic_fragments: object_algebraic_program.dimensions.iter().map(semantic_fragment_from_dimension).collect(),
         object_algebraic_program,
         rewrite_theory: RewriteTheory::default(),
         projection_policy: ProjectionPolicy {
@@ -243,7 +285,7 @@ fn planning_splits_partitions_by_dimension() {
         module_name,
         target: CanonicalTarget::clr(),
         program_facts,
-        semantic_fragments: Vec::new(),
+        semantic_fragments: object_algebraic_program.dimensions.iter().map(semantic_fragment_from_dimension).collect(),
         object_algebraic_program,
         rewrite_theory: RewriteTheory::default(),
         projection_policy: ProjectionPolicy {

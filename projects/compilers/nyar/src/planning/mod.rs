@@ -211,6 +211,13 @@ impl ArtifactPartitionPlan {
             backend_registry,
             clr_suspend_strategy,
         } = input;
+        if semantic_fragments.is_empty() {
+            return Err(PlanningError::SemanticContract {
+                module: module_name.to_string(),
+                stage: nyar_types::CompileStage::RepresentationPlan,
+                detail: "缺少 Compiler 已验证的 semantic fragment；禁止回退到 ObjectAlgebraicProgram".to_owned(),
+            });
+        }
         let mut projection_policy = projection_policy;
         projection_policy.reference_management =
             resolve_reference_management(program_facts.reference_management, projection_policy.reference_management, projection_policy.family);
@@ -251,58 +258,26 @@ fn build_effective_program(
     object_algebraic_program: ObjectAlgebraicProgram,
     semantic_fragments: &[SemanticFragment],
 ) -> ObjectAlgebraicProgram {
-    let mut program = if semantic_fragments.is_empty() {
-        object_algebraic_program
+    let mut exports = program_facts.exports.iter().map(|item| item.local_name.clone()).collect::<Vec<_>>();
+    for fragment in semantic_fragments {
+        for operation in &fragment.exported_operations {
+            push_unique_operation(&mut exports, operation.clone());
+        }
     }
-    else {
-        let mut exports = if object_algebraic_program.exports.is_empty() {
-            program_facts.exports.iter().map(|item| item.local_name.clone()).collect::<Vec<_>>()
-        }
-        else {
-            object_algebraic_program.exports
-        };
-        for fragment in semantic_fragments {
-            for operation in &fragment.exported_operations {
-                push_unique_operation(&mut exports, operation.clone());
-            }
-        }
-
-        ObjectAlgebraicProgram {
-            module_name: if object_algebraic_program.module_name.parts().is_empty() {
-                module_name.clone()
-            }
-            else {
-                object_algebraic_program.module_name
-            },
-            exports,
-            dimensions: semantic_fragments
-                .iter()
-                .map(|fragment| ObjectAlgebraicDimension {
-                    name: fragment.id.clone(),
-                    exported_operations: fragment.exported_operations.clone(),
-                    required_capabilities: fragment.required_capabilities.clone(),
-                    reference_management_hint: fragment.reference_management_hint,
-                })
-                .collect(),
-            structured_terms: object_algebraic_program.structured_terms,
-        }
-    };
-
-    if program.dimensions.is_empty() {
-        let exports = if program.exports.is_empty() {
-            program_facts.exports.iter().map(|item| item.local_name.clone()).collect::<Vec<_>>()
-        }
-        else {
-            program.exports.clone()
-        };
-        program.dimensions.push(ObjectAlgebraicDimension {
-            name: Identifier::new("functions"),
-            exported_operations: exports,
-            required_capabilities: Vec::new(),
-            reference_management_hint: program_facts.reference_management,
-        });
+    ObjectAlgebraicProgram {
+        module_name: if object_algebraic_program.module_name.parts().is_empty() { module_name.clone() } else { object_algebraic_program.module_name },
+        exports,
+        dimensions: semantic_fragments
+            .iter()
+            .map(|fragment| ObjectAlgebraicDimension {
+                name: fragment.id.clone(),
+                exported_operations: fragment.exported_operations.clone(),
+                required_capabilities: fragment.required_capabilities.clone(),
+                reference_management_hint: fragment.reference_management_hint,
+            })
+            .collect(),
+        structured_terms: object_algebraic_program.structured_terms,
     }
-    program
 }
 
 fn merge_rewrite_theory(mut shared: RewriteTheory, semantic_fragments: &[SemanticFragment]) -> RewriteTheory {

@@ -1,6 +1,6 @@
 use nyar::{
     BackendCandidate, BackendInputKind, BackendSelector, BinaryFlavor, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement,
-    ReferenceManagement, TargetFamily, TargetLane,
+    ReferenceManagement, RewriteTheory, SemanticFragment, TargetFamily, TargetLane,
 };
 
 #[test]
@@ -72,7 +72,22 @@ fn builds_backend_requirement_from_partition_plan() {
         module_name: nyar::QualifiedName::new(vec![nyar::Identifier::new("demo")]),
         target: nyar::CanonicalTarget::clr(),
         program_facts: nyar::ProgramFacts::default(),
-        semantic_fragments: Vec::new(),
+        semantic_fragments: vec![SemanticFragment {
+            id: nyar::Identifier::new("functions"),
+            exported_operations: Vec::new(),
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+            entry_operation: None,
+            external_import_links: Default::default(),
+            external_call_edges: Vec::new(),
+            internal_call_edges: Vec::new(),
+            operation_literal_returns: Default::default(),
+            operation_void_returns: Default::default(),
+            witness_tables: Vec::new(),
+            witness_calls: Vec::new(),
+            rewrite_theory: RewriteTheory::default(),
+            wasm_export_names: Default::default(),
+        }],
         object_algebraic_program: nyar::ObjectAlgebraicProgram::default(),
         rewrite_theory: nyar::RewriteTheory::default(),
         projection_policy: nyar::ProjectionPolicy {
