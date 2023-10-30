@@ -333,7 +333,8 @@ fn validate_jvm_call_contracts(submission: &FragmentSubmission) -> Result<()> {
                     ));
                 };
                 let symbol = path.to_string();
-                let local = executable.find_by_symbol(&symbol).is_some();
+                let operation = nyar::QualifiedName::new(path.parts().to_vec());
+                let local = executable.get_function(&operation).is_some();
                 let external_link = submission.external_import_links.get(&nyar::QualifiedName::new(path.parts().to_vec()));
                 let runtime_stub = is_injected_runtime_stub_symbol(&path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>());
                 let host_print = external_link.is_some_and(|link| jvm_host_print_target(link).is_some());

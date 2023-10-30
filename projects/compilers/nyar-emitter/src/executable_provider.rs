@@ -85,10 +85,6 @@ pub trait ExecutableProvider: Send + Sync {
     /// Returns the function view for the given exported operation.
     fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView>;
 
-
-    /// Finds a function by its internal symbol string.
-    fn find_by_symbol(&self, symbol: &str) -> Option<FunctionView>;
-
     /// Returns suspend metadata if the function has suspend semantics.
     fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView>;
 }
@@ -125,11 +121,6 @@ impl ExecutableProvider for MirFunctionMapProvider {
         self.functions.get(operation).cloned().map(|function| FunctionView { function })
     }
 
-
-    fn find_by_symbol(&self, symbol: &str) -> Option<FunctionView> {
-        self.functions.values().find(|function| function.symbol == symbol).cloned().map(|function| FunctionView { function })
-    }
-
     fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
         self.functions.get(operation).and_then(SuspendMetadataView::from_function)
     }
@@ -160,14 +151,13 @@ mod tests {
     }
 
     #[test]
-    fn function_registry_requires_exact_semantic_symbol() {
+    fn function_registry_requires_exact_qualified_name() {
         let operation = QualifiedName::new(vec![nyar::Identifier::new("module"), nyar::Identifier::new("entry")]);
-        let provider = MirFunctionMapProvider::new(BTreeMap::from([(operation, function("module.entry"))]));
+        let provider = MirFunctionMapProvider::new(BTreeMap::from([(operation.clone(), function("module.entry"))]));
 
-        assert!(provider.find_by_symbol("module.entry").is_some());
-        assert!(provider.find_by_symbol("entry").is_none());
-        assert!(provider.find_by_symbol("other.module.entry").is_none());
-        assert!(provider.find_by_symbol("module::entry").is_none());
+        assert!(provider.get_function(&operation).is_some());
+        assert!(provider.get_function(&QualifiedName::new(vec![nyar::Identifier::new("entry")])).is_none());
+        assert!(provider.get_function(&QualifiedName::new(vec![nyar::Identifier::new("other"), nyar::Identifier::new("module"), nyar::Identifier::new("entry")])).is_none());
     }
 
     #[test]

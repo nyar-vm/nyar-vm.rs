@@ -1039,8 +1039,8 @@ impl<'a> ClrMirLowerer<'a> {
         if method_name == plan.accessor_method() && arguments.is_empty() {
             return Some((owner, method_name.to_string(), true, MsilType::Named(plan.name.clone()), Vec::new()));
         }
-        let symbol = format!("{type_name}.{method_name}");
-        let mir_fn = self.submission.executable.as_ref().and_then(|exec| exec.find_by_symbol(&symbol)).map(|view| view.function)?;
+        let operation = nyar::QualifiedName::new(path.parts().to_vec());
+        let mir_fn = self.submission.executable.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
         let return_type = nyar_type_to_msil(&mir_fn.return_type, &self.submission.aggregate_layouts);
         let param_types = mir_fn.param_types.iter().skip(1).map(|ty| nyar_type_to_msil(ty, &self.submission.aggregate_layouts)).collect();
         Some((owner, method_name.to_string(), false, return_type, param_types))
@@ -3687,7 +3687,8 @@ impl<'a> ClrMirLowerer<'a> {
     /// from a short method name or namespace suffix.
     fn resolve_call_signature(&self, path: &nyar::NamePath) -> Option<(MsilType, Vec<MsilType>)> {
         let exec = self.submission.executable.as_ref()?;
-        let view = exec.find_by_symbol(&path.to_string())?;
+        let operation = nyar::QualifiedName::new(path.parts().to_vec());
+        let view = exec.get_function(&operation)?;
         let mir_fn = &view.function;
         let return_type = nyar_type_to_msil(&mir_fn.return_type, &self.submission.aggregate_layouts);
         let param_types = mir_fn.param_types.iter().map(|ty| nyar_type_to_msil(ty, &self.submission.aggregate_layouts)).collect();

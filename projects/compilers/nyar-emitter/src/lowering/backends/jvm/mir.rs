@@ -4502,8 +4502,8 @@ impl<'a> JvmMirLowerer<'a> {
             let descriptor = JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Object(owner.clone()));
             return Some((JvmMethodRef { owner, name: method_name.to_string(), descriptor }, true, false));
         }
-        let symbol = format!("{type_name}.{method_name}");
-        let mir_fn = self.ctx.submission.executable.as_ref().and_then(|exec| exec.find_by_symbol(&symbol)).map(|view| view.function)?;
+        let operation = nyar::QualifiedName::new(path.parts().to_vec());
+        let mir_fn = self.ctx.submission.executable.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
         let return_ty = concretize_self_type(&mir_fn.return_type, Some(type_name));
         let effective_return = effective_jvm_type(&self.ctx, &return_ty);
         let return_type = jvm_type_descriptor(&effective_return);
