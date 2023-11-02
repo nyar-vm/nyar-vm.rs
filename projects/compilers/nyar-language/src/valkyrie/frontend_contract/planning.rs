@@ -396,8 +396,7 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
                     .iter()
                     .find_map(|entry| {
                         dimension.exported_operations.iter().any(|operation| operation == &entry.symbol).then(|| entry.symbol.clone())
-                    })
-                    .or_else(|| dimension.exported_operations.first().cloned()),
+                    }),
                 external_import_links: external_import_links_for_operations(
                     &program_facts.functions,
                     &dimension.exported_operations,

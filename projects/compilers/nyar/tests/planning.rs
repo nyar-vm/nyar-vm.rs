@@ -84,6 +84,46 @@ fn planning_rejects_missing_compiler_semantic_fragments() {
 }
 
 #[test]
+fn planning_does_not_promote_first_export_to_entry() {
+    let operation = qualified_name(&["demo", "exported"]);
+    let fragment = SemanticFragment {
+        id: Identifier::new("functions"),
+        exported_operations: vec![operation],
+        required_capabilities: Vec::new(),
+        reference_management_hint: None,
+        entry_operation: None,
+        external_import_links: Default::default(),
+        external_call_edges: Vec::new(),
+        internal_call_edges: Vec::new(),
+        operation_literal_returns: Default::default(),
+        operation_void_returns: Default::default(),
+        witness_tables: Vec::new(),
+        witness_calls: Vec::new(),
+        rewrite_theory: RewriteTheory::default(),
+        wasm_export_names: Default::default(),
+    };
+    let plan = ArtifactPartitionPlan::from_input(PlanningInput {
+        module_name: qualified_name(&["demo"]),
+        target: CanonicalTarget::clr(),
+        program_facts: ProgramFacts::default(),
+        semantic_fragments: vec![fragment],
+        object_algebraic_program: ObjectAlgebraicProgram::default(),
+        rewrite_theory: RewriteTheory::default(),
+        projection_policy: ProjectionPolicy {
+            family: FutamuraProjectionFamily::Clr,
+            host_boundary: HostProjectionBoundary::Clr,
+            reference_management: ReferenceManagement::HostGc,
+            prefer_small_artifacts: false,
+            preserve_effect_boundaries: true,
+        },
+        backend_registry: backend_registry_for(CanonicalTarget::clr(), FutamuraProjectionFamily::Clr, &["functions"]),
+        clr_suspend_strategy: ClrSuspendStrategy::default(),
+    })
+    .expect("显式语义片段可以规划");
+    assert_eq!(plan.partitions[0].entry_operation, None);
+}
+
+#[test]
 fn planning_runs_optimizer_before_partitioning() {
     let module_name = qualified_name(&["demo"]);
     let program_facts = ProgramFacts {

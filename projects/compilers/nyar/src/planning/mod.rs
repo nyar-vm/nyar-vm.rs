@@ -426,7 +426,6 @@ fn entry_operation_for_dimension(program_facts: &ProgramFacts, operations: &[Qua
         .entries
         .iter()
         .find_map(|entry| operations.iter().any(|operation| operation == &entry.symbol).then(|| entry.symbol.clone()))
-        .or_else(|| operations.first().cloned())
 }
 
 fn resolve_partition_capabilities(
