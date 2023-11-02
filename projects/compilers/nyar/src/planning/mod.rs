@@ -244,7 +244,7 @@ impl ArtifactPartitionPlan {
             interpreter: partition.interpreter.clone(),
             fragment: partition.fragment.clone(),
             lane: partition.lane,
-            input_kind: partition.input_kind.unwrap_or(BackendInputKind::PeImage),
+            input_kind: partition.input_kind?,
             target: partition.binary_target.clone(),
             host_boundary: partition.host_boundary,
             reference_management: partition.reference_management,

@@ -122,6 +122,8 @@ pub enum BackendInputKind {
     SpirvModule,
     /// DXIL 容器输入。
     DxilContainer,
+    /// Nyar VM 字节码模块输入。
+    NyarVm,
 }
 
 /// 目标描述。

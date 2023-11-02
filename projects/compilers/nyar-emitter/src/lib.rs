@@ -476,7 +476,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             backend_name: "nyar-vm",
             interpreter: "nyar.vm",
             lane: TargetLane::Vm,
-            input_kind: None,
+            input_kind: Some(BackendInputKind::NyarVm),
             target_family: TargetFamily::NyarVm,
             supported_host_boundaries: VM_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::HostGc,
