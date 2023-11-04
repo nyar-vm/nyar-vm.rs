@@ -230,7 +230,7 @@ impl ArtifactPartitionPlan {
             rewrite_theory,
             projection_policy,
         });
-        let fragment_views = build_fragment_views(&shared_rewrite_theory, &semantic_fragments, &optimization);
+        let fragment_views = build_fragment_views(&module_name, &shared_rewrite_theory, &semantic_fragments, &optimization)?;
         let binary_target: BinaryTarget = target.into();
         let partitions = build_partitions(&program_facts, &optimization, binary_target, &backend_registry, clr_suspend_strategy)?;
         Ok(Self { module_name, target, optimization, fragment_views, partitions })
@@ -302,10 +302,11 @@ fn merge_rewrite_theory(mut shared: RewriteTheory, semantic_fragments: &[Semanti
 }
 
 fn build_fragment_views(
+    module_name: &QualifiedName,
     shared_theory: &RewriteTheory,
     semantic_fragments: &[SemanticFragment],
     optimization: &OptimizationResult,
-) -> Vec<FragmentOptimizationView> {
+) -> Result<Vec<FragmentOptimizationView>, PlanningError> {
     optimization
         .program
         .dimensions
@@ -314,15 +315,20 @@ fn build_fragment_views(
             let fragment_theory = semantic_fragments
                 .iter()
                 .find(|fragment| fragment.id == dimension.name)
-                .map(|fragment| fragment.rewrite_theory.clone())
-                .unwrap_or_default();
-            FragmentOptimizationView {
+                .ok_or_else(|| PlanningError::SemanticContract {
+                    module: module_name.to_string(),
+                    stage: nyar_types::CompileStage::RepresentationPlan,
+                    detail: format!("优化维度 `{}` 没有对应的 Compiler semantic fragment", dimension.name),
+                })?
+                .rewrite_theory
+                .clone();
+            Ok(FragmentOptimizationView {
                 fragment_id: dimension.name.clone(),
                 canonical_operations: dimension.exported_operations.clone(),
                 structured_terms: optimization.program.structured_terms.clone(),
                 applied_rules: optimization.applied_rules.clone(),
                 theory_bundle: TheoryBundle { shared: shared_theory.clone(), fragment: fragment_theory },
-            }
+            })
         })
         .collect()
 }
