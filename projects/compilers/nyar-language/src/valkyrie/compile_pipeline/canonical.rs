@@ -6,7 +6,8 @@ use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalCallee, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord, NominalValueSemantics,
-    FieldId, FieldRecord, ImportCapability, ImportIndex, ImportRecord, StructuredDiagnosticSet, SubstitutionId, TypeId, TypeRecord,
+    FieldId, FieldRecord, Identifier, ImportCapability, ImportIndex, ImportRecord, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
+    TypeRecord,
 };
 use nyar_types::canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord};
 
@@ -26,6 +27,22 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let symbols = collect_symbols(module)?;
     let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
+    for (symbol, instance) in &symbols {
+        let parts = symbol
+            .split("::")
+            .filter(|part| !part.is_empty())
+            .map(Identifier::new)
+            .collect::<Vec<_>>();
+        if parts.is_empty() {
+            return Err(error(module, "CAN040", format!("callable `{symbol}` 没有完整限定 identity")));
+        }
+        let name = QualifiedName::new(parts);
+        if let Some(previous) = linked.callable_names.insert(*instance, name.clone())
+            && previous != name
+        {
+            return Err(error(module, "CAN041", format!("callable identity `{instance}` 对应多个限定名称")));
+        }
+    }
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
     }
@@ -376,6 +393,7 @@ mod tests {
         let program = canonical_program_from_semantic_mir(&module).expect("精确单态函数应进入 canonical");
         assert_eq!(program.linked.item_instances.len(), 1);
         assert_eq!(program.mir.functions.len(), 1);
+        assert_eq!(program.linked.callable_names.values().map(ToString::to_string).collect::<Vec<_>>(), vec!["demo::main"]);
         assert!(program.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
     }
 

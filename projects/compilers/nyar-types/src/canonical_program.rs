@@ -3,11 +3,11 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::semantic_ids::{
+use crate::{QualifiedName, semantic_ids::{
     layout_choice::RepresentationPlan,
     EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
     SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
-};
+}};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -77,6 +77,8 @@ pub struct LinkedSemanticProgram {
     pub module_name: String,
     /// Closed item instances (bodies + evidence reachable).
     pub item_instances: BTreeMap<ItemInstanceId, ItemInstanceRecord>,
+    /// Compiler 已解析的 callable identity 到限定 ABI 名称映射；后端不得从 MIR 文本反查。
+    pub callable_names: BTreeMap<ItemInstanceId, QualifiedName>,
     /// Closed nominal ADT instances.
     pub nominal_instances: BTreeMap<NominalInstanceId, NominalInstanceRecord>,
     /// 已解析字段身份及其 owner/类型合同。
