@@ -3,13 +3,11 @@
 //! Layering: `nyar-language` -> `emitter` -> `std-data`.
 //! Shared ABI (`AssembledFragment`) lives in `nyar`; the driver only wraps it.
 
-mod executable_closure;
 mod nullable;
 mod suspend_payload;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use emitter::fragment_submission_from_assembled;
 use miette::{Result as MietteResult, miette};
 use nyar::{
     ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
@@ -80,21 +78,7 @@ pub fn assemble_fragment(
         (None, None)
     };
 
-    let mir = build_output.semantic_mir().clone();
-    let mut mir_seed_operations = fragment.exported_operations.clone();
-    // Witness 表里的 impl 方法（`imply Type: Trait { micro method }`）在 MIR 层
-    // 已经按 `{Type}.{method}` 约定降级为独立函数，但它们不会被 entry 可达闭包
-    // 扫到（调用点走 witness 符号，不走 `{Type}.{method}` 直接 Call）。这里把它们
-    // 作为种子加入，确保后端能拿到真实的 Valkyrie 方法体，而不是退回到 Rust mock。
-    for table in &fragment.witness_tables {
-        for method in &table.methods {
-            let seed = QualifiedName::new(vec![Identifier::new(&table.type_name), Identifier::new(&method.method_name)]);
-            if !mir_seed_operations.iter().any(|operation| operation == &seed) {
-                mir_seed_operations.push(seed);
-            }
-        }
-    }
-    let executable_functions = executable_closure::build_reachable_mir_functions(&mir_seed_operations, &mir)?;
+    let mir = build_output.semantic_mir();
 
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
@@ -118,7 +102,7 @@ pub fn assemble_fragment(
         aggregate_layouts: mir.aggregate_layouts.clone(),
         sum_types: mir.sum_types.iter().map(crate::mir::MirSumDeclaration::physical_layout).collect(),
         flags_types: mir.flags_types.clone(),
-        executable_functions,
+        compiled_program: build_output.compiled_program().clone(),
         singleton_instances: collect_singleton_instance_plans(hir_module),
         wasm_export_names: fragment.wasm_export_names.clone(),
     })
@@ -134,7 +118,7 @@ pub fn assemble_fragment_submission(
     partition_index: usize,
 ) -> MietteResult<emitter::FragmentSubmission> {
     let payload = assemble_fragment(build_output, plan, partition_index)?;
-    Ok(fragment_submission_from_assembled(payload))
+    emitter::fragment_submission_from_assembled(payload).map_err(|error| miette!("后端私有计划生产失败: {error}"))
 }
 
 fn merge_program_external_import_links(

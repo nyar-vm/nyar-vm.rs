@@ -9,13 +9,19 @@ use nyar::AssembledFragment;
 
 use crate::{
     FragmentSubmission,
-    executable_provider::{ExecutableProvider, MirFunctionMapProvider},
+    executable_provider::ExecutableProvider,
 };
 
 /// Build a [`FragmentSubmission`] from a frontend [`AssembledFragment`].
-pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> FragmentSubmission {
-    let executable = Some(Arc::new(MirFunctionMapProvider::new(payload.executable_functions)) as Arc<dyn ExecutableProvider>);
-    FragmentSubmission {
+pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
+    let mut roots = payload.exported_operations.clone();
+    if let Some(entry) = &payload.entry_operation {
+        if !roots.iter().any(|root| root == entry) { roots.push(entry.clone()); }
+    }
+    let executable = Some(Arc::new(crate::backend_private_plan::BackendPrivatePlan::from_compiled_program(
+        &payload.compiled_program, &roots,
+    )?) as Arc<dyn ExecutableProvider>);
+    Ok(FragmentSubmission {
         module_name: payload.module_name,
         fragment_id: payload.fragment_id,
         exported_operations: payload.exported_operations,
@@ -37,5 +43,5 @@ pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> Fragmen
         flags_types: payload.flags_types,
         executable,
         singleton_instances: payload.singleton_instances,
-    }
+    })
 }

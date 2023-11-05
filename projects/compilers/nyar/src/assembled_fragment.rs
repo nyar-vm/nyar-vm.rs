@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_optimizer::TheoryBundle;
 use nyar_types::{
-    AggregateLayoutPlan, CapabilityTag, ExecutableFunction, ExternalCallEdge, ExternalImportLink, FlagsLayout, Identifier, InternalCallEdge,
+    AggregateLayoutPlan, CapabilityTag, CompiledProgram, ExternalCallEdge, ExternalImportLink, FlagsLayout, Identifier, InternalCallEdge,
     QualifiedName, SingletonInstancePlan, SumTypeLayout, WitnessCallEdge, WitnessSubmission,
 };
 
@@ -53,8 +53,9 @@ pub struct AssembledFragment {
     /// Flags bitmask layouts.
     pub flags_types: Vec<FlagsLayout>,
     // 已删除：intrinsics / nullable_intrinsics / nullable_try_calls / nullable_bool_profiles。
-    /// Reachable executable functions for this partition.
-    pub executable_functions: BTreeMap<QualifiedName, ExecutableFunction>,
+    /// Compiler 产生的完整 canonical/representation 成功载荷。
+    /// 后端私有计划只能从此合同生成，不得从 HIR 或 Semantic MIR 重建。
+    pub compiled_program: CompiledProgram,
     /// Singleton global instance initialization plans.
     pub singleton_instances: Vec<SingletonInstancePlan>,
     /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。

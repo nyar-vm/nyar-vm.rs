@@ -6,6 +6,7 @@ mod assembly;
 mod backend;
 pub mod contracts;
 mod driver;
+mod backend_private_plan;
 pub mod executable_provider;
 mod lowering;
 mod nullable_profiles;
