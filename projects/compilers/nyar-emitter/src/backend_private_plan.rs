@@ -34,7 +34,7 @@ impl BackendPrivatePlan {
                 .ok_or_else(|| miette!("callable `{name}` 缺少 Compiler identity"))?;
             let function = canonical.mir.functions.get(&instance)
                 .ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
-            let (lowered, callees) = lower_function(canonical, function)?;
+            let (lowered, callees) = lower_function(program, function)?;
             pending.extend(callees);
             functions.insert(name, lowered);
         }
@@ -52,7 +52,8 @@ impl ExecutableProvider for BackendPrivatePlan {
     }
 }
 
-fn lower_function(program: &CanonicalProgram, function: &nyar_types::CanonicalFunction) -> Result<(ExecutableFunction, Vec<QualifiedName>)> {
+fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFunction) -> Result<(ExecutableFunction, Vec<QualifiedName>)> {
+    let canonical = program.canonical();
     for value in function.value_types.keys() {
         let identity = nyar_types::ValueIdentity::new(function.instance, *value);
         if !program.representation().value_reps.contains_key(&identity) {
@@ -80,7 +81,7 @@ fn lower_function(program: &CanonicalProgram, function: &nyar_types::CanonicalFu
             Ok(Instruction {
                 id: instruction.id,
                 results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
-                kind: lower_operation(program, instruction, &mut callees)?,
+                kind: lower_operation(canonical, instruction, &mut callees)?,
                 provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| miette!("指令 identity 溢出"))?,
             })
         }).collect::<Result<Vec<_>>>()?;
@@ -90,8 +91,8 @@ fn lower_function(program: &CanonicalProgram, function: &nyar_types::CanonicalFu
             instructions, terminator: lower_terminator(block.terminator.clone())?,
         });
     }
-    let symbol = program.linked.callable_names.get(&function.instance).ok_or_else(|| miette!("函数实例缺少 ABI 名称"))?.to_string();
-    let type_of = |id| lower_type(program, id);
+    let symbol = canonical.linked.callable_names.get(&function.instance).ok_or_else(|| miette!("函数实例缺少 ABI 名称"))?.to_string();
+    let type_of = |id| lower_type(canonical, id);
     Ok((ExecutableFunction {
         symbol,
         return_type: type_of(function.return_type)?,
