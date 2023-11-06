@@ -3,11 +3,13 @@
 
 # IDE
 .idea/
+*.iml
+*.log
+*.txt
 
 # Rust
 .cargo/
 target/
-
 
 # Node
 node_modules/

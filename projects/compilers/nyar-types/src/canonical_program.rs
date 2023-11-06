@@ -732,6 +732,12 @@ impl CanonicalSemanticMir {
             let mut definitions = function.parameters.iter().map(|(value, _)| (*value, None)).collect::<BTreeMap<_, _>>();
             for block in function.blocks.values() {
                 for (value, _) in &block.parameters {
+                    if block.id == function.entry {
+                        if !function.parameters.iter().any(|(parameter, _)| parameter == value) {
+                            return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
+                        }
+                        continue;
+                    }
                     if definitions.insert(*value, Some(block.id)).is_some() {
                         return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *value });
                     }
@@ -744,9 +750,15 @@ impl CanonicalSemanticMir {
             }
             for (block_id, block) in &function.blocks {
                 let mut block_defined = defined.clone();
-                for (value, ty) in &block.parameters {
+                for (index, (value, ty)) in block.parameters.iter().enumerate() {
                     if !linked.types.contains_key(ty) {
                         return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                    }
+                    if block.id == function.entry {
+                        if function.parameters.get(index) != Some(&(*value, *ty)) {
+                            return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *value, expected: *ty });
+                        }
+                        continue;
                     }
                     if !block_defined.insert(*value) {
                         return Err(CanonicalMirError::DuplicateBlockDefinition { function: *key, value: *value });

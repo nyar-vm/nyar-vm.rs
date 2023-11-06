@@ -204,12 +204,10 @@ fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BT
     let parameters = canonical_entry_parameters(function, ids)?;
     let blocks = function.blocks.iter().map(|block| {
         let id = CanonicalBlockId(block.id.0);
-        let parameters = if block.id == function.entry {
-            Vec::new()
-        }
-        else {
-            block.parameters.iter().map(|value| { let value = MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?; Ok((value, *value_types.get(&value).ok_or_else(|| error_without_module("CAN005", "块参数缺少类型事实"))?)) }).collect::<Result<_, StructuredDiagnosticSet>>()?
-        };
+        let parameters = block.parameters.iter().map(|value| {
+            let value = MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
+            Ok((value, *value_types.get(&value).ok_or_else(|| error_without_module("CAN005", "块参数缺少类型事实"))?))
+        }).collect::<Result<_, StructuredDiagnosticSet>>()?;
         let instructions = block.instructions.iter().map(|instruction| {
             let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
             *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
