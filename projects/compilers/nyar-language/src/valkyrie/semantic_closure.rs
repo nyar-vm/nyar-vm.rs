@@ -1,19 +1,29 @@
-//! 入口驱动的语义闭包规划：namespace 感知的声明图、body lowering 边界与内容摘要。
+//! 入口驱动的语义闭包规划：可见性合同下的声明图、body lowering 边界与内容摘要。
 //!
-//! 闭包由声明身份驱动，而不是文件短名近似：
+//! 闭包是「目标模块能看见的声明」的上界，由声明身份与依赖可见性驱动，而不是文件短名近似：
 //!
+//! - 可见性的事实来源是 Resolver 给出的 `direct_dependencies`：一条引用只能命中本组声明
+//!   或本组直接依赖的声明。闭包不做跨组全局名字回退，也不把整个依赖包的 `.v` 文件拉进闭包；
 //! - 种子是入口组的声明；依赖组只在自身声明被需求时进入 body lowering；
-//! - 自由名引用按「限定路径 → 当前 namespace → 父 namespace」解析；
-//! - 单段名字只允许两条结构化路径：namespace 链命中声明，或变体名命中其拥有者
-//!   sum/unite 声明。方法/imply 成员名不再有全库回退索引；成员调用按接收者类型
-//!   解析的事实须由带类型信息的层提供，此处不得用名字过近似；
+//! - 自由名引用按「限定路径 → 当前 namespace → 父 namespace」解析；链上未命中的单段名
+//!   只在可见组内按短名回退，且只接受非成员声明：方法/imply 成员没有名字回退索引；
+//! - 成员选择名不建立全库同名索引：限定形式 `<聚合>.<成员>` 先解析聚合身份再取成员身份；
+//!   接收者类型在索引阶段不可知的选择名，只在该名字确实出现在闭包需求中、且其拥有聚合
+//!   已被需求时，作为**该聚合的成员**进入闭包；
+//! - 运算符是普通成员调用：`a + b` / `!a` / `a[i]` 登记为 `infix +` / `prefix !` / `suffix []`
+//!   的成员引用，成员名与 HIR lowering 共用 `operator_members` 这一唯一映射；
+//! - 闭包只做上界判定，不做歧义判定：精确调用解析与歧义归 HIR；
 //! - 摘要绑定规划版本、依赖身份、被编译声明身份与这些声明的源文件内容。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use nyar_types::combined_content_hash;
+use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
-use crate::valkyrie::frontend::{ast, parse_source};
+use crate::valkyrie::{
+    frontend::{ast, parse_source},
+    operator_members,
+};
 
 /// 闭包规划版本；规划语义变化必须递增，旧摘要不得跨版本复用。
 const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v0";
@@ -65,6 +75,11 @@ impl DeclarationKind {
     /// 是否携带需要 lowering 的函数体。
     pub fn is_body_bearing(self) -> bool {
         matches!(self, Self::Micro | Self::TypeFunction | Self::Method | Self::ImplyMethod)
+    }
+
+    /// 是否是可以拥有成员方法的名义聚合（成员身份只能挂在这些声明上）。
+    pub fn is_nominal_owner(self) -> bool {
+        matches!(self, Self::Structure | Self::Class | Self::Trait)
     }
 }
 
@@ -143,6 +158,20 @@ pub struct SemanticClosure {
     pub digest: String,
 }
 
+/// 单个源码组的闭包规划输入：组身份、直接依赖身份、是否入口组、组内文件。
+///
+/// `direct_dependencies` 是可见性合同的唯一事实来源：它决定本组引用可以命中哪些组的声明。
+pub struct ClosureGroupInput<'a> {
+    /// 依赖组身份。
+    pub dependency_key: &'a str,
+    /// 本组可直接引用的依赖组身份。
+    pub direct_dependencies: &'a [&'a str],
+    /// 是否为唯一入口组。
+    pub is_entry: bool,
+    /// 组内文件（仓相对路径、源码）。
+    pub files: &'a [(String, String)],
+}
+
 /// 从不可变源码输入计算 Compiler 内部选择。依赖顺序末项是唯一入口组，
 /// 与完整编译入口消费最后一个 HIR 模块的合同一致；装配层不能提交语义计划。
 pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup]) -> SemanticClosure {
@@ -150,55 +179,82 @@ pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup]) -> Sem
         .iter()
         .map(|group| group.sources.iter().map(|file| (file.path.clone(), file.source.clone())).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    let input = groups
+    let dependency_keys =
+        groups.iter().map(|group| group.direct_dependencies.iter().map(String::as_str).collect::<Vec<_>>()).collect::<Vec<_>>();
+    let inputs = groups
         .iter()
         .zip(&owned)
+        .zip(&dependency_keys)
         .enumerate()
-        .map(|(index, (group, files))| (group.dependency_key.as_str(), index + 1 == groups.len(), files.as_slice()))
+        .map(|(index, ((group, files), dependencies))| ClosureGroupInput {
+            dependency_key: group.dependency_key.as_str(),
+            direct_dependencies: dependencies.as_slice(),
+            is_entry: index + 1 == groups.len(),
+            files: files.as_slice(),
+        })
         .collect::<Vec<_>>();
-    plan_semantic_closure(&input)
+    plan_semantic_closure(&inputs)
 }
 
 /// 从入口组与其依赖 inventory 规划完整语义闭包。
-pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> SemanticClosure {
+pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosure {
+    let inventory = groups.iter().map(|group| group.dependency_key).collect::<BTreeSet<_>>();
+    // 可见性：本组 + 直接依赖组。这是闭包允许跨组命中声明的唯一范围；
+    // 装配层未声明的依赖组不构成可见性，跨组全局名字回退一律不存在。
+    let visibility = groups
+        .iter()
+        .map(|group| {
+            let mut visible = BTreeSet::from([group.dependency_key.to_string()]);
+            visible.extend(
+                group
+                    .direct_dependencies
+                    .iter()
+                    .filter(|dependency| inventory.contains(*dependency))
+                    .map(|dependency| (*dependency).to_string()),
+            );
+            (group.dependency_key.to_string(), visible)
+        })
+        .collect::<BTreeMap<String, BTreeSet<String>>>();
+
     let mut indexed_files = BTreeMap::<(String, String), IndexedFile>::new();
     let mut declaration_index = BTreeMap::<DeclarationKey, DeclarationIndexEntry>::new();
-    let mut names = BTreeMap::<(Vec<String>, String), BTreeSet<DeclarationKey>>::new();
-    // 变体名 → 拥有它的 sum/unite 声明身份。变体是声明内部的结构事实，
-    // 不是「全库同名成员」索引：方法/imply 成员不得登记或回查。
-    let mut variant_owners = BTreeMap::<String, BTreeSet<DeclarationKey>>::new();
+    let mut indexes = DeclarationIndexes::default();
     let mut unindexed_source_files = BTreeMap::<String, String>::new();
 
-    for (dependency_key, _, files) in groups.iter() {
-        for (path, source) in files.iter() {
-            match index_source_file(dependency_key, path, source) {
+    for group in groups.iter() {
+        for (path, source) in group.files.iter() {
+            match index_source_file(group.dependency_key, path, source) {
                 Ok(indexed) => {
                     for entry in &indexed.declarations {
-                        names.entry((entry.key.namespace.clone(), entry.key.name.clone())).or_default().insert(entry.key.clone());
+                        indexes.register(entry.key.clone());
                         declaration_index.insert(entry.key.clone(), entry.clone());
                     }
                     for (variant, owner) in &indexed.variant_members {
-                        variant_owners.entry(variant.clone()).or_default().insert(owner.clone());
+                        indexes.register_variant(variant, owner);
                     }
-                    indexed_files.insert((dependency_key.to_string(), path.clone()), indexed);
+                    indexed_files.insert((group.dependency_key.to_string(), path.clone()), indexed);
                 }
                 Err(reason) => {
-                    unindexed_source_files.insert(format!("{dependency_key}::{path}"), reason);
+                    unindexed_source_files.insert(format!("{}::{path}", group.dependency_key), reason);
                 }
             }
         }
     }
+    // 聚合身份与成员身份的关联必须在整个 inventory 索引完成后统一建立：
+    // 聚合与它的成员可以在同组的不同文件里，按文件边界连接是文件级近似。
+    indexes.link_members();
 
     let mut demanded = BTreeSet::new();
+    let mut selectors = BTreeSet::<String>::new();
     let mut queue = VecDeque::new();
     let mut touched_files = BTreeSet::<(String, String)>::new();
-    for (dependency_key, is_entry, files) in groups.iter() {
-        if !*is_entry {
+    for group in groups.iter() {
+        if !group.is_entry {
             continue;
         }
         // 入口文件整体是待编译程序：文件进入 body lowering，且其声明的引用参与闭包展开。
-        for (path, _) in files.iter() {
-            let file_id = (dependency_key.to_string(), path.clone());
+        for (path, _) in group.files.iter() {
+            let file_id = (group.dependency_key.to_string(), path.clone());
             let Some(indexed) = indexed_files.get(&file_id)
             else {
                 continue;
@@ -206,47 +262,70 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
             for entry in &indexed.declarations {
                 queue.push_back(entry.key.clone());
             }
-            // 文件级 `using`/顶层语句与声明外壳的引用必须与声明引用一起展开，
-            // 否则只含模块级语句的入口文件、以及随文件物化的类型/impl 外壳都会缺依赖。
-            if touched_files.insert(file_id.clone()) {
-                push_scoped_references(&indexed.module_references, &names, &variant_owners, &mut queue);
-                push_scoped_references(&indexed.shell_references, &names, &variant_owners, &mut queue);
+            // 文件级 `using`/顶层语句的引用必须与声明引用一起展开，
+            // 否则只含模块级语句的入口文件会缺依赖。
+            if touched_files.insert(file_id) {
+                push_scoped_references(&indexed.module_references, group.dependency_key, &visibility, &indexes, &mut queue);
             }
         }
     }
-    while let Some(key) = queue.pop_front() {
-        if !demanded.insert(key.clone()) {
-            continue;
-        }
-        let entry = match declaration_index.get(&key) {
-            Some(entry) => entry.clone(),
-            None => continue,
-        };
-        if touched_files.insert((key.dependency_key.clone(), key.source_path.clone())) {
-            if let Some(file) = indexed_files.get(&(key.dependency_key.clone(), key.source_path.clone())) {
-                push_scoped_references(&file.module_references, &names, &variant_owners, &mut queue);
-                push_scoped_references(&file.shell_references, &names, &variant_owners, &mut queue);
+    let empty_visibility = BTreeSet::new();
+    loop {
+        while let Some(key) = queue.pop_front() {
+            if !demanded.insert(key.clone()) {
+                continue;
+            }
+            let entry = match declaration_index.get(&key) {
+                Some(entry) => entry.clone(),
+                None => continue,
+            };
+            let visible = visibility.get(&key.dependency_key).unwrap_or(&empty_visibility);
+            if touched_files.insert((key.dependency_key.clone(), key.source_path.clone())) {
+                if let Some(file) = indexed_files.get(&(key.dependency_key.clone(), key.source_path.clone())) {
+                    push_scoped_references(&file.module_references, &key.dependency_key, &visibility, &indexes, &mut queue);
+                }
+            }
+            // 成员方法被需求时，其拥有者聚合的声明外壳同样必须进入闭包。
+            if let Some(owner) = &key.owner {
+                for resolved in indexes.resolve(&[owner.clone()], &key.namespace, visible) {
+                    queue.push_back(resolved);
+                }
+            }
+            for reference in &entry.references {
+                if let Some(name) = reference.last() {
+                    selectors.insert(name.clone());
+                }
+                for resolved in indexes.resolve(reference, &key.namespace, visible) {
+                    queue.push_back(resolved);
+                }
             }
         }
-        // 成员方法被需求时，其拥有者聚合的声明外壳同样必须进入闭包。
-        if let Some(owner) = &key.owner {
-            for resolved in resolve_reference(&[owner.clone()], &key.namespace, &names, &variant_owners) {
-                queue.push_back(resolved);
+        // 选择名驱动的成员提升：成员调用的接收者类型在索引阶段不可知，
+        // 因此只有「该名字确实出现在闭包需求中」且「其拥有聚合已被需求」两条
+        // 结构化事实同时成立时，成员才作为该聚合的成员进入闭包。
+        let mut promoted = BTreeSet::new();
+        for aggregate in &demanded {
+            if !indexes.is_owner(aggregate) {
+                continue;
+            }
+            for member in indexes.selected_members(aggregate, &selectors) {
+                if !demanded.contains(&member) {
+                    promoted.insert(member);
+                }
             }
         }
-        for reference in &entry.references {
-            for resolved in resolve_reference(reference, &key.namespace, &names, &variant_owners) {
-                queue.push_back(resolved);
-            }
+        if promoted.is_empty() {
+            break;
         }
+        queue.extend(promoted);
     }
 
     let mut closure_groups = Vec::with_capacity(groups.len());
-    for (dependency_key, is_entry, files) in groups.iter() {
-        let dependency_key = *dependency_key;
+    for group in groups.iter() {
+        let dependency_key = group.dependency_key;
         let mut body_lowering_source_paths = BTreeSet::new();
-        if *is_entry {
-            for (path, _) in files.iter() {
+        if group.is_entry {
+            for (path, _) in group.files.iter() {
                 body_lowering_source_paths.insert(path.clone());
             }
         }
@@ -271,59 +350,161 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
 /// 解析一组「namespace 段 + 名字路径」引用并把命中的声明身份入队。
 fn push_scoped_references(
     references: &BTreeSet<ScopedReference>,
-    names: &BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
-    variant_owners: &BTreeMap<String, BTreeSet<DeclarationKey>>,
+    group: &str,
+    visibility: &BTreeMap<String, BTreeSet<String>>,
+    indexes: &DeclarationIndexes,
     queue: &mut VecDeque<DeclarationKey>,
 ) {
+    let empty = BTreeSet::new();
+    let visible = visibility.get(group).unwrap_or(&empty);
     for (namespace, reference) in references {
-        for resolved in resolve_reference(reference, namespace, names, variant_owners) {
+        for resolved in indexes.resolve(reference, namespace, visible) {
             queue.push_back(resolved);
         }
     }
 }
 
-/// 解析单个名字路径引用，返回命中的声明身份集合。
+/// 声明索引：闭包规划消费的唯一名字事实来源。
 ///
-/// 命中规则与 `path-resolution.md` 一致：限定路径先按绝对路径，再按当前 namespace 逐级前缀；
-/// 单段名字沿 namespace 链向外查找。
-///
-/// namespace 链上没有命中时，只允许变体名命中其拥有者 sum/unite 声明这一条结构化路径；
-/// **不再回退到全库成员名索引**：成员调用的接收者类型在声明索引阶段不可知，
-/// 按名字把全库同名方法无差别拉进 body lowering 是名称认亲，不是闭包精度。
-/// 未命中的引用保持未解析，由后续按身份解析的层失败，而不是在此处过近似。
-fn resolve_reference(
-    reference: &[String],
-    namespace: &[String],
-    names: &BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
-    variant_owners: &BTreeMap<String, BTreeSet<DeclarationKey>>,
-) -> BTreeSet<DeclarationKey> {
-    let name = match reference.last() {
-        Some(name) => name,
-        None => return BTreeSet::new(),
-    };
-    if reference.len() > 1 {
-        let absolute = reference[..reference.len() - 1].to_vec();
-        if let Some(keys) = names.get(&(absolute, name.clone())) {
-            return keys.clone();
-        }
-        for depth in (0..=namespace.len()).rev() {
-            let mut scoped = namespace[..depth].to_vec();
-            scoped.extend_from_slice(&reference[..reference.len() - 1]);
-            if let Some(keys) = names.get(&(scoped, name.clone())) {
-                return keys.clone();
+/// 索引只登记声明身份与结构关系（依赖组、namespace、种类、拥有者），不复制 HIR 事实：
+/// namespace 链与可见组回退都只是「目标模块能看见哪些声明」的上界判定，
+/// 精确重载解析、类型匹配与歧义判定仍由 HIR 完成。
+#[derive(Debug, Default)]
+struct DeclarationIndexes {
+    /// `(namespace, 短名) → 声明`；namespace 链解析优先使用它，成员声明同样登记。
+    names: BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
+    /// `短名 → 非成员声明`；只用于可见组内的回退查询，方法/imply 成员不登记。
+    by_name: BTreeMap<String, BTreeSet<DeclarationKey>>,
+    /// 变体名 → 拥有它的 sum/unite 声明。
+    variant_owners: BTreeMap<String, BTreeSet<DeclarationKey>>,
+    /// `(依赖组, namespace, 短名) → 名义聚合声明`。
+    owners: BTreeMap<(String, Vec<String>, String), BTreeSet<DeclarationKey>>,
+    /// `(依赖组, namespace, 拥有者短名) → 成员声明`；聚合身份登记完成后再建立关联。
+    pending_members: BTreeMap<(String, Vec<String>, String), BTreeSet<DeclarationKey>>,
+    /// 名义聚合声明 → 它的成员声明。
+    members: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
+}
+
+impl DeclarationIndexes {
+    /// 登记一条声明。成员声明只进入拥有者关联，不进入短名回退索引。
+    fn register(&mut self, key: DeclarationKey) {
+        self.names.entry((key.namespace.clone(), key.name.clone())).or_default().insert(key.clone());
+        match &key.owner {
+            Some(owner) => {
+                self.pending_members.entry((key.dependency_key.clone(), key.namespace.clone(), owner.clone())).or_default().insert(key);
+            }
+            None => {
+                self.by_name.entry(key.name.clone()).or_default().insert(key.clone());
+                if key.kind.is_nominal_owner() {
+                    self.owners.entry((key.dependency_key.clone(), key.namespace.clone(), key.name.clone())).or_default().insert(key);
+                }
             }
         }
-        return BTreeSet::new();
     }
-    if !is_builtin_symbol(name) {
+
+    /// 登记 unity 变体名与它的拥有者 sum/unite 声明。
+    fn register_variant(&mut self, variant: &str, owner: &DeclarationKey) {
+        self.variant_owners.entry(variant.to_string()).or_default().insert(owner.clone());
+    }
+
+    /// 把成员声明挂到其拥有者聚合身份上。
+    ///
+    /// 连接发生在整个 inventory 索引完成后：拥有者与成员可以在同组的不同文件里。
+    /// 拥有者不在本 inventory（例如跨组的聚合名）时，成员关联不成立，也不会被名字回退补上。
+    fn link_members(&mut self) {
+        let pending = std::mem::take(&mut self.pending_members);
+        for ((group, namespace, owner), members) in pending {
+            let Some(owners) = self.owners.get(&(group, namespace, owner))
+            else {
+                continue;
+            };
+            for owner_key in owners {
+                self.members.entry(owner_key.clone()).or_default().extend(members.iter().cloned());
+            }
+        }
+    }
+
+    /// 该声明身份是否为携带成员的名义聚合。
+    fn is_owner(&self, key: &DeclarationKey) -> bool {
+        self.members.contains_key(key)
+    }
+
+    /// 该聚合上「确实出现在闭包需求中」的成员：选择名是需求事实，拥有者是声明身份，
+    /// 两者都成立才提升，不做全库同名成员回退。
+    fn selected_members(&self, aggregate: &DeclarationKey, selectors: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        self.members
+            .get(aggregate)
+            .map(|members| members.iter().filter(|member| selectors.contains(&member.name)).cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// 只保留可见组内的声明：可见性是跨组命中的唯一闸门，本组之外的未声明依赖不得命中。
+    fn retain_visible(&self, keys: &BTreeSet<DeclarationKey>, visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        keys.iter().filter(|key| visible.contains(&key.dependency_key)).cloned().collect()
+    }
+
+    /// 解析单个名字路径引用，返回命中的声明身份集合。
+    ///
+    /// 命中规则与 `path-resolution.md` 一致：限定路径先按绝对路径，再按当前 namespace 逐级前缀；
+    /// 单段名字沿 namespace 链向外查找。**每一步都受可见性约束**：只接受引用方本组与
+    /// 直接依赖组的声明，未声明的依赖组即使名字命中也不进入闭包。
+    ///
+    /// - 限定路径未命中 namespace 时，前缀按同一规则解析为名义聚合身份，再取该聚合的成员身份；
+    /// - 单段名字在 namespace 链未命中时，只在可见组内按短名回退，且**只接受非成员声明**：
+    ///   成员调用按接收者类型解析的事实由「聚合身份 + 已出现的选择名」提供；
+    /// - 都不是时只允许变体名命中其拥有者 sum/unite 声明这一条结构化路径。
+    fn resolve(&self, reference: &[String], namespace: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        let name = match reference.last() {
+            Some(name) => name,
+            None => return BTreeSet::new(),
+        };
+        if reference.len() > 1 {
+            let prefix = &reference[..reference.len() - 1];
+            if let Some(keys) = self.names.get(&(prefix.to_vec(), name.clone())) {
+                let resolved = self.retain_visible(keys, visible);
+                if !resolved.is_empty() {
+                    return resolved;
+                }
+            }
+            for depth in (0..=namespace.len()).rev() {
+                let mut scoped = namespace[..depth].to_vec();
+                scoped.extend_from_slice(prefix);
+                if let Some(keys) = self.names.get(&(scoped, name.clone())) {
+                    let resolved = self.retain_visible(keys, visible);
+                    if !resolved.is_empty() {
+                        return resolved;
+                    }
+                }
+            }
+            // `<聚合>.<成员>`：解析聚合身份后按拥有者身份取成员，不按名字认亲。
+            let mut members = BTreeSet::new();
+            for owner in self.resolve(prefix, namespace, visible) {
+                if let Some(keys) = self.members.get(&owner) {
+                    members.extend(keys.iter().filter(|key| key.name == *name).cloned());
+                }
+            }
+            return members;
+        }
+        // 单段名字沿 namespace 链向外查找，链上未命中时只在可见组内按短名回退。
+        // 这里不区分「内建」与用户声明：`usize` / `utf8` 等同样是由源码声明、拥有
+        // `[primitive]` 注解的普通类型身份，按名字表放行或拒绝都属于第二份声明事实。
         for depth in (0..=namespace.len()).rev() {
             let scoped = namespace[..depth].to_vec();
-            if let Some(keys) = names.get(&(scoped, name.clone())) {
-                return keys.clone();
+            if let Some(keys) = self.names.get(&(scoped, name.clone())) {
+                let resolved = self.retain_visible(keys, visible);
+                if !resolved.is_empty() {
+                    return resolved;
+                }
             }
         }
+        if let Some(keys) = self.by_name.get(name) {
+            let resolved = self.retain_visible(keys, visible);
+            if !resolved.is_empty() {
+                return resolved;
+            }
+        }
+        self.variant_owners.get(name).map(|keys| self.retain_visible(keys, visible)).unwrap_or_default()
     }
-    variant_owners.get(name).cloned().unwrap_or_default()
 }
 
 fn compute_closure_digest(groups: &[GroupSemanticClosure], files: &BTreeMap<(String, String), IndexedFile>) -> String {
@@ -351,11 +532,6 @@ struct IndexedFile {
     variant_members: Vec<(String, DeclarationKey)>,
     /// 文件级语句（`using`、顶层 `let`/表达式）的引用。
     module_references: BTreeSet<ScopedReference>,
-    /// 本文件所有声明外壳（类型声明、聚合、trait、别名、impl 块签名）的引用。
-    ///
-    /// HIR 会物化进入闭包的每个文件的声明外壳，因此外壳引用必须随文件一起进入闭包，
-    /// 否则外壳会出现「声明在闭包里、它引用的类型/trait 不在闭包里」的假失败。
-    shell_references: BTreeSet<ScopedReference>,
 }
 
 fn index_source_file(dependency_key: &str, path: &str, source: &str) -> Result<IndexedFile, String> {
@@ -367,7 +543,6 @@ fn index_source_file(dependency_key: &str, path: &str, source: &str) -> Result<I
         declarations: builder.declarations,
         variant_members: builder.variant_members,
         module_references: builder.module_references,
-        shell_references: builder.shell_references,
     })
 }
 
@@ -379,8 +554,6 @@ struct FileBuilder {
     declarations: Vec<DeclarationIndexEntry>,
     variant_members: Vec<(String, DeclarationKey)>,
     module_references: BTreeSet<ScopedReference>,
-    /// 本文件所有声明外壳（类型声明、聚合、trait、别名、impl 块签名）的引用。
-    shell_references: BTreeSet<ScopedReference>,
     import_paths: BTreeSet<String>,
 }
 
@@ -405,19 +578,8 @@ impl FileBuilder {
             owner: owner.map(str::to_string),
             name: name.to_string(),
         };
-        if !kind.is_body_bearing() {
-            self.register_shell_references(namespace, &references);
-        }
         self.declarations.push(DeclarationIndexEntry { key: key.clone(), references: references.paths, import_paths: references.imports });
         key
-    }
-
-    /// 登记始终物化的声明外壳引用：HIR 会物化进入闭包的每个文件的类型声明与 impl 块签名，
-    /// 这些外壳引用的类型/trait 必须随文件一起进入闭包，否则会出现「声明在闭包内、其依赖不在」的假失败。
-    fn register_shell_references(&mut self, namespace: &[String], references: &References) {
-        for path in &references.paths {
-            self.shell_references.insert((namespace.to_vec(), path.clone()));
-        }
     }
 
     fn register_module_references(&mut self, namespace: &[String], references: References) {
@@ -518,9 +680,13 @@ fn keep_declaration(
         ast::StatementNode::TypeFunction(type_function) => {
             demanded.contains(&key_of(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None))
         }
-        // imply 块的每个 witness 方法各自是一份被需求声明；目标类型/trait 引用随方法进入闭包。
+        // imply 块的每个 witness 方法各自是一份被需求声明；拥有者与成员名都与 `collect_imply` 一致。
         ast::StatementNode::Imply(imply) => {
-            imply.methods.retain(|method| demanded.contains(&key_of(namespace, DeclarationKind::ImplyMethod, &method.name.name, None)));
+            let owner = imply_owner_name(imply);
+            imply.methods.retain(|method| {
+                let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
+                demanded.contains(&key_of(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref()))
+            });
             !imply.methods.is_empty()
         }
         // 包装语句按其内部条目的身份保留或丢弃，包装节点本身不是声明。
@@ -538,7 +704,10 @@ fn retain_members(
     demanded: &BTreeSet<DeclarationKey>,
     key_of: &impl Fn(&[String], DeclarationKind, &str, Option<&str>) -> DeclarationKey,
 ) {
-    methods.retain(|method| demanded.contains(&key_of(namespace, DeclarationKind::Method, &method.name.name, Some(owner))));
+    methods.retain(|method| {
+        let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
+        demanded.contains(&key_of(namespace, DeclarationKind::Method, &name, Some(owner)))
+    });
 }
 
 fn collect_items(builder: &mut FileBuilder, current_namespace: &[String], items: &[ast::StatementNode]) {
@@ -634,7 +803,10 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
     for method in methods {
         let mut references = References::default();
         collect_method(method, &mut references);
-        builder.register(namespace, DeclarationKind::Method, &method.name.name, Some(owner), references);
+        // 成员身份使用与 HIR 相同的运算符成员名：`[infix] micro \`+\`` 的身份是 `infix +`，
+        // 否则调用点（`a + b`）的选择名永远命不中声明。
+        let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
+        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), references);
     }
 }
 
@@ -644,18 +816,34 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
     if let Some(trait_type) = &imply.trait_type {
         collect_type_expression(trait_type, &mut signature);
     }
-    // impl 块外壳（目标类型 + trait 路径）始终物化，其引用必须随文件进入闭包。
-    builder.register_shell_references(namespace, &signature);
     if imply.methods.is_empty() {
+        // 没有 witness 方法的 imply 只有外壳，作为文件级引用保存。
         builder.register_module_references(namespace, signature);
         return;
     }
+    // witness 方法挂在被扩展的聚合身份上：`imply HashMap<K, V> { … }` 的成员属于 `HashMap`。
+    // 拥有者来自 imply 目标类型路径，是语法事实，不依赖全库短名索引。
+    let owner = imply_owner_name(imply);
     for method in &imply.methods {
         // imply 的目标类型与 trait 引用附在每个 witness 方法上：需求任一 witness 都需要它们可解析。
         let mut references = signature.clone();
         collect_method(method, &mut references);
-        builder.register(namespace, DeclarationKind::ImplyMethod, &method.name.name, None, references);
+        let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
+        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), references);
     }
+}
+
+/// imply 目标类型的聚合短名：`imply HashMap<K, V>` / `imply std::collection::HashMap<K, V>` → `HashMap`。
+fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
+    /// 递归剥掉泛型应用，取出被扩展名字路径的末段。
+    fn base_name(ty: &ast::TypeExpression) -> Option<String> {
+        match ty {
+            ast::TypeExpression::Namepath(path) => path.parts.last().map(|part| part.name.clone()),
+            ast::TypeExpression::Apply(apply) => base_name(&apply.base),
+            _ => None,
+        }
+    }
+    base_name(&imply.target_type)
 }
 
 fn collect_using(using: &ast::UsingDeclaration, references: &mut References) {
@@ -763,10 +951,39 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
                 collect_term(item, references);
             }
         }
-        ast::TermExpression::Unary(node) => collect_term(&node.base, references),
+        ast::TermExpression::Unary(node) => {
+            // 运算符是普通成员调用：`!a` 降低为 `a.prefix !()`，`*a` 降低为 `a.deref_read()`。
+            // 成员名与 HIR lowering 共用同一份映射，闭包据此把成员选择名登记进需求。
+            if matches!(node.operator, ValkyrieTokenType::Star) {
+                references.paths.insert(vec![operator_members::DEREF_READ_MEMBER.to_string()]);
+            }
+            else {
+                // 负整数字面量在 HIR 折叠为字面量，不产生成员调用；这里仍登记该成员名，
+                // 闭包只做上界判定：究竟走哪一个由 HIR 的降低规则决定。
+                references.paths.insert(vec![operator_members::prefix_member_name(&node.operator)]);
+            }
+            collect_term(&node.base, references);
+        }
         ast::TermExpression::Binary(node) => {
             collect_term(&node.lhs, references);
             collect_term(&node.rhs, references);
+            match node.operator {
+                // 赋值不是成员调用；对下标左值赋值降低为 `suffix []=` / `suffix ⁅⁆=`。
+                ValkyrieTokenType::Eq => match &node.lhs {
+                    ast::TermExpression::Index { .. } => {
+                        references.paths.insert(vec![operator_members::SUBSCRIPT_ASSIGN_MEMBER.to_string()]);
+                    }
+                    ast::TermExpression::Offset { .. } => {
+                        references.paths.insert(vec![operator_members::CARDINAL_SUBSCRIPT_ASSIGN_MEMBER.to_string()]);
+                    }
+                    _ => {}
+                },
+                // `&&` / `||` 降低为短路控制流，不产生成员调用。
+                ValkyrieTokenType::AndAnd | ValkyrieTokenType::OrOr => {}
+                _ => {
+                    references.paths.insert(vec![operator_members::infix_member_name(&node.operator)]);
+                }
+            }
         }
         ast::TermExpression::Cast { expr, ty, .. } => {
             collect_term(expr, references);
@@ -789,10 +1006,12 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             references.paths.insert(vec![field.name.clone()]);
         }
         ast::TermExpression::Index { receiver, index, .. } => {
+            references.paths.insert(vec![operator_members::SUBSCRIPT_MEMBER.to_string()]);
             collect_term(receiver, references);
             collect_term(index, references);
         }
         ast::TermExpression::Offset { receiver, offset, .. } => {
+            references.paths.insert(vec![operator_members::CARDINAL_SUBSCRIPT_MEMBER.to_string()]);
             collect_term(receiver, references);
             collect_term(offset, references);
         }
@@ -912,51 +1131,8 @@ fn collect_name_path(path: &ast::NamePath, references: &mut References) {
     if segments.is_empty() {
         return;
     }
-    // 无声明身份的内建标量/上下文名不产生引用；内建 unity 变体名（`Some` / `None` /
-    // `Fine` / `Fail`）必须保留，`resolve_reference` 只靠变体名索引命中其拥有者
-    // sum/unite 声明；在此处丢弃会让依赖组的变体声明无法进入闭包。
-    if segments.len() == 1 && is_reference_free_builtin_name(&segments[0]) {
-        return;
-    }
+    // 源码提到的每个名字都登记为引用：名字事实只有一份，就是声明索引。
+    // `usize` / `utf8` 等标量类型同样由源码声明（`structure usize` / `type utf8`），
+    // 不是「无声明内建」，因此不存在按名字表跳过的分支；未命中的引用自然解析为空。
     references.paths.insert(segments);
-}
-
-/// 没有声明身份、因此不产生闭包引用的内建名。
-fn is_reference_free_builtin_name(name: &str) -> bool {
-    is_builtin_symbol(name) && !is_builtin_variant_name(name)
-}
-
-/// 内建 unity 变体名；解析只允许命中其拥有者声明，不建立全库同名成员索引。
-fn is_builtin_variant_name(name: &str) -> bool {
-    matches!(name, "Some" | "None" | "Fine" | "Fail")
-}
-
-fn is_builtin_symbol(name: &str) -> bool {
-    matches!(
-        name,
-        "i8" | "i16"
-            | "i32"
-            | "i64"
-            | "i128"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "u128"
-            | "usize"
-            | "f32"
-            | "f64"
-            | "bool"
-            | "utf8"
-            | "void"
-            | "mut"
-            | "self"
-            | "Self"
-            | "true"
-            | "false"
-            | "None"
-            | "Some"
-            | "Fine"
-            | "Fail"
-    )
 }

@@ -2,8 +2,34 @@ use nyar_language::*;
 use std::collections::BTreeSet;
 
 fn plan_from_groups(groups: &[(&str, bool, Vec<(String, String)>)]) -> SemanticClosure {
-    let refs = groups.iter().map(|(key, is_entry, files)| (*key, *is_entry, files.as_slice())).collect::<Vec<_>>();
-    plan_semantic_closure(&refs)
+    let keys = groups.iter().map(|(key, _, _)| *key).collect::<Vec<_>>();
+    let inputs = groups
+        .iter()
+        .enumerate()
+        .map(|(index, (key, is_entry, files))| ClosureGroupInput {
+            dependency_key: key,
+            // 夹具按依赖顺序提供组：先出现的组视为可被后出现的组直接引用。
+            direct_dependencies: &keys[..index],
+            is_entry: *is_entry,
+            files: files.as_slice(),
+        })
+        .collect::<Vec<_>>();
+    plan_semantic_closure(&inputs)
+}
+
+/// 显式声明依赖可见性的夹具：用于验证「未声明的依赖组不构成可见性」。
+fn plan_with_visibility(groups: &[(&str, bool, Vec<(String, String)>)], visibility: &[&[&str]]) -> SemanticClosure {
+    let inputs = groups
+        .iter()
+        .zip(visibility)
+        .map(|((key, is_entry, files), dependencies)| ClosureGroupInput {
+            dependency_key: key,
+            direct_dependencies: dependencies,
+            is_entry: *is_entry,
+            files: files.as_slice(),
+        })
+        .collect::<Vec<_>>();
+    plan_semantic_closure(&inputs)
 }
 
 fn file(path: &str, source: &str) -> (String, String) {
@@ -117,7 +143,7 @@ fn declared_member_pulls_owning_aggregate_shell() {
 }
 
 #[test]
-fn impl_block_shell_references_enter_closure_without_demanding_its_methods() {
+fn undemanded_impl_witness_keeps_its_shell_out_of_closure() {
     let groups = [
         (
             "library",
@@ -135,10 +161,67 @@ fn impl_block_shell_references_enter_closure_without_demanding_its_methods() {
     let closure = plan_from_groups(&groups);
     let lowered = &closure.groups[0].body_lowering_source_paths;
     assert!(lowered.contains("source/impl.v"));
-    // impl 块外壳始终物化，其 trait 路径必须在闭包内可解析。
-    assert!(lowered.contains("source/iterator/_.v"));
-    // 未被需求的方法体不进入 body lowering。
+    // 未被需求的 witness 方法连带其 impl 外壳一起不进入闭包：外壳的 trait 路径因此不必解析，
+    // 闭包不得以「外壳始终物化」为名把整个文件的无差别引用拉进来。
+    assert!(!lowered.contains("source/iterator/_.v"));
     assert!(!closure.groups[0].body_lowering_declarations.iter().any(|key| key.name == "not_used"));
+}
+
+#[test]
+fn qualified_constructor_resolves_through_dependency_visibility() {
+    let groups = [
+        (
+            "std",
+            false,
+            vec![file(
+                "source/collection/HashMap.v",
+                "namespace std.collection;\nclass HashMap<K, V> { _impl: i32 }\nimply HashMap<K, V> { micro new(capacity: usize): Self { return Self { _impl: 0 } } }",
+            )],
+        ),
+        (
+            "app",
+            true,
+            vec![file("solution.v", "namespace leetcode.two_sum;\nmicro two_sum(size: usize) -> HashMap<i32, i32> { return HashMap::new(0) }")],
+        ),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.groups[0].body_lowering_declarations;
+    // 跨 namespace 的类型引用与限定构造必须通过依赖可见性命中，而不是靠名字认亲。
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::Class && key.name == "HashMap"));
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "new"));
+}
+
+#[test]
+fn member_selector_promotes_used_member_and_skips_unused() {
+    let groups = [
+        (
+            "library",
+            false,
+            vec![file(
+                "source/s.v",
+                "namespace a;\nstructure S { _x: i32 }\nimply S { micro used(self): bool { return true }\nmicro unused(self): bool { return true } }",
+            )],
+        ),
+        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: S) -> bool { return s.used() }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.groups[0].body_lowering_declarations;
+    // 接收者类型在声明索引阶段不可知：成员只按「该名字出现在闭包需求中 + 拥有聚合已需求」提升。
+    assert!(demanded.iter().any(|key| key.name == "used"));
+    assert!(!demanded.iter().any(|key| key.name == "unused"));
+}
+
+#[test]
+fn reference_into_undeclared_dependency_group_is_not_demanded() {
+    let groups = [
+        ("library", false, vec![file("source/answer.v", "micro answer() -> i32 { return 23 }")]),
+        ("app", true, vec![file("solution.v", "micro run() -> i32 { return answer() }")]),
+    ];
+    let visibility: &[&[&str]] = &[&[], &[]];
+    let closure = plan_with_visibility(&groups, visibility);
+    // 未声明直接依赖即不构成可见性：名字命中也不得跨组把声明拉进闭包。
+    assert!(closure.groups[0].body_lowering_source_paths.is_empty());
+    assert!(!closure.demanded_declarations.iter().any(|key| key.name == "answer"));
 }
 
 #[test]
@@ -168,4 +251,35 @@ fn closure_digest_ignores_unreachable_dependency_body_change() {
     let first = plan_from_groups(&groups("micro unused() -> i32 { return 1 }"));
     let second = plan_from_groups(&groups("micro unused() -> i32 { return 2 }"));
     assert_eq!(first.digest, second.digest);
+}
+
+#[test]
+fn operator_use_site_promotes_receiver_operator_member() {
+    let groups = [
+        (
+            "core",
+            false,
+            vec![file(
+                "source/primitive/usize.v",
+                "namespace core::primitive;\nstructure usize { }\nimply usize {\n    infix `+`(self, rhs: Self): Self { return rhs }\n    infix `<`(self, rhs: Self): bool { return true }\n    infix `==`(self, rhs: Self): bool { return true }\n}",
+            )],
+        ),
+        (
+            "std",
+            false,
+            vec![file(
+                "source/hash.v",
+                "namespace std.collection;\nmicro hash_utf8(n: usize) -> usize {\n    let mut i: usize = 0\n    while i < n {\n        i = i + 1\n    }\n    return i\n}",
+            )],
+        ),
+        ("app", true, vec![file("solution.v", "namespace app;\nmicro run() -> usize { return hash_utf8(3) }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.groups[0].body_lowering_declarations;
+    // 运算符是普通成员调用：`i < n` 与 `i + 1` 都是 `usize` 的成员选择名，
+    // 因此接收者类型 `usize` 上的对应运算符成员必须进入闭包。
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix <"));
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix +"));
+    // 没有被选择名命中的运算符成员不得连带进入闭包。
+    assert!(!demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix =="));
 }

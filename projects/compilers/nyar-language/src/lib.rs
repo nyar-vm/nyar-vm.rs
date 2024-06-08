@@ -52,7 +52,9 @@ pub use valkyrie::{
         compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_type, storage_kind_for_type,
     },
     module,
-    semantic_closure::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure},
+    semantic_closure::{
+        ClosureGroupInput, DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure,
+    },
     type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
     typing, validation,

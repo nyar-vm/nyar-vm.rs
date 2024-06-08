@@ -18,6 +18,8 @@ pub mod lint;
 pub mod meta_reactive;
 pub mod mir;
 pub mod module;
+/// 运算符成员名的唯一所有者（运算符是普通成员调用，不是语义类别）。
+pub(crate) mod operator_members;
 pub mod optimizer;
 /// Valkyrie 文本解析入口（委托 `frontend`）。
 pub mod parser;

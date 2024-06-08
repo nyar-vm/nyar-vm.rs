@@ -1,10 +1,16 @@
 use super::*;
 use crate::{
     types::hir::{CaptureMode, CaptureStorage, HirCapture},
-    valkyrie::frontend::ast::{
-        AnonymousClass, AnonymousMicro, AnonymousStructure, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern, Raise,
-        Resume, Return, Statement, StringLiteral, StringSegment, TermBinaryNode, TermExpression, TermUnaryNode, TextSegment, VariablePattern,
-        WildcardPattern, pattern_nodes::ElsePattern,
+    valkyrie::{
+        frontend::ast::{
+            AnonymousClass, AnonymousMicro, AnonymousStructure, Block, Break, ClassPattern, Continue, LiteralPattern, MatchArm, Pattern, Raise,
+            Resume, Return, Statement, StringLiteral, StringSegment, TermBinaryNode, TermExpression, TermUnaryNode, TextSegment,
+            VariablePattern, WildcardPattern, pattern_nodes::ElsePattern,
+        },
+        operator_members::{
+            CARDINAL_SUBSCRIPT_ASSIGN_MEMBER, CARDINAL_SUBSCRIPT_MEMBER, DEREF_READ_MEMBER, SUBSCRIPT_ASSIGN_MEMBER, SUBSCRIPT_MEMBER,
+            infix_member_name, prefix_member_name,
+        },
     },
 };
 
@@ -325,14 +331,14 @@ fn lower_unary_expression(node: &TermUnaryNode, source_id: SourceID, fallback_sp
     }
     else if matches!(node.operator, ValkyrieTokenType::Star) {
         lower_method_call_kind(
-            "deref_read",
+            DEREF_READ_MEMBER,
             vec![HirCallArgument::positional(lower_term_expression_with_context(&node.base, source_id, fallback_span, false))],
             span,
         )
     }
     else {
         lower_operator_member_call(
-            prefix_operator_member(&node.operator),
+            &prefix_member_name(&node.operator),
             vec![HirCallArgument::positional(lower_term_expression_with_context(&node.base, source_id, fallback_span, false))],
             span,
         )
@@ -366,7 +372,7 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
         ValkyrieTokenType::AndAnd => lower_short_circuit_and(lhs, rhs, source_id, fallback_span, span),
         ValkyrieTokenType::OrOr => lower_short_circuit_or(lhs, rhs, source_id, fallback_span, span),
         _ => lower_operator_member_call(
-            infix_operator_member(&node.operator),
+            &infix_member_name(&node.operator),
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(rhs, source_id, fallback_span, false)),
@@ -630,45 +636,6 @@ fn lower_string_literal(literal: &StringLiteral, source_id: SourceID, fallback_s
                 },
             })
             .collect(),
-    }
-}
-
-/// 序数下标 `receiver[i]` / `receiver[i] = v` 的成员名。
-const SUBSCRIPT_MEMBER: &str = "suffix []";
-/// 序数下标赋值 `receiver[i] = v` 的成员名。
-const SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix []=";
-/// 基数下标 `receiver::[i]` 的成员名。
-const CARDINAL_SUBSCRIPT_MEMBER: &str = "suffix ⁅⁆";
-/// 基数下标赋值 `receiver::[i] = v` 的成员名。
-const CARDINAL_SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix ⁅⁆=";
-
-fn infix_operator_member(op: &ValkyrieTokenType) -> &'static str {
-    match op {
-        ValkyrieTokenType::Plus => "infix +",
-        ValkyrieTokenType::Minus => "infix -",
-        ValkyrieTokenType::Star => "infix *",
-        ValkyrieTokenType::Slash => "infix /",
-        ValkyrieTokenType::Percent => "infix %",
-        ValkyrieTokenType::EqEq => "infix ==",
-        ValkyrieTokenType::NotEq => "infix !=",
-        ValkyrieTokenType::LessThan => "infix <",
-        ValkyrieTokenType::LessEq => "infix <=",
-        ValkyrieTokenType::GreaterThan => "infix >",
-        ValkyrieTokenType::GreaterEq => "infix >=",
-        ValkyrieTokenType::LeftShift => "infix <<",
-        ValkyrieTokenType::RightShift => "infix >>",
-        ValkyrieTokenType::Ampersand => "infix &",
-        ValkyrieTokenType::Pipe => "infix |",
-        ValkyrieTokenType::Caret => "infix ^",
-        ValkyrieTokenType::DotDot => "infix ..",
-        _ => "infix +",
-    }
-}
-
-fn prefix_operator_member(op: &ValkyrieTokenType) -> &'static str {
-    match op {
-        ValkyrieTokenType::Bang => "prefix !",
-        _ => "prefix -",
     }
 }
 

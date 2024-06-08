@@ -284,10 +284,7 @@ enums Status {
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile {
-                path: "app.v".into(),
-                source: "micro main(current: Status) -> i32 { return 0 }".into(),
-            }],
+            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main(current: Status) -> i32 { return 0 }".into() }],
             direct_dependencies: vec!["dep".into()],
         },
     ];
@@ -364,10 +361,7 @@ unite Choice {
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile {
-                path: "app.v".into(),
-                source: "micro main(choice: Choice) -> i32 { return 0 }".into(),
-            }],
+            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main(choice: Choice) -> i32 { return 0 }".into() }],
             direct_dependencies: vec!["dep".into()],
         },
     ];

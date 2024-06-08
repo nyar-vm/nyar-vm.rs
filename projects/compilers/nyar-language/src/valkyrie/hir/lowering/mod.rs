@@ -31,6 +31,7 @@ use crate::{
             },
         },
         mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
+        operator_members,
         semantic_closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure},
     },
 };
@@ -2686,22 +2687,7 @@ fn oak_identifier(id: &frontend::ast::Identifier) -> Identifier {
 /// 成员名，不保留 unary/binary/operator 语义类别、`OperatorId` 或 operator domain；
 /// 调用点由 AST 运算符语法糖展开成同一名字的普通成员调用（见 `expr_lowering`）。
 fn operator_member_name(declared: &frontend::ast::Identifier, annotations: &[Attribute]) -> Identifier {
-    let fixity = if has_modifier(annotations, "prefix") {
-        Some("prefix")
-    }
-    else if has_modifier(annotations, "infix") {
-        Some("infix")
-    }
-    else if has_modifier(annotations, "postfix") || has_modifier(annotations, "suffix") {
-        Some("suffix")
-    }
-    else {
-        None
-    };
-    match fixity {
-        Some(fixity) => Identifier::new(&format!("{fixity} {}", declared.name)),
-        None => oak_identifier(declared),
-    }
+    Identifier::new(&operator_members::declared_member_name(&declared.name, annotations))
 }
 
 /// Oak 已区分返回类型与约束；这里只转换结构化语法事实。
