@@ -35,7 +35,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
         namespace: &NamePath,
         declarations: &BTreeMap<NamePath, Vec<(ItemId, usize)>>,
     ) -> Result<(ItemId, usize), ParseError> {
-        // 限定路径按整段绑定；裸名只按声明作用域逐级查找，禁止全局唯一短名回退。
+        // 限定路径按整段绑定；裸名只按声明作用域逐级查找。
         let mut candidates = Vec::new();
         if path.parts().len() > 1 {
             candidates.push(path.clone());
@@ -53,6 +53,28 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
                     return Err(ParseError::invalid(format!("trait 声明歧义：{path}")));
                 }
                 return Ok(entries[0]);
+            }
+        }
+        // 裸名在声明作用域链未命中时，只在本模块可见的声明集合内按唯一短名回退。
+        // 该集合由「本组声明 + `direct_dependencies` 导出」构成，与语义闭包的可见性合同
+        // 是同一份事实；`std.text` 的 `imply AsciiText: Text` 命中 `core::text::Text` 即走这里。
+        // 这不是跨全库的名字回退：不可见组的声明根本不在 `declarations` 中。
+        if let Some(name) = path.parts().last() {
+            let mut matched: Option<(ItemId, usize)> = None;
+            for (declared, entries) in declarations {
+                if declared.parts().last() != Some(name) {
+                    continue;
+                }
+                for entry in entries {
+                    match matched {
+                        None => matched = Some(*entry),
+                        Some(existing) if existing.0 == entry.0 => {}
+                        Some(_) => return Err(ParseError::invalid(format!("trait 声明歧义：{path}"))),
+                    }
+                }
+            }
+            if let Some(entry) = matched {
+                return Ok(entry);
             }
         }
         Err(ParseError::invalid(format!("trait 约束未解析：{path}")))

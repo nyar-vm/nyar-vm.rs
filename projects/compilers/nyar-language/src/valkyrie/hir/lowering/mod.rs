@@ -26,8 +26,8 @@ use crate::{
             ast::{
                 AssociatedType, Attribute, ClassDeclaration, EnumVariant, Enums, EnumsKind, FieldDeclaration, Flags, GenericParam,
                 ImplyDeclaration, MethodDeclaration, MicroDeclaration, NamePath as AstNamePath, Param, Parent, SingletonDeclaration,
-                StatementNode, StructureDeclaration, TermExpression, Trait, TypeExpression, TypeFunction, UnionDeclaration, UsingDeclaration,
-                Variant, WidgetDeclaration,
+                StatementNode, StructureDeclaration, TermExpression, Trait, TypeAliasDeclaration, TypeExpression, TypeFunction,
+                UnionDeclaration, UsingDeclaration, Variant, WidgetDeclaration,
             },
         },
         mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
@@ -1859,7 +1859,7 @@ impl AstToHir {
             .collect();
 
         let _module_type_alias_scope = ModuleTypeAliasScope::enter_empty();
-        let type_aliases = Vec::new();
+        let mut type_aliases = Vec::new();
 
         let mut functions = Vec::new();
         let mut type_functions = Vec::new();
@@ -1892,6 +1892,7 @@ impl AstToHir {
                             &mut enums,
                             &mut flags,
                             &mut impls,
+                            &mut type_aliases,
                         )?;
                     }
                 }
@@ -1907,6 +1908,7 @@ impl AstToHir {
                     &mut enums,
                     &mut flags,
                     &mut impls,
+                    &mut type_aliases,
                 )?,
             }
         }
@@ -1955,9 +1957,23 @@ impl AstToHir {
         enums: &mut Vec<HirEnum>,
         flags: &mut Vec<HirFlags>,
         impls: &mut Vec<HirImpl>,
+        type_aliases: &mut Vec<HirTypeAlias>,
     ) -> Result<(), ParseError> {
         for item in items {
-            self.lower_statement_node(item, namespace, functions, type_functions, structs, widgets, singletons, traits, enums, flags, impls)?;
+            self.lower_statement_node(
+                item,
+                namespace,
+                functions,
+                type_functions,
+                structs,
+                widgets,
+                singletons,
+                traits,
+                enums,
+                flags,
+                impls,
+                type_aliases,
+            )?;
         }
         Ok(())
     }
@@ -1975,6 +1991,7 @@ impl AstToHir {
         enums: &mut Vec<HirEnum>,
         flags: &mut Vec<HirFlags>,
         impls: &mut Vec<HirImpl>,
+        type_aliases: &mut Vec<HirTypeAlias>,
     ) -> Result<(), ParseError> {
         match item {
             StatementNode::Micro(micro) => {
@@ -1983,6 +2000,10 @@ impl AstToHir {
             }
             StatementNode::TypeFunction(type_function) => {
                 type_functions.push(self.lower_type_function(type_function));
+                Ok(())
+            }
+            StatementNode::TypeAlias(alias) => {
+                type_aliases.push(self.lower_type_alias(alias));
                 Ok(())
             }
             StatementNode::Class(class_decl) => {
@@ -2056,6 +2077,15 @@ impl AstToHir {
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,
             is_override: false,
+        }
+    }
+
+    fn lower_type_alias(&self, alias: &TypeAliasDeclaration) -> HirTypeAlias {
+        HirTypeAlias {
+            name: Identifier::new(&alias.name.name),
+            generics: Vec::new(),
+            target: lower_type_expression(&alias.target),
+            span: with_source(&frontend::std_range(&alias.span), self.source_id),
         }
     }
 
