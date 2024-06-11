@@ -177,11 +177,7 @@ fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
         (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
         (
             operator_op,
-            function(
-                "main::infix !=",
-                NyarType::Boolean,
-                vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }],
-            ),
+            function("main::infix !=", NyarType::Boolean, vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }]),
         ),
         (main_op, caller),
     ]);
