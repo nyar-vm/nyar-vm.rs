@@ -10,7 +10,7 @@ use crate::{
         hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
     },
     valkyrie::frontend::{
-        self, ParseError, ValkyrieRoot,
+        self, ParseError,
         ast::{
             NamePath as AstNamePath, TypeExpression,
             type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
@@ -20,58 +20,58 @@ use crate::{
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 thread_local! {
-    static SHADOWED_BUILTIN_TYPE_ALIASES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
 }
 
-/// 模块类型别名条目：可携带泛型形参。
+/// 进入一次 lowering 作用域时可见的单条类型别名。
+///
+/// `target` 为 `None` 表示该别名声明在本组，目标尚未降低：名字已经可见（因此遮蔽同名内建），
+/// 展开则要等目标填入后再进行。可见依赖组导出的别名携带已冻结的目标。
+#[derive(Debug, Clone)]
+pub(crate) struct VisibleTypeAlias {
+    /// 别名短名。
+    pub name: String,
+    /// 泛型形参名。
+    pub params: Vec<String>,
+    /// 已冻结的目标类型；本组声明为 `None`。
+    pub target: Option<ValkyrieType>,
+}
+
+/// 模块类型别名条目：可携带泛型形参；目标未填入时为 `None`。
 #[derive(Debug, Clone)]
 struct ModuleTypeAliasEntry {
     params: Vec<String>,
-    target: ValkyrieType,
-}
-
-/// 管理当前 lowering 过程中的内建类型别名遮蔽作用域。
-#[derive(Debug)]
-pub(crate) struct BuiltinTypeAliasScope;
-
-impl BuiltinTypeAliasScope {
-    /// 进入一次新的根 lowering 作用域。
-    pub(crate) fn enter(root: &ValkyrieRoot) -> Self {
-        let aliases = collect_shadowed_builtin_type_aliases(root);
-        SHADOWED_BUILTIN_TYPE_ALIASES.with(|stack| {
-            stack.borrow_mut().push(aliases);
-        });
-        Self
-    }
-}
-
-impl Drop for BuiltinTypeAliasScope {
-    fn drop(&mut self) {
-        SHADOWED_BUILTIN_TYPE_ALIASES.with(|stack| {
-            let _ = stack.borrow_mut().pop();
-        });
-    }
+    target: Option<ValkyrieType>,
 }
 
 /// 管理当前 lowering 过程中的模块 `type` 别名作用域。
+///
+/// 作用域内容就是「本组（或本根）的 `type` 声明 + 可见依赖导出的别名」，与语义闭包的
+/// 可见性合同一致：不可见组的别名不进入作用域，内建遮蔽同样只认作用域内的名字。
 #[derive(Debug)]
 pub(crate) struct ModuleTypeAliasScope;
 
 impl ModuleTypeAliasScope {
-    /// 进入一次新的根 lowering 作用域。
-    pub(crate) fn enter_empty() -> Self {
+    /// 进入一次 lowering 作用域并注册可见别名。
+    ///
+    /// 调用方把依赖导出（`target: Some`）与本组待填目标的声明（`target: None`）一起传入；
+    /// 本组声明在依赖导出之后插入，故同名时以本组声明为准。
+    pub(crate) fn enter(visible: Vec<VisibleTypeAlias>) -> Self {
+        let mut aliases = BTreeMap::new();
+        for alias in visible {
+            aliases.insert(alias.name, ModuleTypeAliasEntry { params: alias.params, target: alias.target });
+        }
         MODULE_TYPE_ALIASES.with(|stack| {
-            stack.borrow_mut().push(BTreeMap::new());
+            stack.borrow_mut().push(aliases);
         });
         Self
     }
 
-    /// 注册一个模块类型别名到当前作用域。
+    /// 填入本组别名的目标类型；名字必须已由 [`ModuleTypeAliasScope::enter`] 注册。
     pub(crate) fn register_alias(name: &str, params: Vec<String>, target: ValkyrieType) {
         MODULE_TYPE_ALIASES.with(|stack| {
             if let Some(top) = stack.borrow_mut().last_mut() {
-                top.insert(name.to_string(), ModuleTypeAliasEntry { params, target });
+                top.insert(name.to_string(), ModuleTypeAliasEntry { params, target: Some(target) });
             }
         });
     }
@@ -355,12 +355,25 @@ pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
-fn collect_shadowed_builtin_type_aliases(_root: &ValkyrieRoot) -> BTreeSet<String> {
-    BTreeSet::new()
+/// 当前作用域内是否声明了该短名的 `type` 别名（含目标尚未填入的本组声明）。
+///
+/// 这是内建遮蔽的唯一事实来源：源码声明 `type utf8 = Utf8Text` 之后，`utf8` 就不再是内建编码类型。
+fn has_module_type_alias(name: &str) -> bool {
+    MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains_key(name)))
 }
 
-fn is_shadowed_builtin_type(name: &str) -> bool {
-    SHADOWED_BUILTIN_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains(name)))
+/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 未解析短名。
+///
+/// 别名目标尚未填入（或形参个数不匹配）时保留别名身份，不折算成内建类型：
+/// 别名是声明身份，不能被同名的内建类型顶替。
+fn resolve_named_type(name: &str) -> ValkyrieType {
+    if let Some(expanded) = expand_module_type_alias(name, &[], &mut BTreeSet::new()) {
+        return expanded;
+    }
+    if has_module_type_alias(name) {
+        return ValkyrieType::Named(Identifier::new(name));
+    }
+    canonical_builtin_type(name).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(name)))
 }
 
 fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &mut BTreeSet<String>) -> Option<ValkyrieType> {
@@ -372,13 +385,14 @@ fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &m
         if entry.params.len() != arguments.len() {
             return None;
         }
+        let target = entry.target?;
         visiting.insert(name.to_string());
         let substituted = if entry.params.is_empty() {
-            entry.target.clone()
+            target
         }
         else {
             let mapping: BTreeMap<String, ValkyrieType> = entry.params.into_iter().zip(arguments.iter().cloned()).collect();
-            substitute_named_type_params(&entry.target, &mapping)
+            substitute_named_type_params(&target, &mapping)
         };
         let expanded = expand_type_aliases(&substituted, visiting);
         visiting.remove(name);
@@ -462,14 +476,8 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
     // `core::…` / `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。
     if parts.len() == 2 && !is_known_builtin_type_namespace(&parts, last) && !is_module_root_prefix(parts[0]) {
         let head = parts[0];
-        let base = if !is_shadowed_builtin_type(head) {
-            canonical_builtin_type(head).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(head)))
-        }
-        else {
-            ValkyrieType::Named(Identifier::new(head))
-        };
         return ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
-            base,
+            base: resolve_named_type(head),
             name: Identifier::new(last),
             type_arguments: Vec::new(),
         }));
@@ -477,18 +485,8 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
     if parts.len() > 1 && !is_known_builtin_type_namespace(&parts, last) {
         return ValkyrieType::Named(Identifier::new(&parts.join(".")));
     }
-    let base = if !is_shadowed_builtin_type(last) && (parts.len() == 1 || is_known_builtin_type_namespace(&parts, last)) {
-        canonical_builtin_type(last).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(last)))
-    }
-    else {
-        ValkyrieType::Named(Identifier::new(last))
-    };
-    if parts.len() == 1 {
-        if let Some(expanded) = expand_module_type_alias(last, &[], &mut BTreeSet::new()) {
-            return expanded;
-        }
-    }
-    base
+    // 单段名与已知内建命名空间限定名共用同一解析顺序：作用域别名优先于内建类型。
+    resolve_named_type(last)
 }
 
 fn is_module_root_prefix(name: &str) -> bool {

@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     hir::{
-        BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,
+        ModuleTypeAliasScope, VisibleTypeAlias, hoist_anonymous_classes, lower_type_expression,
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
@@ -318,6 +318,62 @@ pub struct CompilerSourceFile {
     pub path: String,
     /// 文件原文。
     pub source: String,
+}
+
+/// 本组（或本根）可见的类型别名：可见依赖导出的别名在前，本组声明在后。
+///
+/// 同名时本组声明遮蔽依赖别名。不可见组的别名不在返回值里，因此既不会被展开，
+/// 也不能遮蔽同名内建类型；本组声明此时只有名字可见（`target: None`）。
+fn visible_type_aliases(roots: &[&ValkyrieRoot], imported_semantic_exports: &[HirDependencySemanticExport]) -> Vec<VisibleTypeAlias> {
+    let mut visible = Vec::new();
+    for export in imported_semantic_exports {
+        for alias in &export.type_aliases {
+            visible.push(VisibleTypeAlias {
+                name: alias.name.to_string(),
+                params: alias.generics.iter().map(ToString::to_string).collect(),
+                target: Some(alias.target.clone()),
+            });
+        }
+    }
+    for root in roots {
+        for alias in root_type_alias_declarations(root) {
+            visible.push(VisibleTypeAlias { name: alias.name.name.clone(), params: Vec::new(), target: None });
+        }
+    }
+    visible
+}
+
+/// 把本组（或本根）`type` 声明的目标填入已建立的作用域。
+///
+/// 全部可见名字在填目标之前已经注册，因此别名之间可以互相引用（含前向引用）；
+/// 展开在引用点进行，环由 `expand_module_type_alias` 的 visiting 集合拒绝。
+fn register_root_type_alias_targets(roots: &[&ValkyrieRoot]) {
+    for root in roots {
+        for alias in root_type_alias_declarations(root) {
+            ModuleTypeAliasScope::register_alias(&alias.name.name, Vec::new(), lower_type_expression(&alias.target));
+        }
+    }
+}
+
+/// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
+fn root_type_alias_declarations(root: &ValkyrieRoot) -> Vec<&TypeAliasDeclaration> {
+    fn walk<'a>(items: &'a [StatementNode], out: &mut Vec<&'a TypeAliasDeclaration>) {
+        for item in items {
+            match item {
+                StatementNode::TypeAlias(alias) => out.push(alias),
+                StatementNode::Namespace(namespace) => {
+                    if let Some(body) = &namespace.body {
+                        walk(&body.items, out);
+                    }
+                }
+                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), out),
+                _ => {}
+            }
+        }
+    }
+    let mut declarations = Vec::new();
+    walk(&root.items, &mut declarations);
+    declarations
 }
 
 /// 在任何解析/裁剪前验证不可变输入身份，避免 map 覆盖制造第二份事实。
@@ -731,15 +787,26 @@ impl ValkyrieCompiler {
                 module_name,
             );
         }
-        let mut merged: Option<HirModule> = None;
-        let mut lowered_file_count = 0usize;
+        // 宏/模板展开必须先于别名收集：展开会合成声明，别名作用域只登记最终进入 lowering 的声明。
+        let mut prepared = Vec::new();
         for file in &group.sources {
             if !selection.body_lowering_source_paths.contains(&file.path) {
                 continue;
             }
             // 计划内的文件属于入口语义闭包；语法或语义错误必须结构化失败，不得吞错后编译残缺程序。
-            let module = self.parse_and_lower_source_file(group, selection, file, imported_semantic_exports, module_name.clone(), arch)?;
-            lowered_file_count += 1;
+            let root = self.prepare_source_file_root(group, selection, file, arch)?;
+            prepared.push((file, root));
+        }
+        if prepared.is_empty() {
+            return Err(ParseError::invalid(format!("semantic source group `{}` has no body-lowering source files", group.dependency_key)));
+        }
+        // 类型别名作用域是组级事实：本组全部文件的 `type` 声明 + 可见依赖导出的别名。
+        let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
+        let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(&roots, imported_semantic_exports));
+        register_root_type_alias_targets(&roots);
+        let mut merged: Option<HirModule> = None;
+        for (file, root) in &prepared {
+            let module = self.lower_prepared_source_file(file, root, imported_semantic_exports, module_name.clone())?;
             if let Some(target) = &mut merged {
                 target.imports.extend(module.imports);
                 target.warnings.extend(module.warnings);
@@ -762,23 +829,19 @@ impl ValkyrieCompiler {
                 merged = Some(module);
             }
         }
-        if lowered_file_count == 0 {
-            return Err(ParseError::invalid(format!("semantic source group `{}` has no body-lowering source files", group.dependency_key)));
-        }
-        let hir = merged.expect("lowered_file_count > 0 implies merged HirModule");
+        let hir = merged.expect("prepared source files imply a merged HirModule");
         validate_interop_surface(&hir)?;
         Ok(hir)
     }
 
-    fn parse_and_lower_source_file(
+    /// 解析一个源文件并完成宏/模板展开；别名收集与 HIR lowering 都在展开结果上进行。
+    fn prepare_source_file_root(
         &self,
         group: &CompilerSourceGroup,
         selection: &GroupSemanticClosure,
         file: &CompilerSourceFile,
-        imported_semantic_exports: &[HirDependencySemanticExport],
-        module_name: Option<NamePath>,
         arch: &str,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<ValkyrieRoot, ParseError> {
         let mut root = frontend::parse_source(&file.source).map_err(|error| match error {
             ParseError::Invalid { message, span } => {
                 ParseError::Invalid { message: format!("源码组 `{}` 文件 `{}`: {message}", group.dependency_key, file.path), span }
@@ -790,8 +853,19 @@ impl ValkyrieCompiler {
         retain_demanded_declarations(&mut root.items, &group.dependency_key, &file.path, &selection.body_lowering_declarations);
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, &file.source, arch)?;
+        Ok(root)
+    }
+
+    /// 降低一个已解析并展开的源文件；类型别名作用域由调用方按组建立。
+    fn lower_prepared_source_file(
+        &self,
+        file: &CompilerSourceFile,
+        root: &ValkyrieRoot,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)
+            AstToHir::new(self.source_id).lower_prepared_root(root, imported_semantic_exports, module_name)
         }))
         .map_err(|_| ParseError::invalid(format!("source file `{}` contains an unexpanded syntax node", file.path)))?
     }
@@ -1830,7 +1904,22 @@ impl AstToHir {
     }
 
     /// 仅物化 HIR；调用身份必须由完整源码组阶段统一解析。
+    ///
+    /// 单根入口自己拥有类型别名作用域（本根声明 + 可见依赖导出）。完整源码组编译走
+    /// [`AstToHir::lower_prepared_root`]，作用域由那一层按组建立。
     pub(crate) fn lower_root_without_call_resolution(
+        &self,
+        root: &ValkyrieRoot,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name_override: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
+        let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(std::slice::from_ref(&root), imported_semantic_exports));
+        register_root_type_alias_targets(std::slice::from_ref(&root));
+        self.lower_prepared_root(root, imported_semantic_exports, module_name_override)
+    }
+
+    /// 降低一个已完成宏/模板展开、且别名作用域已经建立的源码根。
+    pub(crate) fn lower_prepared_root(
         &self,
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
@@ -1838,7 +1927,6 @@ impl AstToHir {
     ) -> Result<HirModule, ParseError> {
         validate_ast_root(root)?;
         let _warning_scope = CompileWarningScope::enter();
-        let _builtin_type_alias_scope = BuiltinTypeAliasScope::enter(root);
         let module_name = module_name_override.unwrap_or_else(|| {
             root.items
                 .iter()
@@ -1858,7 +1946,6 @@ impl AstToHir {
             })
             .collect();
 
-        let _module_type_alias_scope = ModuleTypeAliasScope::enter_empty();
         let mut type_aliases = Vec::new();
 
         let mut functions = Vec::new();
