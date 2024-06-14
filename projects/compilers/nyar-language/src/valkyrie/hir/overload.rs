@@ -1039,6 +1039,56 @@ fn resolve_statement_calls(
     }
 }
 
+/// 值位置成员访问（`receiver.member`，不带括号）的调用合同。
+///
+/// 语言没有「成员读取」这一独立语义：成员是接收者名义类型已声明的字段才是字段访问，
+/// 否则按成员选择名解析为「接收者作首个实参」的普通调用，与 `receiver.member()`、
+/// `a + b`、`a⁅i⁆` 共用同一条 `Invoke(callee, arguments)` 通道。
+///
+/// 命中即把节点改写为 `Call { callee: Path([member]), args: [receiver], resolved }`；
+/// 未命中保持字段访问，由后续阶段结构化拒绝。禁止按成员名猜接收者类型或伪造 ABI。
+fn try_resolve_value_member_access(
+    expr: &mut HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &mut BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
+) -> bool {
+    let HirExprKind::FieldAccess { object, field } = &mut expr.kind
+    else {
+        return false;
+    };
+    resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+    let receiver = object.as_ref().clone();
+    let member = field.clone();
+    let span = expr.span.clone();
+    // 声明字段优先于同名成员调用；接收者类型未知时判不出字段，保持字段访问。
+    let receiver_type = infer_expr_type(&receiver, locals).or_else(|| infer_scrutinee_type(&receiver, locals, struct_fields, singleton_names));
+    if receiver_type.as_ref().is_some_and(|ty| lookup_struct_field_type(ty, &member, struct_fields).is_some()) {
+        return false;
+    }
+    let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member])), span };
+    let args = vec![HirCallArgument::positional(receiver)];
+    let Some(resolved) = try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+    else {
+        return false;
+    };
+    expr.kind = HirExprKind::Call { callee: Box::new(callee), args, resolved: Some(resolved) };
+    true
+}
+
+/// 表达式在父节点中的位置。
+///
+/// `Callee` 只用于 `Call` / `GenericApply` 的被调用者本身：那里的 `receiver.member`
+/// 已经是成员调用的选择名，不得再按值位置成员访问改写一次。其余位置一律 `Value`。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExprPosition {
+    Callee,
+    Value,
+}
+
 fn resolve_expr_calls(
     expr: &mut HirExpr,
     candidates: &[OverloadCandidate],
@@ -1048,10 +1098,38 @@ fn resolve_expr_calls(
     singleton_names: &BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
 ) {
+    resolve_expr_calls_at(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type, ExprPosition::Value);
+}
+
+fn resolve_expr_calls_at(
+    expr: &mut HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &mut BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
+    position: ExprPosition,
+) {
     try_resolve_nullary_variant_expr(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+    // 值位置成员访问先于按形状分发：命中后节点已经是普通调用，不再走字段访问分支。
+    if position == ExprPosition::Value
+        && try_resolve_value_member_access(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+    {
+        return;
+    }
     match &mut expr.kind {
         HirExprKind::Call { callee, args, resolved } => {
-            resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            resolve_expr_calls_at(
+                callee,
+                candidates,
+                type_relations,
+                locals,
+                struct_fields,
+                singleton_names,
+                contextual_type,
+                ExprPosition::Callee,
+            );
             for arg in args.iter_mut() {
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }
@@ -1072,8 +1150,19 @@ fn resolve_expr_calls(
         HirExprKind::FieldAccess { object, .. } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
         }
-        HirExprKind::GenericApply { callee, .. }
-        | HirExprKind::FieldInit { value: callee, .. }
+        // `GenericApply` 的内层是调用选择名（`peel_explicit_generic_arguments` 会剥开它），
+        // 因此与 `Call.callee` 同为被调用者位置。
+        HirExprKind::GenericApply { callee, .. } => resolve_expr_calls_at(
+            callee,
+            candidates,
+            type_relations,
+            locals,
+            struct_fields,
+            singleton_names,
+            contextual_type,
+            ExprPosition::Callee,
+        ),
+        HirExprKind::FieldInit { value: callee, .. }
         | HirExprKind::Await(callee)
         | HirExprKind::Awake(callee)
         | HirExprKind::BlockOn(callee)
@@ -1413,6 +1502,15 @@ pub fn match_call_candidate(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<OverloadCandidate> {
+    // trait 声明的方法（`owner: None`）没有具体 owner 身份，接收者槽仍是 `Self`/未标注类型。
+    // 这类候选只能经 bound 实例化（`instantiate_trait_bound_candidate` 把接收者槽代入 subject）后参与匹配；
+    // 未实例化就按名命中会让任意接收者与同名 trait 方法「认亲」，与真实候选并列成歧义。此处 fail-closed。
+    if candidate.owner.is_none()
+        && candidate.trait_owner.is_some()
+        && matches!(candidate.signature.params.first(), Some(ValkyrieType::AutoType | ValkyrieType::r#SelfType))
+    {
+        return None;
+    }
     // 语言 builtin：以候选符号的 IntrinsicId 为准（ADR 0013），不得按调用点表面名特判。
     if let Some(matched) = match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names) {
         return Some(matched);

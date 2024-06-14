@@ -535,7 +535,7 @@ micro negate_flag(flag: bool) -> bool {
 }
 
 #[test]
-fn array_length_field_access_is_not_rewritten_to_intrinsic() {
+fn array_length_value_access_resolves_through_builtin_contract() {
     let compiler = ValkyrieCompiler::default();
     let hir = compiler
         .compile_source(
@@ -552,10 +552,22 @@ micro len(items: [i32]) -> usize {
     else {
         panic!("expected let with initializer, got {:?}", function.body.statements[0].kind);
     };
-    assert!(
-        matches!(initializer.kind, HirExprKind::FieldAccess { .. }),
-        "array.length must stay field access, not intrinsic rewrite: {initializer:?}"
-    );
+    // 值位置成员访问没有独立语义：`[T].length` 是 `builtin.array.length` 的零实参调用。
+    // 接收者作首个实参，语言身份由已解析的 builtin 符号承载，MIR 不再按字段名 `length` 猜长度。
+    let HirExprKind::Call { callee, args, resolved } = &initializer.kind
+    else {
+        panic!("expected resolved length call, got {initializer:?}");
+    };
+    let HirExprKind::Path(path) = &callee.kind
+    else {
+        panic!("expected bare member callee, got {callee:?}");
+    };
+    assert_eq!(path.parts().len(), 1, "member callee must be the bare selection name: {path}");
+    assert_eq!(args.len(), 1, "receiver must be the first argument: {args:?}");
+    let resolved = resolved.as_ref().expect("array length must resolve through the declared builtin candidate");
+    let symbol = resolved.symbol.parts().iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(symbol, vec!["builtin", "array", "length"], "resolved identity must be the builtin candidate symbol");
+    assert!(matches!(&resolved.return_type, ValkyrieType::Named(name) if name.as_str() == "usize"));
 }
 
 #[test]
