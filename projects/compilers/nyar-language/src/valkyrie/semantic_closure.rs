@@ -77,9 +77,9 @@ impl DeclarationKind {
         matches!(self, Self::Micro | Self::TypeFunction | Self::Method | Self::ImplyMethod)
     }
 
-    /// 是否是可以拥有成员方法的名义聚合（成员身份只能挂在这些声明上）。
-    pub fn is_nominal_owner(self) -> bool {
-        matches!(self, Self::Structure | Self::Class | Self::Trait)
+    /// 是否为成员声明：成员身份只能由「拥有者聚合身份 + 选择名」产生，不进入短名索引。
+    fn is_member(self) -> bool {
+        matches!(self, Self::Method | Self::ImplyMethod)
     }
 }
 
@@ -121,11 +121,28 @@ impl DeclarationKey {
     }
 }
 
+/// 声明的结构关联：一个声明在解析后还应指向哪个**声明身份**。
+///
+/// 成员身份只能由「拥有者聚合身份 + 选择名」产生，类型别名不是独立名义聚合，
+/// 因此二者都必须先解析出被指向的声明身份，而不是按名字直接连接。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeclarationLink {
+    /// 成员声明指向其拥有者聚合的引用路径（`imply i64: Hash` → `["i64"]`）。
+    MemberOwner(ReferencePath),
+    /// 类型别名指向其目标聚合的引用路径（`type utf8 = Utf8Text` → `["Utf8Text"]`）。
+    AliasTarget(ReferencePath),
+}
+
 /// 单条声明索引：不降低函数体，只记录该声明签名与函数体引用的名字路径。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeclarationIndexEntry {
     /// 稳定声明身份。
     pub key: DeclarationKey,
+    /// 结构关联引用：成员声明指向其拥有者聚合，类型别名指向其目标聚合；自由声明为 `None`。
+    ///
+    /// 关联必须在整个 inventory 索引完成后按**声明身份**解析，不能按「拥有者短名 + namespace」
+    /// 直接连接：成员与其拥有者可以在不同依赖组（`imply i64: Hash` 在 std，`structure i64` 在 core）。
+    pub link: Option<DeclarationLink>,
     /// 该声明签名与函数体内出现的名字路径（未解析）。
     pub references: BTreeSet<ReferencePath>,
     /// 文件级 `using` 路径；当前解析器不消费 import，这里只保留为诊断与后续绑定输入。
@@ -226,7 +243,7 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
             match index_source_file(group.dependency_key, path, source) {
                 Ok(indexed) => {
                     for entry in &indexed.declarations {
-                        indexes.register(entry.key.clone());
+                        indexes.register(entry.clone());
                         declaration_index.insert(entry.key.clone(), entry.clone());
                     }
                     for (variant, owner) in &indexed.variant_members {
@@ -240,9 +257,10 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
             }
         }
     }
-    // 聚合身份与成员身份的关联必须在整个 inventory 索引完成后统一建立：
-    // 聚合与它的成员可以在同组的不同文件里，按文件边界连接是文件级近似。
-    indexes.link_members();
+    // 聚合身份与成员身份、别名与目标的关联必须在整个 inventory 索引完成后统一按声明身份建立：
+    // 聚合与它的成员可以在同组的不同文件里，也可以跨依赖组（std 的 `imply i64: Hash` 与 core 的
+    // `structure i64`），按文件边界或「短名 + namespace」连接都是名字近似。
+    indexes.link(&visibility);
 
     let mut demanded = BTreeSet::new();
     let mut selectors = BTreeSet::<String>::new();
@@ -371,35 +389,55 @@ fn push_scoped_references(
 /// 精确重载解析、类型匹配与歧义判定仍由 HIR 完成。
 #[derive(Debug, Default)]
 struct DeclarationIndexes {
-    /// `(namespace, 短名) → 声明`；namespace 链解析优先使用它，成员声明同样登记。
+    /// `(namespace, 短名) → 自由声明`；namespace 链解析优先使用它。成员声明不登记：
+    /// 成员选择名不建立全库同名索引，只能由「拥有者聚合身份 + 选择名」产生。
     names: BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
-    /// `短名 → 非成员声明`；只用于可见组内的回退查询，方法/imply 成员不登记。
+    /// `短名 → 自由声明`；只用于可见组内的回退查询。
     by_name: BTreeMap<String, BTreeSet<DeclarationKey>>,
     /// 变体名 → 拥有它的 sum/unite 声明。
     variant_owners: BTreeMap<String, BTreeSet<DeclarationKey>>,
-    /// `(依赖组, namespace, 短名) → 名义聚合声明`。
-    owners: BTreeMap<(String, Vec<String>, String), BTreeSet<DeclarationKey>>,
-    /// `(依赖组, namespace, 拥有者短名) → 成员声明`；聚合身份登记完成后再建立关联。
-    pending_members: BTreeMap<(String, Vec<String>, String), BTreeSet<DeclarationKey>>,
+    /// 待连接的成员声明：`(依赖组, namespace, 拥有者引用, 成员身份)`。
+    pending_members: Vec<PendingMember>,
+    /// 待展开的类型别名目标：别名身份 → `(别名 namespace, 目标引用)`。
+    alias_targets: BTreeMap<DeclarationKey, (Vec<String>, ReferencePath)>,
     /// 名义聚合声明 → 它的成员声明。
     members: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>>,
 }
 
+/// 一条尚未连接的成员声明：拥有者只以引用路径记录，连接时按声明身份解析。
+#[derive(Debug)]
+struct PendingMember {
+    group: String,
+    namespace: Vec<String>,
+    owner_reference: ReferencePath,
+    key: DeclarationKey,
+}
+
 impl DeclarationIndexes {
-    /// 登记一条声明。成员声明只进入拥有者关联，不进入短名回退索引。
-    fn register(&mut self, key: DeclarationKey) {
-        self.names.entry((key.namespace.clone(), key.name.clone())).or_default().insert(key.clone());
-        match &key.owner {
-            Some(owner) => {
-                self.pending_members.entry((key.dependency_key.clone(), key.namespace.clone(), owner.clone())).or_default().insert(key);
+    /// 登记一条声明。
+    ///
+    /// 成员声明（`method` / `imply_method`）只进入待连接的拥有者关联，不进入任何短名索引；
+    /// 类型别名记录目标引用，供成员拥有者解析时穿透别名取到真正的名义聚合。
+    fn register(&mut self, entry: DeclarationIndexEntry) {
+        let DeclarationIndexEntry { key, link, .. } = entry;
+        if key.kind.is_member() {
+            // 拥有者引用不可解析（例如 imply 目标不是名字路径）时 fail-closed：
+            // 该成员既不会被裸名命中，也不会被提升，只作为不可达声明存在。
+            if let Some(DeclarationLink::MemberOwner(owner_reference)) = link {
+                self.pending_members.push(PendingMember {
+                    group: key.dependency_key.clone(),
+                    namespace: key.namespace.clone(),
+                    owner_reference,
+                    key,
+                });
             }
-            None => {
-                self.by_name.entry(key.name.clone()).or_default().insert(key.clone());
-                if key.kind.is_nominal_owner() {
-                    self.owners.entry((key.dependency_key.clone(), key.namespace.clone(), key.name.clone())).or_default().insert(key);
-                }
-            }
+            return;
         }
+        if let Some(DeclarationLink::AliasTarget(target)) = link {
+            self.alias_targets.insert(key.clone(), (key.namespace.clone(), target));
+        }
+        self.names.entry((key.namespace.clone(), key.name.clone())).or_default().insert(key.clone());
+        self.by_name.entry(key.name.clone()).or_default().insert(key);
     }
 
     /// 登记 unity 变体名与它的拥有者 sum/unite 声明。
@@ -409,19 +447,38 @@ impl DeclarationIndexes {
 
     /// 把成员声明挂到其拥有者聚合身份上。
     ///
-    /// 连接发生在整个 inventory 索引完成后：拥有者与成员可以在同组的不同文件里。
-    /// 拥有者不在本 inventory（例如跨组的聚合名）时，成员关联不成立，也不会被名字回退补上。
-    fn link_members(&mut self) {
-        let pending = std::mem::take(&mut self.pending_members);
-        for ((group, namespace, owner), members) in pending {
-            let Some(owners) = self.owners.get(&(group, namespace, owner))
-            else {
-                continue;
-            };
-            for owner_key in owners {
-                self.members.entry(owner_key.clone()).or_default().extend(members.iter().cloned());
+    /// 连接发生在整个 inventory 索引完成后：拥有者与成员可以在同组的不同文件里，也可以在不同的
+    /// 依赖组里。拥有者引用按成员所属组的可见性解析，因此未声明的依赖组不会成为拥有者；
+    /// 解析不到拥有者时成员关联不成立，也不会被名字回退补上。
+    fn link(&mut self, visibility: &BTreeMap<String, BTreeSet<String>>) {
+        let empty = BTreeSet::new();
+        for member in std::mem::take(&mut self.pending_members) {
+            let visible = visibility.get(&member.group).unwrap_or(&empty);
+            for owner in self.resolve_aggregate(&member.owner_reference, &member.namespace, visible) {
+                self.members.entry(owner).or_default().insert(member.key.clone());
             }
         }
+    }
+
+    /// 解析一个「必须指向名义聚合」的引用：类型别名不是聚合身份，穿透其目标继续解析。
+    fn resolve_aggregate(&self, reference: &[String], namespace: &[String], visible: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+        let mut aggregates = BTreeSet::new();
+        let mut frontier = vec![(reference.to_vec(), namespace.to_vec())];
+        let mut visited = BTreeSet::new();
+        while let Some((reference, namespace)) = frontier.pop() {
+            if !visited.insert((reference.clone(), namespace.clone())) {
+                continue;
+            }
+            for key in self.resolve(&reference, &namespace, visible) {
+                match self.alias_targets.get(&key) {
+                    Some((alias_namespace, target)) => frontier.push((target.clone(), alias_namespace.clone())),
+                    None => {
+                        aggregates.insert(key);
+                    }
+                }
+            }
+        }
+        aggregates
     }
 
     /// 该声明身份是否为携带成员的名义聚合。
@@ -568,6 +625,7 @@ impl FileBuilder {
         kind: DeclarationKind,
         name: &str,
         owner: Option<&str>,
+        link: Option<DeclarationLink>,
         references: References,
     ) -> DeclarationKey {
         let key = DeclarationKey {
@@ -578,7 +636,12 @@ impl FileBuilder {
             owner: owner.map(str::to_string),
             name: name.to_string(),
         };
-        self.declarations.push(DeclarationIndexEntry { key: key.clone(), references: references.paths, import_paths: references.imports });
+        self.declarations.push(DeclarationIndexEntry {
+            key: key.clone(),
+            link,
+            references: references.paths,
+            import_paths: references.imports,
+        });
         key
     }
 
@@ -739,31 +802,31 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Class(class) => {
             let mut signature = References::default();
             collect_signature_fields(&class.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Class, &class.name.name, None, signature);
+            builder.register(namespace, DeclarationKind::Class, &class.name.name, None, None, signature);
             collect_members(builder, namespace, &class.name.name, &class.body.methods);
         }
         ast::StatementNode::Structure(structure) => {
             let mut signature = References::default();
             collect_signature_fields(&structure.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, signature);
+            builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, None, signature);
             collect_members(builder, namespace, &structure.name.name, &structure.body.methods);
         }
         ast::StatementNode::Trait(trait_decl) => {
             let mut signature = References::default();
             collect_signature_fields(&trait_decl.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Trait, &trait_decl.name.name, None, signature);
+            builder.register(namespace, DeclarationKind::Trait, &trait_decl.name.name, None, None, signature);
             collect_members(builder, namespace, &trait_decl.name.name, &trait_decl.body.methods);
         }
         ast::StatementNode::Union(union_def) => {
             let mut signature = References::default();
             collect_signature_fields(&union_def.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Union, &union_def.name.name, None, signature);
+            builder.register(namespace, DeclarationKind::Union, &union_def.name.name, None, None, signature);
         }
         ast::StatementNode::Flags(flags) => {
-            builder.register(namespace, DeclarationKind::Flags, &flags.name.name, None, References::default());
+            builder.register(namespace, DeclarationKind::Flags, &flags.name.name, None, None, References::default());
         }
         ast::StatementNode::Enums(enums) => {
-            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, References::default());
+            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, None, References::default());
             for variant in &enums.variants {
                 builder.variant_members.push((variant.name.name.clone(), key.clone()));
             }
@@ -772,17 +835,18 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Micro(micro) => {
             let mut references = References::default();
             collect_micro(micro, &mut references);
-            builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, references);
+            builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, None, references);
         }
         ast::StatementNode::TypeAlias(alias) => {
             let mut references = References::default();
             collect_type_expression(&alias.target, &mut references);
-            builder.register(namespace, DeclarationKind::TypeAlias, &alias.name.name, None, references);
+            let link = type_target_reference(&alias.target).map(DeclarationLink::AliasTarget);
+            builder.register(namespace, DeclarationKind::TypeAlias, &alias.name.name, None, link, references);
         }
         ast::StatementNode::TypeFunction(type_function) => {
             let mut references = References::default();
             collect_type_function(type_function, &mut references);
-            builder.register(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None, references);
+            builder.register(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None, None, references);
         }
         ast::StatementNode::Statement(inner) => collect_item(builder, namespace, inner),
         ast::StatementNode::Let(let_stmt) => {
@@ -806,7 +870,9 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
         // 成员身份使用与 HIR 相同的运算符成员名：`[infix] micro \`+\`` 的身份是 `infix +`，
         // 否则调用点（`a + b`）的选择名永远命不中声明。
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
-        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), references);
+        // 拥有者引用相对成员自身 namespace：聚合与该成员同文件同 namespace 时按 namespace 链命中。
+        let link = Some(DeclarationLink::MemberOwner(vec![owner.to_string()]));
+        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, references);
     }
 }
 
@@ -821,29 +887,34 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
         builder.register_module_references(namespace, signature);
         return;
     }
-    // witness 方法挂在被扩展的聚合身份上：`imply HashMap<K, V> { … }` 的成员属于 `HashMap`。
-    // 拥有者来自 imply 目标类型路径，是语法事实，不依赖全库短名索引。
+    // witness 方法挂在被扩展聚合的**声明身份**上：拥有者是 imply 目标类型的引用路径，
+    // 由索引在整个 inventory 完成后按可见性解析（可以跨依赖组），不按短名认亲。
     let owner = imply_owner_name(imply);
+    let owner_reference = type_target_reference(&imply.target_type);
     for method in &imply.methods {
         // imply 的目标类型与 trait 引用附在每个 witness 方法上：需求任一 witness 都需要它们可解析。
         let mut references = signature.clone();
         collect_method(method, &mut references);
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
-        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), references);
+        let link = owner_reference.clone().map(DeclarationLink::MemberOwner);
+        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, references);
     }
 }
 
 /// imply 目标类型的聚合短名：`imply HashMap<K, V>` / `imply std::collection::HashMap<K, V>` → `HashMap`。
 fn imply_owner_name(imply: &ast::ImplyDeclaration) -> Option<String> {
-    /// 递归剥掉泛型应用，取出被扩展名字路径的末段。
-    fn base_name(ty: &ast::TypeExpression) -> Option<String> {
-        match ty {
-            ast::TypeExpression::Namepath(path) => path.parts.last().map(|part| part.name.clone()),
-            ast::TypeExpression::Apply(apply) => base_name(&apply.base),
-            _ => None,
-        }
+    type_target_reference(&imply.target_type).and_then(|segments| segments.last().cloned())
+}
+
+/// 类型表达式被引用的名字路径：`Utf8Text` → `["Utf8Text"]`，`std::collection::HashMap<K, V>` → `["std","collection","HashMap"]`。
+///
+/// 只剥掉泛型应用取名字路径，不解释类型本身：声明身份由索引按整个 inventory 与可见性解析。
+fn type_target_reference(ty: &ast::TypeExpression) -> Option<ReferencePath> {
+    match ty {
+        ast::TypeExpression::Namepath(path) => Some(name_path_segments(path)),
+        ast::TypeExpression::Apply(apply) => type_target_reference(&apply.base),
+        _ => None,
     }
-    base_name(&imply.target_type)
 }
 
 fn collect_using(using: &ast::UsingDeclaration, references: &mut References) {

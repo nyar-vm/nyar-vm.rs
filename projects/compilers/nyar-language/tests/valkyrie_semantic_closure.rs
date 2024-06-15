@@ -283,3 +283,84 @@ fn operator_use_site_promotes_receiver_operator_member() {
     // 没有被选择名命中的运算符成员不得连带进入闭包。
     assert!(!demanded.iter().any(|key| key.kind == DeclarationKind::ImplyMethod && key.name == "infix =="));
 }
+
+#[test]
+fn bare_member_selector_never_resolves_to_any_member_declaration() {
+    let groups = [
+        (
+            "library",
+            false,
+            vec![file("source/s.v", "namespace a;\nstructure S { _x: i32 }\nimply S { micro hash(self): usize { return 0 } }")],
+        ),
+        ("app", true, vec![file("solution.v", "namespace a;\nmicro run() -> usize { return hash() }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    // 成员选择名不建立全库同名索引：没有接收者类型事实时，裸名 `hash` 不得命中任何成员声明，
+    // 因此既不能把成员拉进闭包，也不能把只含该成员的文件下沉到 body lowering。
+    assert!(!closure.groups[0].body_lowering_declarations.iter().any(|key| key.name == "hash"));
+    assert!(closure.groups[0].body_lowering_source_paths.is_empty());
+}
+
+#[test]
+fn member_selector_promotes_only_demanded_aggregate_owner() {
+    let groups = [
+        (
+            "library",
+            false,
+            vec![
+                file("source/swiss.v", "namespace a;\nstructure SwissTable { _x: i32 }\nimply SwissTable { micro hash(self): usize { return 0 } }"),
+                file("source/bitset.v", "namespace a;\nstructure BitSet { _x: i32 }\nimply BitSet { micro hash(self): usize { return 0 } }"),
+            ],
+        ),
+        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: SwissTable) -> usize { return s.hash() }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.groups[0].body_lowering_declarations;
+    // 同 namespace 内的同名成员不得互相污染：只有被需求的拥有聚合能凭选择名提升自己的成员。
+    assert!(demanded.iter().any(|key| key.name == "hash" && key.owner.as_deref() == Some("SwissTable")));
+    assert!(!demanded.iter().any(|key| key.owner.as_deref() == Some("BitSet")));
+    assert!(!closure.groups[0].body_lowering_source_paths.contains("source/bitset.v"));
+}
+
+#[test]
+fn member_owner_identity_is_resolved_through_type_alias() {
+    let groups = [
+        (
+            "std",
+            false,
+            vec![
+                file("source/text/_.v", "namespace std.text;\ntype utf8 = Utf8Text;"),
+                file(
+                    "source/text/Utf8Text.v",
+                    "namespace std.text;\nclass Utf8Text { _repr: [u8] }\nimply Utf8Text { micro length(self) -> i32 { return 0 } }",
+                ),
+                file("source/hash/HashPrimitives.v", "namespace std.collection;\nimply utf8: Hash { micro hash(self): usize { return 0 } }"),
+            ],
+        ),
+        ("app", true, vec![file("solution.v", "namespace app;\nmicro run(s: utf8) -> usize { return s.hash() }")]),
+    ];
+    let closure = plan_from_groups(&groups);
+    let demanded = &closure.groups[0].body_lowering_declarations;
+    // 别名不是独立名义聚合：`utf8` 的引用展开到目标聚合 `Utf8Text`，`imply utf8: Hash`
+    // 的 witness 因此挂在该聚合身份上，而不是挂在别名身份或短名 `utf8` 上。
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::TypeAlias && key.name == "utf8"));
+    assert!(demanded.iter().any(|key| key.kind == DeclarationKind::Class && key.name == "Utf8Text"));
+    assert!(demanded.iter().any(|key| key.name == "hash" && key.owner.as_deref() == Some("utf8")));
+    assert!(closure.groups[0].body_lowering_source_paths.contains("source/hash/HashPrimitives.v"));
+}
+
+#[test]
+fn member_owner_link_is_gated_by_owner_group_visibility() {
+    let groups = [
+        ("core", false, vec![file("source/primitive/i64.v", "namespace core.primitive;\nstructure i64 { }")]),
+        ("std", false, vec![file("source/hash.v", "namespace std.collection;\nimply i64: Hash { micro hash(self): usize { return 0 } }")]),
+        ("app", true, vec![file("solution.v", "namespace app;\nmicro run(x: i64) -> usize { return x.hash() }")]),
+    ];
+    // 成员与拥有者跨依赖组：std 的 `imply i64: Hash` 与 core 的 `structure i64` 按声明身份连接。
+    let visible = plan_with_visibility(&groups, &[&[], &["core"], &["core", "std"]]);
+    assert!(visible.demanded_declarations.iter().any(|key| key.dependency_key == "std" && key.name == "hash"));
+    // std 未声明 core 为直接依赖时，拥有者引用不得命中 core 的声明，成员因而不成立也不得提升。
+    let hidden = plan_with_visibility(&groups, &[&[], &[], &["core", "std"]]);
+    assert!(!hidden.demanded_declarations.iter().any(|key| key.name == "hash"));
+    assert!(hidden.demanded_declarations.iter().any(|key| key.kind == DeclarationKind::Structure && key.name == "i64"));
+}
