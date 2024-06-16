@@ -70,7 +70,8 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         )
         .expect("同名不同 owner 的静态方法必须完成 HIR 解析");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true })] {
+    for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Named(Identifier::new("i64")))]
+    {
         let instance =
             mir.functions.iter().find(|function| function.symbol == owner).and_then(|function| function.instance).expect("被调用方法实例");
         let mut matches = 0;

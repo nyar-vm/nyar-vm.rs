@@ -81,9 +81,10 @@ fn generic_apply_type_lowers_to_hir_apply() {
 
     let apply = TypeExpression::Apply(Box::new(ApplyType { base: path_type("Option"), arguments: vec![path_type("i32")], span: oak_span(0) }));
     let lowered = lower_type_expression(&apply);
+    // 数值裸名不是内建：`i32` 落成 `Named`，声明身份由 `bind_declared_nominal_types` 冻结。
     assert_eq!(
         lowered,
-        ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }],),
+        ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Option"))), vec![ValkyrieType::Named(HirIdentifier::new("i32"))],),
     );
 }
 
@@ -93,7 +94,7 @@ fn named_array_is_not_structural_bracket_sugar() {
     let named = TypeExpression::Apply(Box::new(ApplyType { base: path_type("Array"), arguments: vec![path_type("i32")], span: oak_span(0) }));
     assert_eq!(
         lower_type_expression(&named),
-        ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }],)
+        ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Array"))), vec![ValkyrieType::Named(HirIdentifier::new("i32"))],)
     );
 }
 
@@ -118,6 +119,6 @@ fn bracket_sugar_lowers_to_array() {
         length: None,
         span: oak_span(0),
     }));
-    let expected = ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true }));
+    let expected = ValkyrieType::Array(Box::new(ValkyrieType::Named(HirIdentifier::new("i32"))));
     assert_eq!(lower_type_expression(&sugar), expected);
 }

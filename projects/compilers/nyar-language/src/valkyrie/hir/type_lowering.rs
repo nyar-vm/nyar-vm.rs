@@ -318,19 +318,14 @@ fn legacy_builtin_type_alias(name: &str) -> Option<&'static str> {
 }
 
 /// 将内建类型名映射到 `HIR` 类型；未知名字返回 `None`。
+///
+/// 这里只保留**没有源码声明身份**的编码型内建（文本编码、`bool`、`char`、`unit`/`void`
+/// 形态名）；数值原始类型名不是内建：`i8`…`f64` 与 `usize` 一样指 `core/primitive`
+/// 的 `structure` 声明身份，由 [`resolve_named_type`] 产出 `Named` 后交给
+/// `bind_declared_nominal_types` 冻结成 [`ValkyrieType::Nominal`]。
 #[doc(hidden)]
 pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     match name {
-        "i8" => Some(ValkyrieType::Integer8 { signed: true }),
-        "i16" => Some(ValkyrieType::Integer16 { signed: true }),
-        "i32" => Some(ValkyrieType::Integer32 { signed: true }),
-        "i64" => Some(ValkyrieType::Integer64 { signed: true }),
-        "u8" => Some(ValkyrieType::Integer8 { signed: false }),
-        "u16" => Some(ValkyrieType::Integer16 { signed: false }),
-        "u32" => Some(ValkyrieType::Integer32 { signed: false }),
-        "u64" => Some(ValkyrieType::Integer64 { signed: false }),
-        "f32" => Some(ValkyrieType::Float32),
-        "f64" => Some(ValkyrieType::Float64),
         "bool" => Some(ValkyrieType::Boolean),
         "char" => Some(ValkyrieType::Character),
         "utf8" => Some(ValkyrieType::Utf8),
@@ -342,17 +337,29 @@ pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
-/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
-pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
-    match canonical_builtin_type(name)? {
-        ty @ (ValkyrieType::Integer8 { .. }
-        | ValkyrieType::Integer16 { .. }
-        | ValkyrieType::Integer32 { .. }
-        | ValkyrieType::Integer64 { .. }
-        | ValkyrieType::Float32
-        | ValkyrieType::Float64) => Some(ty),
+/// 数值原始类型名的语义标量形态。
+///
+/// 只用于字面量推断与 `i64(x)` 这类显式数值转换的目标形态；类型的**声明身份**由
+/// `core/primitive` 的 `structure` 声明给出，二者不得在同一条解析路径上并存。
+fn numeric_builtin_scalar(name: &str) -> Option<ValkyrieType> {
+    match name {
+        "i8" => Some(ValkyrieType::Integer8 { signed: true }),
+        "i16" => Some(ValkyrieType::Integer16 { signed: true }),
+        "i32" => Some(ValkyrieType::Integer32 { signed: true }),
+        "i64" => Some(ValkyrieType::Integer64 { signed: true }),
+        "u8" => Some(ValkyrieType::Integer8 { signed: false }),
+        "u16" => Some(ValkyrieType::Integer16 { signed: false }),
+        "u32" => Some(ValkyrieType::Integer32 { signed: false }),
+        "u64" => Some(ValkyrieType::Integer64 { signed: false }),
+        "f32" => Some(ValkyrieType::Float32),
+        "f64" => Some(ValkyrieType::Float64),
         _ => None,
     }
+}
+
+/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
+pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
+    numeric_builtin_scalar(name)
 }
 
 /// 当前作用域内是否声明了该短名的 `type` 别名（含目标尚未填入的本组声明）。

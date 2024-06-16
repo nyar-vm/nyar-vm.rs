@@ -400,7 +400,11 @@ fn is_numeric_type_name(name: &str) -> bool {
     )
 }
 
-fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
+/// 数值类型判定（字面量特化与值位置字面量绑定共用同一份口径）。
+///
+/// `Named("i32")` 这类源码写出的数值名与对应 `Nominal{ItemId}` 都算数值；判定只认数值名集合，
+/// 不解析声明本身。
+pub(crate) fn is_numeric_type_name_of(ty: &ValkyrieType) -> bool {
     match ty {
         ValkyrieType::Integer8 { .. }
         | ValkyrieType::Integer16 { .. }

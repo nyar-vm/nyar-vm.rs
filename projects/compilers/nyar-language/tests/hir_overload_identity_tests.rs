@@ -97,7 +97,9 @@ fn nested_call_type_requires_the_selected_contract() {
         panic!("预期外层调用");
     };
     let nested = &mut args[0].value;
-    let expected = Some(ValkyrieType::Integer64 { signed: true });
+    // 该源码没有声明数值 primitive：`i64` 无声明身份，按 `Named` 冻结，不能折成内建标量
+    // `Integer64`。内建标量形式只属于字面量推断与显式数值转换目标。
+    let expected = Some(ValkyrieType::Named(Identifier::new("i64")));
     assert_eq!(infer_expr_type(nested, &BTreeMap::new()), expected);
     assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &AggregateFieldIndex::default(), &BTreeSet::new()), expected);
     let HirExprKind::Call { resolved, .. } = &mut nested.kind
@@ -599,7 +601,7 @@ micro pick(flag: bool) -> Option<i64> {
         resolved.return_type,
         ValkyrieType::Nominal {
             declaration: hir.enums[0].declaration.expect("sum 声明身份"),
-            arguments: vec![ValkyrieType::Integer64 { signed: true }],
+            arguments: vec![ValkyrieType::Named(Identifier::new("i64"))],
         }
     );
 }
@@ -866,7 +868,7 @@ micro main(counter: Counter) {
     );
     assert!(resolved[0].has_receiver);
     assert_eq!(resolved[1].symbol.to_string(), "Counter.make");
-    assert_eq!(resolved[1].parameter_types, vec![ValkyrieType::Integer64 { signed: true }]);
+    assert_eq!(resolved[1].parameter_types, vec![ValkyrieType::Named(Identifier::new("i64"))]);
     assert!(!resolved[1].has_receiver);
 }
 

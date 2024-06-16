@@ -1091,13 +1091,21 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             | HirExprKind::Yield(Some(value))
             | HirExprKind::Break { expr: Some(value), .. }
             | HirExprKind::Assign { value, .. }
-            | HirExprKind::FieldAccess { object: value, .. }
-            | HirExprKind::GenericApply { callee: value, .. } => bind_expr(value, namespace, structs, enums)?,
+            | HirExprKind::FieldAccess { object: value, .. } => bind_expr(value, namespace, structs, enums)?,
+            HirExprKind::GenericApply { callee, arguments } => {
+                bind_expr(callee, namespace, structs, enums)?;
+                for argument in arguments {
+                    bind_type(argument, namespace, structs, enums)?;
+                }
+            }
             HirExprKind::StoreField { object, value, .. } => {
                 bind_expr(object, namespace, structs, enums)?;
                 bind_expr(value, namespace, structs, enums)?;
             }
-            HirExprKind::ArrayNew { length, .. } => bind_expr(length, namespace, structs, enums)?,
+            HirExprKind::ArrayNew { element_type, length } => {
+                bind_type(element_type, namespace, structs, enums)?;
+                bind_expr(length, namespace, structs, enums)?;
+            }
             HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
                 for item in items {
                     bind_expr(item, namespace, structs, enums)?;
@@ -1118,9 +1126,43 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                     bind_block(else_branch, namespace, structs, enums)?;
                 }
             }
+            // 循环、catch、with、super 调用都携带类型位与嵌套表达式：漏掉任何一个都会让该子树
+            // 退回 `Named`，随后与已冻结的 `Nominal` 当成不兼容。
+            HirExprKind::Loop { pattern: _, iterator, condition, body, .. } => {
+                if let Some(iterator) = iterator {
+                    bind_expr(iterator, namespace, structs, enums)?;
+                }
+                if let Some(condition) = condition {
+                    bind_expr(condition, namespace, structs, enums)?;
+                }
+                bind_block(body, namespace, structs, enums)?;
+            }
+            HirExprKind::Catch { expr: inner, arms } => {
+                bind_expr(inner, namespace, structs, enums)?;
+                for arm in arms {
+                    if let Some(guard) = &mut arm.guard {
+                        bind_expr(guard, namespace, structs, enums)?;
+                    }
+                    bind_expr(&mut arm.body, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::With { base, updates } => {
+                bind_expr(base, namespace, structs, enums)?;
+                for (_, update) in updates {
+                    bind_expr(update, namespace, structs, enums)?;
+                }
+            }
+            HirExprKind::SuperCall { args, .. } => {
+                for arg in args {
+                    bind_expr(arg, namespace, structs, enums)?;
+                }
+            }
             HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
                 bind_expr(scrutinee, namespace, structs, enums)?;
                 for arm in arms {
+                    if let Some(guard) = &mut arm.guard {
+                        bind_expr(guard, namespace, structs, enums)?;
+                    }
                     bind_expr(&mut arm.body, namespace, structs, enums)?;
                 }
             }

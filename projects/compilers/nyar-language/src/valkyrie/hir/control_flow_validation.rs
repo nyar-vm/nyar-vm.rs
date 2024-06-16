@@ -24,32 +24,63 @@ struct HirValidationState {
     local_scopes: Vec<BTreeMap<String, ValkyrieType>>,
     /// Unified loop / try / case chain / catch / generator / async scope tracking.
     control_flow: ControlFlowContext,
+    /// 本模块内已冻结为声明身份的数值 primitive（`core/primitive` 的 `structure`）。
+    /// 只有这份声明事实能判定「期望类型是数值」；不得改成对调用点写的类型名做特判。
+    numeric_declarations: BTreeSet<nyar_types::ItemId>,
 }
 
 type LoopValidationContext = crate::valkyrie::control_flow::LoopScopeData;
 
+/// 模块内数值 primitive 的声明身份集合（含子模块与导入语义导出的 `structure`）。
+///
+/// 判定口径复用 `type_relation` 既有的数值名集合，喂进去的是**声明名**；
+/// 调用点写的类型名不参与判定。
+fn numeric_declarations_in_module(module: &HirModule) -> BTreeSet<nyar_types::ItemId> {
+    fn collect(module: &HirModule, out: &mut BTreeSet<nyar_types::ItemId>) {
+        let structs = module.structs.iter().chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()));
+        for item in structs {
+            if crate::valkyrie::hir::type_relation::is_numeric_type_name_of(&ValkyrieType::Named(item.name.clone())) {
+                if let Some(declaration) = item.constructor_declaration {
+                    out.insert(declaration);
+                }
+            }
+        }
+        for submodule in &module.submodules {
+            collect(submodule, out);
+        }
+    }
+    let mut declarations = BTreeSet::new();
+    collect(module, &mut declarations);
+    declarations
+}
+
+fn validation_state(numeric_declarations: &BTreeSet<nyar_types::ItemId>) -> HirValidationState {
+    HirValidationState { numeric_declarations: numeric_declarations.clone(), ..Default::default() }
+}
+
 /// 校验模块内全部函数与控制流的 HIR 合法性。
 pub fn validate_control_flow_module(module: &HirModule) -> Result<(), ParseError> {
+    let numeric_declarations = numeric_declarations_in_module(module);
     for function in &module.functions {
-        let mut state = HirValidationState::default();
+        let mut state = validation_state(&numeric_declarations);
         validate_hir_function(function, &mut state)?;
     }
     for struct_def in &module.structs {
         for method in &struct_def.methods {
-            let mut state = HirValidationState::default();
+            let mut state = validation_state(&numeric_declarations);
             push_self_type(&mut state, ValkyrieType::Named(struct_def.name.clone()));
             validate_hir_function(method, &mut state)?;
             pop_self_type(&mut state);
         }
         for property in &struct_def.properties {
             if let Some(getter) = &property.getter {
-                let mut state = HirValidationState::default();
+                let mut state = validation_state(&numeric_declarations);
                 push_self_type(&mut state, ValkyrieType::Named(struct_def.name.clone()));
                 validate_hir_function(getter, &mut state)?;
                 pop_self_type(&mut state);
             }
             if let Some(setter) = &property.setter {
-                let mut state = HirValidationState::default();
+                let mut state = validation_state(&numeric_declarations);
                 push_self_type(&mut state, ValkyrieType::Named(struct_def.name.clone()));
                 validate_hir_function(setter, &mut state)?;
                 pop_self_type(&mut state);
@@ -58,17 +89,17 @@ pub fn validate_control_flow_module(module: &HirModule) -> Result<(), ParseError
     }
     for trait_def in &module.traits {
         for method in &trait_def.methods {
-            let mut state = HirValidationState::default();
+            let mut state = validation_state(&numeric_declarations);
             validate_hir_function(method, &mut state)?;
         }
         for method in &trait_def.default_methods {
-            let mut state = HirValidationState::default();
+            let mut state = validation_state(&numeric_declarations);
             validate_hir_function(method, &mut state)?;
         }
     }
     for impl_block in &module.impls {
         for method in &impl_block.methods {
-            let mut state = HirValidationState::default();
+            let mut state = validation_state(&numeric_declarations);
             push_self_type(&mut state, impl_block.target.clone());
             validate_hir_function(method, &mut state)?;
             pop_self_type(&mut state);
@@ -270,7 +301,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 validate_hir_expr(value, state, true)?;
             }
             for method in methods {
-                validate_hir_function(method, &mut HirValidationState::default())?;
+                validate_hir_function(method, &mut validation_state(&state.numeric_declarations))?;
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
@@ -392,28 +423,31 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 validate_hir_expr(expr, state, true)?;
                 state.control_flow.set_validating_break_value(false, label_str);
                 let break_type = infer_static_expr_type(expr, state);
-                let target = resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state);
-                if let Some(loop_context) = target {
-                    if !loop_context.accepts_break_value {
-                        return Err(ParseError::invalid("控制流调度校验失败：`break expr` 的目标 loop 当前不接受值"));
-                    }
-                    if let Some(break_type) = break_type {
-                        if let Some(expected_type) = &loop_context.break_value_type {
-                            if !control_flow_value_type_compatible(expected_type, &break_type) {
-                                return Err(ParseError::invalid(format!(
-                                    "控制流调度校验失败：`break expr` 的值类型 `{}` 与目标 loop 已收敛的结果类型 `{}` 不兼容",
-                                    display_type(&break_type),
-                                    display_type(expected_type)
-                                )));
-                            }
-                        }
-                        else {
-                            loop_context.break_value_type = Some(break_type);
-                        }
-                    }
-                }
+                // 先只读借用在目标 loop 上取回已有事实，再决定是否写回；否则持有可变借用时
+                // 无法再做需要 `state` 的字面量判定。
+                let Some((accepts_break_value, expected_type)) = resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state)
+                    .map(|loop_context| (loop_context.accepts_break_value, loop_context.break_value_type.clone()))
                 else {
                     return Err(ParseError::invalid("控制流调度校验失败：`break expr` 未找到可接受值的目标 loop"));
+                };
+                if !accepts_break_value {
+                    return Err(ParseError::invalid("控制流调度校验失败：`break expr` 的目标 loop 当前不接受值"));
+                }
+                if let Some(break_type) = break_type {
+                    if let Some(expected_type) = &expected_type {
+                        if !control_flow_value_type_compatible(expected_type, &break_type)
+                            && !integer_literal_binds_to(expected_type, Some(expr), state)
+                        {
+                            return Err(ParseError::invalid(format!(
+                                "控制流调度校验失败：`break expr` 的值类型 `{}` 与目标 loop 已收敛的结果类型 `{}` 不兼容",
+                                display_type(&break_type),
+                                display_type(expected_type)
+                            )));
+                        }
+                    }
+                    else if let Some(loop_context) = resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state) {
+                        loop_context.break_value_type = Some(break_type);
+                    }
                 }
             }
             else if resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state).is_none() {
@@ -478,6 +512,7 @@ fn lambda_validation_state(parent: &HirValidationState, _body: &HirBlock) -> Hir
         local_scopes: Vec::new(),
         control_flow: parent.control_flow.clone_for_function_boundary(),
         current_function: parent.current_function.clone(),
+        numeric_declarations: parent.numeric_declarations.clone(),
     }
 }
 
@@ -715,7 +750,7 @@ fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVal
         return Ok(());
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
-    if control_flow_value_type_compatible(&expected_type, &actual_type) {
+    if control_flow_value_type_compatible(&expected_type, &actual_type) || integer_literal_binds_to(&expected_type, Some(value), state) {
         return Ok(());
     }
 
@@ -758,7 +793,7 @@ fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVali
         return Ok(());
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
-    if control_flow_value_type_compatible(&yield_item_type, &actual_type) {
+    if control_flow_value_type_compatible(&yield_item_type, &actual_type) || integer_literal_binds_to(&yield_item_type, Some(value), state) {
         return Ok(());
     }
     let _ = expr;
@@ -2100,6 +2135,21 @@ fn array_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> boo
             expected == actual || matches!(expected.as_ref(), ValkyrieType::AutoType) || matches!(actual.as_ref(), ValkyrieType::AutoType)
         }
         _ => false,
+    }
+}
+
+/// 值位置的整数字面量表示多态。
+///
+/// 字面量的静态形态只有默认宽度 `i64`，字面量本身不携带宽度事实；期望类型是数值类型时
+/// 按期望类型取值。判定与 `overload.rs::specialize_call_literal_exprs` 完全同源：
+/// 同一份数值名集合（`Named("i32")` 与 `Nominal{ItemId}` 都算数值），同一条件（仅整数字面量）。
+fn integer_literal_binds_to(expected: &ValkyrieType, value: Option<&HirExpr>, state: &HirValidationState) -> bool {
+    if !matches!(value.map(|value| &value.kind), Some(HirExprKind::Literal(HirLiteral::Integer64(_)))) {
+        return false;
+    }
+    match expected {
+        ValkyrieType::Nominal { declaration, .. } => state.numeric_declarations.contains(declaration),
+        other => crate::valkyrie::hir::type_relation::is_numeric_type_name_of(other),
     }
 }
 
