@@ -287,11 +287,7 @@ fn operator_use_site_promotes_receiver_operator_member() {
 #[test]
 fn bare_member_selector_never_resolves_to_any_member_declaration() {
     let groups = [
-        (
-            "library",
-            false,
-            vec![file("source/s.v", "namespace a;\nstructure S { _x: i32 }\nimply S { micro hash(self): usize { return 0 } }")],
-        ),
+        ("library", false, vec![file("source/s.v", "namespace a;\nstructure S { _x: i32 }\nimply S { micro hash(self): usize { return 0 } }")]),
         ("app", true, vec![file("solution.v", "namespace a;\nmicro run() -> usize { return hash() }")]),
     ];
     let closure = plan_from_groups(&groups);
@@ -308,7 +304,10 @@ fn member_selector_promotes_only_demanded_aggregate_owner() {
             "library",
             false,
             vec![
-                file("source/swiss.v", "namespace a;\nstructure SwissTable { _x: i32 }\nimply SwissTable { micro hash(self): usize { return 0 } }"),
+                file(
+                    "source/swiss.v",
+                    "namespace a;\nstructure SwissTable { _x: i32 }\nimply SwissTable { micro hash(self): usize { return 0 } }",
+                ),
                 file("source/bitset.v", "namespace a;\nstructure BitSet { _x: i32 }\nimply BitSet { micro hash(self): usize { return 0 } }"),
             ],
         ),
