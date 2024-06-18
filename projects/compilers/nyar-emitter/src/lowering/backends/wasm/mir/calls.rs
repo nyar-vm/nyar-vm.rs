@@ -33,7 +33,7 @@ impl<'a> WasmMirLowerer<'a> {
         match dispatch {
             MirDispatchKind::Static => {
                 if let Some(import_index) = self.resolve_callee_import_index(callee, arguments) {
-                    if self.try_emit_wasi_cli_write_via_stream(callee, arguments, import_index, output) {
+                    if self.try_emit_wasi_cli_write_via_stream(arguments, import_index, output) {
                         return;
                     }
                     callee_return = self.resolve_callee_return_type(callee, Some(import_index));
@@ -215,13 +215,7 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 顺序必须是：new →??reader 交给 write-via-stream →?write(writer) →?drop-writable →?drop future?
     /// ?write 再交 reader 会在 sync `stream.write` 上永久挂起?
-    fn try_emit_wasi_cli_write_via_stream(
-        &mut self,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        import_index: u32,
-        output: Option<MirValueRef>,
-    ) -> bool {
+    fn try_emit_wasi_cli_write_via_stream(&mut self, arguments: &[MirOperand], import_index: u32, output: Option<MirValueRef>) -> bool {
         if !self.wasi_mode || arguments.len() != 1 {
             return false;
         }
@@ -251,8 +245,6 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return false;
         };
-        let append_newline = self.callee_wants_console_newline(callee);
-
         // utf8 handle: [len:u32 LE][bytes…]
         let handle = self.alloc_i32_local();
         let len = self.alloc_i32_local();
@@ -298,22 +290,6 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_call(stream_write);
         WasmOpcode::Drop.encode(&mut self.code);
 
-        if append_newline {
-            // bump 1 字节写入 '\n'，再 stream.write（bump_allocate 在栈上留下对齐指针）
-            self.bump_allocate(1, 1);
-            let nl_ptr = self.alloc_i32_local();
-            self.emit_local_tee(nl_ptr);
-            self.emit_i32_const(0x0A);
-            WasmOpcode::I32Store8.encode(&mut self.code);
-            encode_uleb128(0u32, &mut self.code); // align=0
-            encode_uleb128(0u32, &mut self.code); // offset=0
-            self.emit_local_get(writer);
-            self.emit_local_get(nl_ptr);
-            self.emit_i32_const(1);
-            self.emit_call(stream_write);
-            WasmOpcode::Drop.encode(&mut self.code);
-        }
-
         self.emit_local_get(writer);
         self.emit_call(stream_drop_w);
 
@@ -331,14 +307,5 @@ impl<'a> WasmMirLowerer<'a> {
 
     fn find_host_import_index(&self, module: &str, field: &str) -> Option<u32> {
         self.host_imports.iter().position(|(m, f)| m == module && f == field).map(|index| index as u32)
-    }
-
-    fn callee_wants_console_newline(&self, callee: &MirOperand) -> bool {
-        let MirOperand::Symbol(path) = callee
-        else {
-            return false;
-        };
-        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-        simple.contains("write_line") || simple.contains("error_line")
     }
 }
