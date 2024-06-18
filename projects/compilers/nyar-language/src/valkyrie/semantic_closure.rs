@@ -145,6 +145,11 @@ pub struct DeclarationIndexEntry {
     pub link: Option<DeclarationLink>,
     /// 该声明签名与函数体内出现的名字路径（未解析）。
     pub references: BTreeSet<ReferencePath>,
+    /// 该声明签名与函数体内出现的**成员选择名**（`x.get(…)`、`a + b`、`a[i]`）。
+    ///
+    /// 选择名不是自由名引用：它只能与拥有聚合的声明身份结合参与成员提升，
+    /// 不进入声明解析，否则同名自由函数会被误拉进闭包。
+    pub selectors: BTreeSet<String>,
     /// 文件级 `using` 路径；当前解析器不消费 import，这里只保留为诊断与后续绑定输入。
     pub import_paths: BTreeSet<String>,
 }
@@ -283,7 +288,7 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
             // 文件级 `using`/顶层语句的引用必须与声明引用一起展开，
             // 否则只含模块级语句的入口文件会缺依赖。
             if touched_files.insert(file_id) {
-                push_scoped_references(&indexed.module_references, group.dependency_key, &visibility, &indexes, &mut queue);
+                push_scoped_references(indexed, group.dependency_key, &visibility, &indexes, &mut selectors, &mut queue);
             }
         }
     }
@@ -300,7 +305,7 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
             let visible = visibility.get(&key.dependency_key).unwrap_or(&empty_visibility);
             if touched_files.insert((key.dependency_key.clone(), key.source_path.clone())) {
                 if let Some(file) = indexed_files.get(&(key.dependency_key.clone(), key.source_path.clone())) {
-                    push_scoped_references(&file.module_references, &key.dependency_key, &visibility, &indexes, &mut queue);
+                    push_scoped_references(file, &key.dependency_key, &visibility, &indexes, &mut selectors, &mut queue);
                 }
             }
             // 成员方法被需求时，其拥有者聚合的声明外壳同样必须进入闭包。
@@ -309,10 +314,8 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
                     queue.push_back(resolved);
                 }
             }
+            selectors.extend(entry.selectors.iter().cloned());
             for reference in &entry.references {
-                if let Some(name) = reference.last() {
-                    selectors.insert(name.clone());
-                }
                 for resolved in indexes.resolve(reference, &key.namespace, visible) {
                     queue.push_back(resolved);
                 }
@@ -365,17 +368,20 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
     SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest }
 }
 
-/// 解析一组「namespace 段 + 名字路径」引用并把命中的声明身份入队。
+/// 解析一组「namespace 段 + 名字路径」引用并把命中的声明身份入队；
+/// 文件级成员选择名只登记为选择事实，不参与自由名解析。
 fn push_scoped_references(
-    references: &BTreeSet<ScopedReference>,
+    file: &IndexedFile,
     group: &str,
     visibility: &BTreeMap<String, BTreeSet<String>>,
     indexes: &DeclarationIndexes,
+    selectors: &mut BTreeSet<String>,
     queue: &mut VecDeque<DeclarationKey>,
 ) {
     let empty = BTreeSet::new();
     let visible = visibility.get(group).unwrap_or(&empty);
-    for (namespace, reference) in references {
+    selectors.extend(file.module_selectors.iter().cloned());
+    for (namespace, reference) in &file.module_references {
         for resolved in indexes.resolve(reference, namespace, visible) {
             queue.push_back(resolved);
         }
@@ -587,8 +593,10 @@ struct IndexedFile {
     declarations: Vec<DeclarationIndexEntry>,
     /// 变体名 → 拥有该变体的 sum/unite 声明。
     variant_members: Vec<(String, DeclarationKey)>,
-    /// 文件级语句（`using`、顶层 `let`/表达式）的引用。
+    /// 文件级语句（`using`、顶层 `let`/表达式）的自由名引用。
     module_references: BTreeSet<ScopedReference>,
+    /// 文件级语句的成员选择名；与声明级选择名一样只参与成员提升。
+    module_selectors: BTreeSet<String>,
 }
 
 fn index_source_file(dependency_key: &str, path: &str, source: &str) -> Result<IndexedFile, String> {
@@ -600,6 +608,7 @@ fn index_source_file(dependency_key: &str, path: &str, source: &str) -> Result<I
         declarations: builder.declarations,
         variant_members: builder.variant_members,
         module_references: builder.module_references,
+        module_selectors: builder.module_selectors,
     })
 }
 
@@ -611,6 +620,7 @@ struct FileBuilder {
     declarations: Vec<DeclarationIndexEntry>,
     variant_members: Vec<(String, DeclarationKey)>,
     module_references: BTreeSet<ScopedReference>,
+    module_selectors: BTreeSet<String>,
     import_paths: BTreeSet<String>,
 }
 
@@ -640,6 +650,7 @@ impl FileBuilder {
             key: key.clone(),
             link,
             references: references.paths,
+            selectors: references.selectors,
             import_paths: references.imports,
         });
         key
@@ -649,14 +660,17 @@ impl FileBuilder {
         for path in references.paths {
             self.module_references.insert((namespace.to_vec(), path));
         }
+        self.module_selectors.extend(references.selectors);
         self.import_paths.extend(references.imports);
     }
 }
 
-/// 单个声明（或文件级语句）引用的名字路径与 import 路径。
+/// 单个声明（或文件级语句）引用的自由名路径、成员选择名与 import 路径。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct References {
     paths: BTreeSet<ReferencePath>,
+    /// 成员选择名；只能与拥有聚合身份结合参与成员提升，不参与自由名解析。
+    selectors: BTreeSet<String>,
     imports: BTreeSet<String>,
 }
 
@@ -1026,12 +1040,12 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             // 运算符是普通成员调用：`!a` 降低为 `a.prefix !()`，`*a` 降低为 `a.deref_read()`。
             // 成员名与 HIR lowering 共用同一份映射，闭包据此把成员选择名登记进需求。
             if matches!(node.operator, ValkyrieTokenType::Star) {
-                references.paths.insert(vec![operator_members::DEREF_READ_MEMBER.to_string()]);
+                references.selectors.insert(operator_members::DEREF_READ_MEMBER.to_string());
             }
             else {
                 // 负整数字面量在 HIR 折叠为字面量，不产生成员调用；这里仍登记该成员名，
                 // 闭包只做上界判定：究竟走哪一个由 HIR 的降低规则决定。
-                references.paths.insert(vec![operator_members::prefix_member_name(&node.operator)]);
+                references.selectors.insert(operator_members::prefix_member_name(&node.operator));
             }
             collect_term(&node.base, references);
         }
@@ -1042,17 +1056,17 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
                 // 赋值不是成员调用；对下标左值赋值降低为 `suffix []=` / `suffix ⁅⁆=`。
                 ValkyrieTokenType::Eq => match &node.lhs {
                     ast::TermExpression::Index { .. } => {
-                        references.paths.insert(vec![operator_members::SUBSCRIPT_ASSIGN_MEMBER.to_string()]);
+                        references.selectors.insert(operator_members::SUBSCRIPT_ASSIGN_MEMBER.to_string());
                     }
                     ast::TermExpression::Offset { .. } => {
-                        references.paths.insert(vec![operator_members::CARDINAL_SUBSCRIPT_ASSIGN_MEMBER.to_string()]);
+                        references.selectors.insert(operator_members::CARDINAL_SUBSCRIPT_ASSIGN_MEMBER.to_string());
                     }
                     _ => {}
                 },
                 // `&&` / `||` 降低为短路控制流，不产生成员调用。
                 ValkyrieTokenType::AndAnd | ValkyrieTokenType::OrOr => {}
                 _ => {
-                    references.paths.insert(vec![operator_members::infix_member_name(&node.operator)]);
+                    references.selectors.insert(operator_members::infix_member_name(&node.operator));
                 }
             }
         }
@@ -1074,15 +1088,15 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
         }
         ast::TermExpression::DotCall { receiver, field, .. } => {
             collect_term(receiver, references);
-            references.paths.insert(vec![field.name.clone()]);
+            references.selectors.insert(field.name.clone());
         }
         ast::TermExpression::Index { receiver, index, .. } => {
-            references.paths.insert(vec![operator_members::SUBSCRIPT_MEMBER.to_string()]);
+            references.selectors.insert(operator_members::SUBSCRIPT_MEMBER.to_string());
             collect_term(receiver, references);
             collect_term(index, references);
         }
         ast::TermExpression::Offset { receiver, offset, .. } => {
-            references.paths.insert(vec![operator_members::CARDINAL_SUBSCRIPT_MEMBER.to_string()]);
+            references.selectors.insert(operator_members::CARDINAL_SUBSCRIPT_MEMBER.to_string());
             collect_term(receiver, references);
             collect_term(offset, references);
         }
@@ -1150,7 +1164,7 @@ fn collect_call_target(callee: &ast::TermExpression, references: &mut References
         ast::TermExpression::NamePath(path) => collect_name_path(path, references),
         ast::TermExpression::DotCall { receiver, field, .. } => {
             collect_term(receiver, references);
-            references.paths.insert(vec![field.name.clone()]);
+            references.selectors.insert(field.name.clone());
         }
         _ => collect_term(callee, references),
     }
