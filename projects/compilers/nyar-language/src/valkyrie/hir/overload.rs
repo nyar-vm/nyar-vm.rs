@@ -19,9 +19,9 @@ use crate::{
         Identifier, NamePath, QualifiedName,
         hir::{
             GenericBinderId, GenericType, HirAttribute, HirBlock, HirCallArgument, HirCallableDomain, HirDependencySemanticExport, HirEnum,
-            HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern,
-            HirResolvedCall, HirSingleton, HirStatement, HirStatementKind, HirStruct, HirTrait, HirTraitBound, HirVariadicKind, HirVariant,
-            HirWhereConstraint, ValkyrieType,
+            HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirModule, HirParam,
+            HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind, HirStringSegment, HirStruct, HirTrait, HirTraitBound,
+            HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
     valkyrie::{
@@ -197,6 +197,12 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
         [selected] => Ok((*selected).clone()),
         [] => Err(OverloadResolutionError::NoMatch),
         ambiguous => {
+            // 源码声明携带声明身份与冻结的 intrinsic 合同，语言 builtin 注册表只是
+            // 没有对应声明时的语言级种子；同优先级时声明优先，而不是让两个权威并列。
+            let declared = ambiguous.iter().filter(|candidate| candidate.declaration.is_some()).collect::<Vec<_>>();
+            if let [selected] = declared.as_slice() {
+                return Ok((**selected).clone());
+            }
             Err(OverloadResolutionError::Ambiguous { candidates: ambiguous.iter().map(|candidate| candidate.symbol.clone()).collect() })
         }
     }
@@ -466,7 +472,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
+                intrinsic: candidate.intrinsic,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -494,7 +500,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
+                intrinsic: candidate.intrinsic,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -517,7 +523,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
+                intrinsic: candidate.intrinsic,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -542,7 +548,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
+                intrinsic: candidate.intrinsic,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -568,7 +574,7 @@ fn match_intrinsic_builtin_candidate(
                 instance: candidate.instance,
                 sum_owner: None,
                 sum_variant: None,
-                intrinsic: None,
+                intrinsic: candidate.intrinsic,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -732,6 +738,31 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
     candidate
 }
 
+/// 冻结声明上的 `[intrinsic("…")]` 注解为结构化 [`IntrinsicId`]。
+///
+/// 这是声明 intrinsic 身份的唯一生产者：调用点只消费候选已冻结的身份，
+/// 不再由符号短名反查内建注册表。没有注解的声明恒为 `None`。
+fn declaration_intrinsic(function: &HirFunction) -> Option<IntrinsicId> {
+    let attribute = function.annotations.iter().find(|attribute| {
+        attribute.name.parts().len() == 1 && attribute.name.parts()[0].as_str() == "intrinsic"
+    })?;
+    let argument = attribute.arguments.first()?;
+    let HirExprKind::Literal(HirLiteral::String(literal)) = &argument.value.kind
+    else {
+        return None;
+    };
+    let mut rendered = String::new();
+    for segment in &literal.segments {
+        let HirStringSegment::Text(text) = segment
+        else {
+            return None;
+        };
+        rendered.push_str(text);
+    }
+    let parts = rendered.split('.').collect::<Vec<_>>();
+    IntrinsicId::resolve_from_segments(&parts)
+}
+
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> OverloadCandidate {
     let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(module_name, function);
     let mut candidate = OverloadCandidate::new(
@@ -744,6 +775,8 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     .with_param_specs(function.params.clone());
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
+    // 声明级 `[intrinsic(...)]` 是 intrinsic 身份的唯一来源；调用点不再按符号短名认亲。
+    candidate.intrinsic = declaration_intrinsic(function);
     for generic in &function.generics {
         if let Some(binder) = generic.binder {
             candidate = candidate.with_generic_binder(binder);
@@ -871,6 +904,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
     let mut candidate = candidate.with_param_specs(function.params.clone());
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
+    candidate.intrinsic = declaration_intrinsic(function);
     for generic in &function.generics {
         if let Some(binder) = generic.binder {
             candidate = candidate.with_generic_binder(binder);
@@ -965,6 +999,29 @@ fn owner_type_generic_binders(ty: &ValkyrieType) -> BTreeSet<GenericBinderId> {
 
 fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
     candidate.param_specs.first().is_some_and(|parameter| parameter.name.name.as_str() == "self")
+}
+
+/// 类型中是否仍有未代入的泛型 binder（含 nominal 实参中的 binder）。
+///
+/// 这类接收者无法在声明期唯一选择 impl；调用只能冻结成员要求，由单态化按
+/// 完整代入选择 witness。
+fn has_unresolved_generic_arguments(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(generic) => generic.binder.is_some(),
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(has_unresolved_generic_arguments),
+        ValkyrieType::Apply(base, arguments) => {
+            has_unresolved_generic_arguments(base) || arguments.iter().any(has_unresolved_generic_arguments)
+        }
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => has_unresolved_generic_arguments(element),
+        ValkyrieType::FixedArray { element, .. } => has_unresolved_generic_arguments(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(has_unresolved_generic_arguments)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(has_unresolved_generic_arguments) || has_unresolved_generic_arguments(&function.return_type)
+        }
+        _ => false,
+    }
 }
 
 fn resolve_function_calls(
@@ -1130,8 +1187,14 @@ fn resolve_expr_calls_at(
                 contextual_type,
                 ExprPosition::Callee,
             );
-            for arg in args.iter_mut() {
-                resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            // 成员调用的形参是实参的上下文类型：`entries.push(None)` 中接收者已把
+            // `ArrayList<T>` 的 `T` 定为 `Option<...>`，`None` 必须按该形参定型，
+            // 否则无参变体引用没有自足类型，成员调用会因缺类型事实被判未解析。
+            let argument_contexts = member_call_argument_contexts(callee, candidates, type_relations, locals, struct_fields, singleton_names);
+            for (index, arg) in args.iter_mut().enumerate() {
+                let supplied = argument_contexts.get(index).and_then(|context| context.as_ref());
+                let context = if is_unresolved_variant_reference(&arg.value, locals) { supplied.or(contextual_type) } else { contextual_type };
+                resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
             }
             *resolved = try_resolve_call(callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             if let Some(resolved) = resolved.as_mut() {
@@ -1522,10 +1585,17 @@ pub fn match_call_candidate(
         bind_call_arguments(&candidate.param_specs, args).ok()?
     };
     let actual_types =
-        bound_exprs.iter().map(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?;
+        bound_exprs.iter().map(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)).collect::<Vec<_>>();
     // `self: Self` / untyped `self` 必须是 owner 的完整类型（优先 `Nominal{ItemId}`）。
     // 禁止再收成 `Named(短名)`：字段/参数在 bind 后已是 declaration identity。
-    let owner_type = candidate.owner.as_ref().and_then(|owner| type_relations.nominal_type_for_name(owner));
+    let owner_type = candidate.owner.as_ref().and_then(|owner| {
+        actual_types
+            .first()
+            .and_then(|actual| actual.as_ref())
+            .filter(|actual| impl_nominal_type_name(actual) == Some(owner.as_str()))
+            .cloned()
+            .or_else(|| type_relations.nominal_type_for_name(owner))
+    });
     let expected_params = candidate
         .signature
         .params
@@ -1546,9 +1616,6 @@ pub fn match_call_candidate(
             }
         })
         .collect::<Vec<_>>();
-    // 整数/字符串字面量特化必须在 unify 之前完成：`Nominal{usize}` vs 未特化的
-    // `Integer32` 会在 unify 的 Nominal 臂直接失败，导致 `usize == 0` 永远选不中。
-    let actual_types = specialize_call_literal_exprs(&bound_exprs, &actual_types, &expected_params, type_relations);
     let mut substitutions = BTreeMap::new();
     if !explicit_generic_arguments.is_empty() {
         let binders = candidate.generic_binders.iter().cloned().collect::<Vec<_>>();
@@ -1559,14 +1626,35 @@ pub fn match_call_candidate(
             substitutions.insert(binder.clone(), argument.clone());
         }
     }
-    for (expected, actual) in expected_params.iter().zip(actual_types.iter()) {
-        unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions)?;
+    // 字面量特化必须发生在 unify 之前，但形参类型要先按「当前已得到的泛型代入」具体化：
+    // `push(self, value: T)` 的接收者先把 `T` 绑定为名义 `i32`，此时 `value` 的形参
+    // 已具体化为 `Nominal{i32}`，字面量 `0` 才能按该上下文定型。直接拿未代入的
+    // `Generic T` 判断数值性会把字面量留成 `Integer32`，与已绑定的 `T` 冲突。
+    let mut matched_actual_types = Vec::with_capacity(bound_exprs.len());
+    for (expr, (expected, actual)) in bound_exprs.iter().zip(expected_params.iter().zip(actual_types.iter())) {
+        let contextual_expected = substitute_type_vars(expected, &substitutions);
+        let actual = actual
+            .as_ref()
+            .map(|actual| specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations));
+        match actual.as_ref() {
+            Some(actual) => unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions)?,
+            // 空数组字面量自身没有元素类型事实；只有形式参数确实是数组时才可由上下文定型。
+            None if is_empty_array_literal(expr) && accepts_array_shape(&contextual_expected) => {}
+            None => return None,
+        }
+        matched_actual_types.push(actual);
     }
     let expected_params = expected_params.iter().map(|ty| substitute_type_vars(ty, &substitutions)).collect::<Vec<_>>();
     if !type_relations.satisfies_where_constraints(&candidate.where_constraints, &substitutions) {
         return None;
     }
-    let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_params)?;
+    // 由上下文定型的空字面量按形式参数类型参与匹配排序，不另造元素类型。
+    let matched_actual_types = matched_actual_types
+        .iter()
+        .zip(expected_params.iter())
+        .map(|(actual, expected)| actual.clone().unwrap_or_else(|| expected.clone()))
+        .collect::<Vec<_>>();
+    let match_kind = compute_call_match_kind(type_relations, &matched_actual_types, &expected_params)?;
     Some(OverloadCandidate {
         declaration: candidate.declaration,
         instance: candidate.instance,
@@ -1649,33 +1737,59 @@ fn unify_call_type_binders(
 
 fn specialize_call_literals(
     args: &[HirCallArgument],
-    actual: &[ValkyrieType],
+    actual: &[Option<ValkyrieType>],
     expected: &[ValkyrieType],
     type_relations: &TypeRelationContext,
-) -> Vec<ValkyrieType> {
+) -> Vec<Option<ValkyrieType>> {
     let exprs = args.iter().map(|arg| arg.value.clone()).collect::<Vec<_>>();
     specialize_call_literal_exprs(&exprs, actual, expected, type_relations)
 }
 
 fn specialize_call_literal_exprs(
     exprs: &[HirExpr],
-    actual: &[ValkyrieType],
+    actual: &[Option<ValkyrieType>],
     expected: &[ValkyrieType],
     type_relations: &TypeRelationContext,
-) -> Vec<ValkyrieType> {
+) -> Vec<Option<ValkyrieType>> {
     exprs
         .iter()
         .zip(actual.iter().zip(expected.iter()))
-        .map(|(expr, (actual, expected))| match &expr.kind {
-            // Integer literals are representation-polymorphic: bind to the formal
-            // numeric type (`usize`, `i32`, …), same as constructor literals.
-            // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。
-            HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => expected.clone(),
-            // String literals infer as `Utf8` but core APIs take `text`.
-            HirExprKind::Literal(crate::types::hir::HirLiteral::String(_)) if is_text_type(expected) => expected.clone(),
-            _ => actual.clone(),
-        })
+        .map(|(expr, (actual, expected))| actual.as_ref().map(|actual| specialize_literal_expr_type(expr, actual, expected, type_relations)))
         .collect()
+}
+
+/// 单个实参按形参类型做字面量特化；形参必须是已代入泛型后的具体类型。
+fn specialize_literal_expr_type(
+    expr: &HirExpr,
+    actual: &ValkyrieType,
+    expected: &ValkyrieType,
+    type_relations: &TypeRelationContext,
+) -> ValkyrieType {
+    match &expr.kind {
+        // Integer literals are representation-polymorphic: bind to the formal
+        // numeric type (`usize`, `i32`, …), same as constructor literals.
+        // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。
+        HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => expected.clone(),
+        // String literals infer as `Utf8` but core APIs take `text`.
+        HirExprKind::Literal(crate::types::hir::HirLiteral::String(_)) if is_text_type(expected) => expected.clone(),
+        // 空数组字面量没有自足类型，只能由形式参数类型提供上下文；保留 `None`
+        // 交给统一阶段做形状校验，不得在这里猜元素类型。
+        _ => actual.clone(),
+    }
+}
+
+/// 空数组字面量：自身没有元素类型事实，只能由调用形式的参数类型定型。
+fn is_empty_array_literal(expr: &HirExpr) -> bool {
+    matches!(&expr.kind, HirExprKind::ArrayLiteral { items } if items.is_empty())
+}
+
+/// 形式参数是否是空数组字面量可以落入的数组形状。
+fn accepts_array_shape(expected: &ValkyrieType) -> bool {
+    match expected {
+        ValkyrieType::Array(_) => true,
+        ValkyrieType::FixedArray { length, .. } => *length == 0,
+        _ => false,
+    }
 }
 
 /// Replace `Self` with the imply/class owner so instance dispatch is nominal.
@@ -1731,6 +1845,7 @@ fn try_resolve_call(
                 parameter_types: func.params.clone(),
                 has_receiver: false,
                 extractor_payload_type: None,
+        requirement: None,
             });
         }
         if locals.contains_key(local_name) {
@@ -1780,6 +1895,7 @@ fn try_resolve_call(
                     parameter_types: matched.signature.params,
                     has_receiver: false,
                     extractor_payload_type: None,
+        requirement: None,
                 });
             }
             if singleton_names.contains(owner) {
@@ -1912,10 +2028,20 @@ fn try_resolve_call(
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
-    // An unqualified constructor expression denotes the nominal constructor
-    // contract when a same-spelled ordinary function is also visible. This
-    // is a domain precedence rule, so generic libraries cannot manufacture an
-    // ambiguity between a variant and a helper function with the same name.
+    // 平坦运算符调用（`a + b` → `a.infix +(b)`）以首实参为接收者。接收者是
+    // 未声明 bound 的泛型形参时，声明期没有可匹配的具体 impl；此时冻结成员
+    // 要求，由单态化按完整代入选择唯一 witness，禁止按同名实现过选。
+    if filtered.is_empty()
+        && matches!(&callee.kind, HirExprKind::Path(path) if path.parts().len() == 1)
+        && let Some(receiver_type) = args.first().and_then(|arg| {
+            infer_expr_type(&arg.value, locals)
+                .or_else(|| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names))
+        })
+        && has_unresolved_generic_arguments(&receiver_type)
+        && let Some(call) = deferred_member_requirement(candidates, &receiver_type, &callee_name, false)
+    {
+        return Some(call);
+    }
     if filtered.iter().any(|candidate| candidate.domain == OverloadDomain::Constructor) {
         filtered.retain(|candidate| candidate.domain == OverloadDomain::Constructor);
     }
@@ -1939,6 +2065,7 @@ fn try_resolve_call(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
+        requirement: None,
     };
     if matches!(callee_name.as_str(), "unwrap" | "is_some") {
         let receiver_type = args.first().and_then(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names));
@@ -2028,7 +2155,114 @@ fn try_resolve_qualified_free_function(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
+        requirement: None,
     })
+}
+
+/// 未解析的无参变体引用：裸 `Variable`/单段 `Path` 且不是本地绑定。
+fn is_unresolved_variant_reference(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> bool {
+    match &expr.kind {
+        HirExprKind::Variable(identifier) => !locals.contains_key(identifier.name.as_str()),
+        HirExprKind::Path(path) => path.parts().len() == 1 && !locals.contains_key(path.parts()[0].as_str()),
+        _ => false,
+    }
+}
+
+/// 成员调用的实参上下文类型（不含接收者槽）。
+///
+/// 接收者类型已知时，候选形参可在接收者代入后具体化，成为实参的上下文：
+/// `ArrayList<T>.push(self, value: T)` 在接收者为 `ArrayList<Option<_>>` 时，
+/// `value` 的形参是 `Option<_>`。只有所有在接收者上可统一的候选对同一位置
+/// 给出一致类型时才返回该位置，否则留空，避免按单个候选猜类型。
+fn member_call_argument_contexts(
+    callee: &HirExpr,
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &BTreeSet<Identifier>,
+) -> Vec<Option<ValkyrieType>> {
+    // 成员调用有两种等价表示：`FieldAccess` callee，以及解析器保留的扁平
+    // `Path([receiver, ..fields, method])`；后者根必须是本地绑定。
+    let (receiver_type, field) = match &callee.kind {
+        HirExprKind::FieldAccess { object, field } => {
+            let receiver_type =
+                infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names));
+            (receiver_type, field.clone())
+        }
+        HirExprKind::Path(path) if path.parts().len() >= 2 && locals.contains_key(path.parts()[0].as_str()) => {
+            let mut receiver_type = locals.get(path.parts()[0].as_str()).cloned();
+            for field_name in &path.parts()[1..path.parts().len() - 1] {
+                receiver_type = receiver_type
+                    .and_then(|ty| lookup_struct_field_type(&ty, field_name, struct_fields));
+            }
+            (receiver_type, path.parts().last().cloned().unwrap_or_default())
+        }
+        _ => return Vec::new(),
+    };
+    let Some(receiver_type) = receiver_type
+    else {
+        return Vec::new();
+    };
+    let mut contexts = Vec::new();
+    let mut conflicted = Vec::new();
+    let mut applicable = false;
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
+        .filter(|candidate| candidate_has_receiver_parameter(candidate))
+        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| *name == field))
+    {
+        let Some(owner) = candidate.owner.as_ref()
+        else {
+            continue;
+        };
+        // `Nominal{ItemId}` 没有表面名，必须按 declaration 判定接收者是否属于候选 owner；
+        // 只有 `Named`/`Array` 这类仍带表面名的形态才按短名比较。
+        let owner_declaration = match type_relations.nominal_type_for_name(owner) {
+            Some(ValkyrieType::Nominal { declaration, .. }) => Some(declaration),
+            _ => None,
+        };
+        let belongs = match (&receiver_type, owner_declaration) {
+            (ValkyrieType::Nominal { declaration, .. }, Some(owner_declaration)) => *declaration == owner_declaration,
+            _ => impl_nominal_type_name(&receiver_type) == Some(owner.as_str()),
+        };
+        if !belongs {
+            continue;
+        }
+        let Some(self_param) = candidate.signature.params.first()
+        else {
+            continue;
+        };
+        let mut substitutions = BTreeMap::new();
+        if unify_call_type_binders(self_param, &receiver_type, &candidate.generic_binders, &mut substitutions).is_none() {
+            continue;
+        }
+        applicable = true;
+        for (index, ty) in candidate.signature.params.iter().enumerate().skip(1) {
+            let context = substitute_type_vars(ty, &substitutions);
+            let slot = index - 1;
+            if contexts.len() <= slot {
+                contexts.resize(slot + 1, None);
+                conflicted.resize(slot + 1, false);
+            }
+            if conflicted[slot] {
+                continue;
+            }
+            match &contexts[slot] {
+                None => contexts[slot] = Some(context),
+                Some(existing) if existing != &context => {
+                    contexts[slot] = None;
+                    conflicted[slot] = true;
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    if !applicable {
+        return Vec::new();
+    }
+    contexts
 }
 
 fn try_resolve_instance_method(
@@ -2065,6 +2299,7 @@ fn try_resolve_instance_method(
             if generic.binder.is_none() {
                 continue;
             }
+            let mut bounded = false;
             for bound in type_relations
                 .callable_constraints()
                 .iter()
@@ -2072,18 +2307,40 @@ fn try_resolve_instance_method(
                 .flat_map(|constraint| &constraint.bounds)
                 .filter(|bound| bound.declaration.is_some() && bound.declaration == candidate.trait_owner)
             {
+                bounded = true;
                 let candidate = instantiate_trait_bound_candidate(candidate, &receiver_type, bound)?;
                 if let Some(matched) = match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
                 {
                     filtered.push(matched);
                 }
             }
+            if !bounded {
+                // 未声明 bound 的泛型接收者：成员只能登记为 trait 方法合同本身，
+                // 不在 HIR 物化任何具体 impl。具体 witness 由入口实例化提供；
+                // trait 自身带泛型参数时缺实参事实，fail-closed。
+                if let Some(candidate) = instantiate_trait_method_candidate(candidate, &receiver_type) {
+                    if let Some(matched) =
+                        match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
+                    {
+                        filtered.push(matched);
+                    }
+                }
+            }
         }
         else if candidate.trait_owner.is_none() {
-            if let Some(matched) = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names) {
+            let matched = match_call_candidate(candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names);
+            if let Some(matched) = matched {
                 filtered.push(matched);
             }
         }
+    }
+    if filtered.is_empty()
+        && has_unresolved_generic_arguments(&receiver_type)
+        && let Some(call) = deferred_member_requirement(candidates, &receiver_type, method_name, true)
+    {
+        // 未声明 bound 的泛型接收者：HIR 只冻结分派键与签名形状，
+        // 具体 witness/impl 必须由实例化阶段按完整代入选择。
+        return Some(call);
     }
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
@@ -2099,9 +2356,156 @@ fn try_resolve_instance_method(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
+        requirement: None,
     };
     enrich_sum_variant_operation_facts(&mut call, Some(&receiver_type), candidates);
     Some(call)
+}
+
+/// 未声明 bound 的泛型接收者：按成员选择名冻结分派键与签名形状。
+///
+/// 这里不挑选任何具体 impl：trait 成员记录 trait 声明身份，自有成员/运算符
+/// 记录成员名。同一成员名的候选若给出不一致的形状（返回类型或元数不同），
+/// 说明该调用无法在声明期确定合同，fail-closed。
+fn deferred_member_requirement(
+    candidates: &[OverloadCandidate],
+    subject: &ValkyrieType,
+    method_name: &Identifier,
+    has_receiver: bool,
+) -> Option<HirResolvedCall> {
+    let mut trait_ids = BTreeSet::new();
+    let mut trait_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
+    let mut own_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
+        .filter(|candidate| candidate_has_receiver_parameter(candidate))
+        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+    {
+        let shape = if let Some(trait_id) = candidate.trait_owner {
+            trait_ids.insert(trait_id);
+            let instantiated = instantiate_trait_method_candidate(candidate, subject)?;
+            (instantiated.signature.params, instantiated.signature.return_type)
+        }
+        else {
+            own_member_requirement_shape(candidate, subject)?
+        };
+        let slot = if candidate.trait_owner.is_some() { &mut trait_shape } else { &mut own_shape };
+        if slot.as_ref().is_some_and(|existing| existing != &shape) {
+            return None;
+        }
+        *slot = Some(shape);
+    }
+    // 分派优先级：class/impl 自有方法先于 trait 方法；trait 歧义必须失败。
+    let (parameter_types, return_type, trait_declaration) = match (own_shape, trait_shape) {
+        (Some((params, return_type)), _) => (params, return_type, None),
+        (None, Some((params, return_type))) => {
+            if trait_ids.len() != 1 {
+                return None;
+            }
+            (params, return_type, trait_ids.into_iter().next())
+        }
+        (None, None) => return None,
+    };
+    Some(HirResolvedCall {
+        declaration: None,
+        instance: None,
+        sum_owner: None,
+        sum_variant: None,
+        intrinsic: None,
+        symbol: NamePath::new(vec![method_name.clone()]),
+        domain: HirCallableDomain::Function,
+        return_type,
+        parameter_types,
+        has_receiver,
+        extractor_payload_type: None,
+        requirement: Some(crate::types::hir::HirCallRequirement {
+            subject: subject.clone(),
+            member: method_name.clone(),
+            trait_declaration,
+        }),
+    })
+}
+
+/// 自有成员在泛型接收者上的签名形状：接收者槽替换为 subject，其余参数位置
+/// 保持声明。
+///
+/// 返回类型不参与替换：`imply bool` 的 `-> bool` 是具体类型而非 `Self`，把它
+/// 收成 subject 会把“结果恒为 bool”误判成“结果恒等于接收者”。同一成员在不同
+/// impl 上返回类型不一致时，声明期没有可冻结的统一合同，fail-closed。
+fn own_member_requirement_shape(
+    candidate: &OverloadCandidate,
+    subject: &ValkyrieType,
+) -> Option<(Vec<ValkyrieType>, ValkyrieType)> {
+    let receiver = candidate.signature.params.first()?;
+    if matches!(receiver, ValkyrieType::AutoType | ValkyrieType::SelfType) {
+        return None;
+    }
+    let params = candidate
+        .signature
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| if index == 0 { subject.clone() } else { replace_exact_type(ty, receiver, subject) })
+        .collect();
+    Some((params, candidate.signature.return_type.clone()))
+}
+
+fn replace_exact_type(ty: &ValkyrieType, from: &ValkyrieType, to: &ValkyrieType) -> ValkyrieType {
+    if ty == from {
+        return to.clone();
+    }
+    match ty {
+        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|argument| replace_exact_type(argument, from, to)).collect(),
+        },
+        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
+            Box::new(replace_exact_type(base, from, to)),
+            arguments.iter().map(|argument| replace_exact_type(argument, from, to)).collect(),
+        ),
+        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(replace_exact_type(element, from, to))),
+        ValkyrieType::FixedArray { element, length } => {
+            ValkyrieType::FixedArray { element: Box::new(replace_exact_type(element, from, to)), length: *length }
+        }
+        ValkyrieType::Nullable(element) => ValkyrieType::Nullable(Box::new(replace_exact_type(element, from, to))),
+        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
+        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
+        ValkyrieType::Intersection(items) => {
+            ValkyrieType::Intersection(items.iter().map(|item| replace_exact_type(item, from, to)).collect())
+        }
+        ValkyrieType::Function(function) => {
+            let mut function = function.as_ref().clone();
+            function.params = function.params.iter().map(|param| replace_exact_type(param, from, to)).collect();
+            function.return_type = replace_exact_type(&function.return_type, from, to);
+            ValkyrieType::Function(Box::new(function))
+        }
+        _ => ty.clone(),
+    }
+}
+
+/// 未声明 bound 的泛型接收者：把成员实例化为 trait 方法合同本身。
+///
+/// 这不物化任何具体 impl，也不挑选 witness；`Self` 只替换为接收者类型，
+/// 具体 witness 由入口实例化阶段提供。trait 自身带泛型参数时没有实参事实，
+/// 返回 `None` 由调用方 fail-closed。
+fn instantiate_trait_method_candidate(candidate: &OverloadCandidate, subject: &ValkyrieType) -> Option<OverloadCandidate> {
+    let trait_id = candidate.trait_owner?;
+    let mut candidate = substitute_trait_self(candidate, subject);
+    if candidate.generic_binders.iter().any(|binder| binder.owner == trait_id) {
+        return None;
+    }
+    if candidate_has_receiver_parameter(&candidate)
+        && matches!(candidate.signature.params.first(), Some(ValkyrieType::AutoType | ValkyrieType::SelfType))
+    {
+        candidate.signature.params[0] = subject.clone();
+    }
+    if let Some(param) = candidate.param_specs.first_mut() {
+        if matches!(param.ty, ValkyrieType::AutoType | ValkyrieType::SelfType) {
+            param.ty = subject.clone();
+        }
+    }
+    Some(candidate)
 }
 
 /// 用 bound 的 trait 声明、实参与关联等式实例化成员签名，不能按 trait 短名筛选。
@@ -2253,6 +2657,7 @@ fn try_resolve_type_static_method(
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
         has_receiver: candidate_has_receiver_parameter(&resolved),
         extractor_payload_type: None,
+        requirement: None,
     })
 }
 
@@ -2364,6 +2769,7 @@ fn try_resolve_singleton_method(
         parameter_types,
         has_receiver,
         extractor_payload_type: None,
+        requirement: None,
     })
 }
 
@@ -2756,6 +3162,7 @@ fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates:
         parameter_types: vec![operand_type.clone()],
         has_receiver: false,
         extractor_payload_type: payload_type,
+        requirement: None,
     })
 }
 
@@ -2872,6 +3279,7 @@ pub fn try_resolve_constructor(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
+        requirement: None,
     })
 }
 
@@ -3028,6 +3436,7 @@ fn try_resolve_pattern_extractor(
         parameter_types,
         has_receiver,
         extractor_payload_type: Some(payload_type),
+        requirement: None,
     })
 }
 

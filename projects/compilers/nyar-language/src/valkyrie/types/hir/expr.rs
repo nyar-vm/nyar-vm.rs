@@ -101,6 +101,21 @@ pub enum HirCallableDomain {
     Extractor,
 }
 
+/// 声明期无法闭合、必须在实例化时按完整代入决定 witness 的调用要求。
+///
+/// 只在接收者是未声明 bound 的泛型形参时产生：HIR 记录分派键与签名形状，
+/// 不挑选任何具体 impl；具体 `ItemInstanceId` 由单态化按同一结构身份查出。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HirCallRequirement {
+    /// 待实例化后确定的接收者类型（通常是 `Generic` binder）。
+    pub subject: ValkyrieType,
+    /// 成员选择名；运算符使用声明侧成员名（如 `infix ==`）。
+    pub member: Identifier,
+    /// 已声明 bound 的 trait 身份；无 trait 的成员/运算符为 `None`。
+    pub trait_declaration: Option<nyar_types::ItemId>,
+}
+
 /// Resolved call metadata attached to canonical HIR calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -132,6 +147,9 @@ pub struct HirResolvedCall {
     /// Payload type after peeling nullable `T?` extractor returns.
     #[cfg_attr(feature = "serde", serde(default))]
     pub extractor_payload_type: Option<ValkyrieType>,
+    /// 未声明 bound 的泛型接收者要求；具体 witness 在实例化时选择。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub requirement: Option<HirCallRequirement>,
 }
 
 /// The kind of an expression.
