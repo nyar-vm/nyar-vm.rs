@@ -170,6 +170,7 @@ pub(super) fn infer_builder_operand_type(operand: &MirOperand, value_types: &BTr
         MirOperand::Value(value_ref) => value_types.get(value_ref).cloned(),
         MirOperand::Constant(constant) => infer_builder_constant_type(constant),
         MirOperand::Callable(_) => None,
+        MirOperand::Requirement(_) => None,
         MirOperand::Symbol(_) => None,
     }
 }
@@ -371,6 +372,14 @@ pub(super) fn lower_callee_operand(
     if let Some(resolved) = resolved {
         if resolved.domain == crate::types::hir::HirCallableDomain::Constructor {
             return None;
+        }
+        // 未声明 bound 的泛型接收者：保留结构化要求，由单态化按完整代入选择 witness。
+        if let Some(requirement) = &resolved.requirement {
+            return Some(MirOperand::Requirement(super::MirCallRequirement {
+                subject: requirement.subject.clone(),
+                member: requirement.member.clone(),
+                trait_declaration: requirement.trait_declaration,
+            }));
         }
         if let Some(instance) = resolved.instance {
             return Some(MirOperand::Callable(instance));

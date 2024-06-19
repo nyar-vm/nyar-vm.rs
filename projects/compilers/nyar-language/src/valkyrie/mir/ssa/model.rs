@@ -428,6 +428,17 @@ pub enum MirValueOrigin {
     Temporary,
 }
 
+/// 声明期无法闭合、待单态化按完整代入选择 witness 的调用要求。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MirCallRequirement {
+    /// 待代入的接收者类型（通常是泛型 binder）。
+    pub subject: ValkyrieType,
+    /// 成员选择名；运算符使用声明侧成员名。
+    pub member: crate::Identifier,
+    /// 已声明 bound 的 trait 身份；无 trait 的成员/运算符为 `None`。
+    pub trait_declaration: Option<nyar_types::ItemId>,
+}
+
 /// `MIR` 操作数。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirOperand {
@@ -437,6 +448,8 @@ pub enum MirOperand {
     Constant(MirConstant),
     /// Compiler 在依赖闭包冻结后分配的 callable identity。
     Callable(ItemInstanceId),
+    /// 待单态化解析的成员要求；不得进入 Canonical 成功值。
+    Requirement(MirCallRequirement),
     /// HIR/链接阶段尚未完成 identity 冻结的结构化名称；不得进入 Canonical 成功值。
     Symbol(NamePath),
 }

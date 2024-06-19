@@ -16,6 +16,8 @@ pub(super) fn infer_operand_static_type(function: &MirFunction, operand: &MirOpe
             }
         }),
         MirOperand::Callable(_) => None,
+        // 未解析的成员要求没有静态类型：必须先在单态化阶段换成 callable identity。
+        MirOperand::Requirement(_) => None,
         MirOperand::Symbol(_) => None,
     }
 }

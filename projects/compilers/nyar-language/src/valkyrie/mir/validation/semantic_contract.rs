@@ -359,6 +359,8 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
         MirOperand::Constant(MirConstant::Float64(_)) => Some(ValkyrieType::Float64),
         MirOperand::Constant(MirConstant::Unit) => Some(ValkyrieType::Unit),
         MirOperand::Callable(_) => None,
+        // 未解析的成员要求没有 SSA 静态类型；进入校验前必须已被单态化替换。
+        MirOperand::Requirement(_) => None,
         MirOperand::Symbol(_) => None,
     };
     for block in &function.blocks {
@@ -538,6 +540,19 @@ pub(super) fn validate_static_call_resolution(
             function: function.symbol.clone(),
             location,
             detail: "indirect call requires a function-typed callee SSA value".to_string(),
+        });
+    }
+    // 延迟成员要求必须在单态化阶段由分派表解析；进入 Canonical 时仍保留
+    // Requirement 即视为未闭合，禁止按名称或默认实现补选。
+    if let MirOperand::Requirement(requirement) = callee {
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: format!(
+                "deferred member requirement `{}` must be materialized before Canonical",
+                requirement.member
+            ),
         });
     }
     let MirOperand::Symbol(symbol) = callee

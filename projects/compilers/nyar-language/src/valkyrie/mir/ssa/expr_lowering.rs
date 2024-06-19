@@ -18,10 +18,15 @@ use super::{
 
 impl MirBuilder {
     pub(super) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
-        resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)).or_else(|| match callee {
-            MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
-            _ => None,
-        })
+        // 声明冻结的 intrinsic 身份优先；符号路径反查只作为迁移期通道，服务于
+        // 尚未带结构化身份的私有种子（`__array_len` 等）。
+        resolved
+            .and_then(|call| call.intrinsic)
+            .or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)))
+            .or_else(|| match callee {
+                MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
+                _ => None,
+            })
     }
 
     fn try_lower_ref_deref_intrinsic(
@@ -716,10 +721,23 @@ impl MirBuilder {
                         }
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
-                    let Some(callee) = lower_resolved_callee(resolved_call)
+                    // 未声明 bound 的泛型接收者：保留结构化要求，由单态化按完整代入选择 witness。
+                    let callee = if let Some(requirement) = &resolved_call.requirement {
+                        MirOperand::Requirement(super::MirCallRequirement {
+                            subject: requirement.subject.clone(),
+                            member: requirement.member.clone(),
+                            trait_declaration: requirement.trait_declaration,
+                        })
+                    }
                     else {
-                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
-                        return MirOperand::Constant(MirConstant::Unit);
+                        let Some(callee) = lower_resolved_callee(resolved_call)
+                        else {
+                            self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                                symbol: resolved_call.symbol.to_string(),
+                            });
+                            return MirOperand::Constant(MirConstant::Unit);
+                        };
+                        callee
                     };
                     if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
