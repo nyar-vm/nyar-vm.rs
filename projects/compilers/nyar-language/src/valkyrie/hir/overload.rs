@@ -2373,28 +2373,46 @@ fn deferred_member_requirement(
     method_name: &Identifier,
     has_receiver: bool,
 ) -> Option<HirResolvedCall> {
-    let mut trait_ids = BTreeSet::new();
-    let mut trait_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
-    let mut own_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
-    for candidate in candidates
+    let member_candidates = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
-    {
-        let shape = if let Some(trait_id) = candidate.trait_owner {
-            trait_ids.insert(trait_id);
-            let instantiated = instantiate_trait_method_candidate(candidate, subject)?;
-            (instantiated.signature.params, instantiated.signature.return_type)
-        }
+        .filter(|candidate| candidate_receiver_matches_subject(candidate, subject))
+        .collect::<Vec<_>>();
+    // 分派优先级：class/impl 自有成员先于 trait 方法。自有成员存在时 trait 候选不参与
+    // 合同冻结，也不能因某个 trait 方法无法实例化而否掉已经成立的自有成员合同。
+    let mut own_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
+    for candidate in member_candidates.iter().copied().filter(|candidate| candidate.trait_owner.is_none()) {
+        let Some(shape) = own_member_requirement_shape(candidate, subject)
         else {
-            own_member_requirement_shape(candidate, subject)?
+            continue;
         };
-        let slot = if candidate.trait_owner.is_some() { &mut trait_shape } else { &mut own_shape };
-        if slot.as_ref().is_some_and(|existing| existing != &shape) {
+        if own_shape.as_ref().is_some_and(|existing| existing != &shape) {
             return None;
         }
-        *slot = Some(shape);
+        own_shape = Some(shape);
+    }
+    let mut trait_ids = BTreeSet::new();
+    let mut trait_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
+    if own_shape.is_none() {
+        for candidate in member_candidates.iter().copied().filter(|candidate| candidate.trait_owner.is_some()) {
+            let Some(trait_id) = candidate.trait_owner
+            else {
+                continue;
+            };
+            // trait 自身带泛型参数时缺实参事实，该候选 fail-closed；只影响 trait 分支。
+            let Some(instantiated) = instantiate_trait_method_candidate(candidate, subject)
+            else {
+                continue;
+            };
+            trait_ids.insert(trait_id);
+            let shape = (instantiated.signature.params, instantiated.signature.return_type);
+            if trait_shape.as_ref().is_some_and(|existing| existing != &shape) {
+                return None;
+            }
+            trait_shape = Some(shape);
+        }
     }
     // 分派优先级：class/impl 自有方法先于 trait 方法；trait 歧义必须失败。
     let (parameter_types, return_type, trait_declaration) = match (own_shape, trait_shape) {
@@ -2425,6 +2443,25 @@ fn deferred_member_requirement(
             trait_declaration,
         }),
     })
+}
+
+/// 候选接收者能否以 `subject` 为接收者（只按声明身份判定）。
+///
+/// 同名成员存在于多个 owner（`SwissTable.insert` / `HashMap.insert`）：subject 已冻结到
+/// 某一声明时，其他 owner 的候选不可能成为该调用的实现，必须在签名形状比较前排除；
+/// 否则它们的形状差异会把本来唯一的合同误判成歧义。subject 尚未冻结到声明时不排除，
+/// trait 方法按 `Self` 由 trait 身份决定归属。
+fn candidate_receiver_matches_subject(candidate: &OverloadCandidate, subject: &ValkyrieType) -> bool {
+    let ValkyrieType::Nominal { declaration: subject_owner, .. } = subject
+    else {
+        return true;
+    };
+    match candidate.signature.params.first() {
+        Some(ValkyrieType::Nominal { declaration, .. }) => declaration == subject_owner,
+        Some(ValkyrieType::SelfType | ValkyrieType::AutoType | ValkyrieType::Generic(_)) => true,
+        Some(_) => false,
+        None => false,
+    }
 }
 
 /// 自有成员在泛型接收者上的签名形状：接收者槽替换为 subject，其余参数位置
