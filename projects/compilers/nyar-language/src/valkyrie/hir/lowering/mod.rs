@@ -864,10 +864,9 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            AstToHir::new(self.source_id).lower_prepared_root(root, imported_semantic_exports, module_name)
-        }))
-        .map_err(|_| ParseError::invalid(format!("source file `{}` contains an unexpanded syntax node", file.path)))?
+        AstToHir::new(self.source_id)
+            .lower_prepared_root(root, imported_semantic_exports, module_name)
+            .map_err(|error| ParseError::invalid(format!("source file `{}`: {error}", file.path)))
     }
 
     /// Lowers parser output into a HIR module.
@@ -892,6 +891,30 @@ impl ValkyrieCompiler {
         module_name: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, module_name)
+    }
+}
+
+/// `Self` 在其声明作用域内解析出的名义 owner。
+///
+/// `construct_path` 与 `overload::struct_constructor_path` 使用同一组成（namespace + name），
+/// 因此 `Self { … }` 会精确命中 owner 自己的构造器候选；`name` 是候选 owner 使用的短名，
+/// 供 `Self::member` 限定路径改写。两者都只是名称解析结果，声明身份仍由候选冻结。
+struct SelfOwnerPath {
+    construct_path: NamePath,
+    name: Identifier,
+}
+
+impl SelfOwnerPath {
+    fn from_struct(item: &HirStruct) -> Self {
+        let mut parts = item.namespace.clone();
+        parts.push(item.name.clone());
+        Self { construct_path: NamePath::new(parts), name: item.name.clone() }
+    }
+
+    fn named(namespace: &[Identifier], name: &Identifier) -> Self {
+        let mut parts = namespace.to_vec();
+        parts.push(name.clone());
+        Self { construct_path: NamePath::new(parts), name: name.clone() }
     }
 }
 
@@ -966,6 +989,28 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
         Ok(None)
     }
+    /// `imply` 目标已冻结为声明身份后，`Self` 在该块内指目标声明本身。
+    ///
+    /// 只对名义目标成立：结构化数组 `[T]` 的 `Self` 不是 `class Array<T>` 名义类型，
+    /// 因此失败闭合，不借数组 owner 约定改写。
+    fn impl_self_owner(target: &ValkyrieType, structs: &[HirStruct], enums: &[HirEnum]) -> Option<SelfOwnerPath> {
+        let declaration = match target {
+            ValkyrieType::Nominal { declaration, .. } => *declaration,
+            _ => return None,
+        };
+        if let Some(item) = structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
+            return Some(SelfOwnerPath::from_struct(item));
+        }
+        enums.iter().find(|item| item.declaration == Some(declaration)).map(|item| SelfOwnerPath::named(&[], &item.name))
+    }
+    /// 结构化数组 `[T]` 的声明 owner 是否是 `class Array<T>`。
+    ///
+    /// `ValkyrieType::Array` 不携带声明身份，只能由这条 owner 约定接回声明；该约定与
+    /// `impl_nominal_type_name(Array(_)) == "Array"` 一致。这是绑定阶段唯一一次名称判定，
+    /// 保证 `[T]` 与 `Array<T>` 得到同一个类型身份，而不是在下游按名互认。
+    fn is_array_owner(declaration: nyar_types::ItemId, structs: &[HirStruct]) -> bool {
+        array_owner_declarations(structs).contains(&declaration)
+    }
     fn bind_type(ty: &mut ValkyrieType, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
         match ty {
             ValkyrieType::Nominal { arguments, .. } => {
@@ -988,6 +1033,14 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                 };
                 if let Some(name) = named_base {
                     if let Some(declaration) = resolve_declaration(&name, namespace, structs, enums)? {
+                        // `class Array<T>` 是结构化数组 `[T]` 的声明 owner：`Array<T>` 与
+                        // `[T]` 是同一个类型，数组值在所有阶段只有结构化 `Array` 一个身份。
+                        // owner 归属沿用 `impl_nominal_type_name` 的既定约定，不另造名义类型。
+                        if args.len() == 1 && is_array_owner(declaration, structs) {
+                            let element = args.remove(0);
+                            *ty = ValkyrieType::Array(Box::new(element));
+                            return Ok(());
+                        }
                         let arguments = std::mem::take(args);
                         *ty = ValkyrieType::Nominal { declaration, arguments };
                         return Ok(());
@@ -1034,12 +1087,18 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
         Ok(())
     }
-    fn bind_expr(expr: &mut HirExpr, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+    fn bind_expr(
+        expr: &mut HirExpr,
+        namespace: &NamePath,
+        structs: &[HirStruct],
+        enums: &[HirEnum],
+        self_owner: Option<&SelfOwnerPath>,
+    ) -> Result<(), ParseError> {
         match &mut expr.kind {
             HirExprKind::Call { callee, args, resolved, .. } => {
-                bind_expr(callee, namespace, structs, enums)?;
+                bind_expr(callee, namespace, structs, enums, self_owner)?;
                 for arg in args {
-                    bind_expr(&mut arg.value, namespace, structs, enums)?;
+                    bind_expr(&mut arg.value, namespace, structs, enums, self_owner)?;
                 }
                 if let Some(contract) = resolved {
                     for param in &mut contract.parameter_types {
@@ -1051,9 +1110,17 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                     }
                 }
             }
-            HirExprKind::Construct { args, resolved, .. } => {
+            HirExprKind::Construct { path, name, args, resolved } => {
+                // `Self { … }` 在声明作用域内构造 owner 声明本身；这里的改写只是把
+                // `Self` 解析到声明路径，候选匹配仍由已冻结的声明身份完成。
+                if let Some(owner) = self_owner {
+                    if path.parts().len() == 1 && path.parts()[0].as_str() == "Self" {
+                        *path = owner.construct_path.clone();
+                        *name = owner.name.clone();
+                    }
+                }
                 for arg in args {
-                    bind_expr(arg, namespace, structs, enums)?;
+                    bind_expr(arg, namespace, structs, enums, self_owner)?;
                 }
                 if let Some(contract) = resolved {
                     for param in &mut contract.parameter_types {
@@ -1063,7 +1130,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                 }
             }
             HirExprKind::Cast { expr: inner, ty, .. } => {
-                bind_expr(inner, namespace, structs, enums)?;
+                bind_expr(inner, namespace, structs, enums, self_owner)?;
                 bind_type(ty, namespace, structs, enums)?;
             }
             HirExprKind::Lambda { params, return_type, body, .. } => {
@@ -1071,13 +1138,13 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                     bind_type(&mut param.ty, namespace, structs, enums)?;
                 }
                 bind_type(return_type, namespace, structs, enums)?;
-                bind_block(body, namespace, structs, enums)?;
+                bind_block(body, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::TryScope { result_type, body, .. } => {
                 if let Some(ty) = result_type {
                     bind_type(ty, namespace, structs, enums)?;
                 }
-                bind_block(body, namespace, structs, enums)?;
+                bind_block(body, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::FieldInit { value, .. }
             | HirExprKind::Await(value)
@@ -1091,94 +1158,111 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             | HirExprKind::Yield(Some(value))
             | HirExprKind::Break { expr: Some(value), .. }
             | HirExprKind::Assign { value, .. }
-            | HirExprKind::FieldAccess { object: value, .. } => bind_expr(value, namespace, structs, enums)?,
+            | HirExprKind::FieldAccess { object: value, .. } => bind_expr(value, namespace, structs, enums, self_owner)?,
+            HirExprKind::Path(path) => {
+                // `Self::member` 的 `Self` 是声明作用域内的名义 owner；候选 owner 以短名索引。
+                if let Some(owner) = self_owner {
+                    if path.parts().len() > 1 && path.parts()[0].as_str() == "Self" {
+                        let mut parts = path.parts().to_vec();
+                        parts[0] = owner.name.clone();
+                        *path = NamePath::new(parts);
+                    }
+                }
+            }
             HirExprKind::GenericApply { callee, arguments } => {
-                bind_expr(callee, namespace, structs, enums)?;
+                bind_expr(callee, namespace, structs, enums, self_owner)?;
                 for argument in arguments {
                     bind_type(argument, namespace, structs, enums)?;
                 }
             }
             HirExprKind::StoreField { object, value, .. } => {
-                bind_expr(object, namespace, structs, enums)?;
-                bind_expr(value, namespace, structs, enums)?;
+                bind_expr(object, namespace, structs, enums, self_owner)?;
+                bind_expr(value, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::ArrayNew { element_type, length } => {
                 bind_type(element_type, namespace, structs, enums)?;
-                bind_expr(length, namespace, structs, enums)?;
+                bind_expr(length, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
                 for item in items {
-                    bind_expr(item, namespace, structs, enums)?;
+                    bind_expr(item, namespace, structs, enums, self_owner)?;
                 }
             }
-            HirExprKind::Block(block) => bind_block(block, namespace, structs, enums)?,
+            HirExprKind::Block(block) => bind_block(block, namespace, structs, enums, self_owner)?,
             HirExprKind::If { condition, then_branch, else_branch, .. } => {
-                bind_expr(condition, namespace, structs, enums)?;
-                bind_block(then_branch, namespace, structs, enums)?;
+                bind_expr(condition, namespace, structs, enums, self_owner)?;
+                bind_block(then_branch, namespace, structs, enums, self_owner)?;
                 if let Some(else_branch) = else_branch {
-                    bind_block(else_branch, namespace, structs, enums)?;
+                    bind_block(else_branch, namespace, structs, enums, self_owner)?;
                 }
             }
             HirExprKind::IfLet { pattern: _, scrutinee, then_branch, else_branch, .. } => {
-                bind_expr(scrutinee, namespace, structs, enums)?;
-                bind_block(then_branch, namespace, structs, enums)?;
+                bind_expr(scrutinee, namespace, structs, enums, self_owner)?;
+                bind_block(then_branch, namespace, structs, enums, self_owner)?;
                 if let Some(else_branch) = else_branch {
-                    bind_block(else_branch, namespace, structs, enums)?;
+                    bind_block(else_branch, namespace, structs, enums, self_owner)?;
                 }
             }
             // 循环、catch、with、super 调用都携带类型位与嵌套表达式：漏掉任何一个都会让该子树
             // 退回 `Named`，随后与已冻结的 `Nominal` 当成不兼容。
             HirExprKind::Loop { pattern: _, iterator, condition, body, .. } => {
                 if let Some(iterator) = iterator {
-                    bind_expr(iterator, namespace, structs, enums)?;
+                    bind_expr(iterator, namespace, structs, enums, self_owner)?;
                 }
                 if let Some(condition) = condition {
-                    bind_expr(condition, namespace, structs, enums)?;
+                    bind_expr(condition, namespace, structs, enums, self_owner)?;
                 }
-                bind_block(body, namespace, structs, enums)?;
+                bind_block(body, namespace, structs, enums, self_owner)?;
             }
             HirExprKind::Catch { expr: inner, arms } => {
-                bind_expr(inner, namespace, structs, enums)?;
+                bind_expr(inner, namespace, structs, enums, self_owner)?;
                 for arm in arms {
                     if let Some(guard) = &mut arm.guard {
-                        bind_expr(guard, namespace, structs, enums)?;
+                        bind_expr(guard, namespace, structs, enums, self_owner)?;
                     }
-                    bind_expr(&mut arm.body, namespace, structs, enums)?;
+                    bind_expr(&mut arm.body, namespace, structs, enums, self_owner)?;
                 }
             }
             HirExprKind::With { base, updates } => {
-                bind_expr(base, namespace, structs, enums)?;
+                bind_expr(base, namespace, structs, enums, self_owner)?;
                 for (_, update) in updates {
-                    bind_expr(update, namespace, structs, enums)?;
+                    bind_expr(update, namespace, structs, enums, self_owner)?;
                 }
             }
             HirExprKind::SuperCall { args, .. } => {
                 for arg in args {
-                    bind_expr(arg, namespace, structs, enums)?;
+                    bind_expr(arg, namespace, structs, enums, self_owner)?;
                 }
             }
             HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
-                bind_expr(scrutinee, namespace, structs, enums)?;
+                bind_expr(scrutinee, namespace, structs, enums, self_owner)?;
                 for arm in arms {
                     if let Some(guard) = &mut arm.guard {
-                        bind_expr(guard, namespace, structs, enums)?;
+                        bind_expr(guard, namespace, structs, enums, self_owner)?;
                     }
-                    bind_expr(&mut arm.body, namespace, structs, enums)?;
+                    bind_expr(&mut arm.body, namespace, structs, enums, self_owner)?;
                 }
             }
             HirExprKind::AnonymousClass { fields, methods, .. } => {
                 for (_, value) in fields {
-                    bind_expr(value, namespace, structs, enums)?;
+                    bind_expr(value, namespace, structs, enums, self_owner)?;
                 }
+                // 匿名类内的 `Self` 指匿名类本身，不能继承外层 owner 身份。
                 for method in methods {
-                    bind_function(method, structs, enums)?;
+                    bind_function(method, structs, enums, None)?;
                 }
             }
             _ => {}
         }
         Ok(())
     }
-    fn bind_block(block: &mut HirBlock, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+    fn bind_block(
+        block: &mut HirBlock,
+        namespace: &NamePath,
+        structs: &[HirStruct],
+        enums: &[HirEnum],
+        self_owner: Option<&SelfOwnerPath>,
+    ) -> Result<(), ParseError> {
         for statement in &mut block.statements {
             match &mut statement.kind {
                 HirStatementKind::Let { ty, initializer, .. } => {
@@ -1186,18 +1270,23 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                         bind_type(annotation, namespace, structs, enums)?;
                     }
                     if let Some(initializer) = initializer {
-                        bind_expr(initializer, namespace, structs, enums)?;
+                        bind_expr(initializer, namespace, structs, enums, self_owner)?;
                     }
                 }
-                HirStatementKind::Expr(expr) => bind_expr(expr, namespace, structs, enums)?,
+                HirStatementKind::Expr(expr) => bind_expr(expr, namespace, structs, enums, self_owner)?,
             }
         }
         if let Some(expr) = &mut block.expr {
-            bind_expr(expr, namespace, structs, enums)?;
+            bind_expr(expr, namespace, structs, enums, self_owner)?;
         }
         Ok(())
     }
-    fn bind_function(function: &mut HirFunction, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+    fn bind_function(
+        function: &mut HirFunction,
+        structs: &[HirStruct],
+        enums: &[HirEnum],
+        self_owner: Option<&SelfOwnerPath>,
+    ) -> Result<(), ParseError> {
         for param in &mut function.params {
             bind_type(&mut param.ty, &function.declaring_namespace, structs, enums)?;
         }
@@ -1214,7 +1303,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             }
         }
         // 函数体注解（let/cast/lambda 等）必须同步冻结；否则 return 校验会把残留 Named 与已绑定 Nominal 当成不兼容。
-        bind_block(&mut function.body, &function.declaring_namespace, structs, enums)
+        bind_block(&mut function.body, &function.declaring_namespace, structs, enums, self_owner)
     }
     let mut structs = Vec::new();
     let mut enums = Vec::new();
@@ -1225,8 +1314,9 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         for field in &mut item.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
         }
+        let self_owner = SelfOwnerPath::from_struct(item);
         for function in &mut item.methods {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, Some(&self_owner))?;
         }
     }
     for enum_def in &mut module.enums {
@@ -1240,32 +1330,34 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
     }
     for function in &mut module.functions {
-        bind_function(function, &structs, &enums)?;
+        bind_function(function, &structs, &enums, None)?;
     }
     for singleton in &mut module.singletons {
         let namespace = NamePath::new(singleton.namespace.clone());
         for field in &mut singleton.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
         }
+        let self_owner = SelfOwnerPath::named(&singleton.namespace, &singleton.name);
         for function in &mut singleton.methods {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, Some(&self_owner))?;
         }
         if let Some(function) = &mut singleton.constructor {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, Some(&self_owner))?;
         }
         if let Some(function) = &mut singleton.finalizer {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, Some(&self_owner))?;
         }
     }
     for impl_block in &mut module.impls {
         bind_type(&mut impl_block.target, &NamePath::default(), &structs, &enums)?;
+        let self_owner = impl_self_owner(&impl_block.target, &structs, &enums);
         for function in &mut impl_block.methods {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, self_owner.as_ref())?;
         }
     }
     for trait_def in &mut module.traits {
         for function in trait_def.methods.iter_mut().chain(trait_def.default_methods.iter_mut()) {
-            bind_function(function, &structs, &enums)?;
+            bind_function(function, &structs, &enums, None)?;
         }
     }
     for submodule in &mut module.submodules {
@@ -1274,6 +1366,29 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
     // `imply Option<T>` 等块头无显式泛型参数时，target 实参仍须回收为 owner 的 Generic binder。
     propagate_impl_owner_type_generics(module);
     Ok(())
+}
+
+/// 全部承担结构化数组 `[T]` owner 身份的声明：唯一约定是名为 `Array` 且带一个泛型的聚合。
+fn array_owner_declarations(structs: &[HirStruct]) -> Vec<nyar_types::ItemId> {
+    structs
+        .iter()
+        .filter(|item| item.name.as_str() == "Array" && item.generics.len() == 1)
+        .filter_map(|item| item.constructor_declaration)
+        .collect()
+}
+
+/// 模块（含可见依赖导出与子模块）内结构化数组的 owner 声明。
+fn array_owner_declaration(module: &HirModule) -> Option<nyar_types::ItemId> {
+    let local = array_owner_declarations(&module.structs);
+    if let Some(declaration) = local.first() {
+        return Some(*declaration);
+    }
+    for export in &module.imported_semantic_exports {
+        if let Some(declaration) = array_owner_declarations(&export.structs).first() {
+            return Some(*declaration);
+        }
+    }
+    module.submodules.iter().find_map(array_owner_declaration)
 }
 
 fn lookup_owner_generics_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Vec<GenericType> {
@@ -1304,6 +1419,11 @@ fn combined_impl_generic_context(module: &HirModule, implementation: &HirImpl) -
     let mut generics = implementation.generics.clone();
     let owner_generics = match &implementation.target {
         ValkyrieType::Nominal { declaration, .. } => lookup_owner_generics_by_declaration(module, *declaration),
+        // `imply Array<T>`：结构化数组不携带声明身份，owner 由 `class Array<T>` 的
+        // 唯一约定接回，与绑定阶段 `Array<T>` → 结构化 `Array` 的归一使用同一事实。
+        ValkyrieType::Array(_) => {
+            array_owner_declaration(module).map(|declaration| lookup_owner_generics_by_declaration(module, declaration)).unwrap_or_default()
+        }
         _ => Vec::new(),
     };
     for owner in owner_generics {

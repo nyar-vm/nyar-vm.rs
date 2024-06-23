@@ -6,11 +6,98 @@
 
 use std::collections::BTreeMap;
 
-use nyar_types::ItemInstanceId;
+use nyar_types::{ItemId, ItemInstanceId};
 
-use crate::types::hir::{GenericBinderId, ValkyrieType};
+use crate::types::hir::{GenericBinderId, HirModule, ValkyrieType};
 
-use super::{MirFunction, MirOperand, MirOperation};
+use super::{MirCallRequirement, MirDiagnostic, MirFunction, MirOperand, MirOperation};
+
+/// 声明期已冻结的成员分派条目。
+///
+/// `target` 是声明侧接收者类型（可含 owner 的泛型 binder），`instance` 是对应
+/// 方法已物化的 callable 身份。分派只做结构化目标统一，不从短名或符号字符串恢复身份。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MirDispatchEntry {
+    /// trait 实现的 trait 声明身份；inherent 成员/运算符为空。
+    pub(crate) trait_declaration: Option<ItemId>,
+    /// 声明侧接收者类型。
+    pub(crate) target: ValkyrieType,
+    /// 成员选择名（运算符为 `{fixity} {lexeme}`）。
+    pub(crate) member: crate::Identifier,
+    /// 方法实例身份。
+    pub(crate) instance: ItemInstanceId,
+}
+
+/// 从完整源码闭包的 HIR 收集成员分派表。
+///
+/// 只收已分配 callable instance 的方法：泛型种子的实例由单态化按调用点生成，
+/// 未实例化时不在声明期猜测 witness。
+pub(crate) fn collect_dispatch_entries(modules: &[&HirModule]) -> Vec<MirDispatchEntry> {
+    let mut entries = Vec::new();
+    for module in modules {
+        collect_module_dispatch(module, &mut entries);
+    }
+    entries
+}
+
+fn collect_module_dispatch(module: &HirModule, entries: &mut Vec<MirDispatchEntry>) {
+    for implementation in &module.impls {
+        for method in &implementation.methods {
+            let Some(instance) = method.instance
+            else {
+                continue;
+            };
+            entries.push(MirDispatchEntry {
+                trait_declaration: implementation.trait_declaration,
+                target: implementation.target.clone(),
+                member: method.name.clone(),
+                instance,
+            });
+        }
+    }
+    for structure in &module.structs {
+        let Some(declaration) = structure.constructor_declaration
+        else {
+            continue;
+        };
+        let target = ValkyrieType::Nominal {
+            declaration,
+            arguments: structure
+                .generics
+                .iter()
+                .map(|generic| ValkyrieType::Generic(generic.clone()))
+                .collect(),
+        };
+        for method in &structure.methods {
+            let Some(instance) = method.instance
+            else {
+                continue;
+            };
+            entries.push(MirDispatchEntry { trait_declaration: None, target: target.clone(), member: method.name.clone(), instance });
+        }
+    }
+    for submodule in &module.submodules {
+        collect_module_dispatch(submodule, entries);
+    }
+}
+
+/// 类型中是否仍有未代入的泛型 binder。
+pub(crate) fn contains_unresolved_generic(ty: &ValkyrieType) -> bool {
+    match ty {
+        ValkyrieType::Generic(_) => true,
+        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_unresolved_generic),
+        ValkyrieType::Apply(base, arguments) => contains_unresolved_generic(base) || arguments.iter().any(contains_unresolved_generic),
+        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_unresolved_generic(element),
+        ValkyrieType::FixedArray { element, .. } => contains_unresolved_generic(element),
+        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => {
+            items.iter().any(contains_unresolved_generic)
+        }
+        ValkyrieType::Function(function) => {
+            function.params.iter().any(contains_unresolved_generic) || contains_unresolved_generic(&function.return_type)
+        }
+        _ => false,
+    }
+}
 
 /// 若 `concrete` 实例化 `template`，返回 binder → 实参代入表。
 pub(crate) fn collect_generic_substitutions(
@@ -117,40 +204,179 @@ pub(crate) fn unify_generic_instantiation(
     }
 }
 
-/// 扫描全部 Call 站点：若结果类型是种子返回类型的实例，则物化 monomorph 并改写 callee。
+/// 单态化缓存：同一 `(种子实例, 代入)` 复用同一个 monomorph 实例。
+type MonomorphCache = BTreeMap<(ItemInstanceId, BTreeMap<GenericBinderId, ValkyrieType>), ItemInstanceId>;
+
+/// 扫描全部 Call 站点并物化具体实例，改写 callee。
 ///
 /// `next_instance` 必须是整份源码闭包的全局游标（已覆盖全部包的 HIR 实例），
 /// 不得仅取当前模块 `max(instance)+1`——否则会与后注册包的声明实例撞号（link 定义重复）。
-pub(super) fn materialize_generic_call_instances(functions: &mut Vec<MirFunction>, next_instance: &mut u32) {
-    let mut cache: BTreeMap<(ItemInstanceId, BTreeMap<GenericBinderId, ValkyrieType>), ItemInstanceId> = BTreeMap::new();
+///
+/// `seed_pool` 提供已 lowering 的依赖模块泛型种子：consumer 的调用点必须能在
+/// 完整源码闭包内实例化依赖函数，不能因为种子不在本模块而跳过。
+/// `dispatch` 是声明期冻结的成员分派表，用于解析 [`MirOperand::Requirement`]。
+pub(super) fn materialize_generic_call_instances(
+    functions: &mut Vec<MirFunction>,
+    next_instance: &mut u32,
+    seed_pool: &[MirFunction],
+    dispatch: &[MirDispatchEntry],
+    diagnostics: &mut Vec<MirDiagnostic>,
+) {
+    let mut cache = MonomorphCache::new();
     let mut cursor = 0usize;
     while cursor < functions.len() {
-        let sites = collect_instantiation_sites(&functions[cursor], functions);
+        let sites = collect_instantiation_sites(&functions[cursor], functions, seed_pool);
         for (block_index, instruction_index, seed, concrete_return, substitutions) in sites {
-            let mono = if let Some(existing) = cache.get(&(seed, substitutions.clone())).copied() {
-                existing
-            }
+            let Some(seed_function) =
+                functions.iter().find(|function| function.instance == Some(seed)).or_else(|| {
+                    seed_pool.iter().find(|function| function.instance == Some(seed))
+                }).cloned()
             else {
-                let seed_function =
-                    functions.iter().find(|function| function.instance == Some(seed)).cloned().expect("seed callable must exist");
-                let specialized = specialize_function(&seed_function, &concrete_return, &substitutions, *next_instance);
-                let instance = specialized.instance.expect("specialized callable must receive instance");
-                *next_instance = next_instance.saturating_add(1);
-                cache.insert((seed, substitutions), instance);
-                functions.push(specialized);
-                instance
+                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
+                    symbol: format!("generic seed `{seed}` has no lowered definition"),
+                });
+                continue;
+            };
+            let Some(mono) = instantiate_seed(&seed_function, &concrete_return, &substitutions, functions, next_instance, &mut cache)
+            else {
+                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
+                    symbol: format!("generic seed `{}` cannot be fully substituted", seed_function.symbol),
+                });
+                continue;
             };
             if let MirOperation::Call { callee, .. } = &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind {
                 *callee = MirOperand::Callable(mono);
+            }
+        }
+        let requirement_sites = collect_requirement_sites(&functions[cursor]);
+        for (block_index, instruction_index, requirement) in requirement_sites {
+            // 种子自身仍带泛型 binder：具体 witness 由调用点的 monomorph 决定。
+            // 未实例化的种子不产生诊断，也不会被当成入口链接。
+            if contains_unresolved_generic(&requirement.subject) {
+                continue;
+            }
+            let result_type = functions[cursor].blocks[block_index].instructions[instruction_index]
+                .results
+                .first()
+                .and_then(|result| functions[cursor].value_types.get(result).cloned());
+            match resolve_requirement_callee(
+                &requirement,
+                result_type.as_ref(),
+                functions,
+                seed_pool,
+                dispatch,
+                next_instance,
+                &mut cache,
+            ) {
+                Ok(mono) => {
+                    if let MirOperation::Call { callee, .. } =
+                        &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind
+                    {
+                        *callee = MirOperand::Callable(mono);
+                    }
+                }
+                Err(detail) => diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: detail }),
             }
         }
         cursor += 1;
     }
 }
 
+/// 按完整代入物化种子；签名仍含未代入 binder 时失败，不生成半成品实例。
+fn instantiate_seed(
+    seed: &MirFunction,
+    concrete_return: &ValkyrieType,
+    substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
+    functions: &mut Vec<MirFunction>,
+    next_instance: &mut u32,
+    cache: &mut MonomorphCache,
+) -> Option<ItemInstanceId> {
+    let seed_instance = seed.instance?;
+    if let Some(existing) = cache.get(&(seed_instance, substitutions.clone())).copied() {
+        return Some(existing);
+    }
+    let specialized = specialize_function(seed, concrete_return, substitutions, *next_instance);
+    if specialized.param_types.iter().any(contains_unresolved_generic) || contains_unresolved_generic(&specialized.return_type) {
+        return None;
+    }
+    let instance = specialized.instance?;
+    *next_instance = next_instance.saturating_add(1);
+    cache.insert((seed_instance, substitutions.clone()), instance);
+    functions.push(specialized);
+    Some(instance)
+}
+
+/// 用成员分派表解析延迟要求：按 trait 身份、成员名与目标类型统一选唯一 witness。
+///
+/// 0 个或多个匹配都必须结构化失败；不得按同名候选、默认 impl 或目标特判补选。
+fn resolve_requirement_callee(
+    requirement: &MirCallRequirement,
+    result_type: Option<&ValkyrieType>,
+    functions: &mut Vec<MirFunction>,
+    seed_pool: &[MirFunction],
+    dispatch: &[MirDispatchEntry],
+    next_instance: &mut u32,
+    cache: &mut MonomorphCache,
+) -> Result<ItemInstanceId, String> {
+    let mut matches = Vec::new();
+    for entry in dispatch {
+        if entry.member != requirement.member || entry.trait_declaration != requirement.trait_declaration {
+            continue;
+        }
+        let mut substitutions = BTreeMap::new();
+        if !unify_generic_instantiation(&entry.target, &requirement.subject, &mut substitutions) {
+            continue;
+        }
+        matches.push((entry, substitutions));
+    }
+    let (entry, substitutions) = match matches.len() {
+        0 => {
+            return Err(format!(
+                "member `{}` on `{:?}` has no impl witness in the frozen dispatch table",
+                requirement.member, requirement.subject
+            ));
+        }
+        1 => matches.pop().expect("one dispatch match"),
+        count => {
+            return Err(format!("member `{}` on `{:?}` has {count} ambiguous impl witnesses", requirement.member, requirement.subject));
+        }
+    };
+    let Some(seed) =
+        functions.iter().find(|function| function.instance == Some(entry.instance)).or_else(|| {
+            seed_pool.iter().find(|function| function.instance == Some(entry.instance))
+        }).cloned()
+    else {
+        return Err(format!(
+            "member `{}` dispatch instance `{}` has no lowered definition",
+            requirement.member, entry.instance
+        ));
+    };
+    if !contains_unresolved_generic(&seed.return_type) && !seed.param_types.iter().any(contains_unresolved_generic) {
+        return Ok(entry.instance);
+    }
+    let concrete_return =
+        result_type.cloned().unwrap_or_else(|| apply_type_substitution(&seed.return_type, &substitutions));
+    instantiate_seed(&seed, &concrete_return, &substitutions, functions, next_instance, cache).ok_or_else(|| {
+        format!("member `{}` witness cannot be fully substituted", requirement.member)
+    })
+}
+
+fn collect_requirement_sites(function: &MirFunction) -> Vec<(usize, usize, MirCallRequirement)> {
+    let mut sites = Vec::new();
+    for (block_index, block) in function.blocks.iter().enumerate() {
+        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            if let MirOperation::Call { callee: MirOperand::Requirement(requirement), .. } = &instruction.kind {
+                sites.push((block_index, instruction_index, requirement.clone()));
+            }
+        }
+    }
+    sites
+}
+
 fn collect_instantiation_sites(
     function: &MirFunction,
     functions: &[MirFunction],
+    seed_pool: &[MirFunction],
 ) -> Vec<(usize, usize, ItemInstanceId, ValkyrieType, BTreeMap<GenericBinderId, ValkyrieType>)> {
     let mut sites = Vec::new();
     for (block_index, block) in function.blocks.iter().enumerate() {
@@ -167,7 +393,10 @@ fn collect_instantiation_sites(
             else {
                 continue;
             };
-            let Some(seed_function) = functions.iter().find(|candidate| candidate.instance == Some(*seed))
+            let Some(seed_function) =
+                functions.iter().find(|candidate| candidate.instance == Some(*seed)).or_else(|| {
+                    seed_pool.iter().find(|candidate| candidate.instance == Some(*seed))
+                })
             else {
                 continue;
             };
@@ -247,6 +476,11 @@ fn specialize_operation(operation: &mut MirOperation, substitutions: &BTreeMap<G
             for argument in type_args.iter_mut() {
                 *argument = apply_type_substitution(argument, substitutions);
             }
+        }
+        // 种子内的延迟成员要求随种子代入改写接收者；未闭合的要求保留到下一次
+        // 实例化，由分派表按完整代入选择 witness。
+        MirOperation::Call { callee: MirOperand::Requirement(requirement), .. } => {
+            requirement.subject = apply_type_substitution(&requirement.subject, substitutions);
         }
         _ => {}
     }

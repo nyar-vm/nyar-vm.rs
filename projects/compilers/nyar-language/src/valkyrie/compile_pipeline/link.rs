@@ -66,7 +66,18 @@ pub fn link_reachable_dependency_mir(
         remap_function_aggregates(function, &remaps[0])?;
     }
     let mut visited = BTreeSet::new();
-    let mut pending = consumer.functions.iter().filter_map(|function| function.instance).collect::<Vec<_>>();
+    // 链接根只取已冻结的出口/入口实例；泛型种子等不可达实例不参与传播，
+    // 否则会拉入未闭合的 requirement 或无关依赖。无出口合同的分析用闭包
+    // 以已实例化函数为根。
+    let mut pending = consumer
+        .exports
+        .iter()
+        .filter_map(|export| export.instance)
+        .chain(consumer.entries.iter().filter_map(|entry| entry.instance))
+        .collect::<Vec<_>>();
+    if pending.is_empty() {
+        pending = consumer.functions.iter().filter_map(|function| function.instance).collect();
+    }
     while let Some(instance) = pending.pop() {
         if !visited.insert(instance) {
             continue;

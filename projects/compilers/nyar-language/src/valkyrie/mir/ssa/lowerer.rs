@@ -24,14 +24,30 @@ impl MirLowerer {
     /// Lowers HIR to semantic MIR (PerformEffect intact, no state-machine rewrite).
     ///
     /// 单模块路径：monomorph `ItemInstanceId` 从本模块已有实例之后分配。
-    /// 跨包闭包须用 [`Self::lower_module_semantic_with_mono_counter`]。
+    /// 跨包闭包须用 [`Self::lower_module_semantic_with_closure_context`]。
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
         let mut next_mono = None;
-        Self::lower_module_semantic_with_mono_counter(module, &mut next_mono)
+        let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
+        Self::lower_module_semantic_with_closure_context(module, &mut next_mono, &[], &dispatch)
     }
 
     /// 跨包闭包：`mono_counter` 为全局实例游标；`None` 时回退为本模块 `max+1`。
+    ///
+    /// 单模块入口：种子池与分派表仅覆盖本模块；依赖模块的泛型种子须用
+    /// [`Self::lower_module_semantic_with_closure_context`]。
     pub fn lower_module_semantic_with_mono_counter(module: &HirModule, mono_counter: &mut Option<u32>) -> MirModule {
+        let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
+        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch)
+    }
+
+    /// 跨包闭包上下文：`seed_pool` 提供已 lowering 的依赖模块函数，
+    /// `dispatch` 提供完整源码闭包冻结的成员分派表。
+    pub fn lower_module_semantic_with_closure_context(
+        module: &HirModule,
+        mono_counter: &mut Option<u32>,
+        seed_pool: &[MirFunction],
+        dispatch: &[generic_call_instantiation::MirDispatchEntry],
+    ) -> MirModule {
         let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
         crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
         merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
@@ -112,7 +128,7 @@ impl MirLowerer {
         if *next_mono < local_floor {
             *next_mono = local_floor;
         }
-        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono);
+        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono, seed_pool, dispatch, &mut diagnostics);
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
