@@ -44,6 +44,7 @@ fn resolved_call_result_comes_from_its_signature() {
                 parameter_types: Vec::new(),
                 has_receiver: false,
                 extractor_payload_type: None,
+                requirement: None,
             }),
         },
         span: span(),

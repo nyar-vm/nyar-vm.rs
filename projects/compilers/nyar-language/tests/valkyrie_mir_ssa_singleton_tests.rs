@@ -436,6 +436,9 @@ imply SwissTable<K, V> {
                     MirOperand::Symbol(symbol) => {
                         panic!("block {} jump to {} arg {} is bare symbol {:?}", block.id.0, target.0, index, symbol);
                     }
+                    MirOperand::Requirement(requirement) => {
+                        panic!("block {} jump to {} arg {} is an unresolved requirement {:?}", block.id.0, target.0, index, requirement);
+                    }
                 };
                 assert!(ty.is_some(), "block {} jump to {} arg {} has no SSA type: {:?}", block.id.0, target.0, index, argument);
             }

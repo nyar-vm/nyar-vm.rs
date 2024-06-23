@@ -1,20 +1,15 @@
 use nyar_language::{
     CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler,
     valkyrie::{
-        frontend::ParseError,
         hir::lowering::DEFAULT_COMPILE_ARCH,
         types::hir::{HirExprKind, HirFunction, HirStatementKind, types::ValkyrieType},
     },
 };
 
 #[test]
-fn source_parse_error_identifies_file_and_preserves_local_offset() {
+fn entry_source_group_parse_failure_reports_file_and_reason() {
     let source = "micro broken() { value = }";
     let direct = nyar_language::valkyrie::frontend::parse_source(source).expect_err("语法必须失败");
-    let ParseError::Invalid { span: expected_span, .. } = direct
-    else {
-        panic!("缺少语法诊断")
-    };
     let groups = vec![CompilerSourceGroup::from_source_files(
         "broken.package",
         "broken.package",
@@ -22,12 +17,12 @@ fn source_parse_error_identifies_file_and_preserves_local_offset() {
         vec![],
     )];
     let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("不能生成残缺 HIR");
-    let ParseError::Invalid { message, span } = error
-    else {
-        panic!("缺少语法诊断")
-    };
-    assert_eq!(span, expected_span);
-    assert!(message.contains("broken.package") && message.contains("source/broken.v"), "{message}");
+    // 入口文件没有可索引声明：失败必须保留入口组、文件路径与底层解析原因，
+    // 而不是把无法建立入口的文件当成可执行程序继续 lowering。
+    let text = error.to_string();
+    assert!(text.contains("broken.package"), "{text}");
+    assert!(text.contains("source/broken.v"), "{text}");
+    assert!(text.contains(&direct.to_string()), "{text}");
 }
 
 #[test]
@@ -42,7 +37,7 @@ fn compiler_selects_reachable_files_from_inventory() {
             ],
             direct_dependencies: vec![],
         },
-        CompilerSourceGroup::single_source("app", "app", "micro run() -> i32 { let value: i32 = answer(); return value }")
+        CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { let value: i32 = answer(); return value }")
             .with_direct_dependencies(vec!["library".into()]),
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("Compiler 自行选择可达声明");
@@ -74,7 +69,7 @@ fn compiler_owned_plan_skips_unreachable_files() {
             direct_dependencies: vec![],
             ..Default::default()
         },
-        CompilerSourceGroup::single_source("app", "app", "micro run() -> i32 { return answer() }")
+        CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { return answer() }")
             .with_direct_dependencies(vec!["library".into()]),
     ];
     let modules =
@@ -108,7 +103,7 @@ fn declaration_identity_survives_dependency_export_and_call_selection() {
             name: "app".into(),
             sources: vec![CompilerSourceFile {
                 path: "app.v".into(),
-                source: "micro run() -> i32 { let value: i32 = answer(); return value }".into(),
+                source: "[export] micro run() -> i32 { let value: i32 = answer(); return value }".into(),
             }],
             direct_dependencies: vec!["library".into()],
         },
@@ -190,7 +185,7 @@ fn materialized_group_does_not_grant_undeclared_dependency_visibility() {
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main() -> i32 { return answer() }".into() }],
+            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() -> i32 { return answer() }".into() }],
             direct_dependencies: Vec::new(),
         },
     ];
@@ -210,7 +205,7 @@ fn compiler_owns_dependency_group_linking() {
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main() -> i32 { return answer() }".into() }],
+            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() -> i32 { return answer() }".into() }],
             direct_dependencies: vec!["core".into()],
         },
     ];
@@ -240,7 +235,7 @@ fn compiler_links_transitive_calls_by_instance_and_excludes_unused_bodies() {
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro run() -> i32 { return relay() }".into() }],
+            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro run() -> i32 { return relay() }".into() }],
             direct_dependencies: vec!["library".into()],
         },
     ];
@@ -349,7 +344,7 @@ fn compiler_rejects_unknown_dependency_identity() {
     let groups = vec![CompilerSourceGroup {
         dependency_key: "app".into(),
         name: "app".into(),
-        sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
+        sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() { return }".into() }],
         direct_dependencies: vec!["missing".into()],
         ..Default::default()
     }];

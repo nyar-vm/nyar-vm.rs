@@ -69,7 +69,7 @@ pub fn compile_source_groups_to_artifacts(
     generate_runtime_config: bool,
 ) -> Result<CompilerArtifactReport> {
     let bundle = compile_source_groups_to_backend_bundle(compiler, groups, context)?;
-    let evidence = CompilerCompileEvidence::from_success(groups, &bundle.compiled_program, &context.selected_host_providers);
+    let evidence = CompilerCompileEvidence::from_success(groups, &context.arch, &bundle.compiled_program, &context.selected_host_providers);
     let driver = nyar_emitter::compile_frontend_bundle_with_bundled_backends(
         &bundle,
         output_dir,

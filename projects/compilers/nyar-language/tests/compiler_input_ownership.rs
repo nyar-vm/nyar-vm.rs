@@ -14,7 +14,7 @@ fn group(key: &str, source: &str, dependencies: &[&str]) -> CompilerSourceGroup 
 #[test]
 fn unused_inventory_never_materializes_and_names_do_not_affect_selection() {
     for key in ["unused_package", "other_inventory", "third_dependency"] {
-        let groups = [group(key, "micro broken() { value = }", &[]), group("app", "micro run() -> i32 { return 23 }", &[key])];
+        let groups = [group(key, "micro broken() { value = }", &[]), group("app", "[export] micro run() -> i32 { return 23 }", &[key])];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("未被需求的组是合法空模块");
         assert!(modules[0].functions.is_empty());
         assert_eq!(modules[1].functions.len(), 1);
@@ -25,7 +25,7 @@ fn unused_inventory_never_materializes_and_names_do_not_affect_selection() {
 fn compiler_discovers_reachable_declarations_without_caller_plan() {
     let mut library = group("library", "micro answer() -> i32 { return 23 }", &[]);
     library.sources.push(CompilerSourceFile { path: "broken.v".into(), source: "micro broken() { value = }".into() });
-    let groups = [library, group("app", "micro run() -> i32 { return answer() }", &["library"])];
+    let groups = [library, group("app", "[export] micro run() -> i32 { return answer() }", &["library"])];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("Compiler 选择并绑定可达调用");
     assert_eq!(modules[0].functions.len(), 1);
     assert!(modules[0].functions[0].declaration.is_some());
@@ -45,23 +45,25 @@ fn malformed_identity_and_dependency_order_fail_before_parsing() {
 
 #[test]
 fn evidence_is_computed_from_source_and_dependency_edges() {
-    let baseline =
-        [group("library", "micro answer() -> i32 { return 23 }", &[]), group("app", "micro run() -> i32 { return answer() }", &["library"])];
-    let first = semantic_closure_hash_for_groups(&baseline);
+    let baseline = [
+        group("library", "micro answer() -> i32 { return 23 }", &[]),
+        group("app", "[export] micro run() -> i32 { return answer() }", &["library"]),
+    ];
+    let first = semantic_closure_hash_for_groups(&baseline, "wasm32");
     let mut changed = baseline.clone();
     changed[0].sources[0].source = "micro answer() -> i32 { return 24 }".into();
-    assert_ne!(first, semantic_closure_hash_for_groups(&changed));
+    assert_ne!(first, semantic_closure_hash_for_groups(&changed, "wasm32"));
     let mut changed = baseline.clone();
     changed[1].direct_dependencies.clear();
-    assert_ne!(first, semantic_closure_hash_for_groups(&changed));
+    assert_ne!(first, semantic_closure_hash_for_groups(&changed, "wasm32"));
     let mut changed = baseline;
     changed[0].sources.push(CompilerSourceFile { path: "unused.v".into(), source: "micro ignored() -> i32 { return 42 }".into() });
-    assert_eq!(first, semantic_closure_hash_for_groups(&changed));
+    assert_eq!(first, semantic_closure_hash_for_groups(&changed, "wasm32"));
 }
 
 #[test]
 fn empty_brace_namespace_and_pruned_namespace_cannot_change_following_scope() {
-    let groups = [group("app", "namespace hidden {} micro run() -> i32 { return 23 }", &[])];
+    let groups = [group("app", "namespace hidden {} [export] micro run() -> i32 { return 23 }", &[])];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("空 namespace 保持作用域边界");
     assert_eq!(modules[0].functions.len(), 1);
     assert!(modules[0].functions[0].declaring_namespace.parts().is_empty());

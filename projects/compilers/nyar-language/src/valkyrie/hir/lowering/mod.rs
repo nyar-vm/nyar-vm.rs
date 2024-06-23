@@ -254,7 +254,7 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
 mod expr_lowering;
 mod macro_expand;
 mod template_const;
-mod template_expand;
+pub(crate) mod template_expand;
 mod vx;
 
 pub use super::CaptureAnalyzer;
@@ -722,7 +722,7 @@ impl ValkyrieCompiler {
     #[doc(hidden)]
     pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, ParseError> {
         validate_source_groups(groups)?;
-        let closure = source_group_closure(groups);
+        let closure = source_group_closure(groups, arch).map_err(|error| ParseError::invalid(error.to_string()))?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;

@@ -14,7 +14,7 @@ fn plan_from_groups(groups: &[(&str, bool, Vec<(String, String)>)]) -> SemanticC
             files: files.as_slice(),
         })
         .collect::<Vec<_>>();
-    plan_semantic_closure(&inputs)
+    plan_semantic_closure(&inputs, "wasm32").expect("semantic closure planning succeeds")
 }
 
 /// 显式声明依赖可见性的夹具：用于验证「未声明的依赖组不构成可见性」。
@@ -29,7 +29,7 @@ fn plan_with_visibility(groups: &[(&str, bool, Vec<(String, String)>)], visibili
             files: files.as_slice(),
         })
         .collect::<Vec<_>>();
-    plan_semantic_closure(&inputs)
+    plan_semantic_closure(&inputs, "wasm32").expect("semantic closure planning succeeds")
 }
 
 fn file(path: &str, source: &str) -> (String, String) {
@@ -44,7 +44,7 @@ fn unreachable_inventory_syntax_error_does_not_expand_into_body_paths() {
             false,
             vec![file("source/good.v", "micro answer() -> i32 { return 23 }"), file("source/broken.v", "micro broken() { value = }")],
         ),
-        ("app", true, vec![file("solution.v", "micro run() -> i32 { let value: i32 = answer(); return value }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { let value: i32 = answer(); return value }")]),
     ];
     let closure = plan_from_groups(&groups);
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/good.v".into()]));
@@ -57,10 +57,32 @@ fn unreachable_inventory_syntax_error_does_not_expand_into_body_paths() {
 }
 
 #[test]
-fn entry_group_keeps_all_files_in_body_paths() {
-    let groups = [("app", true, vec![file("solution.v", "micro broken() { value = }")])];
+fn entry_group_without_entry_declaration_is_structured_failure() {
+    let groups = [("app", true, vec![file("solution.v", "micro run() -> i32 { return 23 }")])];
+    let inputs = [ClosureGroupInput { dependency_key: "app", direct_dependencies: &[], is_entry: true, files: groups[0].2.as_slice() }];
+    let error = plan_semantic_closure(&inputs, "wasm32").expect_err("entry group without `[export]`/`[main]` must fail");
+    assert_eq!(error, SemanticClosureError::MissingEntryDeclaration { dependency_key: "app".to_string(), unindexed_source_files: Vec::new() });
+}
+
+#[test]
+fn entry_group_body_paths_follow_explicit_entry_declarations_only() {
+    let groups = [(
+        "app",
+        true,
+        vec![file("solution.v", "[export] micro run() -> i32 { return 23 }"), file("source/not_entry.v", "micro helper() -> i32 { return 1 }")],
+    )];
     let closure = plan_from_groups(&groups);
+    // 入口组不是「整组文件都是程序」：未注解声明既不进入 seed，也不下沉其文件。
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
+    assert!(!closure.demanded_declarations.iter().any(|key| key.name == "helper"));
+}
+
+#[test]
+fn main_annotation_is_an_entry_seed() {
+    let groups = [("app", true, vec![file("main.v", "[main] micro start() -> i32 { return 1 }")])];
+    let closure = plan_from_groups(&groups);
+    assert!(closure.demanded_declarations.iter().any(|key| key.name == "start"));
+    assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["main.v".into()]));
 }
 
 #[test]
@@ -68,7 +90,7 @@ fn transitive_cross_package_symbol_pulls_base_dependency_file() {
     let groups = [
         ("base", false, vec![file("source/answer.v", "micro answer() -> i32 { return 23 }")]),
         ("library", false, vec![file("source/relay.v", "micro relay() -> i32 { return answer() }")]),
-        ("app", true, vec![file("solution.v", "micro run() -> i32 { return relay() }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return relay() }")]),
     ];
     let closure = plan_from_groups(&groups);
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/answer.v".into()]));
@@ -83,7 +105,7 @@ fn cross_package_reachable_symbol_pulls_dependency_file_into_closure() {
             false,
             vec![file("source/answer.v", "micro answer() -> i32 { return 23 }"), file("source/unused.v", "micro unused() -> i32 { return 0 }")],
         ),
-        ("app", true, vec![file("solution.v", "micro run() -> i32 { return answer() }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return answer() }")]),
     ];
     let closure = plan_from_groups(&groups);
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/answer.v".into()]));
@@ -101,7 +123,7 @@ fn namespace_chain_does_not_pull_same_name_from_other_namespace() {
                 file("source/b.v", "namespace b;\nmicro helper() -> i32 { return 2 }"),
             ],
         ),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run() -> i32 { return helper() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run() -> i32 { return helper() }")]),
     ];
     let closure = plan_from_groups(&groups);
     assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/a.v".into()]));
@@ -118,7 +140,7 @@ fn member_reference_resolves_within_namespace_before_global_fallback() {
                 file("source/b.v", "namespace b;\nstructure T { _x: i32 }\nimply T { micro is_empty(self): bool { return true } }"),
             ],
         ),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: S) -> bool { return s.is_empty() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run(s: S) -> bool { return s.is_empty() }")]),
     ];
     let closure = plan_from_groups(&groups);
     let lowered = &closure.groups[0].body_lowering_source_paths;
@@ -134,7 +156,7 @@ fn declared_member_pulls_owning_aggregate_shell() {
             false,
             vec![file("source/hash.v", "namespace a;\nstructure S { _x: i32 }\nimply S { micro hash(self): usize { return 0 } }")],
         ),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: S) -> usize { return s.hash() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run(s: S) -> usize { return s.hash() }")]),
     ];
     let closure = plan_from_groups(&groups);
     let demanded = &closure.groups[0].body_lowering_declarations;
@@ -156,7 +178,7 @@ fn undemanded_impl_witness_keeps_its_shell_out_of_closure() {
                 ),
             ],
         ),
-        ("app", true, vec![file("solution.v", "namespace std.collection;\nmicro run(s: S) -> bool { return true }")]),
+        ("app", true, vec![file("solution.v", "namespace std.collection;\n[export] micro run(s: S) -> bool { return true }")]),
     ];
     let closure = plan_from_groups(&groups);
     let lowered = &closure.groups[0].body_lowering_source_paths;
@@ -181,7 +203,10 @@ fn qualified_constructor_resolves_through_dependency_visibility() {
         (
             "app",
             true,
-            vec![file("solution.v", "namespace leetcode.two_sum;\nmicro two_sum(size: usize) -> HashMap<i32, i32> { return HashMap::new(0) }")],
+            vec![file(
+                "solution.v",
+                "namespace leetcode.two_sum;\n[export] micro two_sum(size: usize) -> HashMap<i32, i32> { return HashMap::new(0) }",
+            )],
         ),
     ];
     let closure = plan_from_groups(&groups);
@@ -202,7 +227,7 @@ fn member_selector_promotes_used_member_and_skips_unused() {
                 "namespace a;\nstructure S { _x: i32 }\nimply S { micro used(self): bool { return true }\nmicro unused(self): bool { return true } }",
             )],
         ),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: S) -> bool { return s.used() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run(s: S) -> bool { return s.used() }")]),
     ];
     let closure = plan_from_groups(&groups);
     let demanded = &closure.groups[0].body_lowering_declarations;
@@ -215,7 +240,7 @@ fn member_selector_promotes_used_member_and_skips_unused() {
 fn reference_into_undeclared_dependency_group_is_not_demanded() {
     let groups = [
         ("library", false, vec![file("source/answer.v", "micro answer() -> i32 { return 23 }")]),
-        ("app", true, vec![file("solution.v", "micro run() -> i32 { return answer() }")]),
+        ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return answer() }")]),
     ];
     let visibility: &[&[&str]] = &[&[], &[]];
     let closure = plan_with_visibility(&groups, visibility);
@@ -226,7 +251,7 @@ fn reference_into_undeclared_dependency_group_is_not_demanded() {
 
 #[test]
 fn closure_digest_is_stable_for_identical_input() {
-    let groups = [("app", true, vec![file("solution.v", "micro run() -> i32 { return 23 }")])];
+    let groups = [("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 23 }")])];
     let first = plan_from_groups(&groups);
     let second = plan_from_groups(&groups);
     assert_eq!(first.digest, second.digest);
@@ -235,8 +260,8 @@ fn closure_digest_is_stable_for_identical_input() {
 
 #[test]
 fn closure_digest_binds_demanded_source_content() {
-    let baseline = [("app", true, vec![file("solution.v", "micro run() -> i32 { return 23 }")])];
-    let changed = [("app", true, vec![file("solution.v", "micro run() -> i32 { return 24 }")])];
+    let baseline = [("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 23 }")])];
+    let changed = [("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return 24 }")])];
     assert_ne!(plan_from_groups(&baseline).digest, plan_from_groups(&changed).digest);
 }
 
@@ -245,7 +270,7 @@ fn closure_digest_ignores_unreachable_dependency_body_change() {
     let groups = |body: &str| {
         [
             ("library", false, vec![file("source/answer.v", "micro answer() -> i32 { return 23 }"), file("source/unused.v", body)]),
-            ("app", true, vec![file("solution.v", "micro run() -> i32 { return answer() }")]),
+            ("app", true, vec![file("solution.v", "[export] micro run() -> i32 { return answer() }")]),
         ]
     };
     let first = plan_from_groups(&groups("micro unused() -> i32 { return 1 }"));
@@ -272,7 +297,7 @@ fn operator_use_site_promotes_receiver_operator_member() {
                 "namespace std.collection;\nmicro hash_utf8(n: usize) -> usize {\n    let mut i: usize = 0\n    while i < n {\n        i = i + 1\n    }\n    return i\n}",
             )],
         ),
-        ("app", true, vec![file("solution.v", "namespace app;\nmicro run() -> usize { return hash_utf8(3) }")]),
+        ("app", true, vec![file("solution.v", "namespace app;\n[export] micro run() -> usize { return hash_utf8(3) }")]),
     ];
     let closure = plan_from_groups(&groups);
     let demanded = &closure.groups[0].body_lowering_declarations;
@@ -288,7 +313,7 @@ fn operator_use_site_promotes_receiver_operator_member() {
 fn bare_member_selector_never_resolves_to_any_member_declaration() {
     let groups = [
         ("library", false, vec![file("source/s.v", "namespace a;\nstructure S { _x: i32 }\nimply S { micro hash(self): usize { return 0 } }")]),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run() -> usize { return hash() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run() -> usize { return hash() }")]),
     ];
     let closure = plan_from_groups(&groups);
     // 成员选择名不建立全库同名索引：没有接收者类型事实时，裸名 `hash` 不得命中任何成员声明，
@@ -311,7 +336,7 @@ fn member_selector_promotes_only_demanded_aggregate_owner() {
                 file("source/bitset.v", "namespace a;\nstructure BitSet { _x: i32 }\nimply BitSet { micro hash(self): usize { return 0 } }"),
             ],
         ),
-        ("app", true, vec![file("solution.v", "namespace a;\nmicro run(s: SwissTable) -> usize { return s.hash() }")]),
+        ("app", true, vec![file("solution.v", "namespace a;\n[export] micro run(s: SwissTable) -> usize { return s.hash() }")]),
     ];
     let closure = plan_from_groups(&groups);
     let demanded = &closure.groups[0].body_lowering_declarations;
@@ -336,7 +361,7 @@ fn member_owner_identity_is_resolved_through_type_alias() {
                 file("source/hash/HashPrimitives.v", "namespace std.collection;\nimply utf8: Hash { micro hash(self): usize { return 0 } }"),
             ],
         ),
-        ("app", true, vec![file("solution.v", "namespace app;\nmicro run(s: utf8) -> usize { return s.hash() }")]),
+        ("app", true, vec![file("solution.v", "namespace app;\n[export] micro run(s: utf8) -> usize { return s.hash() }")]),
     ];
     let closure = plan_from_groups(&groups);
     let demanded = &closure.groups[0].body_lowering_declarations;
@@ -353,7 +378,7 @@ fn member_owner_link_is_gated_by_owner_group_visibility() {
     let groups = [
         ("core", false, vec![file("source/primitive/i64.v", "namespace core.primitive;\nstructure i64 { }")]),
         ("std", false, vec![file("source/hash.v", "namespace std.collection;\nimply i64: Hash { micro hash(self): usize { return 0 } }")]),
-        ("app", true, vec![file("solution.v", "namespace app;\nmicro run(x: i64) -> usize { return x.hash() }")]),
+        ("app", true, vec![file("solution.v", "namespace app;\n[export] micro run(x: i64) -> usize { return x.hash() }")]),
     ];
     // 成员与拥有者跨依赖组：std 的 `imply i64: Hash` 与 core 的 `structure i64` 按声明身份连接。
     let visible = plan_with_visibility(&groups, &[&[], &["core"], &["core", "std"]]);

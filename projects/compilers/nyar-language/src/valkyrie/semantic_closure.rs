@@ -26,7 +26,7 @@ use crate::valkyrie::{
 };
 
 /// 闭包规划版本；规划语义变化必须递增，旧摘要不得跨版本复用。
-const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v0";
+const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 
 /// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -53,6 +53,15 @@ pub enum DeclarationKind {
     Method,
     /// trait 实现方法声明。
     ImplyMethod,
+}
+
+/// 显式入口注解身份：入口组 seed 的唯一事实来源。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EntryPointKind {
+    /// `[export]`：产物导出入口。
+    Export,
+    /// `[main]`：程序入口。
+    Main,
 }
 
 impl DeclarationKind {
@@ -143,6 +152,8 @@ pub struct DeclarationIndexEntry {
     /// 关联必须在整个 inventory 索引完成后按**声明身份**解析，不能按「拥有者短名 + namespace」
     /// 直接连接：成员与其拥有者可以在不同依赖组（`imply i64: Hash` 在 std，`structure i64` 在 core）。
     pub link: Option<DeclarationLink>,
+    /// 显式入口身份（`[export]` / `[main]`）；只有它能让入口组产生 seed。
+    pub entry_point: Option<EntryPointKind>,
     /// 该声明签名与函数体内出现的名字路径（未解析）。
     pub references: BTreeSet<ReferencePath>,
     /// 该声明签名与函数体内出现的**成员选择名**（`x.get(…)`、`a + b`、`a[i]`）。
@@ -194,9 +205,43 @@ pub struct ClosureGroupInput<'a> {
     pub files: &'a [(String, String)],
 }
 
+/// 语义闭包规划的结构化失败。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticClosureError {
+    /// 入口组没有提供任何 `[export]` / `[main]` 声明：不得把整组文件当作可执行程序。
+    MissingEntryDeclaration {
+        /// 失败入口组身份。
+        dependency_key: String,
+        /// 入口组内未能建立索引的文件（路径、原因）；为空表示文件可解析但没有入口注解。
+        unindexed_source_files: Vec<(String, String)>,
+    },
+}
+
+impl std::fmt::Display for SemanticClosureError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingEntryDeclaration { dependency_key, unindexed_source_files } => {
+                write!(formatter, "entry source group `{dependency_key}` declares no `[export]` or `[main]` entry")?;
+                if !unindexed_source_files.is_empty() {
+                    write!(formatter, "; unindexed sources:")?;
+                    for (path, reason) in unindexed_source_files {
+                        write!(formatter, " {path}: {reason};")?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for SemanticClosureError {}
+
 /// 从不可变源码输入计算 Compiler 内部选择。依赖顺序末项是唯一入口组，
 /// 与完整编译入口消费最后一个 HIR 模块的合同一致；装配层不能提交语义计划。
-pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup]) -> SemanticClosure {
+///
+/// `arch` 是 TGrammar 模板展开的目标键：索引必须在与 HIR lowering 相同的展开结果上
+/// 识别 `[export]` / `[main]`，否则模板分支内的入口声明不可见。
+pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup], arch: &str) -> Result<SemanticClosure, SemanticClosureError> {
     let owned = groups
         .iter()
         .map(|group| group.sources.iter().map(|file| (file.path.clone(), file.source.clone())).collect::<Vec<_>>())
@@ -215,11 +260,11 @@ pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup]) -> Sem
             files: files.as_slice(),
         })
         .collect::<Vec<_>>();
-    plan_semantic_closure(&inputs)
+    plan_semantic_closure(&inputs, arch)
 }
 
-/// 从入口组与其依赖 inventory 规划完整语义闭包。
-pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosure {
+/// 从入口组与其依赖 inventory 规划完整语义闭包；`arch` 决定 TGrammar 模板分支。
+pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>], arch: &str) -> Result<SemanticClosure, SemanticClosureError> {
     let inventory = groups.iter().map(|group| group.dependency_key).collect::<BTreeSet<_>>();
     // 可见性：本组 + 直接依赖组。这是闭包允许跨组命中声明的唯一范围；
     // 装配层未声明的依赖组不构成可见性，跨组全局名字回退一律不存在。
@@ -245,7 +290,7 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
 
     for group in groups.iter() {
         for (path, source) in group.files.iter() {
-            match index_source_file(group.dependency_key, path, source) {
+            match index_source_file(group.dependency_key, path, source, arch) {
                 Ok(indexed) => {
                     for entry in &indexed.declarations {
                         indexes.register(entry.clone());
@@ -275,21 +320,41 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
         if !group.is_entry {
             continue;
         }
-        // 入口文件整体是待编译程序：文件进入 body lowering，且其声明的引用参与闭包展开。
+        // 入口组只为显式 `[export]` / `[main]` 声明提供 seed。
+        // 「文件属于入口组」或「组顺序末项」都不是需求事实，不能提升组内全部声明。
+        let mut seeded = false;
         for (path, _) in group.files.iter() {
             let file_id = (group.dependency_key.to_string(), path.clone());
             let Some(indexed) = indexed_files.get(&file_id)
             else {
                 continue;
             };
-            for entry in &indexed.declarations {
-                queue.push_back(entry.key.clone());
+            if !indexed.declarations.iter().any(|entry| entry.entry_point.is_some()) {
+                continue;
             }
-            // 文件级 `using`/顶层语句的引用必须与声明引用一起展开，
-            // 否则只含模块级语句的入口文件会缺依赖。
+            for entry in &indexed.declarations {
+                if entry.entry_point.is_some() {
+                    queue.push_back(entry.key.clone());
+                    seeded = true;
+                }
+            }
+            // 入口声明所在文件的 `using`/顶层语句是程序的一部分，
+            // 必须与声明引用一起展开，否则只含模块级语句的文件会缺依赖。
             if touched_files.insert(file_id) {
                 push_scoped_references(indexed, group.dependency_key, &visibility, &indexes, &mut selectors, &mut queue);
             }
+        }
+        if !seeded {
+            let prefix = format!("{}::", group.dependency_key);
+            let unindexed_source_files = unindexed_source_files
+                .range(prefix.clone()..)
+                .take_while(|(file, _)| file.starts_with(&prefix))
+                .map(|(file, reason)| (file[prefix.len()..].to_string(), reason.clone()))
+                .collect();
+            return Err(SemanticClosureError::MissingEntryDeclaration {
+                dependency_key: group.dependency_key.to_string(),
+                unindexed_source_files,
+            });
         }
     }
     let empty_visibility = BTreeSet::new();
@@ -344,12 +409,8 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
     let mut closure_groups = Vec::with_capacity(groups.len());
     for group in groups.iter() {
         let dependency_key = group.dependency_key;
+        // body lowering 边界只由被需求声明身份产生；入口组不再按文件整体下沉。
         let mut body_lowering_source_paths = BTreeSet::new();
-        if group.is_entry {
-            for (path, _) in group.files.iter() {
-                body_lowering_source_paths.insert(path.clone());
-            }
-        }
         let mut body_lowering_declarations = BTreeSet::new();
         for key in &demanded {
             if key.dependency_key == dependency_key {
@@ -364,8 +425,8 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>]) -> SemanticClosur
         });
     }
 
-    let digest = compute_closure_digest(&closure_groups, &indexed_files);
-    SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest }
+    let digest = compute_closure_digest(&closure_groups, &indexed_files, arch);
+    Ok(SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest })
 }
 
 /// 解析一组「namespace 段 + 名字路径」引用并把命中的声明身份入队；
@@ -570,8 +631,8 @@ impl DeclarationIndexes {
     }
 }
 
-fn compute_closure_digest(groups: &[GroupSemanticClosure], files: &BTreeMap<(String, String), IndexedFile>) -> String {
-    let mut parts = vec![format!("planner:{CLOSURE_PLANNER_VERSION}")];
+fn compute_closure_digest(groups: &[GroupSemanticClosure], files: &BTreeMap<(String, String), IndexedFile>, arch: &str) -> String {
+    let mut parts = vec![format!("planner:{CLOSURE_PLANNER_VERSION}"), format!("arch:{arch}")];
     for group in groups {
         parts.push(format!("group:{}", group.dependency_key));
         for key in &group.body_lowering_declarations {
@@ -599,8 +660,11 @@ struct IndexedFile {
     module_selectors: BTreeSet<String>,
 }
 
-fn index_source_file(dependency_key: &str, path: &str, source: &str) -> Result<IndexedFile, String> {
-    let root = parse_source(source).map_err(|error| error.to_string())?;
+fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &str) -> Result<IndexedFile, String> {
+    let mut root = parse_source(source).map_err(|error| error.to_string())?;
+    // TGrammar 模板分支必须按编译架构展开后再建索引：入口声明可能只在某个分支里，
+    // 直接索引模板节点会让 `[export]` / `[main]` 在索引阶段不可见。
+    crate::valkyrie::hir::lowering::template_expand::expand_templates_in_root(&mut root, source, arch).map_err(|error| error.to_string())?;
     let mut builder = FileBuilder::new(dependency_key, path);
     collect_items(&mut builder, &[], &root.items);
     Ok(IndexedFile {
@@ -636,6 +700,7 @@ impl FileBuilder {
         name: &str,
         owner: Option<&str>,
         link: Option<DeclarationLink>,
+        entry_point: Option<EntryPointKind>,
         references: References,
     ) -> DeclarationKey {
         let key = DeclarationKey {
@@ -649,6 +714,7 @@ impl FileBuilder {
         self.declarations.push(DeclarationIndexEntry {
             key: key.clone(),
             link,
+            entry_point,
             references: references.paths,
             selectors: references.selectors,
             import_paths: references.imports,
@@ -816,31 +882,31 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Class(class) => {
             let mut signature = References::default();
             collect_signature_fields(&class.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Class, &class.name.name, None, None, signature);
+            builder.register(namespace, DeclarationKind::Class, &class.name.name, None, None, None, signature);
             collect_members(builder, namespace, &class.name.name, &class.body.methods);
         }
         ast::StatementNode::Structure(structure) => {
             let mut signature = References::default();
             collect_signature_fields(&structure.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, None, signature);
+            builder.register(namespace, DeclarationKind::Structure, &structure.name.name, None, None, None, signature);
             collect_members(builder, namespace, &structure.name.name, &structure.body.methods);
         }
         ast::StatementNode::Trait(trait_decl) => {
             let mut signature = References::default();
             collect_signature_fields(&trait_decl.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Trait, &trait_decl.name.name, None, None, signature);
+            builder.register(namespace, DeclarationKind::Trait, &trait_decl.name.name, None, None, None, signature);
             collect_members(builder, namespace, &trait_decl.name.name, &trait_decl.body.methods);
         }
         ast::StatementNode::Union(union_def) => {
             let mut signature = References::default();
             collect_signature_fields(&union_def.body.fields, &mut signature);
-            builder.register(namespace, DeclarationKind::Union, &union_def.name.name, None, None, signature);
+            builder.register(namespace, DeclarationKind::Union, &union_def.name.name, None, None, None, signature);
         }
         ast::StatementNode::Flags(flags) => {
-            builder.register(namespace, DeclarationKind::Flags, &flags.name.name, None, None, References::default());
+            builder.register(namespace, DeclarationKind::Flags, &flags.name.name, None, None, None, References::default());
         }
         ast::StatementNode::Enums(enums) => {
-            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, None, References::default());
+            let key = builder.register(namespace, DeclarationKind::Enum, &enums.name.name, None, None, None, References::default());
             for variant in &enums.variants {
                 builder.variant_members.push((variant.name.name.clone(), key.clone()));
             }
@@ -849,18 +915,19 @@ fn collect_item(builder: &mut FileBuilder, namespace: &[String], item: &ast::Sta
         ast::StatementNode::Micro(micro) => {
             let mut references = References::default();
             collect_micro(micro, &mut references);
-            builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, None, references);
+            let entry_point = entry_point_annotation(&micro.annotations);
+            builder.register(namespace, DeclarationKind::Micro, &micro.name.name, None, None, entry_point, references);
         }
         ast::StatementNode::TypeAlias(alias) => {
             let mut references = References::default();
             collect_type_expression(&alias.target, &mut references);
             let link = type_target_reference(&alias.target).map(DeclarationLink::AliasTarget);
-            builder.register(namespace, DeclarationKind::TypeAlias, &alias.name.name, None, link, references);
+            builder.register(namespace, DeclarationKind::TypeAlias, &alias.name.name, None, link, None, references);
         }
         ast::StatementNode::TypeFunction(type_function) => {
             let mut references = References::default();
             collect_type_function(type_function, &mut references);
-            builder.register(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None, None, references);
+            builder.register(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None, None, None, references);
         }
         ast::StatementNode::Statement(inner) => collect_item(builder, namespace, inner),
         ast::StatementNode::Let(let_stmt) => {
@@ -886,7 +953,7 @@ fn collect_members(builder: &mut FileBuilder, namespace: &[String], owner: &str,
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         // 拥有者引用相对成员自身 namespace：聚合与该成员同文件同 namespace 时按 namespace 链命中。
         let link = Some(DeclarationLink::MemberOwner(vec![owner.to_string()]));
-        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, references);
+        builder.register(namespace, DeclarationKind::Method, &name, Some(owner), link, None, references);
     }
 }
 
@@ -911,7 +978,7 @@ fn collect_imply(builder: &mut FileBuilder, namespace: &[String], imply: &ast::I
         collect_method(method, &mut references);
         let name = operator_members::declared_member_name(&method.name.name, &method.annotations);
         let link = owner_reference.clone().map(DeclarationLink::MemberOwner);
-        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, references);
+        builder.register(namespace, DeclarationKind::ImplyMethod, &name, owner.as_deref(), link, None, references);
     }
 }
 
@@ -946,6 +1013,19 @@ fn collect_signature_fields(fields: &[ast::FieldDeclaration], references: &mut R
     for field in fields {
         collect_type_expression(&field.typing, references);
     }
+}
+
+/// 声明的显式入口注解：`[export]` 优先于 `[main]`；二者都只提供 seed，不改变声明身份。
+fn entry_point_annotation(annotations: &[ast::Attribute]) -> Option<EntryPointKind> {
+    let mut entry_point = None;
+    for attribute in annotations {
+        match attribute.name.name.as_str() {
+            "export" => return Some(EntryPointKind::Export),
+            "main" => entry_point = Some(EntryPointKind::Main),
+            _ => {}
+        }
+    }
+    entry_point
 }
 
 fn collect_micro(micro: &ast::MicroDeclaration, references: &mut References) {

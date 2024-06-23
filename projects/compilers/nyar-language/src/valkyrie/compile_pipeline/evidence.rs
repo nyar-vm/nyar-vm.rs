@@ -20,18 +20,25 @@ pub struct CompilerCompileEvidence {
 
 impl CompilerCompileEvidence {
     /// 从源码组、成功载荷与 host 绑定构造证据。
-    pub fn from_success(groups: &[CompilerSourceGroup], program: &CompiledProgram, host_bindings: &[CompilerHostProviderBinding]) -> Self {
+    ///
+    /// `arch` 必须与本次编译使用的模板展开键一致，否则闭包摘要无法与证据比对。
+    pub fn from_success(
+        groups: &[CompilerSourceGroup],
+        arch: &str,
+        program: &CompiledProgram,
+        host_bindings: &[CompilerHostProviderBinding],
+    ) -> Self {
         Self {
-            semantic_closure_hash: semantic_closure_hash(groups),
+            semantic_closure_hash: semantic_closure_hash(groups, arch),
             canonical_surface_hash: program.surface_digest(),
             host_provider_binding_hash: host_provider_binding_hash(host_bindings),
         }
     }
 }
 
-/// 从 Resolver 提交的源码组计算语义闭包摘要（供 freshness 比对）。
-pub fn semantic_closure_hash_for_groups(groups: &[CompilerSourceGroup]) -> String {
-    semantic_closure_hash(groups)
+/// 从 Resolver 提交的源码组计算语义闭包摘要（供 freshness 比对）；`arch` 与编译上下文一致。
+pub fn semantic_closure_hash_for_groups(groups: &[CompilerSourceGroup], arch: &str) -> String {
+    semantic_closure_hash(groups, arch)
 }
 
 /// 从 host provider 绑定计算摘要（供 freshness 比对）。
@@ -39,10 +46,14 @@ pub fn host_provider_binding_hash_for_bindings(host_bindings: &[CompilerHostProv
     host_provider_binding_hash(host_bindings)
 }
 
-fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
+fn semantic_closure_hash(groups: &[CompilerSourceGroup], arch: &str) -> String {
     // 闭包和摘要使用同一 Compiler 生产者，不能信任调用方提交的摘要。
-    let closure = crate::valkyrie::semantic_closure::source_group_closure(groups);
-    let mut parts = vec![closure.digest];
+    let digest = match crate::valkyrie::semantic_closure::source_group_closure(groups, arch) {
+        Ok(closure) => closure.digest,
+        // 不可规划的入口不是一次成功闭包：摘要显式记录失败事实，供 freshness 区分。
+        Err(error) => format!("closure-plan-error:{error}"),
+    };
+    let mut parts = vec![digest];
     for group in groups {
         parts.push(group.dependency_key.clone());
         parts.push(group.name.clone());

@@ -378,7 +378,7 @@ micro Some<T>(value: T) -> Option<T> {
                 path: "std.adaptor.wasm.v".into(),
                 source: r#"
 namespace std.adaptor.wasm.collection;
-micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+[export] micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     let item: T = array::[ordinal]
     return Some(item)
 }
@@ -419,7 +419,7 @@ micro Some<T>(value: T) -> Option<T> {
             sources: vec![CompilerSourceFile {
                 path: "app.v".into(),
                 source: r#"
-micro wrap<T>(value: T): Option<T> {
+[export] micro wrap<T>(value: T): Option<T> {
     return Some(value)
 }
 "#
@@ -470,7 +470,7 @@ micro Some<T>(value: T) -> Option<T> {
                 path: "std.adaptor.wasm.v".into(),
                 source: r#"
 namespace std.adaptor.wasm.collection;
-micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+[export] micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     let item_count: usize = builtin.array.length(array)
     if ordinal == 0 || ordinal > item_count {
         return None
@@ -628,7 +628,7 @@ micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
     return wrapped
 }
-micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
+[export] micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     let item: T = array::[ordinal]
     return Some(item)
 }

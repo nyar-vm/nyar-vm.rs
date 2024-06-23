@@ -53,7 +53,8 @@ pub use valkyrie::{
     },
     module,
     semantic_closure::{
-        ClosureGroupInput, DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure,
+        ClosureGroupInput, DeclarationIndexEntry, DeclarationKey, DeclarationKind, EntryPointKind, GroupSemanticClosure, SemanticClosure,
+        SemanticClosureError, plan_semantic_closure,
     },
     type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},

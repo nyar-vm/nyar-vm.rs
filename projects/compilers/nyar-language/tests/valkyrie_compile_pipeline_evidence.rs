@@ -27,6 +27,6 @@ fn compile_evidence_is_stable_for_the_same_source_closure() {
     assert_eq!(first.evidence, second.evidence);
     assert!(!first.evidence.semantic_closure_hash.is_empty());
     assert!(!first.evidence.canonical_surface_hash.is_empty());
-    assert_eq!(first.evidence.semantic_closure_hash, semantic_closure_hash_for_groups(&groups));
+    assert_eq!(first.evidence.semantic_closure_hash, semantic_closure_hash_for_groups(&groups, "wasm32"));
     assert_eq!(first.evidence.host_provider_binding_hash, host_provider_binding_hash_for_bindings(&[]));
 }
