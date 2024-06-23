@@ -15,7 +15,8 @@ fn entry_source_group_parse_failure_reports_file_and_reason() {
         "broken.package",
         vec![CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }],
         vec![],
-    )];
+    )
+    .as_entry()];
     let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("不能生成残缺 HIR");
     // 入口文件没有可索引声明：失败必须保留入口组、文件路径与底层解析原因，
     // 而不是把无法建立入口的文件当成可执行程序继续 lowering。
@@ -36,8 +37,10 @@ fn compiler_selects_reachable_files_from_inventory() {
                 CompilerSourceFile { path: "source/broken.v".into(), source: "micro broken() { value = }".into() },
             ],
             direct_dependencies: vec![],
+            is_entry: false,
         },
         CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { let value: i32 = answer(); return value }")
+            .as_entry()
             .with_direct_dependencies(vec!["library".into()]),
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("Compiler 自行选择可达声明");
@@ -51,7 +54,8 @@ fn entry_group_parse_failure_fails_closed() {
         "app",
         vec![CompilerSourceFile { path: "solution.v".into(), source: "micro broken() { value = }".into() }],
         vec![],
-    )];
+    )
+    .as_entry()];
     let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("入口文件语法错误必须失败");
     assert!(error.to_string().contains("solution.v"), "{error}");
 }
@@ -70,6 +74,7 @@ fn compiler_owned_plan_skips_unreachable_files() {
             ..Default::default()
         },
         CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { return answer() }")
+            .as_entry()
             .with_direct_dependencies(vec!["library".into()]),
     ];
     let modules =
@@ -97,6 +102,7 @@ fn declaration_identity_survives_dependency_export_and_call_selection() {
             name: "library".into(),
             sources: vec![CompilerSourceFile { path: "library.v".into(), source: "micro answer() -> i32 { return 23 }".into() }],
             direct_dependencies: vec![],
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -106,6 +112,7 @@ fn declaration_identity_survives_dependency_export_and_call_selection() {
                 source: "[export] micro run() -> i32 { let value: i32 = answer(); return value }".into(),
             }],
             direct_dependencies: vec!["library".into()],
+            is_entry: true,
         },
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("完整源码闭包的 HIR");
@@ -161,12 +168,14 @@ fn source_closure_materialization_precedes_call_validation() {
             name: "library".into(),
             sources: vec![CompilerSourceFile { path: "library.v".into(), source: "micro helper() -> i32 { return missing() }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
             sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main(".into() }],
             direct_dependencies: vec!["library".into()],
+            is_entry: true,
         },
     ];
     let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("完整源码闭包必须先完成物化");
@@ -181,12 +190,14 @@ fn materialized_group_does_not_grant_undeclared_dependency_visibility() {
             name: "library".into(),
             sources: vec![CompilerSourceFile { path: "library.v".into(), source: "micro answer() -> i32 { return 1 }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
             sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() -> i32 { return answer() }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: true,
         },
     ];
     let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("完整闭包不授予未声明依赖可见性");
@@ -201,12 +212,14 @@ fn compiler_owns_dependency_group_linking() {
             name: "core".into(),
             sources: vec![CompilerSourceFile { path: "core.v".into(), source: "micro answer() -> i32 { return 1 }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
             sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() -> i32 { return answer() }".into() }],
             direct_dependencies: vec!["core".into()],
+            is_entry: true,
         },
     ];
     let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("compiler closes source groups");
@@ -225,18 +238,21 @@ fn compiler_links_transitive_calls_by_instance_and_excludes_unused_bodies() {
                 source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into(),
             }],
             direct_dependencies: vec![],
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "library".into(),
             name: "library".into(),
             sources: vec![CompilerSourceFile { path: "library.v".into(), source: "micro relay() -> i32 { return answer() }".into() }],
             direct_dependencies: vec!["base".into()],
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
             sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro run() -> i32 { return relay() }".into() }],
             direct_dependencies: vec!["library".into()],
+            is_entry: true,
         },
     ];
     let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("实例闭包必须贯穿 Canonical 校验及表示规划");
@@ -346,6 +362,7 @@ fn compiler_rejects_unknown_dependency_identity() {
         name: "app".into(),
         sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro main() { return }".into() }],
         direct_dependencies: vec!["missing".into()],
+        is_entry: true,
         ..Default::default()
     }];
     let error =
@@ -361,14 +378,46 @@ fn compiler_rejects_dependency_identity_collision() {
             name: "first".into(),
             sources: vec![CompilerSourceFile { path: "first.v".into(), source: "micro first() { return }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "same".into(),
             name: "second".into(),
             sources: vec![CompilerSourceFile { path: "second.v".into(), source: "micro second() { return }".into() }],
             direct_dependencies: Vec::new(),
+            is_entry: true,
         },
     ];
     let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("duplicate dependency identity must fail");
     assert!(error.to_string().contains("Compiler 源码组身份为空或重复"), "{error}");
+}
+
+#[test]
+fn multiple_entry_groups_merge_their_frozen_surface_contracts() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("app", "app", "[main] micro start() -> i32 { return 23 }").as_entry(),
+        CompilerSourceGroup::single_source("awsl", "awsl", "[export(asgard)] micro hydrate() -> i32 { return 7 }")
+            .as_entry()
+            .with_direct_dependencies(vec!["app".into()]),
+    ];
+    let output =
+        ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("多个入口组共同产生程序表面");
+    let linked = &output.canonical().linked;
+    // 末尾入口组是程序模块宿主；前序入口组的 [main] 与其自身 [export] 都必须保留。
+    assert_eq!(linked.exports.len(), 1, "生成入口组的导出不得因末尾组选择而丢失");
+    assert_eq!(linked.entries.len(), 1, "应用入口组的 [main] 不得因末尾组选择而丢失");
+}
+
+#[test]
+fn multiple_main_entry_groups_fail_closed_instead_of_overwriting() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("first", "first", "[main] micro first() -> i32 { return 1 }").as_entry(),
+        CompilerSourceGroup::single_source("second", "second", "[main] micro second() -> i32 { return 2 }")
+            .as_entry()
+            .with_direct_dependencies(vec!["first".into()]),
+    ];
+    let error = ValkyrieCompiler::default()
+        .compile_source_groups_to_program(&groups)
+        .expect_err("同一程序不允许两个 [main] 入口");
+    assert!(error.to_string().contains("多个入口 operation"), "{error}");
 }

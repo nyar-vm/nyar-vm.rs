@@ -236,8 +236,8 @@ impl std::fmt::Display for SemanticClosureError {
 
 impl std::error::Error for SemanticClosureError {}
 
-/// 从不可变源码输入计算 Compiler 内部选择。依赖顺序末项是唯一入口组，
-/// 与完整编译入口消费最后一个 HIR 模块的合同一致；装配层不能提交语义计划。
+/// 从不可变源码输入计算 Compiler 内部选择。入口身份只由 `CompilerSourceGroup::is_entry`
+/// 提供，不按依赖顺序或末项位置推断；装配层不能提交语义计划。
 ///
 /// `arch` 是 TGrammar 模板展开的目标键：索引必须在与 HIR lowering 相同的展开结果上
 /// 识别 `[export]` / `[main]`，否则模板分支内的入口声明不可见。
@@ -252,11 +252,10 @@ pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup], arch: 
         .iter()
         .zip(&owned)
         .zip(&dependency_keys)
-        .enumerate()
-        .map(|(index, ((group, files), dependencies))| ClosureGroupInput {
+        .map(|((group, files), dependencies)| ClosureGroupInput {
             dependency_key: group.dependency_key.as_str(),
             direct_dependencies: dependencies.as_slice(),
-            is_entry: index + 1 == groups.len(),
+            is_entry: group.is_entry,
             files: files.as_slice(),
         })
         .collect::<Vec<_>>();

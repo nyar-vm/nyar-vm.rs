@@ -14,7 +14,7 @@ fn group(key: &str, source: &str, dependencies: &[&str]) -> CompilerSourceGroup 
 #[test]
 fn unused_inventory_never_materializes_and_names_do_not_affect_selection() {
     for key in ["unused_package", "other_inventory", "third_dependency"] {
-        let groups = [group(key, "micro broken() { value = }", &[]), group("app", "[export] micro run() -> i32 { return 23 }", &[key])];
+        let groups = [group(key, "micro broken() { value = }", &[]), group("app", "[export] micro run() -> i32 { return 23 }", &[key]).as_entry()];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("未被需求的组是合法空模块");
         assert!(modules[0].functions.is_empty());
         assert_eq!(modules[1].functions.len(), 1);
@@ -25,7 +25,7 @@ fn unused_inventory_never_materializes_and_names_do_not_affect_selection() {
 fn compiler_discovers_reachable_declarations_without_caller_plan() {
     let mut library = group("library", "micro answer() -> i32 { return 23 }", &[]);
     library.sources.push(CompilerSourceFile { path: "broken.v".into(), source: "micro broken() { value = }".into() });
-    let groups = [library, group("app", "[export] micro run() -> i32 { return answer() }", &["library"])];
+    let groups = [library, group("app", "[export] micro run() -> i32 { return answer() }", &["library"]).as_entry()];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("Compiler 选择并绑定可达调用");
     assert_eq!(modules[0].functions.len(), 1);
     assert!(modules[0].functions[0].declaration.is_some());
@@ -35,10 +35,10 @@ fn compiler_discovers_reachable_declarations_without_caller_plan() {
 #[test]
 fn malformed_identity_and_dependency_order_fail_before_parsing() {
     let bad = group("duplicate", "micro broken(", &[]);
-    let error = ValkyrieCompiler::default().resolve_source_groups(&[bad.clone(), bad], "wasm32").expect_err("身份不能被 map 覆盖");
+    let error = ValkyrieCompiler::default().resolve_source_groups(&[bad.clone(), bad.as_entry()], "wasm32").expect_err("身份不能被 map 覆盖");
     assert!(error.to_string().contains("重复"));
     let error = ValkyrieCompiler::default()
-        .resolve_source_groups(&[group("app", "micro broken(", &["missing"])], "wasm32")
+        .resolve_source_groups(&[group("app", "micro broken(", &["missing"]).as_entry()], "wasm32")
         .expect_err("工程依赖错误不应成为语法错误");
     assert!(error.to_string().contains("missing"));
 }
@@ -47,7 +47,7 @@ fn malformed_identity_and_dependency_order_fail_before_parsing() {
 fn evidence_is_computed_from_source_and_dependency_edges() {
     let baseline = [
         group("library", "micro answer() -> i32 { return 23 }", &[]),
-        group("app", "[export] micro run() -> i32 { return answer() }", &["library"]),
+        group("app", "[export] micro run() -> i32 { return answer() }", &["library"]).as_entry(),
     ];
     let first = semantic_closure_hash_for_groups(&baseline, "wasm32");
     let mut changed = baseline.clone();
@@ -63,7 +63,7 @@ fn evidence_is_computed_from_source_and_dependency_edges() {
 
 #[test]
 fn empty_brace_namespace_and_pruned_namespace_cannot_change_following_scope() {
-    let groups = [group("app", "namespace hidden {} [export] micro run() -> i32 { return 23 }", &[])];
+    let groups = [group("app", "namespace hidden {} [export] micro run() -> i32 { return 23 }", &[]).as_entry()];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("空 namespace 保持作用域边界");
     assert_eq!(modules[0].functions.len(), 1);
     assert!(modules[0].functions[0].declaring_namespace.parts().is_empty());

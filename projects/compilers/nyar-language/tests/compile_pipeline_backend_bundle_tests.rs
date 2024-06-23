@@ -10,7 +10,7 @@ const TEMPLATE_SOURCE: &str = r#"<% match arch %>
 <% end %>"#;
 
 fn template_groups_from_source(source: String) -> [CompilerSourceGroup; 1] {
-    [CompilerSourceGroup::from_source_files("app", "app", vec![CompilerSourceFile { path: "app.v".into(), source }], Vec::new())]
+    [CompilerSourceGroup::from_source_files("app", "app", vec![CompilerSourceFile { path: "app.v".into(), source }], Vec::new()).as_entry()]
 }
 
 #[test]

@@ -10,7 +10,7 @@ use nyar_language::{
 fn compile_evidence_is_stable_for_the_same_source_closure() {
     // 本夹具只验证证据哈希稳定性：使用无声明身份的内建 `bool`。数值原始类型名
     // （`i32` 等）必须由 `core/primitive` 的 `structure` 给出声明身份，不在该单组闭包内。
-    let groups = [CompilerSourceGroup::single_source("app", "app", "[main] micro main() -> bool { return true }")];
+    let groups = [CompilerSourceGroup::single_source("app", "app", "[main] micro main() -> bool { return true }").as_entry()];
     let context = CompilerBuildContext::new(
         "wasm32",
         CanonicalTarget::parse("node").expect("node"),

@@ -24,6 +24,7 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
             "[host_contract] micro write(value: i32) -> i32 { } \
                 [main] micro main() -> i32 { return write(1) }",
         )
+        .as_entry()
         .with_direct_dependencies(vec!["adaptor".into()]),
     ];
     let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "adaptor.write".into() }];
@@ -54,6 +55,7 @@ fn missing_host_provider_binding_keeps_contract_import() {
             "[host_contract] micro write(value: i32) -> i32 { } \
                 [main] micro main() -> i32 { return write(1) }",
         )
+        .as_entry()
         .with_direct_dependencies(vec!["adaptor".into()]),
     ];
     let program = ValkyrieCompiler::default()

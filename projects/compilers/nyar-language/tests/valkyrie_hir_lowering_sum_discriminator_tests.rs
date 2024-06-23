@@ -280,6 +280,7 @@ enums Status {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -289,6 +290,7 @@ enums Status {
                 source: "[export] micro main(current: Status) -> i32 { return 0 }".into(),
             }],
             direct_dependencies: vec!["dep".into()],
+            is_entry: true,
         },
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported enums");
@@ -360,6 +362,7 @@ unite Choice {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -369,6 +372,7 @@ unite Choice {
                 source: "[export] micro main(choice: Choice) -> i32 { return 0 }".into(),
             }],
             direct_dependencies: vec!["dep".into()],
+            is_entry: true,
         },
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported unite");

@@ -370,6 +370,7 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "std.adaptor.wasm".into(),
@@ -386,6 +387,7 @@ namespace std.adaptor.wasm.collection;
                 .into(),
             }],
             direct_dependencies: vec!["core".into()],
+            is_entry: true,
         },
     ];
     ValkyrieCompiler::default()
@@ -412,6 +414,7 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -426,6 +429,7 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
             }],
             direct_dependencies: vec!["core".into()],
+            is_entry: true,
         },
     ];
     ValkyrieCompiler::default()
@@ -462,6 +466,7 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
+            is_entry: false,
         },
         CompilerSourceGroup {
             dependency_key: "std.adaptor.wasm".into(),
@@ -488,6 +493,7 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
                 .into(),
             }],
             direct_dependencies: vec!["core".into()],
+            is_entry: true,
         },
     ];
     let compiler = ValkyrieCompiler::default();

@@ -140,6 +140,68 @@ pub fn link_reachable_dependency_mir(
     Ok(())
 }
 
+/// 把入口组的公开表面并入唯一程序模块。
+///
+/// 程序模块是全部入口组共同的链接根宿主。合并只按已冻结的合同身份进行：
+/// 同一实例的导出/入口必须完全一致；同一片段身份只允许 union；片段
+/// 入口 operation 或 wasm 导出名冲突必须失败，不能择一覆盖。
+#[doc(hidden)]
+pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) -> Result<(), crate::valkyrie::frontend::ParseError> {
+    for contract in &entry.exports {
+        match consumer.exports.iter().find(|existing| existing.instance == contract.instance) {
+            Some(existing) if existing != contract => {
+                return Err(ParseError::invalid(format!("入口组导出合同冲突: `{}`", contract.symbol)));
+            }
+            Some(_) => {}
+            None => consumer.exports.push(contract.clone()),
+        }
+    }
+    for contract in &entry.entries {
+        match consumer.entries.iter().find(|existing| existing.instance == contract.instance) {
+            Some(existing) if existing != contract => {
+                return Err(ParseError::invalid(format!("入口组入口合同冲突: `{}`", contract.symbol)));
+            }
+            Some(_) => {}
+            None => consumer.entries.push(contract.clone()),
+        }
+    }
+    for fragment in &entry.semantic_fragments {
+        let Some(existing) = consumer.semantic_fragments.iter_mut().find(|existing| existing.id == fragment.id)
+        else {
+            consumer.semantic_fragments.push(fragment.clone());
+            continue;
+        };
+        for operation in &fragment.exported_operations {
+            if !existing.exported_operations.contains(operation) {
+                existing.exported_operations.push(*operation);
+            }
+        }
+        for (instance, name) in &fragment.wasm_export_names {
+            if let Some(previous) = existing.wasm_export_names.insert(*instance, name.clone())
+                && previous != *name
+            {
+                return Err(ParseError::invalid(format!("片段 `{}` 的 wasm 导出名冲突", fragment.id)));
+            }
+        }
+        match (existing.entry_operation, fragment.entry_operation) {
+            (Some(previous), Some(next)) if previous != next => {
+                return Err(ParseError::invalid(format!("片段 `{}` 包含多个入口 operation", fragment.id)));
+            }
+            (None, Some(next)) => existing.entry_operation = Some(next),
+            _ => {}
+        }
+        for capability in &fragment.required_capabilities {
+            if !existing.required_capabilities.contains(capability) {
+                existing.required_capabilities.push(capability.clone());
+            }
+        }
+        if existing.reference_management_hint.is_none() {
+            existing.reference_management_hint = fragment.reference_management_hint.clone();
+        }
+    }
+    Ok(())
+}
+
 /// 按 declaration identity 合并依赖的聚合布局；外部测试入口。
 #[doc(hidden)]
 pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {

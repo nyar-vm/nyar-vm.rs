@@ -280,6 +280,10 @@ pub struct ValkyrieCompiler {
 }
 
 /// Resolver 交给 Compiler 的有序源码语义组。
+///
+/// 入口身份是显式事实，不由依赖顺序或「最后一组」推断：只有 `is_entry` 组
+/// 能让其 `[export]` / `[main]` 声明成为闭包 seed。依赖组即使位于末尾也
+/// 不产生入口，缺少 `[export]` / `[main]` 的入口组必须结构化失败。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CompilerSourceGroup {
     /// Resolver 分配的稳定依赖身份。
@@ -290,23 +294,31 @@ pub struct CompilerSourceGroup {
     pub sources: Vec<CompilerSourceFile>,
     /// 只允许引用已完成链接的直接依赖身份。
     pub direct_dependencies: Vec<String>,
+    /// 是否为显式入口组；入口组的闭包 seed 只来自组内 `[export]` / `[main]`。
+    pub is_entry: bool,
 }
 
 impl CompilerSourceGroup {
-    /// 测试与单文件夹具用的最小源码组；入口组默认 fail-closed。
+    /// 测试与单文件夹具用的最小源码组；默认不是入口组。
     pub fn single_source(dependency_key: &str, name: &str, source: &str) -> Self {
         Self::from_source_files(dependency_key, name, vec![CompilerSourceFile { path: format!("{name}.v"), source: source.into() }], Vec::new())
     }
 
     /// 多文件输入组；语义选择由 Compiler 生产，调用方不得注入裁剪或摘要。
     pub fn from_source_files(dependency_key: &str, name: &str, sources: Vec<CompilerSourceFile>, direct_dependencies: Vec<String>) -> Self {
-        Self { dependency_key: dependency_key.into(), name: name.into(), sources, direct_dependencies }
+        Self { dependency_key: dependency_key.into(), name: name.into(), sources, direct_dependencies, is_entry: false }
     }
 
     /// 覆盖直接依赖身份集合：仅供依赖顺序已固定的源码组夹具使用。
     #[doc(hidden)]
     pub fn with_direct_dependencies(mut self, direct_dependencies: Vec<String>) -> Self {
         self.direct_dependencies = direct_dependencies;
+        self
+    }
+
+    /// 显式标记本组为入口组；只有入口组的 `[export]` / `[main]` 能产生闭包 seed。
+    pub fn as_entry(mut self) -> Self {
+        self.is_entry = true;
         self
     }
 }
@@ -382,6 +394,9 @@ fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), ParseErr
     if groups.is_empty() {
         return Err(ParseError::invalid("Compiler 源码快照缺少入口组"));
     }
+    if !groups.iter().any(|group| group.is_entry) {
+        return Err(ParseError::invalid("Compiler 源码快照缺少显式入口组"));
+    }
     for group in groups {
         if group.dependency_key.is_empty() || completed.contains(&group.dependency_key) {
             return Err(ParseError::invalid("Compiler 源码组身份为空或重复"));
@@ -397,10 +412,10 @@ fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), ParseErr
                 return Err(ParseError::invalid(format!("源码组 `{}` 的文件身份为空或重复", group.dependency_key)));
             }
         }
+        if group.is_entry && group.sources.is_empty() {
+            return Err(ParseError::invalid(format!("Compiler 入口组 `{}` 缺少源码文件", group.dependency_key)));
+        }
         completed.insert(group.dependency_key.clone());
-    }
-    if groups.last().is_some_and(|group| group.sources.is_empty()) {
-        return Err(ParseError::invalid("Compiler 入口组缺少源码文件"));
     }
     Ok(())
 }
@@ -686,7 +701,9 @@ impl ValkyrieCompiler {
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
         arch: &str,
     ) -> Result<nyar_types::CompiledProgram, ParseError> {
+        let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
         let mut hir_groups = self.resolve_source_groups(groups, arch)?;
+        let final_index = hir_groups.len().checked_sub(1).ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         // monomorph 必须接在整份闭包 HIR 实例号之后，避免与后包声明实例撞号。
         let mut mono_counter = Some(
@@ -702,6 +719,13 @@ impl ValkyrieCompiler {
             .map(|hir| crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(hir, &mut mono_counter))
             .collect::<Vec<_>>();
         let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(&final_hir, &mut mono_counter);
+        // 程序模块是全部入口组共同的链接根宿主：非末尾入口组的 `[export]` / `[main]`
+        // 必须按已冻结合同身份并入，而不是只让最后一个组决定产物表面。
+        for index in entry_indices {
+            if index != final_index {
+                crate::valkyrie::compile_pipeline::merge_entry_group_surface(&mut final_mir, &mir_groups[index])?;
+            }
+        }
         let modules = std::iter::once(&final_mir).chain(mir_groups.iter()).collect::<Vec<_>>();
         let functions = modules.iter().flat_map(|module| module.functions.iter().cloned()).collect::<Vec<_>>();
         let imports = modules.iter().flat_map(|module| module.external_calls.iter().cloned()).collect::<Vec<_>>();
