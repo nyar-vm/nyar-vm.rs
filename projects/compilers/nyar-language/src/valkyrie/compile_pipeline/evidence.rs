@@ -2,7 +2,7 @@
 
 use nyar_types::{CompiledProgram, combined_content_hash};
 
-use crate::CompilerSourceGroup;
+use crate::{CompilerSourceGroup, GeneratedSourceGroup};
 
 use super::context::CompilerHostProviderBinding;
 
@@ -16,10 +16,13 @@ pub struct CompilerCompileEvidence {
     pub canonical_surface_hash: String,
     /// Resolver 选定的 host provider 绑定摘要。
     pub host_provider_binding_hash: String,
+    /// 独立生成源码的 producer / 源码摘要；无生成输入时为空串。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub generated_source_hash: String,
 }
 
 impl CompilerCompileEvidence {
-    /// 从源码组、成功载荷与 host 绑定构造证据。
+    /// 从应用源码组、成功载荷与 host 绑定构造证据（无生成源码）。
     ///
     /// `arch` 必须与本次编译使用的模板展开键一致，否则闭包摘要无法与证据比对。
     pub fn from_success(
@@ -28,10 +31,25 @@ impl CompilerCompileEvidence {
         program: &CompiledProgram,
         host_bindings: &[CompilerHostProviderBinding],
     ) -> Self {
+        Self::from_success_with_generated(groups, &[], arch, program, host_bindings)
+    }
+
+    /// 从已合成的源码组、独立生成源码、成功载荷与 host 绑定构造证据。
+    ///
+    /// `groups` 必须是 Compiler 实际编译的合成闭包；生成源码只作为独立 provenance
+    /// 进入证据，不会被再次拼接或重解析。
+    pub fn from_success_with_generated(
+        groups: &[CompilerSourceGroup],
+        generated: &[GeneratedSourceGroup],
+        arch: &str,
+        program: &CompiledProgram,
+        host_bindings: &[CompilerHostProviderBinding],
+    ) -> Self {
         Self {
             semantic_closure_hash: semantic_closure_hash(groups, arch),
             canonical_surface_hash: program.surface_digest(),
             host_provider_binding_hash: host_provider_binding_hash(host_bindings),
+            generated_source_hash: generated_source_hash(generated),
         }
     }
 }
@@ -39,6 +57,27 @@ impl CompilerCompileEvidence {
 /// 从 Resolver 提交的源码组计算语义闭包摘要（供 freshness 比对）；`arch` 与编译上下文一致。
 pub fn semantic_closure_hash_for_groups(groups: &[CompilerSourceGroup], arch: &str) -> String {
     semantic_closure_hash(groups, arch)
+}
+
+/// 从独立生成源码组计算来源摘要；无生成输入时为空串。
+pub fn generated_source_hash(generated: &[GeneratedSourceGroup]) -> String {
+    if generated.is_empty() {
+        return String::new();
+    }
+    let mut parts = Vec::new();
+    for generated in generated {
+        parts.push(format!("producer:{}", generated.producer));
+        parts.push(format!("group:{}", generated.group.dependency_key));
+        for dependency in &generated.group.direct_dependencies {
+            parts.push(format!("dependency:{dependency}"));
+        }
+        for file in &generated.group.sources {
+            parts.push(format!("file:{}", file.path));
+            parts.push(format!("content:{}", combined_content_hash(&[file.source.as_str()])));
+        }
+    }
+    let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
+    combined_content_hash(&borrowed)
 }
 
 /// 从 host provider 绑定计算摘要（供 freshness 比对）。

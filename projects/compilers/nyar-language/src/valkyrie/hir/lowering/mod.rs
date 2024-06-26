@@ -322,6 +322,87 @@ impl CompilerSourceGroup {
         self
     }
 }
+/// 由独立生产者生成、并作为正式 Compiler 输入的源码组。
+///
+/// 生成源码不是应用源码组的一部分：它拥有独立 producer 身份、源码身份与摘要，
+/// 必须显式标记入口，并且只能追加在应用组之后。装配层不得把生成文本拼进应用组。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedSourceGroup {
+    /// 生成器稳定身份（例：`asgard.awsl.wasm`）；空身份表示来源不可证明。
+    pub producer: String,
+    /// 生成源码组；必须显式标记入口。
+    pub group: CompilerSourceGroup,
+}
+
+impl GeneratedSourceGroup {
+    /// 建立生成源码组；producer 与入口身份都由生成器显式提供，不接受缺省推断。
+    pub fn new(producer: impl Into<String>, group: CompilerSourceGroup) -> Result<Self, ParseError> {
+        let producer = producer.into();
+        if producer.trim().is_empty() {
+            return Err(ParseError::invalid("生成源码组缺少 producer 身份"));
+        }
+        if !group.is_entry {
+            return Err(ParseError::invalid(format!("生成源码组 `{}` 必须显式标记入口", group.dependency_key)));
+        }
+        Ok(Self { producer, group })
+    }
+}
+
+/// Compiler 的完整有序输入：应用源码组与独立生成源码组。
+///
+/// 生成组由 [`CompilerSourceInput::compose`] 合成到唯一源码闭包，禁止调用方
+/// 只提交应用组而静默丢弃生成源码；没有生成输入的调用方必须显式使用 [`Self::application`]。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CompilerSourceInput {
+    /// 按依赖顺序排列的应用源码组。
+    pub groups: Vec<CompilerSourceGroup>,
+    /// 独立生产者生成、追加在应用组之后的入口源码组。
+    pub generated: Vec<GeneratedSourceGroup>,
+}
+
+impl CompilerSourceInput {
+    /// 只含应用源码的输入（无生成源码）。
+    pub fn application(groups: Vec<CompilerSourceGroup>) -> Self {
+        Self { groups, generated: Vec::new() }
+    }
+
+    /// 含生成源码的输入；构造时即验证 producer、入口身份、组身份与依赖顺序。
+    pub fn with_generated(groups: Vec<CompilerSourceGroup>, generated: Vec<GeneratedSourceGroup>) -> Result<Self, ParseError> {
+        let input = Self { groups, generated };
+        input.compose()?;
+        Ok(input)
+    }
+
+    /// 把生成组追加到应用组之后，得到唯一有序源码闭包。
+    ///
+    /// 生成组必须显式入口、身份唯一，且只能依赖此前已提供的组；其余拓扑与
+    /// 文件身份校验由 Compiler 的源码快照校验统一承担。
+    pub fn compose(&self) -> Result<Vec<CompilerSourceGroup>, ParseError> {
+        let mut composed = self.groups.clone();
+        let mut provided = self.groups.iter().map(|group| group.dependency_key.clone()).collect::<std::collections::BTreeSet<_>>();
+        for generated in &self.generated {
+            if generated.producer.trim().is_empty() {
+                return Err(ParseError::invalid("生成源码组缺少 producer 身份"));
+            }
+            if !generated.group.is_entry {
+                return Err(ParseError::invalid(format!("生成源码组 `{}` 必须显式标记入口", generated.group.dependency_key)));
+            }
+            if generated.group.dependency_key.is_empty() || !provided.insert(generated.group.dependency_key.clone()) {
+                return Err(ParseError::invalid(format!("生成源码组身份 `{}` 为空或与已提供组冲突", generated.group.dependency_key)));
+            }
+            for dependency in &generated.group.direct_dependencies {
+                if dependency == &generated.group.dependency_key || !provided.contains(dependency) {
+                    return Err(ParseError::invalid(format!(
+                        "生成源码组 `{}` 的依赖 `{dependency}` 未在此之前提供",
+                        generated.group.dependency_key
+                    )));
+                }
+            }
+            composed.push(generated.group.clone());
+        }
+        Ok(composed)
+    }
+}
 
 /// 一个具有独立 source span 边界的 Valkyrie 源文件。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -693,6 +774,19 @@ impl ValkyrieCompiler {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
     }
 
+    /// 从「应用组 + 独立生成组」的完整输入构建程序。
+    ///
+    /// 生成组在这里合成到唯一源码闭包；不存在只编译应用组而静默丢弃生成源码的路径。
+    #[doc(hidden)]
+    pub fn compile_source_input_to_program_with_host_bindings(
+        &self,
+        input: &CompilerSourceInput,
+        host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+        arch: &str,
+    ) -> Result<nyar_types::CompiledProgram, ParseError> {
+        let groups = input.compose()?;
+        self.compile_source_groups_to_program_with_host_bindings(&groups, host_bindings, arch)
+    }
     /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
     #[doc(hidden)]
     pub fn compile_source_groups_to_program_with_host_bindings(

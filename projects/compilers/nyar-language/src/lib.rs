@@ -38,11 +38,11 @@ pub use nyar::{
 pub use valkyrie::{
     compile_pipeline::{
         CompilerArtifactReport, CompilerBuildContext, CompilerCompileEvidence, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
-        host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
+        generated_source_hash, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
     },
     derive,
     frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type},
-    hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler},
+    hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler},
     lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
     mir,
     mir::{

@@ -10,7 +10,7 @@ use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
 use crate::{
-    CompilerSourceGroup, ValkyrieCompiler,
+    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler,
     valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
 };
 
@@ -58,18 +58,27 @@ pub fn compile_source_groups_to_backend_bundle(
     Ok(bundle)
 }
 
-/// 从源码闭包直接生产完整目标产物报告。
+/// 从完整源码输入（应用组 + 独立生成组）生产目标产物报告。
+///
+/// 生成源码在这里合成到唯一源码闭包；不存在绕过生成组证据的产物路径。
 pub fn compile_source_groups_to_artifacts(
     compiler: &ValkyrieCompiler,
-    groups: &[CompilerSourceGroup],
+    input: &CompilerSourceInput,
     context: &CompilerBuildContext,
     output_dir: &Path,
     project_name: &str,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<CompilerArtifactReport> {
-    let bundle = compile_source_groups_to_backend_bundle(compiler, groups, context)?;
-    let evidence = CompilerCompileEvidence::from_success(groups, &context.arch, &bundle.compiled_program, &context.selected_host_providers);
+    let groups = input.compose().map_err(|error| miette!("Compiler source input composition failed: {error}"))?;
+    let bundle = compile_source_groups_to_backend_bundle(compiler, &groups, context)?;
+    let evidence = CompilerCompileEvidence::from_success_with_generated(
+        &groups,
+        &input.generated,
+        &context.arch,
+        &bundle.compiled_program,
+        &context.selected_host_providers,
+    );
     let driver = nyar_emitter::compile_frontend_bundle_with_bundled_backends(
         &bundle,
         output_dir,
