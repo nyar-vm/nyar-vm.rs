@@ -84,6 +84,19 @@ impl CopySemanticsValidator {
         }
     }
 
+    /// 登记依赖组导出的值类型声明身份。
+    ///
+    /// 跨组聚合只按 `constructor_declaration` 身份登记，不写短名集合：
+    /// 短名可见性属于本组，导入声明不能凭名字影响本地 `Named` 判定。
+    /// 数值 primitive（`usize` 等）在 core 声明、在 std 使用，正是这条路径。
+    pub fn register_value_type_declaration(&mut self, class: &HirStruct) {
+        if class.is_value_type {
+            if let Some(declaration) = class.constructor_declaration {
+                self.value_type_declarations.insert(declaration);
+            }
+        }
+    }
+
     fn is_value(&self, ty: &HirType) -> bool {
         match ty {
             HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
@@ -140,12 +153,16 @@ impl CopySemanticsValidator {
             HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
             // 已绑定 declaration：按声明侧值类型登记判断，禁止再按短名回查。
             HirType::Nominal { declaration, .. } => self.value_type_declarations.contains(declaration),
+            // 未代入的泛型参数在声明期没有类型事实：`structure Entry<K> { key: K }` 的 `K`
+            // 可能被实例化为标量，也可能是堆数组。这里既不能判可拷贝，也不能判违反 copy
+            // discipline——字段闭包的复制语义属于实例事实，必须由代入完整实例后的阶段验证
+            // （ADR 0006）。引用型包装（`Array`/`Function`/`TraitObject` 等）不因这条例外放行。
+            HirType::Generic(_) => true,
             HirType::Array(_)
             | HirType::Function(_)
             | HirType::TypeLambda(_)
             | HirType::TraitObject(_)
             | HirType::Associated(_)
-            | HirType::Generic(_)
             | HirType::Row(_)
             | HirType::Apply(_, _)
             | HirType::Nullable(_)

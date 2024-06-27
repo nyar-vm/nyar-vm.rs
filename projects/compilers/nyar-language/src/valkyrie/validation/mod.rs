@@ -79,6 +79,13 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), ParseError> {
     for class in &module.structs {
         validator.register_value_type(class);
     }
+    // 值类型声明可以来自直接依赖组（`usize` 在 core 声明、在 std 的聚合字段里使用）。
+    // 只按声明身份登记，跨组字段才能与本地声明用同一套复制语义判定。
+    for export in &module.imported_semantic_exports {
+        for class in &export.structs {
+            validator.register_value_type_declaration(class);
+        }
+    }
     let mut violations: Vec<String> = Vec::new();
     let mut violating_types: BTreeSet<Identifier> = BTreeSet::new();
     for class in &module.structs {
