@@ -82,15 +82,17 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
 }
 
 #[test]
-fn missing_host_contract_fails_closed() {
+fn unreferenced_host_contract_selection_is_ignored() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     module.external_calls.clear();
     let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "std.adaptor.clr.write".into() }];
 
-    let error = apply_host_provider_bindings(&mut module, &[], &bindings).expect_err("missing contract must fail");
-    assert!(error.to_string().contains("host contract"));
+    apply_host_provider_bindings(&mut module, &[], &bindings).expect("未被入口闭包引用的 contract 不要求 provider 身份");
+
+    assert!(module.external_calls.is_empty());
+    assert!(module.callable_identities.values().any(|instance| *instance == contract_instance));
 }
 
 #[test]

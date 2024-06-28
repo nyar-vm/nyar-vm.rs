@@ -28,24 +28,27 @@ pub fn apply_host_provider_bindings(
     let mut remaps = BTreeMap::<ItemInstanceId, ItemInstanceId>::new();
 
     for binding in bindings {
+        // 装配层按 target/profile 选择 provider 时看到的是声明库存，不掌握入口可达性。
+        // 未被本次可观察入口闭包引用的 contract 没有需要改写的调用点，其 provider
+        // 也就不需要出现在依赖 MIR 中：跳过，不得因未使用而拒绝整个编译。
+        let contract_keys = symbol_lookup_keys(&binding.contract);
+        let contract_instance = {
+            let contracts = module
+                .external_calls
+                .iter()
+                .filter(|contract| contract_keys.iter().any(|key| symbols_equivalent(&contract.symbol.to_string(), key)))
+                .collect::<Vec<_>>();
+            match contracts.as_slice() {
+                [] => continue,
+                [contract] => contract.instance.ok_or_else(|| ParseError::invalid(format!("host contract `{}` 缺少 callable identity", binding.contract)))?,
+                _ => return Err(ParseError::invalid(format!("host contract `{}` 在 Semantic MIR 中有多个候选", binding.contract))),
+            }
+        };
+
         let (provider_instance, provider_function) = resolve_callable_binding(module, dependency_mirs, &binding.symbol)?;
         if let Some(provider_function) = provider_function {
             install_provider_definition(module, provider_instance, provider_function)?;
         }
-
-        let contract_keys = symbol_lookup_keys(&binding.contract);
-        let contracts = module
-            .external_calls
-            .iter()
-            .filter(|contract| contract_keys.iter().any(|key| symbols_equivalent(&contract.symbol.to_string(), key)))
-            .collect::<Vec<_>>();
-        let contract = match contracts.as_slice() {
-            [] => return Err(ParseError::invalid(format!("host contract `{}` 未在 Semantic MIR 中解析到 external call", binding.contract))),
-            [contract] => *contract,
-            _ => return Err(ParseError::invalid(format!("host contract `{}` 在 Semantic MIR 中有多个候选", binding.contract))),
-        };
-        let contract_instance =
-            contract.instance.ok_or_else(|| ParseError::invalid(format!("host contract `{}` 缺少 callable identity", binding.contract)))?;
         if contract_instance == provider_instance {
             continue;
         }
