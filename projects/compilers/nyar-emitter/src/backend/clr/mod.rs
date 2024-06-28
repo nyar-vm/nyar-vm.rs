@@ -76,10 +76,10 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
     }
 
     fn validate(&self, _input: &Self::Input) -> Result<()> {
-        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 BackendPrivatePlan 编码器，拒绝编译"))
+        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译"))
     }
 
     fn compile(&self, _input: Self::Input, _options: &CompilationOptions) -> Result<ArtifactSet> {
-        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 BackendPrivatePlan 编码器，拒绝编译"))
+        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 TargetExecutionPlan 编码器，拒绝编译"))
     }
 }

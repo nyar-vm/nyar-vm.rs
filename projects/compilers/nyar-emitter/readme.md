@@ -36,7 +36,7 @@ driver does not duplicate selection algorithms).
 
 ## Single compile-flow contract (in progress)
 
-Production still carries transitional duplication: `BackendPrivatePlan` is generated from `CompiledProgram`, but outer
+Production still carries transitional duplication: `TargetExecutionPlan` is generated from `CompiledProgram`, but outer
 layers may still supply `AssembledFragment` / `FragmentSubmission` summaries consumed by backends. Treating the private
 plan type as wired **does not** mean the single-owner contract is finished.
 

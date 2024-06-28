@@ -51,7 +51,7 @@ pub enum CompileStage {
     /// Sparse representation / layout planning.
     RepresentationPlan,
     /// Target-private plan.
-    BackendPrivatePlan,
+    TargetExecutionPlan,
     /// Artifact emit.
     Emit,
 }

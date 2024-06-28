@@ -1,7 +1,7 @@
 use miette::Result;
 use nyar::{NamePath, QualifiedName};
 use nyar_emitter::{
-    BackendPrivatePlan, CompiledProgram, FragmentSubmission,
+    TargetExecutionPlan, CompiledProgram, FragmentSubmission,
     contracts::{InstructionKind, Operand},
 };
 use nyar_types::{
@@ -27,10 +27,10 @@ fn source_program_from(source: &str) -> CompiledProgram {
     CompiledProgram::new(canonical, representation).expect("单测表示输入必须一致，不代表生产流水线验收")
 }
 
-fn prepare(program: &CompiledProgram) -> Result<BackendPrivatePlan> {
+fn prepare(program: &CompiledProgram) -> Result<TargetExecutionPlan> {
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
-    BackendPrivatePlan::from_compiled_program(program, fragment, nyar::TheoryBundle::default(), &roots)
+    TargetExecutionPlan::from_compiled_program(program, fragment, nyar::TheoryBundle::default(), &roots)
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn source_specialized_values_and_direct_calls_prepare() {
 fn unknown_fragment_identity_fails_before_backend_preparation() {
     let program = source_program();
     let missing = nyar::Identifier::new("missing_fragment");
-    let error = BackendPrivatePlan::from_compiled_program(&program, &missing, nyar::TheoryBundle::default(), &[])
+    let error = TargetExecutionPlan::from_compiled_program(&program, &missing, nyar::TheoryBundle::default(), &[])
         .expect_err("片段必须来自同一 Canonical 程序，不能按根或顺序猜测");
     assert!(error.to_string().contains("不存在"), "{error}");
 }
@@ -55,7 +55,7 @@ fn unknown_root_identity_fails_before_function_projection() {
     let unknown = ItemInstanceId::from_index(1000).expect("构造闭包外身份");
     assert!(!program.canonical().mir.functions.contains_key(&unknown));
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
-    let error = BackendPrivatePlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[unknown])
+    let error = TargetExecutionPlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[unknown])
         .expect_err("闭包外根身份必须失败，不能改按名称寻找其他函数");
     assert!(error.to_string().contains("缺少 canonical 函数体"), "{error}");
 }
@@ -68,7 +68,7 @@ fn root_identity_is_not_resolved_again_from_abi_spelling() {
     canonical.linked.callable_names.insert(root, QualifiedName::new(vec![nyar::Identifier::new("renamed_boundary")]));
     let program = CompiledProgram::new(canonical, source.representation().clone()).expect("ABI 名不改变已经验证的调用与表示身份");
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
-    let plan = BackendPrivatePlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[root])
+    let plan = TargetExecutionPlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[root])
         .expect("目标准备必须消费同一根身份");
     assert!(plan.testing_functions().contains_key(&root));
     assert_eq!(plan.testing_functions()[&root].symbol, "renamed_boundary");

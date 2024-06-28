@@ -148,7 +148,7 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_operand(operand);
             return;
         }
-        // 仅允许 BackendPrivatePlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
+        // 仅允许 TargetExecutionPlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
             self.emit_operand(operand);
             self.emit_unbox_i64_payload();
@@ -174,7 +174,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         panic!(
             "WASM ABI carrier mismatch in `{}`: expected={expected:#x} actual={actual:#x}; \
-             BackendPrivatePlan must provide an explicit conversion — refusing null/0 placeholders",
+             TargetExecutionPlan must provide an explicit conversion — refusing null/0 placeholders",
             self.mir_fn.symbol
         );
     }

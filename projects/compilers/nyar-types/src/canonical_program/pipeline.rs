@@ -31,6 +31,6 @@ pub const STAGE_ORDER: &[CompileStage] = &[
     CompileStage::LinkTime,
     CompileStage::ValidateMir,
     CompileStage::RepresentationPlan,
-    CompileStage::BackendPrivatePlan,
+    CompileStage::TargetExecutionPlan,
     CompileStage::Emit,
 ];

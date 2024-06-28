@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! Analysis:   AST → HIR → Semantic MIR → Link → Validate (M2) → CanonicalProgram
-//! Processing: CanonicalProgram → RepresentationPlan → BackendPrivatePlan → Emit
+//! Processing: CanonicalProgram → RepresentationPlan → TargetExecutionPlan → Emit
 //! ```
 //!
 //! 本模块只负责编排。不得复活并行权威
@@ -51,7 +51,7 @@ pub fn stream_half(stage: CompileStage) -> StreamHalf {
         CompileStage::Ast | CompileStage::Hir | CompileStage::SemanticMir | CompileStage::LinkTime | CompileStage::ValidateMir => {
             StreamHalf::Analysis
         }
-        CompileStage::RepresentationPlan | CompileStage::BackendPrivatePlan | CompileStage::Emit => StreamHalf::Processing,
+        CompileStage::RepresentationPlan | CompileStage::TargetExecutionPlan | CompileStage::Emit => StreamHalf::Processing,
     }
 }
 
@@ -60,4 +60,4 @@ pub const ANALYSIS_STAGE_ORDER: &[CompileStage] =
     &[CompileStage::Ast, CompileStage::Hir, CompileStage::SemanticMir, CompileStage::LinkTime, CompileStage::ValidateMir];
 
 /// Documented processing stage order.
-pub const PROCESSING_STAGE_ORDER: &[CompileStage] = &[CompileStage::RepresentationPlan, CompileStage::BackendPrivatePlan, CompileStage::Emit];
+pub const PROCESSING_STAGE_ORDER: &[CompileStage] = &[CompileStage::RepresentationPlan, CompileStage::TargetExecutionPlan, CompileStage::Emit];

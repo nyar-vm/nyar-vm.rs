@@ -7,7 +7,7 @@
 //! `MirModule.intrinsics`，以及 `emit_intrinsic_opcode*` 旁路。
 //!
 //! 正确路线：`std adaptor` → `ItemInstance` → `Invoke` →
-//! 稀疏 RepresentationPlan → BackendPrivatePlan。
+//! 稀疏 RepresentationPlan → TargetExecutionPlan。
 
 #![allow(dead_code)]
 

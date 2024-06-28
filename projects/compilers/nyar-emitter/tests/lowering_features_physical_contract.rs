@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
-    BackendPrivatePlan, FragmentSubmission,
+    TargetExecutionPlan, FragmentSubmission,
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
 use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
@@ -67,7 +67,7 @@ fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> FragmentSu
             }
         }
     }
-    FragmentSubmission::from_backend_plan(BackendPrivatePlan::from_functions(functions))
+    FragmentSubmission::from_backend_plan(TargetExecutionPlan::from_functions(functions))
 }
 
 #[test]

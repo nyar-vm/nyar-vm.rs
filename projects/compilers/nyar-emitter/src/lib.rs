@@ -8,7 +8,7 @@ mod assembly;
 #[doc(hidden)]
 pub mod backend;
 pub mod backend_plan_views;
-mod backend_private_plan;
+mod target_execution_plan;
 pub mod contracts;
 mod driver;
 #[doc(hidden)]
@@ -29,7 +29,7 @@ pub use backend::{
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
 #[doc(hidden)]
-pub use backend_private_plan::BackendPrivatePlan;
+pub use target_execution_plan::TargetExecutionPlan;
 use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
@@ -62,7 +62,7 @@ pub mod testing {
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
 
     use super::{
-        BackendPrivatePlan, DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
+        TargetExecutionPlan, DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
     #[cfg(feature = "nyar-vm-lane")]
@@ -152,11 +152,11 @@ pub mod testing {
 
     /// Empty submission for integration tests and pending contract migrations.
     pub fn empty_fragment_submission() -> FragmentSubmission {
-        FragmentSubmission::from_backend_plan(BackendPrivatePlan::default())
+        FragmentSubmission::from_backend_plan(TargetExecutionPlan::default())
     }
 
     /// Build a fragment submission from a completed backend-private plan.
-    pub fn fragment_submission_from_plan(plan: BackendPrivatePlan) -> FragmentSubmission {
+    pub fn fragment_submission_from_plan(plan: TargetExecutionPlan) -> FragmentSubmission {
         FragmentSubmission::from_backend_plan(plan)
     }
 
@@ -445,7 +445,7 @@ pub trait FrontendBuildBundle {
 pub struct FragmentSubmission {
     /// 已完成语义闭包与表示合同的目标私有计划。
     #[doc(hidden)]
-    pub backend_plan: Arc<BackendPrivatePlan>,
+    pub backend_plan: Arc<TargetExecutionPlan>,
 }
 
 impl std::fmt::Debug for FragmentSubmission {
@@ -456,14 +456,14 @@ impl std::fmt::Debug for FragmentSubmission {
 
 impl Default for FragmentSubmission {
     fn default() -> Self {
-        Self::from_backend_plan(BackendPrivatePlan::default())
+        Self::from_backend_plan(TargetExecutionPlan::default())
     }
 }
 
 impl FragmentSubmission {
     /// 从目标私有计划构造片段提交。
     #[doc(hidden)]
-    pub fn from_backend_plan(plan: BackendPrivatePlan) -> Self {
+    pub fn from_backend_plan(plan: TargetExecutionPlan) -> Self {
         Self { backend_plan: Arc::new(plan) }
     }
 }

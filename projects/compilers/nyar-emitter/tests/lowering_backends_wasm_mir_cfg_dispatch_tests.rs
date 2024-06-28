@@ -4,7 +4,7 @@
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, NyarType, QualifiedName};
 use nyar_emitter::{
-    BackendPrivatePlan, FragmentSubmission,
+    TargetExecutionPlan, FragmentSubmission,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
     testing::lower_fragment_to_wasm_mir_module,
 };
@@ -34,7 +34,7 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
 
 fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
     let main = QualifiedName::new(vec![Identifier::new("main")]);
-    let mut plan = BackendPrivatePlan::from_functions(BTreeMap::from([(main.clone(), leaf_i32_fn("main", blocks))]));
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), leaf_i32_fn("main", blocks))]));
     plan.testing_module_name("cfg_exec").testing_entry_operation(main);
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_wasm_mir_module(&submission, "main")

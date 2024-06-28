@@ -17,7 +17,7 @@ use nyar_bytecode::{
 use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
-use crate::{BackendPrivatePlan, FragmentSubmission};
+use crate::{TargetExecutionPlan, FragmentSubmission};
 use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
@@ -198,7 +198,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 }
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
-fn build_nyar_function_entry_arities(exec: &BackendPrivatePlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, usize> {
+fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, usize> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
         let Some(view) = exec.get_function(instance)

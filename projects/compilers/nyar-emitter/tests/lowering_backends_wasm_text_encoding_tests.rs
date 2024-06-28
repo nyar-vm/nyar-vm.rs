@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar::{HostProjectionBoundary, NyarType, QualifiedName};
 use nyar_emitter::{
-    BackendPrivatePlan, FragmentSubmission,
+    TargetExecutionPlan, FragmentSubmission,
     contracts::{Block, BlockRef, ExecutableFunction, Terminator},
     lowering::backends::wasm::validate_text_encoding_projection,
 };
@@ -34,7 +34,7 @@ fn utf16_submission() -> FragmentSubmission {
         }],
         diagnostics: Vec::new(),
     };
-    FragmentSubmission::from_backend_plan(BackendPrivatePlan::from_functions(BTreeMap::from([(operation, function)])))
+    FragmentSubmission::from_backend_plan(TargetExecutionPlan::from_functions(BTreeMap::from([(operation, function)])))
 }
 
 #[test]

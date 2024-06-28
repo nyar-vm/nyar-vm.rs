@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::{ItemInstanceId, NamePath, NyarType};
 
 use crate::{
-    BackendPrivatePlan, FragmentSubmission,
+    TargetExecutionPlan, FragmentSubmission,
     backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef},
 };
 
@@ -154,7 +154,7 @@ pub(crate) fn validate_physical_submission(submission: &FragmentSubmission, back
 }
 
 fn build_function_plan(
-    executable: &BackendPrivatePlan,
+    executable: &TargetExecutionPlan,
     function: &ExecutableFunction,
     backend: PhysicalBackend,
 ) -> Result<PhysicalFunctionPlan, PhysicalPlanError> {

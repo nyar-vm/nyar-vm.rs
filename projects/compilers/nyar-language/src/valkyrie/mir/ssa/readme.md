@@ -9,7 +9,7 @@ Finer-grained home of **MIR (SSA)** structures and algorithms.
 
 ## Forbidden
 
-- No target-specific `BackendPrivatePlan` or runtime logic mixed in here.
+- No target-specific `TargetExecutionPlan` or runtime logic mixed in here.
 - Do not let the `ssa` subtree become a second compile mega-entry.
 
 ## Call fact ownership

@@ -18,7 +18,7 @@ use crate::{
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
 #[derive(Debug, Clone, Default)]
-pub struct BackendPrivatePlan {
+pub struct TargetExecutionPlan {
     module_name: String,
     fragment_id: nyar::Identifier,
     exported_operations: Vec<ItemInstanceId>,
@@ -54,7 +54,7 @@ pub struct BackendImport {
     pub return_type: NyarType,
 }
 
-impl BackendPrivatePlan {
+impl TargetExecutionPlan {
     pub(crate) fn from_entry_function(function: ExecutableFunction) -> Self {
         let entry = ItemInstanceId::from_index(0).expect("测试入口身份");
         let name = QualifiedName::new(vec![nyar::Identifier::new("main")]);

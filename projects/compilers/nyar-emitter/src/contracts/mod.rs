@@ -3,7 +3,7 @@
 //! **规则**：后端 lowering 只依赖驱动拥有的可执行视图与辅助物，
 //! 不得依赖 `nyar-language` 的 MIR 类型。
 //!
-//! 下列 dispatch / receiver 枚举是 emitter 私有的 BackendPrivatePlan 路由提示，
+//! 下列 dispatch / receiver 枚举是 emitter 私有的 TargetExecutionPlan 路由提示，
 //! 不得重新挂回 [`nyar_types::InstructionKind::Call`]。
 
 pub use nyar_types::{

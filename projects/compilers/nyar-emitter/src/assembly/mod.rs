@@ -6,7 +6,7 @@
 use miette::miette;
 use nyar::AssembledFragment;
 
-use crate::{BackendPrivatePlan, FragmentSubmission};
+use crate::{TargetExecutionPlan, FragmentSubmission};
 
 /// 从编译器成功载荷生成唯一的后端提交视图。
 pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
@@ -23,7 +23,7 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
         }
     }
     let backend_plan =
-        BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &partition.fragment, payload.theory_bundle, &roots)?;
+        TargetExecutionPlan::from_compiled_program(&payload.compiled_program, &partition.fragment, payload.theory_bundle, &roots)?;
 
     Ok(FragmentSubmission { backend_plan: std::sync::Arc::new(backend_plan) })
 }
