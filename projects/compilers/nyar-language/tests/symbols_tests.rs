@@ -7,7 +7,7 @@ use nyar_language::{
 };
 
 #[test]
-fn stable_hir_function_name_path_does_not_recurse() {
+fn stable_hir_function_name_path_uses_structured_segments() {
     let module = NamePath::new(vec![Identifier::new("main")]);
     let function = HirFunction {
         declaration: None,
@@ -28,6 +28,9 @@ fn stable_hir_function_name_path_does_not_recurse() {
         is_virtual: false,
         is_override: false,
     };
+    let path = stable_hir_function_name_path(&module, &function);
+    assert_eq!(path.parts().len(), 2);
+    assert_eq!(path.parts()[0].as_str(), "main");
+    assert_eq!(path.parts()[1].as_str(), "answer");
     assert_eq!(stable_hir_function_symbol(&module, &function), "main::answer");
-    assert_eq!(stable_hir_function_name_path(&module, &function).to_string(), "main::answer");
 }

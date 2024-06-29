@@ -40,7 +40,7 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
         external_calls: vec![MirExternalCallContract {
             declaration: Some(ItemId::from_index(1).unwrap()),
             instance: Some(contract_instance),
-            symbol: NamePath::new(vec![Identifier::new("demo::write")]),
+            symbol: NamePath::new(vec![Identifier::new("demo"), Identifier::new("write")]),
             link: ExternalImportLink::host(None, vec!["demo".to_owned(), "write".to_owned()]),
             parameter_types: vec![ValkyrieType::Integer32 { signed: true }],
             return_type: ValkyrieType::Integer32 { signed: true },
@@ -67,7 +67,7 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
-    let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "std.adaptor.clr.write".into() }];
+    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
 
     apply_host_provider_bindings(&mut module, &[], &bindings).expect("host provider binding must close adaptor contract");
 
@@ -87,7 +87,7 @@ fn unreferenced_host_contract_selection_is_ignored() {
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     module.external_calls.clear();
-    let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "std.adaptor.clr.write".into() }];
+    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
 
     apply_host_provider_bindings(&mut module, &[], &bindings).expect("未被入口闭包引用的 contract 不要求 provider 身份");
 
@@ -101,7 +101,7 @@ fn missing_provider_symbol_fails_closed() {
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     module.callable_identities.remove("std.adaptor.clr::write");
-    let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "std.adaptor.clr.write".into() }];
+    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
 
     let error = apply_host_provider_bindings(&mut module, &[], &bindings).expect_err("missing provider must fail");
     assert!(error.to_string().contains("host provider"));
@@ -114,7 +114,7 @@ fn ambiguous_host_contract_fails_closed() {
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     let duplicate = module.external_calls[0].clone();
     module.external_calls.push(duplicate);
-    let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "std.adaptor.clr.write".into() }];
+    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
 
     let error = apply_host_provider_bindings(&mut module, &[], &bindings).expect_err("ambiguous contract must fail");
     assert!(error.to_string().contains("多个候选"));

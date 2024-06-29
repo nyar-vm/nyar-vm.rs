@@ -10,6 +10,7 @@ use nyar_types::ItemInstanceId;
 use crate::valkyrie::{
     frontend::ParseError,
     mir::{MirFunction, MirModule, MirOperand, MirOperation},
+    symbols::stable_symbol_key,
 };
 
 use super::context::CompilerHostProviderBinding;
@@ -31,12 +32,11 @@ pub fn apply_host_provider_bindings(
         // 装配层按 target/profile 选择 provider 时看到的是声明库存，不掌握入口可达性。
         // 未被本次可观察入口闭包引用的 contract 没有需要改写的调用点，其 provider
         // 也就不需要出现在依赖 MIR 中：跳过，不得因未使用而拒绝整个编译。
-        let contract_keys = symbol_lookup_keys(&binding.contract);
         let contract_instance = {
             let contracts = module
                 .external_calls
                 .iter()
-                .filter(|contract| contract_keys.iter().any(|key| symbols_equivalent(&contract.symbol.to_string(), key)))
+                .filter(|contract| stable_symbol_key(&contract.symbol) == binding.contract)
                 .collect::<Vec<_>>();
             match contracts.as_slice() {
                 [] => continue,
@@ -80,9 +80,15 @@ fn resolve_callable_binding(
     dependency_mirs: &[MirModule],
     symbol: &str,
 ) -> Result<(ItemInstanceId, Option<MirFunction>), ParseError> {
-    let registered = symbol_lookup_keys(symbol)
-        .into_iter()
-        .filter_map(|key| module.callable_identities.get(&key).copied())
+    if let Some(instance) = module.callable_identities.get(symbol).copied() {
+        return Ok((instance, None));
+    }
+
+    let registered = module
+        .callable_identities
+        .iter()
+        .filter(|(key, _)| *key == symbol)
+        .map(|(_, instance)| *instance)
         .collect::<std::collections::BTreeSet<_>>();
     if registered.len() > 1 {
         return Err(ParseError::invalid(format!("host provider `{symbol}` 的 callable identity 有歧义")));
@@ -94,17 +100,13 @@ fn resolve_callable_binding(
     let candidates = dependency_mirs
         .iter()
         .flat_map(|dependency| dependency.functions.iter())
-        .filter(|function| function.instance.is_some() && symbol_matches(&function.symbol, symbol))
+        .filter(|function| function.instance.is_some() && function.symbol == symbol)
         .collect::<Vec<_>>();
     match candidates.as_slice() {
         [] => Err(ParseError::invalid(format!("host provider `{symbol}` 未在源码闭包中解析到 callable identity"))),
         [function] => Ok((function.instance.expect("已过滤 callable instance"), Some((*function).clone()))),
         _ => Err(ParseError::invalid(format!("host provider `{symbol}` 在依赖闭包中有多个候选"))),
     }
-}
-
-fn symbol_matches(candidate: &str, symbol: &str) -> bool {
-    symbol_lookup_keys(symbol).iter().any(|key| key == candidate)
 }
 
 fn install_provider_definition(
@@ -123,26 +125,6 @@ fn install_provider_definition(
         return Err(ParseError::invalid(format!("host provider `{}` 的 callable identity 冲突", provider_function.symbol)));
     }
     Ok(())
-}
-
-fn symbol_lookup_keys(symbol: &str) -> Vec<String> {
-    let mut keys = Vec::new();
-    keys.push(symbol.to_string());
-    keys.push(symbol.replace('.', "::"));
-    keys.push(symbol.replace("::", "."));
-    if let Some((namespace, name)) = symbol.rsplit_once('.') {
-        keys.push(format!("{}::{}", namespace, name));
-    }
-    if let Some((namespace, name)) = symbol.rsplit_once("::") {
-        keys.push(format!("{}.{}", namespace, name));
-    }
-    keys.sort();
-    keys.dedup();
-    keys
-}
-
-fn symbols_equivalent(left: &str, right: &str) -> bool {
-    symbol_lookup_keys(left).iter().any(|candidate| candidate == right) || symbol_lookup_keys(right).iter().any(|candidate| candidate == left)
 }
 
 fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>) {
