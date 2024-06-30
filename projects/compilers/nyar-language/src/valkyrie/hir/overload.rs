@@ -785,13 +785,9 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     candidate.with_where_constraints(function.where_constraints.clone())
 }
 
-/// Simple name used when matching an unqualified call site to overload candidates.
-///
-/// Module-level MIR symbols are stored as a single `NamePath` segment (`main::answer`);
-/// instance methods keep dotted paths (`Counter.increment`).
+/// Final path segment for an unqualified call site; does not reinterpret embedded separators.
 fn overload_symbol_simple_name(symbol: &NamePath) -> &str {
-    let part = symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("");
-    part.rsplit_once("::").map(|(_, simple)| simple).unwrap_or(part)
+    symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("")
 }
 
 fn symbol_matches_callee_name(symbol: &NamePath, callee_name: &Identifier) -> bool {
@@ -1980,6 +1976,7 @@ fn try_resolve_call(
                         locals,
                         struct_fields,
                         singleton_names,
+                        contextual_type,
                     );
                 }
                 return try_resolve_qualified_free_function(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
@@ -2011,7 +2008,7 @@ fn try_resolve_call(
         .filter(|candidate| symbol_matches_callee_name(&candidate.symbol, &callee_name))
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
-                if let Some(instantiated) = instantiate_constructor_candidate_for_context(candidate, context) {
+                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
                     if let Some(matched) = match_call_candidate(
                         &instantiated,
                         args,
@@ -2666,6 +2663,7 @@ fn try_resolve_type_static_method(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
 ) -> Option<HirResolvedCall> {
     let filtered = candidates
         .iter()
@@ -2673,7 +2671,18 @@ fn try_resolve_type_static_method(
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
-        .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
+        .filter_map(|candidate| {
+            // 静态方法没有接收者实参，owner 的类型参数无法从实参推出：`ArrayList::new(0)`
+            // 的 `new(capacity: usize): Self` 中 `T` 只能由调用点的期望类型确定。
+            // 期望类型与返回类型形状不一致时退回普通匹配，缺实例由后续阶段结构化失败。
+            if let Some(context) = contextual_type
+                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                && let Some(matched) = match_call_candidate(&instantiated, args, &[], type_relations, locals, struct_fields, singleton_names)
+            {
+                return Some(matched);
+            }
+            match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names)
+        })
         .collect::<Vec<_>>();
     if filtered.is_empty() {
         return None;
@@ -3236,7 +3245,7 @@ pub fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_t
     }
 }
 
-fn instantiate_constructor_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
+fn instantiate_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
     let mut substitutions = BTreeMap::new();
     unify_call_type_binders(&candidate.signature.return_type, contextual_type, &candidate.generic_binders, &mut substitutions)?;
     let mut candidate = candidate.clone();
@@ -3283,13 +3292,10 @@ pub fn try_resolve_constructor(
     let filtered = candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-        .filter(|candidate| {
-            candidate.symbol == *path
-                || (path.parts().len() == 1 && candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == &name))
-        })
+        .filter(|candidate| candidate.symbol == *path)
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
-                if let Some(instantiated) = instantiate_constructor_candidate_for_context(candidate, context) {
+                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
                     if let Some(matched) =
                         match_call_candidate(&instantiated, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
                     {

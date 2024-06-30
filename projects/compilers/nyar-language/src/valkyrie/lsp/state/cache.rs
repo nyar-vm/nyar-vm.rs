@@ -2,14 +2,26 @@ use super::symbol::SymbolInfo;
 use dashmap::DashMap;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SymbolRef {
+    namespace: String,
+    name: String,
+}
+
+impl SymbolRef {
+    fn new(namespace: &str, name: &str) -> Self {
+        Self { namespace: namespace.to_string(), name: name.to_string() }
+    }
+}
+
 /// 语义缓存，存储已解析的类型和跨命名空间的引用
 pub struct SemanticCache {
     /// 命名空间 -> 符号名 -> 语义信息 (SymbolInfo)
     pub cache: DashMap<String, DashMap<String, Arc<SymbolInfo>>>,
-    /// 依赖图：符号标识符 (ns.name) -> 依赖它的符号列表 (ns.name)
-    pub symbol_dependencies: DashMap<String, Vec<String>>,
-    /// 文件 URI -> 该文件定义的符号标识符列表 (ns.name)
-    pub file_to_symbols: DashMap<String, Vec<String>>,
+    /// 依赖图：被依赖符号 -> 依赖它的符号列表
+    pub symbol_dependencies: DashMap<SymbolRef, Vec<SymbolRef>>,
+    /// 文件 URI -> 该文件定义的符号标识符列表
+    pub file_to_symbols: DashMap<String, Vec<SymbolRef>>,
 }
 
 impl SemanticCache {
@@ -23,24 +35,19 @@ impl SemanticCache {
             ns_map.remove(name);
         }
 
-        // 级联失效：找到所有依赖于此符号的项并移除
-        let symbol_id = format!("{}.{}", namespace, name);
+        let symbol_id = SymbolRef::new(namespace, name);
         if let Some((_, dependents)) = self.symbol_dependencies.remove(&symbol_id) {
             for dep in dependents {
-                let parts: Vec<&str> = dep.splitn(2, '.').collect();
-                if parts.len() == 2 {
-                    self.invalidate_symbol(parts[0], parts[1]);
-                }
+                self.invalidate_symbol(&dep.namespace, &dep.name);
             }
         }
     }
 
     /// 更新依赖关系
     pub fn update_dependencies(&self, dependency_ns: &str, dependency_name: &str, dependent_ns: &str, dependent_name: &str) {
-        let dependency_id = format!("{}.{}", dependency_ns, dependency_name);
-        let dependent_id = format!("{}.{}", dependent_ns, dependent_name);
+        let dependency_id = SymbolRef::new(dependency_ns, dependency_name);
+        let dependent_id = SymbolRef::new(dependent_ns, dependent_name);
 
-        // 避免自依赖
         if dependency_id == dependent_id {
             return;
         }
@@ -51,7 +58,7 @@ impl SemanticCache {
     pub fn invalidate_namespace(&self, namespace: &str) {
         if let Some((_, symbols)) = self.cache.remove(namespace) {
             for (name, _) in symbols {
-                let symbol_id = format!("{}.{}", namespace, name);
+                let symbol_id = SymbolRef::new(namespace, &name);
                 self.symbol_dependencies.remove(&symbol_id);
             }
         }

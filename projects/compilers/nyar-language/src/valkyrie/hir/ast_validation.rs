@@ -16,7 +16,7 @@ pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), ParseError> {
 /// `namespace first;` 是空 items 指令，后续顶层声明落在该作用域；
 /// 不得只按短名判重，否则跨 namespace 同名结构会被误杀。
 fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str) -> Result<(), ParseError> {
-    let mut seen: BTreeMap<String, &'static str> = BTreeMap::new();
+    let mut seen: BTreeMap<(String, String), &'static str> = BTreeMap::new();
     let mut current_namespace = namespace_prefix.to_string();
     for item in items {
         match item {
@@ -25,15 +25,19 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str
             }
             StatementNode::Namespace(namespace) => {
                 if let Some(body) = &namespace.body {
-                    let nested = qualify_name(&current_namespace, &name_path_text(&namespace.name));
+                    let nested = join_namespace(&current_namespace, &name_path_text(&namespace.name));
                     validate_duplicate_type_names(&body.items, &nested)?;
                 }
             }
             other => {
                 if let Some((name, kind)) = type_declaration_identity(other) {
-                    let key = qualify_name(&current_namespace, &name);
+                    let key = (current_namespace.clone(), name);
                     if let Some(prior) = seen.insert(key.clone(), kind) {
-                        return Err(ParseError::invalid(format!("duplicate definition of `{key}`: {prior} and {kind}")));
+                        return Err(ParseError::invalid(format!(
+                            "duplicate definition of `{}` in namespace `{}`: {prior} and {kind}",
+                            key.1,
+                            key.0
+                        )));
                     }
                 }
             }
@@ -46,7 +50,7 @@ fn name_path_text(path: &NamePath) -> String {
     path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join(".")
 }
 
-fn qualify_name(namespace: &str, name: &str) -> String {
+fn join_namespace(namespace: &str, name: &str) -> String {
     if namespace.is_empty() { name.to_string() } else { format!("{namespace}.{name}") }
 }
 

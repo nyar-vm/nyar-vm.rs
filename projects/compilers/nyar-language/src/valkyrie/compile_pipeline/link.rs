@@ -106,7 +106,8 @@ pub fn link_reachable_dependency_mir(
         else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
-                if let Some(previous) = linked.callable_identities.insert(contract.symbol.to_string(), instance)
+                if let Some(previous) =
+                    linked.callable_identities.insert(crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance)
                     && previous != instance
                 {
                     return Err(ParseError::invalid("外部导入 ABI 标签冲突"));
@@ -273,7 +274,6 @@ struct AggregateRemap {
 fn same_struct_contract(left: &MirStruct, right: &MirStruct) -> bool {
     left.declaration.is_some()
         && left.declaration == right.declaration
-        && left.qualified_name() == right.qualified_name()
         && left.generics == right.generics
         && left.is_value_type == right.is_value_type
         && left.fields.iter().map(|field| (&field.name, &field.ty)).eq(right.fields.iter().map(|field| (&field.name, &field.ty)))

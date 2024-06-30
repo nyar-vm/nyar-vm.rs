@@ -67,7 +67,10 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.singleton_instances = module.singleton_instances.clone();
     for (symbol, instance) in
         module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance))).chain(
-            module.external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))),
+            module
+                .external_calls
+                .iter()
+                .filter_map(|contract| contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))),
         )
     {
         let parts = symbol.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>();

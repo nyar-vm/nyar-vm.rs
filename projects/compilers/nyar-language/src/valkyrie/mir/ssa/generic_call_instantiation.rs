@@ -385,14 +385,10 @@ fn collect_instantiation_sites(
             else {
                 continue;
             };
-            let Some(result) = instruction.results.first()
-            else {
-                continue;
-            };
-            let Some(concrete_return) = function.value_types.get(result).cloned()
-            else {
-                continue;
-            };
+            // 结果被丢弃的调用（含 `unit` 返回）同样必须物化：callee 仍是泛型种子时
+            // 链接会把未闭合的种子当作可达实例拉入，绕过调用点的完整代入。
+            // 没有结果 SSA 时以形参统一得到的代入改写种子返回类型。
+            let observed_return = instruction.results.first().and_then(|result| function.value_types.get(result).cloned());
             let Some(seed_function) =
                 functions.iter().find(|candidate| candidate.instance == Some(*seed)).or_else(|| {
                     seed_pool.iter().find(|candidate| candidate.instance == Some(*seed))
@@ -415,9 +411,18 @@ fn collect_instantiation_sites(
                 };
                 unify_generic_instantiation(formal, actual, &mut substitutions)
             });
-            if !parameters_match || !unify_generic_instantiation(&seed_function.return_type, &concrete_return, &mut substitutions) {
+            if !parameters_match {
                 continue;
             }
+            let concrete_return = match observed_return {
+                Some(concrete_return) => {
+                    if !unify_generic_instantiation(&seed_function.return_type, &concrete_return, &mut substitutions) {
+                        continue;
+                    }
+                    concrete_return
+                }
+                None => apply_type_substitution(&seed_function.return_type, &substitutions),
+            };
             if substitutions.is_empty() {
                 continue;
             }

@@ -166,6 +166,14 @@ pub struct GlobalIndex {
     pub type_aliases: DashMap<String, String>,
 }
 
+fn qualified_trait_key(symbol_namespace: &str, trait_name: &str) -> String {
+    if let Some((namespace, name)) = trait_name.split_once("::") {
+        format!("{}::{}", namespace, name)
+    } else {
+        format!("{}::{}", symbol_namespace, trait_name)
+    }
+}
+
 impl GlobalIndex {
     pub fn new() -> Self {
         Self {
@@ -240,7 +248,7 @@ impl GlobalIndex {
                     }
                 }
                 for trait_name in &symbol.implemented_traits {
-                    let trait_key = format!("{}::{}", symbol.namespace, trait_name);
+                    let trait_key = qualified_trait_key(&symbol.namespace, trait_name);
                     if let Some(mut impls) = self.trait_to_implementations.get_mut(&trait_key) {
                         impls.retain(|i| i.implementor != symbol.name);
                     }
@@ -259,7 +267,7 @@ impl GlobalIndex {
                 self.register_class_inheritance(&parent_key, &child_key);
             }
             for trait_name in &symbol.implemented_traits {
-                let trait_key = if trait_name.contains("::") { trait_name.clone() } else { format!("{}::{}", symbol.namespace, trait_name) };
+                let trait_key = qualified_trait_key(&symbol.namespace, trait_name);
                 let impl_info = TraitImplementation {
                     implementor: symbol.name.clone(),
                     implementor_namespace: symbol.namespace.clone(),

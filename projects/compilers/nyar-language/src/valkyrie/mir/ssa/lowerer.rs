@@ -135,7 +135,11 @@ impl MirLowerer {
         let callable_identities = functions
             .iter()
             .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
-            .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
+            .chain(
+                external_calls
+                    .iter()
+                    .filter_map(|contract| contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))),
+            )
             .collect();
         let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
         let result = MirModule {

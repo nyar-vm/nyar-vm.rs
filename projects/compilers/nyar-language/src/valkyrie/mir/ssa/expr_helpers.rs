@@ -309,8 +309,7 @@ pub(super) fn future_resume_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
 }
 
 fn overload_symbol_simple_name(symbol: &NamePath) -> &str {
-    let part = symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("");
-    part.rsplit_once("::").map(|(_, simple)| simple).unwrap_or(part)
+    symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("")
 }
 
 fn callee_surface_simple_name(kind: &HirExprKind) -> Option<&str> {
@@ -325,8 +324,7 @@ fn callee_surface_simple_name(kind: &HirExprKind) -> Option<&str> {
 /// 同时支持 `HirExprKind::Path`（多部分路径）和 `HirExprKind::Variable`（单部分名称），
 /// 因为 `lower_name_expression` 会将单部分名称降级为 `Variable`。
 pub(super) fn callee_name_matches(kind: &HirExprKind, expected: &str) -> bool {
-    callee_surface_simple_name(kind)
-        .is_some_and(|name| name == expected || name.rsplit_once("::").is_some_and(|(_, simple)| simple == expected))
+    callee_surface_simple_name(kind).is_some_and(|name| name == expected)
 }
 
 /// 结合 overload 合同与限定路径末段，匹配 `option_none` / `Some` 等全局后缀解析结果。

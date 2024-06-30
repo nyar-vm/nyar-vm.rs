@@ -418,9 +418,12 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     MirOperand::Symbol(symbol) => {
                         // 已通过 `validate_static_call_resolution` 的 Symbol 只能是内建 intrinsic
                         // 或携带冻结身份的外部导入合同；本地函数按名字提供签名属于名称认亲，不得作为签名来源。
-                        let target_symbol = symbol.to_string();
-                        let external: Vec<_> =
-                            module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
+                        let target_symbol = crate::valkyrie::symbols::stable_symbol_key(symbol);
+                        let external: Vec<_> = module
+                            .external_calls
+                            .iter()
+                            .filter(|candidate| crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol) == target_symbol)
+                            .collect();
                         if external.len() > 1 {
                             return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
                         }
