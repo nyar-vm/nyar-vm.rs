@@ -32,7 +32,7 @@ use crate::{
         },
         mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
         operator_members,
-        semantic_closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure},
+        semantic_closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure_with_host_bindings},
     },
 };
 mod trait_binding;
@@ -796,7 +796,7 @@ impl ValkyrieCompiler {
         arch: &str,
     ) -> Result<nyar_types::CompiledProgram, ParseError> {
         let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
-        let mut hir_groups = self.resolve_source_groups(groups, arch)?;
+        let mut hir_groups = self.resolve_source_groups_with_host_bindings(groups, host_bindings, arch)?;
         let final_index = hir_groups.len().checked_sub(1).ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         // monomorph 必须接在整份闭包 HIR 实例号之后，避免与后包声明实例撞号。
@@ -839,8 +839,19 @@ impl ValkyrieCompiler {
 
     #[doc(hidden)]
     pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, ParseError> {
+        self.resolve_source_groups_with_host_bindings(groups, &[], arch)
+    }
+
+    /// 从完整依赖顺序的源码快照构建语义闭包，并把 Resolver 选定的 host provider 声明纳入 body lowering。
+    pub fn resolve_source_groups_with_host_bindings(
+        &self,
+        groups: &[CompilerSourceGroup],
+        host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+        arch: &str,
+    ) -> Result<Vec<HirModule>, ParseError> {
         validate_source_groups(groups)?;
-        let closure = source_group_closure(groups, arch).map_err(|error| ParseError::invalid(error.to_string()))?;
+        let closure =
+            source_group_closure_with_host_bindings(groups, host_bindings, arch).map_err(|error| ParseError::invalid(error.to_string()))?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;

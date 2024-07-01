@@ -191,12 +191,14 @@ pub struct SemanticClosure {
     pub digest: String,
 }
 
-/// 单个源码组的闭包规划输入：组身份、直接依赖身份、是否入口组、组内文件。
+/// 单个源码组的闭包规划输入：组身份、模块名、直接依赖身份、是否入口组、组内文件。
 ///
 /// `direct_dependencies` 是可见性合同的唯一事实来源：它决定本组引用可以命中哪些组的声明。
 pub struct ClosureGroupInput<'a> {
     /// 依赖组身份。
     pub dependency_key: &'a str,
+    /// 语义组模块名；无 namespace 的声明用它形成与 HIR 稳定符号一致的限定名。
+    pub module_name: &'a str,
     /// 本组可直接引用的依赖组身份。
     pub direct_dependencies: &'a [&'a str],
     /// 是否为唯一入口组。
@@ -215,6 +217,18 @@ pub enum SemanticClosureError {
         /// 入口组内未能建立索引的文件（路径、原因）；为空表示文件可解析但没有入口注解。
         unindexed_source_files: Vec<(String, String)>,
     },
+    /// Resolver 选定的 provider 符号没有命中唯一声明身份；被需求合同不得缺实现。
+    HostProviderNotResolved {
+        /// 绑定中的 provider 稳定符号。
+        symbol: String,
+    },
+    /// 同一 provider 符号命中多个声明身份：不得择一继续。
+    HostProviderAmbiguous {
+        /// 绑定中的 provider 稳定符号。
+        symbol: String,
+        /// 命中的声明身份（依赖组::路径::种类::namespace::拥有者::名字）。
+        declarations: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for SemanticClosureError {
@@ -230,6 +244,12 @@ impl std::fmt::Display for SemanticClosureError {
                 }
                 Ok(())
             }
+            Self::HostProviderNotResolved { symbol } => {
+                write!(formatter, "host provider `{symbol}` 未在语义源码闭包中解析到唯一声明身份")
+            }
+            Self::HostProviderAmbiguous { symbol, declarations } => {
+                write!(formatter, "host provider `{symbol}` 在语义源码闭包中命中多个声明身份: {declarations:?}")
+            }
         }
     }
 }
@@ -242,6 +262,18 @@ impl std::error::Error for SemanticClosureError {}
 /// `arch` 是 TGrammar 模板展开的目标键：索引必须在与 HIR lowering 相同的展开结果上
 /// 识别 `[export]` / `[main]`，否则模板分支内的入口声明不可见。
 pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup], arch: &str) -> Result<SemanticClosure, SemanticClosureError> {
+    source_group_closure_with_host_bindings(groups, &[], arch)
+}
+
+/// 与 [`source_group_closure`] 相同，但把 Resolver 选定的 host provider 绑定作为外部事实：
+/// 被本次入口闭包引用的合同，其选定 provider 声明必须进入 body lowering。
+///
+/// 未被引用的合同不物化 provider：装配层的选择基于声明库存，不掌握入口可达性。
+pub(crate) fn source_group_closure_with_host_bindings(
+    groups: &[crate::CompilerSourceGroup],
+    host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+    arch: &str,
+) -> Result<SemanticClosure, SemanticClosureError> {
     let owned = groups
         .iter()
         .map(|group| group.sources.iter().map(|file| (file.path.clone(), file.source.clone())).collect::<Vec<_>>())
@@ -254,16 +286,26 @@ pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup], arch: 
         .zip(&dependency_keys)
         .map(|((group, files), dependencies)| ClosureGroupInput {
             dependency_key: group.dependency_key.as_str(),
+            module_name: group.name.as_str(),
             direct_dependencies: dependencies.as_slice(),
             is_entry: group.is_entry,
             files: files.as_slice(),
         })
         .collect::<Vec<_>>();
-    plan_semantic_closure(&inputs, arch)
+    plan_semantic_closure_with_host_bindings(&inputs, host_bindings, arch)
 }
 
 /// 从入口组与其依赖 inventory 规划完整语义闭包；`arch` 决定 TGrammar 模板分支。
 pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>], arch: &str) -> Result<SemanticClosure, SemanticClosureError> {
+    plan_semantic_closure_with_host_bindings(groups, &[], arch)
+}
+
+/// 从入口组、依赖 inventory 与 Resolver 的 host provider 选择规划完整语义闭包。
+pub fn plan_semantic_closure_with_host_bindings(
+    groups: &[ClosureGroupInput<'_>],
+    host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+    arch: &str,
+) -> Result<SemanticClosure, SemanticClosureError> {
     let inventory = groups.iter().map(|group| group.dependency_key).collect::<BTreeSet<_>>();
     // 可见性：本组 + 直接依赖组。这是闭包允许跨组命中声明的唯一范围；
     // 装配层未声明的依赖组不构成可见性，跨组全局名字回退一律不存在。
@@ -405,6 +447,8 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>], arch: &str) -> Re
         queue.extend(promoted);
     }
 
+    demand_selected_host_providers(host_bindings, groups, &declaration_index, &mut demanded)?;
+
     let mut closure_groups = Vec::with_capacity(groups.len());
     for group in groups.iter() {
         let dependency_key = group.dependency_key;
@@ -426,6 +470,71 @@ pub fn plan_semantic_closure(groups: &[ClosureGroupInput<'_>], arch: &str) -> Re
 
     let digest = compute_closure_digest(&closure_groups, &indexed_files, arch);
     Ok(SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest })
+}
+
+fn demand_selected_host_providers(
+    host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+    groups: &[ClosureGroupInput<'_>],
+    declaration_index: &BTreeMap<DeclarationKey, DeclarationIndexEntry>,
+    demanded: &mut BTreeSet<DeclarationKey>,
+) -> Result<(), SemanticClosureError> {
+    for binding in host_bindings {
+        let key = resolve_host_provider_declaration(&binding.symbol, groups, declaration_index)?;
+        demanded.insert(key);
+    }
+    Ok(())
+}
+
+fn resolve_host_provider_declaration(
+    symbol: &str,
+    groups: &[ClosureGroupInput<'_>],
+    declaration_index: &BTreeMap<DeclarationKey, DeclarationIndexEntry>,
+) -> Result<DeclarationKey, SemanticClosureError> {
+    let parts = symbol.split("::").filter(|part| !part.is_empty()).collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return Err(SemanticClosureError::HostProviderNotResolved { symbol: symbol.to_string() });
+    }
+    let name = parts[parts.len() - 1];
+    let candidate_groups = candidate_groups_for_symbol_prefix(&parts[..parts.len() - 1], groups);
+    let matches = declaration_index
+        .keys()
+        .filter(|key| candidate_groups.contains(&key.dependency_key))
+        .filter(|key| key.name == name)
+        .filter(|key| symbol_matches_host_provider_declaration(&parts, key))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Err(SemanticClosureError::HostProviderNotResolved { symbol: symbol.to_string() }),
+        [key] => Ok((*key).clone()),
+        _ => Err(SemanticClosureError::HostProviderAmbiguous {
+            symbol: symbol.to_string(),
+            declarations: matches.iter().map(|key| key.encoded()).collect(),
+        }),
+    }
+}
+
+fn candidate_groups_for_symbol_prefix(prefix_parts: &[&str], groups: &[ClosureGroupInput<'_>]) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let dotted_prefix = prefix_parts.join(".");
+    for group in groups {
+        if prefix_parts.len() == 1 && (group.module_name == prefix_parts[0] || group.dependency_key == prefix_parts[0]) {
+            out.insert(group.dependency_key.to_string());
+        }
+        if group.module_name == dotted_prefix || group.dependency_key == dotted_prefix {
+            out.insert(group.dependency_key.to_string());
+        }
+    }
+    out
+}
+
+fn symbol_matches_host_provider_declaration(parts: &[&str], key: &DeclarationKey) -> bool {
+    match parts.len() {
+        0 | 1 => false,
+        2 => key.owner.is_none() && matches!(key.kind, DeclarationKind::Micro),
+        _ => {
+            let owner = parts[parts.len() - 2];
+            key.owner.as_deref() == Some(owner) && matches!(key.kind, DeclarationKind::Method | DeclarationKind::ImplyMethod)
+        }
+    }
 }
 
 /// 解析一组「namespace 段 + 名字路径」引用并把命中的声明身份入队；

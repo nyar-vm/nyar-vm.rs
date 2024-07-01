@@ -8,6 +8,7 @@ fn plan_from_groups(groups: &[(&str, bool, Vec<(String, String)>)]) -> SemanticC
         .enumerate()
         .map(|(index, (key, is_entry, files))| ClosureGroupInput {
             dependency_key: key,
+            module_name: key,
             // 夹具按依赖顺序提供组：先出现的组视为可被后出现的组直接引用。
             direct_dependencies: &keys[..index],
             is_entry: *is_entry,
@@ -24,6 +25,7 @@ fn plan_with_visibility(groups: &[(&str, bool, Vec<(String, String)>)], visibili
         .zip(visibility)
         .map(|((key, is_entry, files), dependencies)| ClosureGroupInput {
             dependency_key: key,
+            module_name: key,
             direct_dependencies: dependencies,
             is_entry: *is_entry,
             files: files.as_slice(),
@@ -59,7 +61,13 @@ fn unreachable_inventory_syntax_error_does_not_expand_into_body_paths() {
 #[test]
 fn entry_group_without_entry_declaration_is_structured_failure() {
     let groups = [("app", true, vec![file("solution.v", "micro run() -> i32 { return 23 }")])];
-    let inputs = [ClosureGroupInput { dependency_key: "app", direct_dependencies: &[], is_entry: true, files: groups[0].2.as_slice() }];
+    let inputs = [ClosureGroupInput {
+        dependency_key: "app",
+        module_name: "app",
+        direct_dependencies: &[],
+        is_entry: true,
+        files: groups[0].2.as_slice(),
+    }];
     let error = plan_semantic_closure(&inputs, "wasm32").expect_err("entry group without `[export]`/`[main]` must fail");
     assert_eq!(error, SemanticClosureError::MissingEntryDeclaration { dependency_key: "app".to_string(), unindexed_source_files: Vec::new() });
 }
