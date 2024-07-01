@@ -21,7 +21,7 @@ fn source_surface_module() -> MirModule {
 fn source_instances_reach_canonical_without_a_name_binding_table() {
     let mut module = source_surface_module();
     let instance = module.functions[0].instance.expect("Compiler 实例 identity");
-    module.callable_identities.clear();
+    module.callable_symbols.clear();
     let program = canonical_program_from_semantic_mir(&module).expect("Canonical 只消费节点实例，不按名称重绑");
     assert!(program.mir.functions.contains_key(&instance));
     assert!(program.linked.exports.contains_key(&instance));
@@ -43,7 +43,7 @@ fn source_export_and_entry_diagnostic_names_cannot_rebind_instances() {
 fn source_missing_node_instance_cannot_be_recovered_from_a_name_table() {
     let mut module = source_surface_module();
     assert!(module.functions[0].instance.take().is_some());
-    assert!(!module.callable_identities.is_empty());
+    assert!(!module.callable_symbols.is_empty());
     let error = canonical_program_from_semantic_mir(&module).expect_err("名称表不能补造缺失节点身份");
     assert_eq!(error.records[0].code, "CAN034");
 }
@@ -75,7 +75,7 @@ fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -168,7 +168,7 @@ fn producer_rejects_unresolved_callable_without_name_fallback() {
 fn producer_rejects_missing_compiler_callable_identity() {
     let mut module =
         module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
-    module.callable_identities.clear();
+    module.callable_symbols.clear();
     let error = canonical_program_from_semantic_mir(&module).expect_err("缺失 Compiler callable identity 必须失败");
     assert_eq!(error.records[0].code, "CAN034");
 }
@@ -288,7 +288,7 @@ fn array_push_operation_canonicalizes_without_symbol_call() {
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -361,7 +361,7 @@ fn array_set_operation_canonicalizes_without_symbol_call() {
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -431,7 +431,7 @@ fn array_length_operation_canonicalizes_without_symbol_call() {
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -503,7 +503,7 @@ fn array_get_operation_canonicalizes_without_symbol_call() {
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),
@@ -582,7 +582,7 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
         external_calls: Vec::new(),
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+        callable_symbols: BTreeMap::from([(ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned())]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
         sum_types: Vec::new(),

@@ -441,7 +441,7 @@ fn specialize_function(
     let instance = ItemInstanceId::from_index(instance_index).expect("ItemInstanceId overflow");
     let mut specialized = seed.clone();
     specialized.instance = Some(instance);
-    // callable_identities 以符号为键；monomorph 必须使用独立符号，避免覆盖种子条目。
+    // monomorph 必须使用独立 ABI 诊断标签，避免覆盖种子 callable_symbols 条目。
     specialized.symbol = format!("{}#{}", seed.symbol, instance_index);
     specialized.return_type = concrete_return.clone();
     specialized.param_types = seed.param_types.iter().map(|ty| apply_type_substitution(ty, substitutions)).collect();

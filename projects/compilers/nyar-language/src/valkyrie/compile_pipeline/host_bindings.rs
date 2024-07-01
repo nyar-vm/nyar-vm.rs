@@ -67,8 +67,8 @@ pub fn apply_host_provider_bindings(
         remap_call_targets(function, &remaps);
     }
 
-    for (contract_instance, provider_instance) in &remaps {
-        module.callable_identities.retain(|_, instance| *instance != *contract_instance || *instance == *provider_instance);
+    for (contract_instance, _provider_instance) in &remaps {
+        module.callable_symbols.remove(contract_instance);
         module.external_calls.retain(|contract| contract.instance != Some(*contract_instance));
     }
 
@@ -80,21 +80,20 @@ fn resolve_callable_binding(
     dependency_mirs: &[MirModule],
     symbol: &str,
 ) -> Result<(ItemInstanceId, Option<MirFunction>), ParseError> {
-    if let Some(instance) = module.callable_identities.get(symbol).copied() {
-        return Ok((instance, None));
+    if let Some((instance, _)) = module.callable_symbols.iter().find(|(_, label)| label.as_str() == symbol) {
+        return Ok((*instance, None));
     }
 
-    let registered = module
-        .callable_identities
+    let consumer_matches = module
+        .functions
         .iter()
-        .filter(|(key, _)| *key == symbol)
-        .map(|(_, instance)| *instance)
-        .collect::<std::collections::BTreeSet<_>>();
-    if registered.len() > 1 {
+        .filter(|function| function.instance.is_some() && function.symbol == symbol)
+        .collect::<Vec<_>>();
+    if consumer_matches.len() > 1 {
         return Err(ParseError::invalid(format!("host provider `{symbol}` 的 callable identity 有歧义")));
     }
-    if let Some(instance) = registered.into_iter().next() {
-        return Ok((instance, None));
+    if let Some(function) = consumer_matches.first() {
+        return Ok((function.instance.expect("已过滤 callable instance"), None));
     }
 
     let candidates = dependency_mirs
@@ -115,15 +114,11 @@ fn install_provider_definition(
     provider_function: MirFunction,
 ) -> Result<(), ParseError> {
     if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
-        module.callable_identities.entry(provider_function.symbol.clone()).or_insert(provider_instance);
+        module.register_callable_symbol(provider_instance, provider_function.symbol.clone()).map_err(ParseError::invalid)?;
         return Ok(());
     }
     module.functions.push(provider_function.clone());
-    if let Some(previous) = module.callable_identities.insert(provider_function.symbol.clone(), provider_instance)
-        && previous != provider_instance
-    {
-        return Err(ParseError::invalid(format!("host provider `{}` 的 callable identity 冲突", provider_function.symbol)));
-    }
+    module.register_callable_symbol(provider_instance, provider_function.symbol).map_err(ParseError::invalid)?;
     Ok(())
 }
 

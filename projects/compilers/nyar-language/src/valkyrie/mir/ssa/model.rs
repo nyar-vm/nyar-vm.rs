@@ -87,9 +87,11 @@ pub struct MirModule {
     pub exports: Vec<MirExportContract>,
     /// Compiler 在 Semantic MIR 边界确定的入口合同。
     pub entries: Vec<MirEntryContract>,
-    /// Compiler 在 Semantic MIR 边界确定的完整 callable identity 表。
-    /// Canonical producer 只能消费该表，不能按函数遍历顺序重新编号。
-    pub callable_identities: BTreeMap<String, ItemInstanceId>,
+    /// Compiler 在 Semantic MIR 边界确定的 callable 诊断符号表（`ItemInstanceId` → ABI 标签）。
+    ///
+    /// 语义查找必须以 instance / declaration 为主键；本表仅供诊断与外部 ABI 投影，
+    /// 不得反向按字符串标签恢复 callable identity。
+    pub callable_symbols: BTreeMap<ItemInstanceId, String>,
     /// Compiler 在 Semantic MIR 边界确定的类型 identity 表。
     /// Canonical producer 不得重新收集或按排序结果重编号。
     pub type_identities: BTreeMap<ValkyrieType, nyar_types::TypeId>,
@@ -106,6 +108,36 @@ pub struct MirModule {
     pub semantic_fragments: Vec<SemanticFragment>,
     /// `MIR` lowering 过程中收集的编译期诊断，由校验层转化为编译错误。
     pub diagnostics: Vec<MirDiagnostic>,
+}
+
+/// 向 callable 诊断表写入条目；instance 与 ABI 标签均必须唯一。
+pub(crate) fn register_callable_symbol_entry(
+    table: &mut BTreeMap<ItemInstanceId, String>,
+    instance: ItemInstanceId,
+    symbol: String,
+) -> Result<(), String> {
+    if let Some(previous) = table.get(&instance) {
+        if previous != &symbol {
+            return Err(format!("callable identity `{instance}` 对应多个 ABI 标签"));
+        }
+        return Ok(());
+    }
+    if table.values().any(|existing| existing == &symbol) {
+        return Err(format!("callable ABI 标签 `{symbol}` 重复"));
+    }
+    table.insert(instance, symbol);
+    Ok(())
+}
+
+impl MirModule {
+    /// 登记 callable 的 ABI 诊断标签；instance 与标签均必须唯一。
+    pub(crate) fn register_callable_symbol(&mut self, instance: ItemInstanceId, symbol: String) -> Result<(), String> {
+        register_callable_symbol_entry(&mut self.callable_symbols, instance, symbol)
+    }
+
+    pub(crate) fn contains_callable_instance(&self, instance: ItemInstanceId) -> bool {
+        self.callable_symbols.contains_key(&instance)
+    }
 }
 
 /// 由导入语义导出持有的静态解析调用合同。

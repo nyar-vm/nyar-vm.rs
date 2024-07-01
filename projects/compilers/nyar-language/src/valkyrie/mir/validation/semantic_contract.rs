@@ -524,7 +524,7 @@ pub(super) fn validate_static_call_resolution(
         return Ok(());
     };
     if let MirOperand::Callable(identity) = callee {
-        if module.callable_identities.values().any(|candidate| candidate == identity) {
+        if module.contains_callable_instance(*identity) {
             return Ok(());
         }
         return Err(SemanticMirContractError {

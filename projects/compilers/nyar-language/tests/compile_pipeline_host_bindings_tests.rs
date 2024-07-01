@@ -47,10 +47,10 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
         }],
         exports: Vec::new(),
         entries: Vec::new(),
-        callable_identities: BTreeMap::from([
-            ("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap()),
-            ("demo::write".to_owned(), contract_instance),
-            ("std.adaptor.clr::write".to_owned(), provider_instance),
+        callable_symbols: BTreeMap::from([
+            (ItemInstanceId::from_index(0).unwrap(), "demo::main".to_owned()),
+            (contract_instance, "demo::write".to_owned()),
+            (provider_instance, "std.adaptor.clr::write".to_owned()),
         ]),
         type_identities: BTreeMap::new(),
         aggregate_layouts: AggregateLayoutPlan::default(),
@@ -77,8 +77,8 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
         MirOperation::Call { callee: MirOperand::Callable(provider_instance), arguments: vec![MirOperand::Value(MirValueRef(0))] }
     );
     assert!(module.external_calls.is_empty());
-    assert!(!module.callable_identities.values().any(|instance| *instance == contract_instance));
-    assert!(module.callable_identities.values().any(|instance| *instance == provider_instance));
+    assert!(!module.callable_symbols.contains_key(&contract_instance));
+    assert!(module.callable_symbols.contains_key(&provider_instance));
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn unreferenced_host_contract_selection_is_ignored() {
     apply_host_provider_bindings(&mut module, &[], &bindings).expect("未被入口闭包引用的 contract 不要求 provider 身份");
 
     assert!(module.external_calls.is_empty());
-    assert!(module.callable_identities.values().any(|instance| *instance == contract_instance));
+    assert!(module.callable_symbols.contains_key(&contract_instance));
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn missing_provider_symbol_fails_closed() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
-    module.callable_identities.remove("std.adaptor.clr::write");
+    module.callable_symbols.remove(&provider_instance);
     let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
 
     let error = apply_host_provider_bindings(&mut module, &[], &bindings).expect_err("missing provider must fail");

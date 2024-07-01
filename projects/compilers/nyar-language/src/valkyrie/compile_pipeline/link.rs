@@ -91,8 +91,8 @@ pub fn link_reachable_dependency_mir(
                 }
             }
             if !std::ptr::eq(*module, &*consumer) {
-                if linked.callable_identities.insert(function.symbol.clone(), instance).is_some() {
-                    return Err(ParseError::invalid(format!("实例 `{instance}` 的 ABI 标签重复")));
+                if let Err(detail) = linked.register_callable_symbol(instance, function.symbol.clone()) {
+                    return Err(ParseError::invalid(detail));
                 }
                 let module_index = std::iter::once(&*consumer)
                     .chain(dependency_mirs)
@@ -106,11 +106,9 @@ pub fn link_reachable_dependency_mir(
         else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
-                if let Some(previous) =
-                    linked.callable_identities.insert(crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance)
-                    && previous != instance
-                {
-                    return Err(ParseError::invalid("外部导入 ABI 标签冲突"));
+                let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
+                if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
+                    return Err(ParseError::invalid(detail));
                 }
             }
         }

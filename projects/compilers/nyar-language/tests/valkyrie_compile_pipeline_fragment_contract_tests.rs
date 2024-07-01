@@ -15,7 +15,7 @@ fn fragment_contract_ignores_colliding_diagnostic_labels() {
     for function in &mut mir.functions {
         function.symbol = "diagnostic::same".into();
     }
-    mir.callable_identities.clear();
+    mir.callable_symbols.clear();
     let renamed = canonical_program_from_semantic_mir(&mir).expect("诊断标签不参与绑定");
     assert_eq!(renamed.linked.fragments, original.linked.fragments);
     assert_eq!(renamed.mir, original.mir);

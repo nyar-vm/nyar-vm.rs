@@ -16,6 +16,7 @@ use super::{
     value_semantics,
 };
 use crate::types::hir::HirModule;
+use std::collections::BTreeMap;
 
 /// Semantic MIR lowering 阶段入口：把 `HirModule` 编排为 `MirModule`。
 pub struct MirLowerer;
@@ -132,15 +133,20 @@ impl MirLowerer {
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
-        let callable_identities = functions
-            .iter()
-            .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
-            .chain(
-                external_calls
-                    .iter()
-                    .filter_map(|contract| contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))),
-            )
-            .collect();
+        let mut callable_symbols = BTreeMap::new();
+        for function in &functions {
+            if let Some(instance) = function.instance {
+                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.symbol.clone())
+                    .expect("duplicate callable symbol during lowering");
+            }
+        }
+        for contract in &external_calls {
+            if let Some(instance) = contract.instance {
+                let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
+                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
+                    .expect("duplicate callable symbol during lowering");
+            }
+        }
         let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
         let result = MirModule {
             name: module.name.to_string(),
@@ -150,7 +156,7 @@ impl MirLowerer {
             external_calls,
             exports,
             entries,
-            callable_identities,
+            callable_symbols,
             type_identities,
             aggregate_layouts,
             sum_types,
