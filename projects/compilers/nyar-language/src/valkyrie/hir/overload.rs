@@ -234,6 +234,7 @@ fn resolve_submodule_calls(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) {
+    let type_relations = &type_relations.with_enclosing_module(&module.name);
     for function in &mut module.functions {
         resolve_function_calls(function, candidates, type_relations, struct_fields, singleton_names, None);
     }
@@ -785,13 +786,17 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     candidate.with_where_constraints(function.where_constraints.clone())
 }
 
-/// Final path segment for an unqualified call site; does not reinterpret embedded separators.
-fn overload_symbol_simple_name(symbol: &NamePath) -> &str {
-    symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("")
-}
-
-fn symbol_matches_callee_name(symbol: &NamePath, callee_name: &Identifier) -> bool {
-    overload_symbol_simple_name(symbol) == callee_name.as_str()
+/// 无限定自由函数调用：按当前模块结构化路径匹配，禁止末段字符串回退。
+fn symbol_matches_unqualified_free_call(symbol: &NamePath, callee_name: &Identifier, enclosing_module: &NamePath) -> bool {
+    match symbol.parts() {
+        [name] => name == callee_name,
+        parts if parts.last() == Some(callee_name) => {
+            let mut expected = enclosing_module.parts().to_vec();
+            expected.push(callee_name.clone());
+            parts == expected.as_slice()
+        }
+        _ => false,
+    }
 }
 
 fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
@@ -2002,10 +2007,14 @@ fn try_resolve_call(
         }
     }
 
+    let enclosing_module = type_relations.enclosing_module();
     let mut filtered = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
-        .filter(|candidate| symbol_matches_callee_name(&candidate.symbol, &callee_name))
+        .filter(|candidate| {
+            candidate.owner.is_none()
+                && symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+        })
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
                 if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {

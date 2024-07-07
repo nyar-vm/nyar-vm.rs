@@ -15,7 +15,7 @@ use crate::{
         trait_system::{NamedTraitWitness, TraitModuleError, TraitModuleView},
     },
     types::{
-        Identifier,
+        Identifier, NamePath,
         hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
     },
 };
@@ -91,6 +91,8 @@ pub struct TypeRelationContext {
     enums: BTreeMap<Identifier, HirEnum>,
     enums_by_declaration: BTreeMap<nyar_types::ItemId, HirEnum>,
     callable_constraints: Vec<HirWhereConstraint>,
+    /// 当前正在解析调用的模块路径；无限定自由函数按结构化路径匹配，禁止末段回退。
+    enclosing_module: NamePath,
 }
 
 impl TypeRelationContext {
@@ -110,7 +112,19 @@ impl TypeRelationContext {
             enums,
             enums_by_declaration,
             callable_constraints: Vec::new(),
+            enclosing_module: module.name.clone(),
         }
+    }
+
+    /// 限定当前模块作用域，供无限定自由函数 overload 解析使用。
+    pub(crate) fn with_enclosing_module(&self, module: &NamePath) -> Self {
+        let mut context = self.clone();
+        context.enclosing_module = module.clone();
+        context
+    }
+
+    pub(crate) fn enclosing_module(&self) -> &NamePath {
+        &self.enclosing_module
     }
 
     /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
