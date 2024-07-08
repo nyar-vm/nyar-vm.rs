@@ -8,24 +8,24 @@ use std::collections::BTreeMap;
 
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
 pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), ParseError> {
-    validate_duplicate_type_names(&root.items, "")
+    validate_duplicate_type_names(&root.items, &[])
 }
 
 /// 重复定义键必须带当前 namespace 前缀。
 ///
 /// `namespace first;` 是空 items 指令，后续顶层声明落在该作用域；
 /// 不得只按短名判重，否则跨 namespace 同名结构会被误杀。
-fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str) -> Result<(), ParseError> {
-    let mut seen: BTreeMap<(String, String), &'static str> = BTreeMap::new();
-    let mut current_namespace = namespace_prefix.to_string();
+fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[String]) -> Result<(), ParseError> {
+    let mut seen: BTreeMap<(Vec<String>, String), &'static str> = BTreeMap::new();
+    let mut current_namespace = namespace_prefix.to_vec();
     for item in items {
         match item {
             StatementNode::Namespace(namespace) if !namespace.has_body() => {
-                current_namespace = name_path_text(&namespace.name);
+                current_namespace = name_path_parts(&namespace.name);
             }
             StatementNode::Namespace(namespace) => {
                 if let Some(body) = &namespace.body {
-                    let nested = join_namespace(&current_namespace, &name_path_text(&namespace.name));
+                    let nested = append_namespace_path(&current_namespace, &name_path_parts(&namespace.name));
                     validate_duplicate_type_names(&body.items, &nested)?;
                 }
             }
@@ -36,7 +36,7 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str
                         return Err(ParseError::invalid(format!(
                             "duplicate definition of `{}` in namespace `{}`: {prior} and {kind}",
                             key.1,
-                            key.0
+                            namespace_display(&key.0)
                         )));
                     }
                 }
@@ -46,12 +46,18 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str
     Ok(())
 }
 
-fn name_path_text(path: &NamePath) -> String {
-    path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join(".")
+fn name_path_parts(path: &NamePath) -> Vec<String> {
+    path.parts.iter().map(|part| part.name.clone()).collect()
 }
 
-fn join_namespace(namespace: &str, name: &str) -> String {
-    if namespace.is_empty() { name.to_string() } else { format!("{namespace}.{name}") }
+fn append_namespace_path(prefix: &[String], segment: &[String]) -> Vec<String> {
+    let mut path = prefix.to_vec();
+    path.extend_from_slice(segment);
+    path
+}
+
+fn namespace_display(path: &[String]) -> String {
+    path.join(".")
 }
 
 fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str)> {
