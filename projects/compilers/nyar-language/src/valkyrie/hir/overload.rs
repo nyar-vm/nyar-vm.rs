@@ -799,6 +799,65 @@ fn symbol_matches_unqualified_free_call(symbol: &NamePath, callee_name: &Identif
     }
 }
 
+/// 自有/静态成员候选：符号为单段成员名，由 `owner` / `trait_owner` 携带归属。
+fn candidate_owned_method_name(candidate: &OverloadCandidate) -> Option<&Identifier> {
+    match candidate.symbol.parts() {
+        [name] => Some(name),
+        _ => None,
+    }
+}
+
+fn candidate_owned_method_matches(candidate: &OverloadCandidate, method_name: &Identifier) -> bool {
+    candidate_owned_method_name(candidate) == Some(method_name)
+}
+
+/// trait 默认/声明方法：符号为 `[Trait, method]` 或单段 `method`（`trait_owner` 已冻结）。
+fn candidate_trait_method_matches(candidate: &OverloadCandidate, method_name: &Identifier) -> bool {
+    match candidate.symbol.parts() {
+        [name] => name == method_name,
+        [_, name] if candidate.trait_owner.is_some() => name == method_name,
+        _ => false,
+    }
+}
+
+fn candidate_instance_method_matches(candidate: &OverloadCandidate, method_name: &Identifier) -> bool {
+    if candidate.trait_owner.is_some() {
+        candidate_trait_method_matches(candidate, method_name)
+    } else {
+        candidate_owned_method_matches(candidate, method_name)
+    }
+}
+
+/// 变体构造候选：`owner` 为枚举短名，符号为单段变体名。
+fn candidate_variant_constructor_matches(candidate: &OverloadCandidate, variant_name: &Identifier) -> bool {
+    candidate.domain == OverloadDomain::Constructor
+        && candidate.owner.is_some()
+        && matches!(candidate.symbol.parts(), [name] if name == variant_name)
+}
+
+/// 聚合构造候选：结构化路径与 `Construct` 的 `path`/`name` 对齐，禁止跨 owner 末段碰撞。
+fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &NamePath, name: &Identifier) -> bool {
+    if candidate.domain != OverloadDomain::Constructor {
+        return false;
+    }
+    if candidate.owner.is_some() {
+        return candidate_variant_constructor_matches(candidate, name);
+    }
+    candidate.symbol.parts() == path.parts() || matches!(candidate.symbol.parts(), [single] if single == name)
+}
+
+/// 模式 extractors：`Owner.member` 与候选 `owner` + 单段符号精确对齐。
+fn candidate_owned_member_path_matches(candidate: &OverloadCandidate, owner: &Identifier, member: &Identifier) -> bool {
+    candidate.owner.as_ref() == Some(owner) && matches!(candidate.symbol.parts(), [name] if name == member)
+}
+
+fn candidate_extractor_path_matches(canonical_callee: &NamePath, candidate: &OverloadCandidate) -> bool {
+    match canonical_callee.parts() {
+        [owner, member] => candidate_owned_member_path_matches(candidate, owner, member),
+        _ => false,
+    }
+}
+
 fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
     let param_specs = synthetic_field_params(item);
     let mut candidate = OverloadCandidate::new(
@@ -1264,8 +1323,7 @@ fn resolve_expr_calls_at(
                         .or_else(|| {
                             candidates
                                 .iter()
-                                .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-                                .filter(|candidate| candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == name))
+                                .filter(|candidate| aggregate_constructor_matches_name(candidate, path, name))
                                 .find_map(|candidate| {
                                     candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty)
                                 })
@@ -1866,7 +1924,7 @@ fn try_resolve_call(
                     for candidate in candidates
                         .iter()
                         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
-                        .filter(|candidate| candidate.symbol.parts().last() == Some(method_name))
+                        .filter(|candidate| candidate_trait_method_matches(candidate, method_name))
                         .filter(|candidate| bound.declaration.is_some() && candidate.trait_owner == bound.declaration)
                     {
                         let candidate = instantiate_trait_bound_candidate(candidate, &subject.target, bound)?;
@@ -1970,7 +2028,7 @@ fn try_resolve_call(
                     );
                 }
                 if candidates.iter().any(|candidate| {
-                    candidate.owner.as_ref() == Some(type_owner) && candidate.symbol.parts().last().is_some_and(|name| name == method_name)
+                    candidate.owner.as_ref() == Some(type_owner) && candidate_owned_method_matches(candidate, method_name)
                 }) {
                     return try_resolve_type_static_method(
                         type_owner,
@@ -2217,7 +2275,7 @@ fn member_call_argument_contexts(
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| *name == field))
+        .filter(|candidate| candidate_owned_method_matches(candidate, &field))
     {
         let Some(owner) = candidate.owner.as_ref()
         else {
@@ -2299,7 +2357,7 @@ fn try_resolve_instance_method(
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+        .filter(|candidate| candidate_instance_method_matches(candidate, method_name))
     {
         if let ValkyrieType::Generic(generic) = &receiver_type {
             if generic.binder.is_none() {
@@ -2383,7 +2441,7 @@ fn deferred_member_requirement(
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+        .filter(|candidate| candidate_instance_method_matches(candidate, method_name))
         .filter(|candidate| candidate_receiver_matches_subject(candidate, subject))
         .collect::<Vec<_>>();
     // 分派优先级：class/impl 自有成员先于 trait 方法。自有成员存在时 trait 候选不参与
@@ -2679,7 +2737,7 @@ fn try_resolve_type_static_method(
         .filter(|candidate| candidate.owner.as_ref() == Some(type_owner))
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| !candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+        .filter(|candidate| candidate_owned_method_matches(candidate, method_name))
         .filter_map(|candidate| {
             // 静态方法没有接收者实参，owner 的类型参数无法从实参推出：`ArrayList::new(0)`
             // 的 `new(capacity: usize): Self` 中 `T` 只能由调用点的期望类型确定。
@@ -2791,7 +2849,7 @@ fn try_resolve_singleton_method(
         .iter()
         .filter(|candidate| candidate.owner.as_ref() == Some(owner))
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
+        .filter(|candidate| candidate_owned_method_matches(candidate, method_name))
         .filter_map(|candidate| {
             match_singleton_method_candidate(candidate, call_args, type_relations, locals, struct_fields, singleton_names, skip_self_param)
         })
@@ -2993,7 +3051,7 @@ pub fn try_resolve_nullary_constructor(
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
         .filter(|candidate| candidate.signature.params.is_empty())
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|variant| variant == name))
+        .filter(|candidate| candidate_variant_constructor_matches(candidate, name))
         .filter_map(|candidate| {
             let Some(context) = contextual_type
             else {
@@ -3106,7 +3164,10 @@ fn enrich_unite_variant_constructor_facts(
     if call.sum_owner.is_some() && call.sum_variant.is_some() {
         return;
     }
-    let Some(variant_name) = extract_callable_name(callee).or_else(|| call.symbol.parts().last().cloned())
+    let Some(variant_name) = extract_callable_name(callee).or_else(|| match call.symbol.parts() {
+        [name] => Some(name.clone()),
+        _ => None,
+    })
     else {
         return;
     };
@@ -3121,8 +3182,7 @@ fn enrich_unite_variant_constructor_facts(
             let _payload = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
             candidates
                 .iter()
-                .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-                .filter(|candidate| candidate.symbol.parts().last() == Some(&variant_name))
+                .filter(|candidate| candidate_variant_constructor_matches(candidate, &variant_name))
                 .find_map(|candidate| candidate.signature.return_type.clone().into())
         });
     let Some(declaration) = hint.as_ref().and_then(|ty| sum_declaration_of_type(ty))
@@ -3186,7 +3246,7 @@ fn variant_constructor_facts_from_declaration(
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
         .filter(|candidate| candidate.sum_owner == Some(sum_owner))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|variant| variant.as_str() == variant_name))
+        .filter(|candidate| candidate_variant_constructor_matches(candidate, &Identifier::new(variant_name)))
         .find_map(|candidate| candidate.sum_owner.zip(candidate.sum_variant))
 }
 
@@ -3456,7 +3516,7 @@ fn try_resolve_pattern_extractor(
         .filter(|candidate| candidate.owner.as_ref().is_some_and(|owner| canonical_callee.parts().first() == Some(owner)))
         .filter(|candidate| candidate.param_specs.first().is_some_and(is_extractor_receiver_param))
         .filter(|candidate| candidate.param_specs.first().is_none_or(|param| !param.is_mutable))
-        .filter(|candidate| candidate.symbol.parts().last() == canonical_callee.parts().last())
+        .filter(|candidate| candidate_extractor_path_matches(canonical_callee, candidate))
         .filter_map(|candidate| {
             let receiver_type = pattern_extractor_receiver_type(candidate)?;
             let match_kind = matches_extractor_receiver_type(actual_type, &receiver_type, type_relations)?;
@@ -4200,12 +4260,10 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
     }
     // If the workspace already registered `Variant.extractor`, missing local
     // scrutinee typing is inference debt — not an unknown pattern.
-    if canonical_callee.parts().last().is_some_and(|part| part.as_str() == "extractor")
-        && candidates.iter().any(|candidate| {
-            candidate.domain == OverloadDomain::Function
-                && candidate.owner.as_ref().is_some_and(|owner| owner.as_str() == head)
-                && candidate.symbol.parts().last().is_some_and(|method| method.as_str() == "extractor")
-        })
+    if matches!(canonical_callee.parts(), [owner, member] if owner.as_str() == head && member.as_str() == "extractor")
+        && candidates
+            .iter()
+            .any(|candidate| candidate.domain == OverloadDomain::Function && candidate_extractor_path_matches(canonical_callee, candidate))
     {
         return None;
     }
@@ -4239,8 +4297,7 @@ fn matching_extractor_candidates<'a>(
     candidates
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Function)
-        .filter(|candidate| candidate.owner.as_ref().is_some_and(|owner| canonical_callee.parts().first() == Some(owner)))
-        .filter(|candidate| candidate.symbol.parts().last() == canonical_callee.parts().last())
+        .filter(|candidate| candidate_extractor_path_matches(canonical_callee, candidate))
         .filter(|candidate| candidate.param_specs.first().is_some_and(is_extractor_receiver_param))
         .filter(|candidate| {
             pattern_extractor_receiver_type(candidate)
