@@ -155,22 +155,36 @@ pub struct GlobalIndex {
     pub file_symbols: DashMap<String, Vec<Arc<GlobalSymbol>>>,
     /// 文件 URI -> 文件索引状态（用于增量索引）
     pub file_states: DashMap<String, FileIndexState>,
-    /// Trait 名称 -> 实现该 Trait 的类型列表
-    /// 键为 "namespace::TraitName" 格式
-    pub trait_to_implementations: DashMap<String, Vec<TraitImplementation>>,
-    /// 类名称 -> 继承该类的子类列表
-    /// 键为 "namespace::ClassName" 格式
-    pub class_to_children: DashMap<String, Vec<String>>,
-    /// 类型别名 -> 原类型名称
-    /// 键为 "namespace::AliasName" 格式
-    pub type_aliases: DashMap<String, String>,
+    /// Trait 身份 -> 实现该 Trait 的类型列表
+    pub trait_to_implementations: DashMap<QualifiedSymbolKey, Vec<TraitImplementation>>,
+    /// 类身份 -> 继承该类的子类列表
+    pub class_to_children: DashMap<QualifiedSymbolKey, Vec<QualifiedSymbolKey>>,
+    /// 类型别名身份 -> 原类型名称（展示用）
+    pub type_aliases: DashMap<QualifiedSymbolKey, String>,
 }
 
-fn qualified_trait_key(symbol_namespace: &str, trait_name: &str) -> String {
-    if let Some((namespace, name)) = trait_name.split_once("::") {
-        format!("{}::{}", namespace, name)
-    } else {
-        format!("{}::{}", symbol_namespace, trait_name)
+/// LSP 索引用的结构化限定符号键；禁止用点号拼接或 `splitn` 反解析。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct QualifiedSymbolKey {
+    pub namespace: String,
+    pub name: String,
+}
+
+impl QualifiedSymbolKey {
+    fn new(namespace: &str, name: &str) -> Self {
+        Self { namespace: namespace.to_string(), name: name.to_string() }
+    }
+
+    fn from_trait_reference(symbol_namespace: &str, trait_name: &str) -> Self {
+        if let Some((namespace, name)) = trait_name.split_once("::") {
+            Self::new(namespace, name)
+        } else {
+            Self::new(symbol_namespace, trait_name)
+        }
+    }
+
+    fn parse(full_name: &str) -> Option<Self> {
+        full_name.split_once("::").map(|(namespace, name)| Self::new(namespace, name))
     }
 }
 
@@ -200,39 +214,39 @@ impl GlobalIndex {
     }
 
     /// 注册 Trait 实现
-    pub fn register_trait_implementation(&self, trait_full_name: &str, impl_info: TraitImplementation) {
-        let mut impls = self.trait_to_implementations.entry(trait_full_name.to_string()).or_insert_with(Vec::new);
+    pub fn register_trait_implementation(&self, trait_key: QualifiedSymbolKey, impl_info: TraitImplementation) {
+        let mut impls = self.trait_to_implementations.entry(trait_key).or_insert_with(Vec::new);
         if !impls.iter().any(|i| i.implementor == impl_info.implementor && i.uri == impl_info.uri) {
             impls.push(impl_info);
         }
     }
 
     /// 注册类继承关系
-    pub fn register_class_inheritance(&self, parent_full_name: &str, child_full_name: &str) {
-        let mut children = self.class_to_children.entry(parent_full_name.to_string()).or_insert_with(Vec::new);
-        if !children.contains(&child_full_name.to_string()) {
-            children.push(child_full_name.to_string());
+    pub fn register_class_inheritance(&self, parent_key: QualifiedSymbolKey, child_key: QualifiedSymbolKey) {
+        let mut children = self.class_to_children.entry(parent_key).or_insert_with(Vec::new);
+        if !children.contains(&child_key) {
+            children.push(child_key);
         }
     }
 
     /// 注册类型别名
-    pub fn register_type_alias(&self, alias_full_name: &str, target_type: &str) {
-        self.type_aliases.insert(alias_full_name.to_string(), target_type.to_string());
+    pub fn register_type_alias(&self, alias_key: QualifiedSymbolKey, target_type: &str) {
+        self.type_aliases.insert(alias_key, target_type.to_string());
     }
 
     /// 获取 Trait 的所有实现
     pub fn get_trait_implementations(&self, trait_full_name: &str) -> Option<Vec<TraitImplementation>> {
-        self.trait_to_implementations.get(trait_full_name).map(|v| v.clone())
+        QualifiedSymbolKey::parse(trait_full_name).and_then(|key| self.trait_to_implementations.get(&key).map(|v| v.clone()))
     }
 
     /// 获取类的所有子类
-    pub fn get_class_children(&self, class_full_name: &str) -> Option<Vec<String>> {
-        self.class_to_children.get(class_full_name).map(|v| v.clone())
+    pub fn get_class_children(&self, class_full_name: &str) -> Option<Vec<QualifiedSymbolKey>> {
+        QualifiedSymbolKey::parse(class_full_name).and_then(|key| self.class_to_children.get(&key).map(|v| v.clone()))
     }
 
     /// 获取类型别名的目标类型
     pub fn get_type_alias_target(&self, alias_full_name: &str) -> Option<String> {
-        self.type_aliases.get(alias_full_name).map(|v| v.clone())
+        QualifiedSymbolKey::parse(alias_full_name).and_then(|key| self.type_aliases.get(&key).map(|v| v.clone()))
     }
 
     pub fn update_file_symbols(&self, uri: &str, namespace: &str, symbols: Vec<GlobalSymbol>, content_hash: u64) {
@@ -242,13 +256,14 @@ impl GlobalIndex {
                     ns_map.remove(&symbol.name);
                 }
                 if let Some(ref parent) = symbol.parent_class {
-                    let parent_key = format!("{}::{}", symbol.namespace, parent);
+                    let parent_key = QualifiedSymbolKey::new(&symbol.namespace, parent);
+                    let child_key = QualifiedSymbolKey::new(&symbol.namespace, &symbol.name);
                     if let Some(mut children) = self.class_to_children.get_mut(&parent_key) {
-                        children.retain(|c| c != &format!("{}::{}", symbol.namespace, symbol.name));
+                        children.retain(|c| c != &child_key);
                     }
                 }
                 for trait_name in &symbol.implemented_traits {
-                    let trait_key = qualified_trait_key(&symbol.namespace, trait_name);
+                    let trait_key = QualifiedSymbolKey::from_trait_reference(&symbol.namespace, trait_name);
                     if let Some(mut impls) = self.trait_to_implementations.get_mut(&trait_key) {
                         impls.retain(|i| i.implementor != symbol.name);
                     }
@@ -262,23 +277,23 @@ impl GlobalIndex {
 
         for symbol in symbols {
             if let Some(ref parent) = symbol.parent_class {
-                let parent_key = format!("{}::{}", symbol.namespace, parent);
-                let child_key = format!("{}::{}", symbol.namespace, symbol.name);
-                self.register_class_inheritance(&parent_key, &child_key);
+                let parent_key = QualifiedSymbolKey::new(&symbol.namespace, parent);
+                let child_key = QualifiedSymbolKey::new(&symbol.namespace, &symbol.name);
+                self.register_class_inheritance(parent_key, child_key);
             }
             for trait_name in &symbol.implemented_traits {
-                let trait_key = qualified_trait_key(&symbol.namespace, trait_name);
+                let trait_key = QualifiedSymbolKey::from_trait_reference(&symbol.namespace, trait_name);
                 let impl_info = TraitImplementation {
                     implementor: symbol.name.clone(),
                     implementor_namespace: symbol.namespace.clone(),
                     uri: symbol.uri.clone(),
                     range: symbol.range.clone(),
                 };
-                self.register_trait_implementation(&trait_key, impl_info);
+                self.register_trait_implementation(trait_key, impl_info);
             }
             if let Some(ref target) = symbol.type_alias_target {
-                let alias_key = format!("{}::{}", symbol.namespace, symbol.name);
-                self.register_type_alias(&alias_key, target);
+                let alias_key = QualifiedSymbolKey::new(&symbol.namespace, &symbol.name);
+                self.register_type_alias(alias_key, target);
             }
 
             symbol_hashes.push((symbol.name.clone(), symbol.hash));

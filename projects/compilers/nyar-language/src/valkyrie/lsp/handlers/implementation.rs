@@ -40,14 +40,10 @@ impl ImplementationHandler {
         let mut locations = Vec::new();
 
         if let Some(children) = state.index.get_class_children(class_full_name) {
-            for child_full_name in children {
-                if let Some(pos) = child_full_name.rfind("::") {
-                    let ns = &child_full_name[..pos];
-                    let name = &child_full_name[pos + 2..];
-                    if let Some(ns_map) = state.index.symbols.get(ns) {
-                        if let Some(symbol) = ns_map.get(name) {
-                            locations.push(LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() });
-                        }
+            for child in children {
+                if let Some(ns_map) = state.index.symbols.get(&child.namespace) {
+                    if let Some(symbol) = ns_map.get(&child.name) {
+                        locations.push(LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() });
                     }
                 }
             }

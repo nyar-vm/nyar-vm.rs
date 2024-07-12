@@ -308,10 +308,6 @@ pub(super) fn future_resume_type(ty: &ValkyrieType) -> Option<ValkyrieType> {
     }
 }
 
-fn overload_symbol_simple_name(symbol: &NamePath) -> &str {
-    symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("")
-}
-
 fn callee_surface_simple_name(kind: &HirExprKind) -> Option<&str> {
     match kind {
         HirExprKind::Variable(ident) => Some(ident.name.as_str()),
@@ -327,9 +323,10 @@ pub(super) fn callee_name_matches(kind: &HirExprKind, expected: &str) -> bool {
     callee_surface_simple_name(kind).is_some_and(|name| name == expected)
 }
 
-/// 结合 overload 合同与限定路径末段，匹配 `option_none` / `Some` 等全局后缀解析结果。
+/// 结合 overload 合同与单段符号，匹配 `option_none` / `Some` 等全局解析结果。
 pub(super) fn callee_matches_name(callee: &HirExpr, resolved: Option<&crate::types::hir::HirResolvedCall>, expected: &str) -> bool {
-    callee_name_matches(&callee.kind, expected) || resolved.is_some_and(|call| overload_symbol_simple_name(&call.symbol) == expected)
+    callee_name_matches(&callee.kind, expected)
+        || resolved.is_some_and(|call| matches!(call.symbol.parts(), [name] if name.as_str() == expected))
 }
 
 fn callee_binding_name(kind: &HirExprKind) -> Option<&str> {
