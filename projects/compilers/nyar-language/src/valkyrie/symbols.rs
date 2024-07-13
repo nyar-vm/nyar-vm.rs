@@ -14,11 +14,7 @@ pub(crate) fn stable_symbol_key(path: &NamePath) -> String {
         _ => {
             let name = parts[parts.len() - 1].as_str();
             let module = parts[..parts.len() - 1].iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
-            if module.is_empty() {
-                name.to_string()
-            } else {
-                format!("{module}::{name}")
-            }
+            if module.is_empty() { name.to_string() } else { format!("{module}::{name}") }
         }
     }
 }

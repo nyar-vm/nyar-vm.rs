@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::{ItemInstanceId, NamePath, NyarType};
 
 use crate::{
-    TargetExecutionPlan, FragmentSubmission,
+    FragmentSubmission, TargetExecutionPlan,
     backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef},
 };
 

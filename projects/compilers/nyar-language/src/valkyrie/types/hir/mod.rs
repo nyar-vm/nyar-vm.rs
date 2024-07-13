@@ -26,7 +26,7 @@ pub use export_spec::{
     HirExportSpec, parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id, snake_case_to_camel_case,
 };
 pub use expr::{
-    CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCallRequirement, HirCapture, HirExpr, HirExprKind, HirResolvedCall,
+    CaptureMode, CaptureStorage, HirCallArgument, HirCallRequirement, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall,
     hir_call_arg_values,
 };
 pub use function::HirFunction;

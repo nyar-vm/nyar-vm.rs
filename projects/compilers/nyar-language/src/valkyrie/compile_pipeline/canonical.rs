@@ -66,11 +66,10 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
     for (symbol, instance) in
-        module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance))).chain(
-            module
-                .external_calls
-                .iter()
-                .filter_map(|contract| contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))),
+        module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.display_symbol.clone(), instance))).chain(
+            module.external_calls.iter().filter_map(|contract| {
+                contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))
+            }),
         )
     {
         let parts = symbol.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>();
@@ -109,14 +108,15 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     backfill_nominal_semantics_for_linked_types(&mut linked);
     linked.fields = field_records.clone();
     for function in &module.functions {
-        let instance =
-            function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        let instance = function
+            .instance
+            .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.display_symbol)))?;
         linked.item_instances.insert(
             instance,
             ItemInstanceRecord {
                 declaration: function
                     .declaration
-                    .ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.symbol)))?,
+                    .ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.display_symbol)))?,
                 substitution: monomorphic_substitution(function)?,
                 parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
                 return_type: type_id(&type_values, &function.return_type)?,
@@ -171,7 +171,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         .map(|function| {
             let instance = function
                 .instance
-                .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+                .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.display_symbol)))?;
             Ok((
                 instance,
                 lower_function(function, instance, &type_values, &nominals, &field_records, &sum_instance_by_type, &mut next_instruction)?,
@@ -338,9 +338,9 @@ fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiag
     for function in &module.functions {
         let Some(identity) = function.instance
         else {
-            return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)));
+            return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.display_symbol)));
         };
-        if instances.insert(identity, function.symbol.clone()).is_some() {
+        if instances.insert(identity, function.display_symbol.clone()).is_some() {
             return Err(error(module, "CAN001", format!("callable identity `{identity}` 重复")));
         }
     }
@@ -614,7 +614,7 @@ fn canonical_entry_parameters(
     function: &MirFunction,
     ids: &BTreeMap<ValkyrieType, TypeId>,
 ) -> Result<Vec<(MirValueId, TypeId)>, StructuredDiagnosticSet> {
-    let invalid = || error_without_module("CAN032", format!("函数 `{}` 的声明参数、SSA 参数来源与入口块参数不一致", function.symbol));
+    let invalid = || error_without_module("CAN032", format!("函数 `{}` 的声明参数、SSA 参数来源与入口块参数不一致", function.display_symbol));
     let entry = function.blocks.iter().find(|block| block.id == function.entry).ok_or_else(invalid)?;
     let mut origins = BTreeMap::new();
     for value in &function.values {
@@ -883,7 +883,7 @@ fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, St
         .chain(std::iter::once(&function.return_type))
         .any(crate::valkyrie::mir::ssa::type_contains_non_monomorphic_signature_reference)
     {
-        Err(error_without_module("CAN013", format!("函数 `{}` 仍包含未代入类型参数", function.symbol)))
+        Err(error_without_module("CAN013", format!("函数 `{}` 仍包含未代入类型参数", function.display_symbol)))
     }
     else {
         Ok(SubstitutionId::from_index(0).expect("monomorphic substitution"))
@@ -921,12 +921,13 @@ fn describe_call_result_mismatch(
     callee: ItemInstanceId,
     value: MirValueId,
 ) -> String {
-    let caller = module.functions.iter().find(|item| item.instance == Some(function)).map(|item| item.symbol.as_str()).unwrap_or("<unknown>");
+    let caller =
+        module.functions.iter().find(|item| item.instance == Some(function)).map(|item| item.display_symbol.as_str()).unwrap_or("<unknown>");
     let callee_symbol = module
         .functions
         .iter()
         .find(|item| item.instance == Some(callee))
-        .map(|item| item.symbol.clone())
+        .map(|item| item.display_symbol.clone())
         .or_else(|| program.linked.callable_names.get(&callee).map(|name| name.to_string()))
         .unwrap_or_else(|| "<unknown>".to_string());
     let actual = program
@@ -952,7 +953,7 @@ fn describe_operation_result_mismatch(
         .functions
         .iter()
         .find(|item| item.instance == Some(function))
-        .map(|item| item.symbol.clone())
+        .map(|item| item.display_symbol.clone())
         .or_else(|| program.linked.callable_names.get(&function).map(|name| name.to_string()))
         .unwrap_or_else(|| "<unknown>".to_string());
     let Some(func) = program.mir.functions.get(&function)

@@ -744,9 +744,8 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
 /// 这是声明 intrinsic 身份的唯一生产者：调用点只消费候选已冻结的身份，
 /// 不再由符号短名反查内建注册表。没有注解的声明恒为 `None`。
 fn declaration_intrinsic(function: &HirFunction) -> Option<IntrinsicId> {
-    let attribute = function.annotations.iter().find(|attribute| {
-        attribute.name.parts().len() == 1 && attribute.name.parts()[0].as_str() == "intrinsic"
-    })?;
+    let attribute =
+        function.annotations.iter().find(|attribute| attribute.name.parts().len() == 1 && attribute.name.parts()[0].as_str() == "intrinsic")?;
     let argument = attribute.arguments.first()?;
     let HirExprKind::Literal(HirLiteral::String(literal)) = &argument.value.kind
     else {
@@ -823,7 +822,8 @@ fn candidate_trait_method_matches(candidate: &OverloadCandidate, method_name: &I
 fn candidate_instance_method_matches(candidate: &OverloadCandidate, method_name: &Identifier) -> bool {
     if candidate.trait_owner.is_some() {
         candidate_trait_method_matches(candidate, method_name)
-    } else {
+    }
+    else {
         candidate_owned_method_matches(candidate, method_name)
     }
 }
@@ -1321,12 +1321,9 @@ fn resolve_expr_calls_at(
                         .fields_of(&ValkyrieType::Named(name.clone()))
                         .and_then(|fields| fields.iter().find(|field| field.name == *field_name).map(|field| &field.ty))
                         .or_else(|| {
-                            candidates
-                                .iter()
-                                .filter(|candidate| aggregate_constructor_matches_name(candidate, path, name))
-                                .find_map(|candidate| {
-                                    candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty)
-                                })
+                            candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path, name)).find_map(
+                                |candidate| candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty),
+                            )
                         }),
                     _ => None,
                 };
@@ -1643,8 +1640,7 @@ pub fn match_call_candidate(
     else {
         bind_call_arguments(&candidate.param_specs, args).ok()?
     };
-    let actual_types =
-        bound_exprs.iter().map(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)).collect::<Vec<_>>();
+    let actual_types = bound_exprs.iter().map(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)).collect::<Vec<_>>();
     // `self: Self` / untyped `self` 必须是 owner 的完整类型（优先 `Nominal{ItemId}`）。
     // 禁止再收成 `Named(短名)`：字段/参数在 bind 后已是 declaration identity。
     let owner_type = candidate.owner.as_ref().and_then(|owner| {
@@ -1692,9 +1688,7 @@ pub fn match_call_candidate(
     let mut matched_actual_types = Vec::with_capacity(bound_exprs.len());
     for (expr, (expected, actual)) in bound_exprs.iter().zip(expected_params.iter().zip(actual_types.iter())) {
         let contextual_expected = substitute_type_vars(expected, &substitutions);
-        let actual = actual
-            .as_ref()
-            .map(|actual| specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations));
+        let actual = actual.as_ref().map(|actual| specialize_literal_expr_type(expr, actual, &contextual_expected, type_relations));
         match actual.as_ref() {
             Some(actual) => unify_call_type_binders(expected, actual, &candidate.generic_binders, &mut substitutions)?,
             // 空数组字面量自身没有元素类型事实；只有形式参数确实是数组时才可由上下文定型。
@@ -1904,7 +1898,7 @@ fn try_resolve_call(
                 parameter_types: func.params.clone(),
                 has_receiver: false,
                 extractor_payload_type: None,
-        requirement: None,
+                requirement: None,
             });
         }
         if locals.contains_key(local_name) {
@@ -1954,7 +1948,7 @@ fn try_resolve_call(
                     parameter_types: matched.signature.params,
                     has_receiver: false,
                     extractor_payload_type: None,
-        requirement: None,
+                    requirement: None,
                 });
             }
             if singleton_names.contains(owner) {
@@ -2027,9 +2021,10 @@ fn try_resolve_call(
                         false,
                     );
                 }
-                if candidates.iter().any(|candidate| {
-                    candidate.owner.as_ref() == Some(type_owner) && candidate_owned_method_matches(candidate, method_name)
-                }) {
+                if candidates
+                    .iter()
+                    .any(|candidate| candidate.owner.as_ref() == Some(type_owner) && candidate_owned_method_matches(candidate, method_name))
+                {
                     return try_resolve_type_static_method(
                         type_owner,
                         method_name,
@@ -2070,8 +2065,7 @@ fn try_resolve_call(
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| {
-            candidate.owner.is_none()
-                && symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+            candidate.owner.is_none() && symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
         })
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
@@ -2098,8 +2092,7 @@ fn try_resolve_call(
     if filtered.is_empty()
         && matches!(&callee.kind, HirExprKind::Path(path) if path.parts().len() == 1)
         && let Some(receiver_type) = args.first().and_then(|arg| {
-            infer_expr_type(&arg.value, locals)
-                .or_else(|| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names))
+            infer_expr_type(&arg.value, locals).or_else(|| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names))
         })
         && has_unresolved_generic_arguments(&receiver_type)
         && let Some(call) = deferred_member_requirement(candidates, &receiver_type, &callee_name, false)
@@ -2257,8 +2250,7 @@ fn member_call_argument_contexts(
         HirExprKind::Path(path) if path.parts().len() >= 2 && locals.contains_key(path.parts()[0].as_str()) => {
             let mut receiver_type = locals.get(path.parts()[0].as_str()).cloned();
             for field_name in &path.parts()[1..path.parts().len() - 1] {
-                receiver_type = receiver_type
-                    .and_then(|ty| lookup_struct_field_type(&ty, field_name, struct_fields));
+                receiver_type = receiver_type.and_then(|ty| lookup_struct_field_type(&ty, field_name, struct_fields));
             }
             (receiver_type, path.parts().last().cloned().unwrap_or_default())
         }
@@ -2501,11 +2493,7 @@ fn deferred_member_requirement(
         parameter_types,
         has_receiver,
         extractor_payload_type: None,
-        requirement: Some(crate::types::hir::HirCallRequirement {
-            subject: subject.clone(),
-            member: method_name.clone(),
-            trait_declaration,
-        }),
+        requirement: Some(crate::types::hir::HirCallRequirement { subject: subject.clone(), member: method_name.clone(), trait_declaration }),
     })
 }
 
@@ -2534,10 +2522,7 @@ fn candidate_receiver_matches_subject(candidate: &OverloadCandidate, subject: &V
 /// 返回类型不参与替换：`imply bool` 的 `-> bool` 是具体类型而非 `Self`，把它
 /// 收成 subject 会把“结果恒为 bool”误判成“结果恒等于接收者”。同一成员在不同
 /// impl 上返回类型不一致时，声明期没有可冻结的统一合同，fail-closed。
-fn own_member_requirement_shape(
-    candidate: &OverloadCandidate,
-    subject: &ValkyrieType,
-) -> Option<(Vec<ValkyrieType>, ValkyrieType)> {
+fn own_member_requirement_shape(candidate: &OverloadCandidate, subject: &ValkyrieType) -> Option<(Vec<ValkyrieType>, ValkyrieType)> {
     let receiver = candidate.signature.params.first()?;
     if matches!(receiver, ValkyrieType::AutoType | ValkyrieType::SelfType) {
         return None;
@@ -2572,9 +2557,7 @@ fn replace_exact_type(ty: &ValkyrieType, from: &ValkyrieType, to: &ValkyrieType)
         ValkyrieType::Nullable(element) => ValkyrieType::Nullable(Box::new(replace_exact_type(element, from, to))),
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
         ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
-        ValkyrieType::Intersection(items) => {
-            ValkyrieType::Intersection(items.iter().map(|item| replace_exact_type(item, from, to)).collect())
-        }
+        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
         ValkyrieType::Function(function) => {
             let mut function = function.as_ref().clone();
             function.params = function.params.iter().map(|param| replace_exact_type(param, from, to)).collect();

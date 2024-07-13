@@ -26,7 +26,7 @@ micro caller() -> [WasmValueType] {
 "#;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9611 }).compile_source(source).expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let caller = mir.functions.iter().find(|f| f.symbol.contains("caller")).expect("caller");
+    let caller = mir.functions.iter().find(|f| f.display_symbol.contains("caller")).expect("caller");
     let mut found = false;
     for block in &caller.blocks {
         for instruction in &block.instructions {

@@ -33,14 +33,13 @@ pub fn apply_host_provider_bindings(
         // 未被本次可观察入口闭包引用的 contract 没有需要改写的调用点，其 provider
         // 也就不需要出现在依赖 MIR 中：跳过，不得因未使用而拒绝整个编译。
         let contract_instance = {
-            let contracts = module
-                .external_calls
-                .iter()
-                .filter(|contract| stable_symbol_key(&contract.symbol) == binding.contract)
-                .collect::<Vec<_>>();
+            let contracts =
+                module.external_calls.iter().filter(|contract| stable_symbol_key(&contract.symbol) == binding.contract).collect::<Vec<_>>();
             match contracts.as_slice() {
                 [] => continue,
-                [contract] => contract.instance.ok_or_else(|| ParseError::invalid(format!("host contract `{}` 缺少 callable identity", binding.contract)))?,
+                [contract] => contract
+                    .instance
+                    .ok_or_else(|| ParseError::invalid(format!("host contract `{}` 缺少 callable identity", binding.contract)))?,
                 _ => return Err(ParseError::invalid(format!("host contract `{}` 在 Semantic MIR 中有多个候选", binding.contract))),
             }
         };
@@ -84,11 +83,8 @@ fn resolve_callable_binding(
         return Ok((*instance, None));
     }
 
-    let consumer_matches = module
-        .functions
-        .iter()
-        .filter(|function| function.instance.is_some() && function.symbol == symbol)
-        .collect::<Vec<_>>();
+    let consumer_matches =
+        module.functions.iter().filter(|function| function.instance.is_some() && function.display_symbol == symbol).collect::<Vec<_>>();
     if consumer_matches.len() > 1 {
         return Err(ParseError::invalid(format!("host provider `{symbol}` 的 callable identity 有歧义")));
     }
@@ -99,7 +95,7 @@ fn resolve_callable_binding(
     let candidates = dependency_mirs
         .iter()
         .flat_map(|dependency| dependency.functions.iter())
-        .filter(|function| function.instance.is_some() && function.symbol == symbol)
+        .filter(|function| function.instance.is_some() && function.display_symbol == symbol)
         .collect::<Vec<_>>();
     match candidates.as_slice() {
         [] => Err(ParseError::invalid(format!("host provider `{symbol}` 未在源码闭包中解析到 callable identity"))),
@@ -114,11 +110,11 @@ fn install_provider_definition(
     provider_function: MirFunction,
 ) -> Result<(), ParseError> {
     if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
-        module.register_callable_symbol(provider_instance, provider_function.symbol.clone()).map_err(ParseError::invalid)?;
+        module.register_callable_symbol(provider_instance, provider_function.display_symbol.clone()).map_err(ParseError::invalid)?;
         return Ok(());
     }
     module.functions.push(provider_function.clone());
-    module.register_callable_symbol(provider_instance, provider_function.symbol).map_err(ParseError::invalid)?;
+    module.register_callable_symbol(provider_instance, provider_function.display_symbol).map_err(ParseError::invalid)?;
     Ok(())
 }
 

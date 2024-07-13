@@ -25,7 +25,7 @@ micro clamped_mul_add(base: i64, step: i64) -> i64 {
 "#;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 1 }).compile_source(source).expect("hir");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let func = mir.functions.iter().find(|f| f.symbol.contains("clamped_mul_add")).expect("clamped_mul_add");
+    let func = mir.functions.iter().find(|f| f.display_symbol.contains("clamped_mul_add")).expect("clamped_mul_add");
     for block in &func.blocks {
         for insn in &block.instructions {
             if matches!(&insn.kind, MirOperation::Call { .. }) {

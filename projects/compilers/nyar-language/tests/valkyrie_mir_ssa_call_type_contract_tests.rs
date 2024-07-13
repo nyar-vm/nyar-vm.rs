@@ -17,7 +17,7 @@ fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
     assert!(resolved.take().is_some());
     let mir = MirLowerer::lower_module_semantic(&hir);
     assert!(mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedCallableIdentity { .. })));
-    let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
+    let caller = mir.functions.iter().find(|function| function.display_symbol.ends_with("::caller")).unwrap();
     assert!(
         !caller.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. }))
     );
@@ -38,7 +38,7 @@ fn resolved_callable_identity_survives_diagnostic_name_changes() {
     let instance = resolved.instance.expect("源码解析必须持有实例身份");
     resolved.symbol = path.clone();
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
+    let caller = mir.functions.iter().find(|function| function.display_symbol.ends_with("::caller")).unwrap();
     let callees = caller
         .blocks
         .iter()
@@ -72,8 +72,12 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
     let mir = MirLowerer::lower_module_semantic(&hir);
     for (owner, expected) in [("BooleanOwner.read", ValkyrieType::Boolean), ("IntegerOwner.read", ValkyrieType::Named(Identifier::new("i64")))]
     {
-        let instance =
-            mir.functions.iter().find(|function| function.symbol == owner).and_then(|function| function.instance).expect("被调用方法实例");
+        let instance = mir
+            .functions
+            .iter()
+            .find(|function| function.display_symbol == owner)
+            .and_then(|function| function.instance)
+            .expect("被调用方法实例");
         let mut matches = 0;
         for function in &mir.functions {
             for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
@@ -118,7 +122,7 @@ micro apply(left: Number, right: Number) -> bool { left + right }
     assert_eq!(resolved.parameter_types.len(), 2);
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let apply = mir.functions.iter().find(|function| function.symbol.ends_with("::apply")).expect("Semantic MIR apply");
+    let apply = mir.functions.iter().find(|function| function.display_symbol.ends_with("::apply")).expect("Semantic MIR apply");
     let calls = apply
         .blocks
         .iter()

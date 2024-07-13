@@ -95,7 +95,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 let location = format!("block {} instruction {index}", block.id.0);
                 let failure = |detail: &str| SemanticMirContractError {
                     code: "SMIR006",
-                    function: function.symbol.clone(),
+                    function: function.display_symbol.clone(),
                     location: location.clone(),
                     detail: detail.to_string(),
                 };
@@ -127,7 +127,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum construction references an undeclared sum".to_string(),
                     });
@@ -136,14 +136,14 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum construction references an undeclared variant".to_string(),
                     });
                 };
                 let expected_payload = sum.instantiate_payload(declared, type_args).ok_or_else(|| SemanticMirContractError {
                     code: "SMIR006",
-                    function: function.symbol.clone(),
+                    function: function.display_symbol.clone(),
                     location: location.clone(),
                     detail: "sum 实例的类型实参数量与声明不一致".to_string(),
                 })?;
@@ -164,7 +164,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum construction contract disagrees with declared sum metadata".to_string(),
                     });
@@ -177,7 +177,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum payload extraction references undeclared nominal identity".to_string(),
                     });
@@ -186,7 +186,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum has no payload-bearing variant with this identity".to_string(),
                     });
@@ -204,7 +204,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "sum payload extraction contract disagrees with declared sum metadata".to_string(),
                     });
@@ -217,7 +217,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "SumVariantIs references undeclared nominal identity".to_string(),
                     });
@@ -226,7 +226,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "SumVariantIs references an unknown variant identity".to_string(),
                     });
@@ -238,14 +238,14 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
                 let expected_receiver = sum.instantiate_result(declared, type_args).ok_or_else(|| SemanticMirContractError {
                     code: "SMIR006",
-                    function: function.symbol.clone(),
+                    function: function.display_symbol.clone(),
                     location: location.clone(),
                     detail: "sum 判别的类型实参数量与声明不一致".to_string(),
                 })?;
                 if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
-                        function: function.symbol.clone(),
+                        function: function.display_symbol.clone(),
                         location,
                         detail: "SumVariantIs contract incomplete".to_string(),
                     });
@@ -346,7 +346,7 @@ pub(super) fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMi
 }
 
 pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Result<(), SemanticMirContractError> {
-    let error = |code, location: String, detail| SemanticMirContractError { code, function: function.symbol.clone(), location, detail };
+    let error = |code, location: String, detail| SemanticMirContractError { code, function: function.display_symbol.clone(), location, detail };
     if !function.blocks.iter().any(|block| block.id == function.entry) {
         return Err(error("SMIR009", "entry".to_string(), "entry block is absent".to_string()));
     }
@@ -529,7 +529,7 @@ pub(super) fn validate_static_call_resolution(
         }
         return Err(SemanticMirContractError {
             code: "SMIR003",
-            function: function.symbol.clone(),
+            function: function.display_symbol.clone(),
             location,
             detail: "callable identity is absent from the Compiler identity table".to_string(),
         });
@@ -540,7 +540,7 @@ pub(super) fn validate_static_call_resolution(
         }
         return Err(SemanticMirContractError {
             code: "SMIR003",
-            function: function.symbol.clone(),
+            function: function.display_symbol.clone(),
             location,
             detail: "indirect call requires a function-typed callee SSA value".to_string(),
         });
@@ -550,19 +550,16 @@ pub(super) fn validate_static_call_resolution(
     if let MirOperand::Requirement(requirement) = callee {
         return Err(SemanticMirContractError {
             code: "SMIR003",
-            function: function.symbol.clone(),
+            function: function.display_symbol.clone(),
             location,
-            detail: format!(
-                "deferred member requirement `{}` must be materialized before Canonical",
-                requirement.member
-            ),
+            detail: format!("deferred member requirement `{}` must be materialized before Canonical", requirement.member),
         });
     }
     let MirOperand::Symbol(symbol) = callee
     else {
         return Err(SemanticMirContractError {
             code: "SMIR003",
-            function: function.symbol.clone(),
+            function: function.display_symbol.clone(),
             location,
             detail: "static call requires a frozen callable identity".to_string(),
         });
@@ -581,7 +578,7 @@ pub(super) fn validate_static_call_resolution(
     }
     Err(SemanticMirContractError {
         code: "SMIR003",
-        function: function.symbol.clone(),
+        function: function.display_symbol.clone(),
         location,
         detail: format!("static callee `{symbol}` carries no frozen callable identity and no dependency-export contract"),
     })

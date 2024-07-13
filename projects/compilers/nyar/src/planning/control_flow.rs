@@ -6,7 +6,7 @@
 //! - [`SuspendConsumptionModel::StateMachine`]: explicit `MoveNext` / asyncify lowering
 //!   (JVM, WASM, legacy MSIL PE writer).
 
-use nyar_types::QualifiedName;
+use nyar_types::{ItemId, QualifiedName};
 
 use crate::packaging::TargetLane;
 
@@ -121,11 +121,15 @@ pub struct SuspendWitnessBinding {
     pub trait_name: String,
     /// Method name on the witness table.
     pub method_name: String,
+    /// Frozen trait declaration identity when statically resolved.
+    pub trait_declaration: Option<ItemId>,
+    /// Frozen method declaration identity when statically resolved.
+    pub method_declaration: Option<ItemId>,
     /// Stable slot index in the witness table.
     pub method_index: u32,
     /// Statically resolved implementing type when known.
     pub type_name: Option<String>,
-    /// Target lowering symbol when statically resolved.
+    /// Diagnostic/export projection only; must not drive witness dispatch identity.
     pub impl_symbol: Option<String>,
 }
 

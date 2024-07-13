@@ -4,7 +4,7 @@
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, NyarType, QualifiedName};
 use nyar_emitter::{
-    TargetExecutionPlan, FragmentSubmission,
+    FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
     testing::lower_fragment_to_wasm_mir_module,
 };

@@ -49,7 +49,7 @@ pub(super) fn validate_jump_target(
     blocks: &BTreeMap<MirBlockRef, usize>,
     block_map: &BTreeMap<MirBlockRef, &MirBlock>,
 ) -> Result<(), ParseError> {
-    validate_jump_shape(&function.symbol, block.label.as_str(), target, arguments.len(), blocks)?;
+    validate_jump_shape(&function.display_symbol, block.label.as_str(), target, arguments.len(), blocks)?;
     let Some(target_block) = block_map.get(&target)
     else {
         return Ok(());
@@ -66,7 +66,7 @@ pub(super) fn validate_jump_target(
         if argument_type != *parameter_type {
             return Err(ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR` 函数 `{}` 的 block `{}` 跳向 `{}` 时，第 {} 个 Jump 参数类型为 `{}`，目标参数类型为 `{}`",
-                function.symbol,
+                function.display_symbol,
                 block.label,
                 target_block.label,
                 index + 1,

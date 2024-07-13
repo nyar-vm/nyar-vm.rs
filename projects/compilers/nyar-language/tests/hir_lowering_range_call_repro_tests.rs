@@ -505,7 +505,7 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
     for module in std::iter::once(&final_mir).chain(mir_groups.iter()) {
         eprintln!("-- mir module functions --");
         for function in &module.functions {
-            eprintln!("  {:?} decl={:?} inst={:?}", function.symbol, function.declaration, function.instance);
+            eprintln!("  {:?} decl={:?} inst={:?}", function.display_symbol, function.declaration, function.instance);
             if let Some(instance) = function.instance {
                 defined.insert(instance);
             }
@@ -529,7 +529,7 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
                     if !defined.contains(callee) {
                         panic!(
                             "orphan Callable {callee:?} in {}; ops={:?}",
-                            function.symbol,
+                            function.display_symbol,
                             function
                                 .blocks
                                 .iter()

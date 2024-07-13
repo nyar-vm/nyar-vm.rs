@@ -20,13 +20,12 @@ impl MirBuilder {
     pub(super) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
         // 声明冻结的 intrinsic 身份优先；符号路径反查只作为迁移期通道，服务于
         // 尚未带结构化身份的私有种子（`__array_len` 等）。
-        resolved
-            .and_then(|call| call.intrinsic)
-            .or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)))
-            .or_else(|| match callee {
+        resolved.and_then(|call| call.intrinsic).or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol))).or_else(|| {
+            match callee {
                 MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
                 _ => None,
-            })
+            }
+        })
     }
 
     fn try_lower_ref_deref_intrinsic(
@@ -732,9 +731,8 @@ impl MirBuilder {
                     else {
                         let Some(callee) = lower_resolved_callee(resolved_call)
                         else {
-                            self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                                symbol: resolved_call.symbol.to_string(),
-                            });
+                            self.diagnostics
+                                .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
                             return MirOperand::Constant(MirConstant::Unit);
                         };
                         callee

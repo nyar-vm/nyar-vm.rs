@@ -11,7 +11,7 @@ fn source_import_declaration_has_signature_but_no_fabricated_body() {
     );
     assert_eq!(mir.functions.len(), 1);
     assert_eq!(mir.external_calls.len(), 1);
-    assert!(mir.functions.iter().all(|function| function.symbol != mir.external_calls[0].symbol.to_string()));
+    assert!(mir.functions.iter().all(|function| function.display_symbol != mir.external_calls[0].symbol.to_string()));
     let canonical = output.canonical();
     assert_eq!(canonical.mir.functions.len(), 1);
     assert_eq!(canonical.linked.item_instances.len(), 2);

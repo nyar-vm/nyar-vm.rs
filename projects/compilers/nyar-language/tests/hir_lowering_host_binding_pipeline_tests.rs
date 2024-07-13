@@ -17,7 +17,11 @@ fn invoke_callee(canonical: &nyar_types::CanonicalProgram, instance: ItemInstanc
 #[test]
 fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
     let groups = [
-        CompilerSourceGroup::single_source("adaptor", "adaptor", "[host_provider(demo::write)] micro write(value: i32) -> i32 { return value }"),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::write)] micro write(value: i32) -> i32 { return value }",
+        ),
         CompilerSourceGroup::single_source(
             "app",
             "demo",
@@ -48,7 +52,11 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
 #[test]
 fn missing_host_provider_binding_keeps_contract_import() {
     let groups = [
-        CompilerSourceGroup::single_source("adaptor", "adaptor", "[host_provider(demo::write)] micro write(value: i32) -> i32 { return value }"),
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo::write)] micro write(value: i32) -> i32 { return value }",
+        ),
         CompilerSourceGroup::single_source(
             "app",
             "demo",

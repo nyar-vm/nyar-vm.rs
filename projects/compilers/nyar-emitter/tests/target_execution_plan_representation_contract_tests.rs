@@ -1,7 +1,7 @@
 use miette::Result;
 use nyar::{NamePath, QualifiedName};
 use nyar_emitter::{
-    TargetExecutionPlan, CompiledProgram, FragmentSubmission,
+    CompiledProgram, FragmentSubmission, TargetExecutionPlan,
     contracts::{InstructionKind, Operand},
 };
 use nyar_types::{

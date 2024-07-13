@@ -6,7 +6,7 @@
 use miette::miette;
 use nyar::AssembledFragment;
 
-use crate::{TargetExecutionPlan, FragmentSubmission};
+use crate::{FragmentSubmission, TargetExecutionPlan};
 
 /// 从编译器成功载荷生成唯一的后端提交视图。
 pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
-    TargetExecutionPlan, FragmentSubmission,
+    FragmentSubmission, TargetExecutionPlan,
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
 use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};

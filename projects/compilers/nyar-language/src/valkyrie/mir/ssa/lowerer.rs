@@ -136,7 +136,7 @@ impl MirLowerer {
         let mut callable_symbols = BTreeMap::new();
         for function in &functions {
             if let Some(instance) = function.instance {
-                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.symbol.clone())
+                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.display_symbol.clone())
                     .expect("duplicate callable symbol during lowering");
             }
         }

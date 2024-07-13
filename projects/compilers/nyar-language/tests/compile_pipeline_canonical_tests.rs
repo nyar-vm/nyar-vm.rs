@@ -54,7 +54,7 @@ fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value
     let mut module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type,
@@ -260,7 +260,7 @@ fn array_push_operation_canonicalizes_without_symbol_call() {
     let module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: array_ty.clone(),
@@ -332,7 +332,7 @@ fn array_set_operation_canonicalizes_without_symbol_call() {
     let module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Unit,
@@ -404,7 +404,7 @@ fn array_length_operation_canonicalizes_without_symbol_call() {
     let module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: usize_ty.clone(),
@@ -475,7 +475,7 @@ fn array_get_operation_canonicalizes_without_symbol_call() {
     let module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Utf8,
@@ -548,7 +548,7 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
     let module = MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: payload_ty.clone(),

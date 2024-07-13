@@ -35,13 +35,13 @@ pub fn link_reachable_dependency_mir(
                 if function.declaration.is_none() {
                     return Err(ParseError::invalid(format!(
                         "ItemInstanceId `{instance}` 缺少声明 ItemId；symbol=`{}`; module=`{}`",
-                        function.symbol, module.name
+                        function.display_symbol, module.name
                     )));
                 }
                 if let Some((previous_module, previous)) = definitions.insert(instance, (module, function)) {
                     return Err(ParseError::invalid(format!(
                         "ItemInstanceId `{instance}` 定义重复；first=`{}`@`{}`; second=`{}`@`{}`",
-                        previous.symbol, previous_module.name, function.symbol, module.name
+                        previous.display_symbol, previous_module.name, function.display_symbol, module.name
                     )));
                 }
             }
@@ -91,7 +91,7 @@ pub fn link_reachable_dependency_mir(
                 }
             }
             if !std::ptr::eq(*module, &*consumer) {
-                if let Err(detail) = linked.register_callable_symbol(instance, function.symbol.clone()) {
+                if let Err(detail) = linked.register_callable_symbol(instance, function.display_symbol.clone()) {
                     return Err(ParseError::invalid(detail));
                 }
                 let module_index = std::iter::once(&*consumer)
@@ -127,7 +127,7 @@ pub fn link_reachable_dependency_mir(
                         })
                     })
                 })
-                .map(|function| function.symbol.clone())
+                .map(|function| function.display_symbol.clone())
                 .collect::<Vec<_>>();
             let local_imports = consumer.external_calls.iter().map(|c| c.symbol.to_string()).take(12).collect::<Vec<_>>();
             return Err(ParseError::invalid(format!(

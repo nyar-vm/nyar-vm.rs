@@ -38,7 +38,7 @@ pub(super) fn lower_singleton_method_functions(
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{}.{}", singleton.name, method.name);
+            mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
             functions.push(mir_function);
         }
         if let Some(constructor) = &singleton.constructor {
@@ -56,7 +56,7 @@ pub(super) fn lower_singleton_method_functions(
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{}.{}", singleton.name, constructor.name);
+            mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
             functions.push(mir_function);
         }
         if let Some(finalizer) = &singleton.finalizer {
@@ -74,7 +74,7 @@ pub(super) fn lower_singleton_method_functions(
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{}.{}", singleton.name, finalizer.name);
+            mir_function.display_symbol = format!("{}.{}", singleton.name, finalizer.name);
             functions.push(mir_function);
         }
     }
@@ -113,7 +113,7 @@ pub(super) fn lower_impl_method_functions(
                 impl_type_arguments_from_generics(&impl_block.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{type_name}.{}", method.name);
+            mir_function.display_symbol = format!("{type_name}.{}", method.name);
             functions.push(mir_function);
         }
     }
@@ -133,7 +133,7 @@ pub(super) fn lower_impl_method_functions(
                 impl_type_arguments_from_generics(&item.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{}.{}", item.name, method.name);
+            mir_function.display_symbol = format!("{}.{}", item.name, method.name);
             functions.push(mir_function);
         }
     }
@@ -153,7 +153,7 @@ pub(super) fn lower_impl_method_functions(
                 impl_type_arguments_from_generics(&trait_def.generics),
                 diagnostics,
             );
-            mir_function.symbol = format!("{}.{}", trait_def.name, method.name);
+            mir_function.display_symbol = format!("{}.{}", trait_def.name, method.name);
             functions.push(mir_function);
         }
     }

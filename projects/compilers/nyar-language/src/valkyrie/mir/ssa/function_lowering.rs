@@ -138,7 +138,7 @@ pub(super) fn lower_function_semantic(
         .collect();
     diagnostics.append(&mut builder.diagnostics);
     let mut mir_function = MirFunction {
-        symbol: stable_hir_function_symbol(&module.name, function),
+        display_symbol: stable_hir_function_symbol(&module.name, function),
         declaration: function.declaration,
         instance: function.instance,
         return_type: resolved_return_type,

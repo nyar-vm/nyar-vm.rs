@@ -21,7 +21,7 @@ micro main() -> ExitCode {
     let module = MirLowerer::lower_module_semantic(&hir);
     let mut out = String::new();
     for function in &module.functions {
-        out.push_str(&format!("=== Function: {} ===\n", function.symbol));
+        out.push_str(&format!("=== Function: {} ===\n", function.display_symbol));
         out.push_str(&format!("Entry: {:?}\n", function.entry));
         out.push_str(&format!("Return type: {:?}\n", function.return_type));
         for (i, block) in function.blocks.iter().enumerate() {

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use nyar::{HostProjectionBoundary, NyarType, QualifiedName};
 use nyar_emitter::{
-    TargetExecutionPlan, FragmentSubmission,
+    FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, ExecutableFunction, Terminator},
     lowering::backends::wasm::validate_text_encoding_projection,
 };

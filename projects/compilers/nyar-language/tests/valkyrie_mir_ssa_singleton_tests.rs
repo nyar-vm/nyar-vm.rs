@@ -23,9 +23,11 @@ fn compile_mir(source: &str) -> MirModule {
 fn find_function<'a>(mir: &'a MirModule, name: &str) -> &'a MirFunction {
     mir.functions
         .iter()
-        .find(|f| f.symbol == name || f.symbol.ends_with(&format!("::{name}")) || f.symbol.ends_with(&format!(".{name}")))
+        .find(|f| {
+            f.display_symbol == name || f.display_symbol.ends_with(&format!("::{name}")) || f.display_symbol.ends_with(&format!(".{name}"))
+        })
         .unwrap_or_else(|| {
-            let symbols: Vec<_> = mir.functions.iter().map(|f| f.symbol.as_str()).collect();
+            let symbols: Vec<_> = mir.functions.iter().map(|f| f.display_symbol.as_str()).collect();
             panic!("expected mir function {name}, got {symbols:?}")
         })
 }

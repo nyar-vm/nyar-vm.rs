@@ -62,11 +62,7 @@ fn collect_module_dispatch(module: &HirModule, entries: &mut Vec<MirDispatchEntr
         };
         let target = ValkyrieType::Nominal {
             declaration,
-            arguments: structure
-                .generics
-                .iter()
-                .map(|generic| ValkyrieType::Generic(generic.clone()))
-                .collect(),
+            arguments: structure.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect(),
         };
         for method in &structure.methods {
             let Some(instance) = method.instance
@@ -227,20 +223,20 @@ pub(super) fn materialize_generic_call_instances(
     while cursor < functions.len() {
         let sites = collect_instantiation_sites(&functions[cursor], functions, seed_pool);
         for (block_index, instruction_index, seed, concrete_return, substitutions) in sites {
-            let Some(seed_function) =
-                functions.iter().find(|function| function.instance == Some(seed)).or_else(|| {
-                    seed_pool.iter().find(|function| function.instance == Some(seed))
-                }).cloned()
+            let Some(seed_function) = functions
+                .iter()
+                .find(|function| function.instance == Some(seed))
+                .or_else(|| seed_pool.iter().find(|function| function.instance == Some(seed)))
+                .cloned()
             else {
-                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
-                    symbol: format!("generic seed `{seed}` has no lowered definition"),
-                });
+                diagnostics
+                    .push(MirDiagnostic::UnresolvedCallableIdentity { symbol: format!("generic seed `{seed}` has no lowered definition") });
                 continue;
             };
             let Some(mono) = instantiate_seed(&seed_function, &concrete_return, &substitutions, functions, next_instance, &mut cache)
             else {
                 diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
-                    symbol: format!("generic seed `{}` cannot be fully substituted", seed_function.symbol),
+                    symbol: format!("generic seed `{}` cannot be fully substituted", seed_function.display_symbol),
                 });
                 continue;
             };
@@ -259,19 +255,9 @@ pub(super) fn materialize_generic_call_instances(
                 .results
                 .first()
                 .and_then(|result| functions[cursor].value_types.get(result).cloned());
-            match resolve_requirement_callee(
-                &requirement,
-                result_type.as_ref(),
-                functions,
-                seed_pool,
-                dispatch,
-                next_instance,
-                &mut cache,
-            ) {
+            match resolve_requirement_callee(&requirement, result_type.as_ref(), functions, seed_pool, dispatch, next_instance, &mut cache) {
                 Ok(mono) => {
-                    if let MirOperation::Call { callee, .. } =
-                        &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind
-                    {
+                    if let MirOperation::Call { callee, .. } = &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind {
                         *callee = MirOperand::Callable(mono);
                     }
                 }
@@ -341,24 +327,20 @@ fn resolve_requirement_callee(
             return Err(format!("member `{}` on `{:?}` has {count} ambiguous impl witnesses", requirement.member, requirement.subject));
         }
     };
-    let Some(seed) =
-        functions.iter().find(|function| function.instance == Some(entry.instance)).or_else(|| {
-            seed_pool.iter().find(|function| function.instance == Some(entry.instance))
-        }).cloned()
+    let Some(seed) = functions
+        .iter()
+        .find(|function| function.instance == Some(entry.instance))
+        .or_else(|| seed_pool.iter().find(|function| function.instance == Some(entry.instance)))
+        .cloned()
     else {
-        return Err(format!(
-            "member `{}` dispatch instance `{}` has no lowered definition",
-            requirement.member, entry.instance
-        ));
+        return Err(format!("member `{}` dispatch instance `{}` has no lowered definition", requirement.member, entry.instance));
     };
     if !contains_unresolved_generic(&seed.return_type) && !seed.param_types.iter().any(contains_unresolved_generic) {
         return Ok(entry.instance);
     }
-    let concrete_return =
-        result_type.cloned().unwrap_or_else(|| apply_type_substitution(&seed.return_type, &substitutions));
-    instantiate_seed(&seed, &concrete_return, &substitutions, functions, next_instance, cache).ok_or_else(|| {
-        format!("member `{}` witness cannot be fully substituted", requirement.member)
-    })
+    let concrete_return = result_type.cloned().unwrap_or_else(|| apply_type_substitution(&seed.return_type, &substitutions));
+    instantiate_seed(&seed, &concrete_return, &substitutions, functions, next_instance, cache)
+        .ok_or_else(|| format!("member `{}` witness cannot be fully substituted", requirement.member))
 }
 
 fn collect_requirement_sites(function: &MirFunction) -> Vec<(usize, usize, MirCallRequirement)> {
@@ -389,10 +371,10 @@ fn collect_instantiation_sites(
             // 链接会把未闭合的种子当作可达实例拉入，绕过调用点的完整代入。
             // 没有结果 SSA 时以形参统一得到的代入改写种子返回类型。
             let observed_return = instruction.results.first().and_then(|result| function.value_types.get(result).cloned());
-            let Some(seed_function) =
-                functions.iter().find(|candidate| candidate.instance == Some(*seed)).or_else(|| {
-                    seed_pool.iter().find(|candidate| candidate.instance == Some(*seed))
-                })
+            let Some(seed_function) = functions
+                .iter()
+                .find(|candidate| candidate.instance == Some(*seed))
+                .or_else(|| seed_pool.iter().find(|candidate| candidate.instance == Some(*seed)))
             else {
                 continue;
             };
@@ -442,7 +424,7 @@ fn specialize_function(
     let mut specialized = seed.clone();
     specialized.instance = Some(instance);
     // monomorph 必须使用独立 ABI 诊断标签，避免覆盖种子 callable_symbols 条目。
-    specialized.symbol = format!("{}#{}", seed.symbol, instance_index);
+    specialized.display_symbol = format!("{}#{}", seed.display_symbol, instance_index);
     specialized.return_type = concrete_return.clone();
     specialized.param_types = seed.param_types.iter().map(|ty| apply_type_substitution(ty, substitutions)).collect();
     specialized.value_types = seed.value_types.iter().map(|(value, ty)| (*value, apply_type_substitution(ty, substitutions))).collect();

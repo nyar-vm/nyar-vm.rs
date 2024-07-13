@@ -13,7 +13,7 @@ micro main(): bool {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 1 }).compile_source(src).expect("hir");
     let mir = MirLowerer::lower_module_semantic(&hir);
     for f in &mir.functions {
-        println!("=== {} ret={:?} params={:?} ===", f.symbol, f.return_type, f.param_types);
+        println!("=== {} ret={:?} params={:?} ===", f.display_symbol, f.return_type, f.param_types);
         for (k, v) in &f.value_types {
             println!("  v{:?} : {:?}", k, v);
         }

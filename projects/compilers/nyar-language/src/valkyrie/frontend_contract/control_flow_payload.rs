@@ -81,6 +81,7 @@ pub fn collect_witness_binding(
 /// 从模块 impl 中解析指定 trait 方法对应的 witness 槽位。
 #[doc(hidden)]
 pub fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
+    let trait_declaration = resolve_trait_declaration(hir_module, trait_name)?;
     let trait_impl = find_trait_impl(hir_module, trait_name)?;
     let type_name = impl_type_name(hir_module, trait_impl)?;
     let (index, method) = trait_impl.methods.iter().enumerate().find(|(_, method)| method.name.as_str() == method_name)?;
@@ -89,6 +90,8 @@ pub fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method
     Some(SuspendWitnessBinding {
         trait_name: trait_name.to_string(),
         method_name: method_name.to_string(),
+        trait_declaration: Some(trait_declaration),
+        method_declaration: method.declaration,
         method_index: resolved_index,
         type_name: Some(type_name),
         impl_symbol: Some(impl_symbol),

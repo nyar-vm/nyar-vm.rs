@@ -257,8 +257,8 @@ pub struct MirField {
 /// `SSA` 形式的 `MIR` 函数定义。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirFunction {
-    /// 函数的限定符号名。
-    pub symbol: String,
+    /// 诊断与 ABI 投影用显示名；语义身份以 `declaration` / `instance` 为准。
+    pub display_symbol: String,
     /// HIR 声明对应的 Compiler ItemId；MIR 不再按符号重新铸造实例身份。
     pub declaration: Option<nyar_types::ItemId>,
     /// 由 Compiler 独立实例化阶段分配，不能由声明编号转换。

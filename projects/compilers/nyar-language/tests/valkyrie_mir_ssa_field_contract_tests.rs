@@ -198,7 +198,7 @@ fn sum_param_binds_declaration_identity_through_canonical() {
     let sum = mir.sum_types.iter().find(|item| item.name == "Envelope").expect("Envelope");
     let item = sum.declaration.expect("Envelope declaration ItemId");
     let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8] };
-    let function = mir.functions.iter().find(|f| f.symbol.contains("identity")).expect("identity");
+    let function = mir.functions.iter().find(|f| f.display_symbol.contains("identity")).expect("identity");
     assert_eq!(function.param_types[0], expected, "sum 参数须是 Nominal{{ItemId}}，不得残留 Named/Apply(Named)");
     assert_eq!(function.return_type, expected, "sum 返回类型须与参数共享同一 Nominal 声明");
     let monomorphic = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
@@ -220,9 +220,9 @@ fn option_sum_construct_binds_declaration_identity_without_short_name() {
     let option = mir.sum_types.iter().find(|item| item.name.contains("Option")).expect("Option");
     let item = option.declaration.expect("Option declaration");
     let expected = ValkyrieType::Nominal { declaration: item, arguments: vec![ValkyrieType::Utf8] };
-    let wrap = mir.functions.iter().find(|f| f.symbol.contains("wrap")).expect("wrap");
+    let wrap = mir.functions.iter().find(|f| f.display_symbol.contains("wrap")).expect("wrap");
     assert_eq!(wrap.return_type, expected, "Option 返回须是 Nominal{{ItemId}}");
-    let identity = mir.functions.iter().find(|f| f.symbol.contains("identity")).expect("identity");
+    let identity = mir.functions.iter().find(|f| f.display_symbol.contains("identity")).expect("identity");
     assert_eq!(identity.param_types[0], expected);
     assert!(!mir.type_identities.contains_key(&ValkyrieType::Named(Identifier::new("Option"))));
     assert!(mir.type_identities.contains_key(&expected));
@@ -240,7 +240,7 @@ fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
     let item = structure.declaration.expect("TextSpan declaration ItemId");
     let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
     let declaration_id = mir.type_identities.get(&declaration_ty).copied().expect("Nominal 声明键须进入 type identity 表");
-    let param_ty = mir.functions.iter().find(|f| f.symbol.contains("as_start")).expect("as_start").param_types[0].clone();
+    let param_ty = mir.functions.iter().find(|f| f.display_symbol.contains("as_start")).expect("as_start").param_types[0].clone();
     assert_eq!(param_ty, declaration_ty, "参数须是已绑定 ItemId 的 Nominal，不得残留 Named 短名");
     let param_id = mir.type_identities.get(&param_ty).copied().expect("参数 Nominal 须进入 type identity 表");
     assert_eq!(param_id, declaration_id, "参数与聚合声明须共享同一 TypeId");
@@ -277,7 +277,7 @@ fn semantic_field_write_rejects_owner_value_masquerading_as_field_type() {
         )
         .expect("泛型字段读取源码必须满足 Semantic MIR 合同");
     let field = field_id(&module, "tail");
-    let function = module.functions.iter_mut().find(|function| function.symbol.contains("read")).expect("read");
+    let function = module.functions.iter_mut().find(|function| function.display_symbol.contains("read")).expect("read");
     let object = function.blocks[0].parameters[0];
     function.blocks[0].instructions.push(nyar_language::valkyrie::mir::ssa::MirInstruction::from_operation(MirOperation::FieldSet {
         object: MirOperand::Value(object),

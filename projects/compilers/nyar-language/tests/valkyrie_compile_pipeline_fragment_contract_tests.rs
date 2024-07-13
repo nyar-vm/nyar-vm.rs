@@ -13,7 +13,7 @@ fn fragment_contract_ignores_colliding_diagnostic_labels() {
     let mut mir = MirLowerer::lower_module_semantic(&hir);
     let original = canonical_program_from_semantic_mir(&mir).expect("原始实例合同");
     for function in &mut mir.functions {
-        function.symbol = "diagnostic::same".into();
+        function.display_symbol = "diagnostic::same".into();
     }
     mir.callable_symbols.clear();
     let renamed = canonical_program_from_semantic_mir(&mir).expect("诊断标签不参与绑定");

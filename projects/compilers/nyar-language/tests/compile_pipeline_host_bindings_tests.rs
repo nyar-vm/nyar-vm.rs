@@ -16,7 +16,7 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
     MirModule {
         name: "demo".into(),
         functions: vec![MirFunction {
-            symbol: "demo::main".into(),
+            display_symbol: "demo::main".into(),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Integer32 { signed: true },

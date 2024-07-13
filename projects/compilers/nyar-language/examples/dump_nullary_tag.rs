@@ -16,7 +16,7 @@ micro main(k: Kind) -> i32 {
         )
         .expect("compile");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let f = mir.functions.iter().find(|f| f.symbol.contains("main")).expect("main");
+    let f = mir.functions.iter().find(|f| f.display_symbol.contains("main")).expect("main");
     for (bi, b) in f.blocks.iter().enumerate() {
         println!("block {} {}:", bi, b.label);
         for ins in &b.instructions {

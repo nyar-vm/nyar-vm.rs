@@ -17,7 +17,7 @@ use nyar_bytecode::{
 use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
-use crate::{TargetExecutionPlan, FragmentSubmission};
+use crate::{FragmentSubmission, TargetExecutionPlan};
 use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。

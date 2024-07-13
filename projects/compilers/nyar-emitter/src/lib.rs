@@ -8,12 +8,12 @@ mod assembly;
 #[doc(hidden)]
 pub mod backend;
 pub mod backend_plan_views;
-mod target_execution_plan;
 pub mod contracts;
 mod driver;
 #[doc(hidden)]
 pub mod lowering;
 mod nullable_profiles;
+mod target_execution_plan;
 
 use std::{
     path::{Path, PathBuf},
@@ -28,8 +28,6 @@ pub use backend::{
     clr as nyar_backend_clr, jvm as nyar_backend_jvm, native as nyar_backend_native, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
-#[doc(hidden)]
-pub use target_execution_plan::TargetExecutionPlan;
 use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
@@ -41,6 +39,8 @@ use nyar::{
 pub use nyar_types::CompiledProgram;
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
+#[doc(hidden)]
+pub use target_execution_plan::TargetExecutionPlan;
 
 use crate::{
     backend_plan_views::ExecutableFunction,
@@ -62,7 +62,7 @@ pub mod testing {
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
 
     use super::{
-        TargetExecutionPlan, DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
+        DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
     #[cfg(feature = "nyar-vm-lane")]

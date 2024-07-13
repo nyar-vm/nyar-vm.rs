@@ -10,13 +10,15 @@ use nyar_language::{
 fn entry_source_group_parse_failure_reports_file_and_reason() {
     let source = "micro broken() { value = }";
     let direct = nyar_language::valkyrie::frontend::parse_source(source).expect_err("语法必须失败");
-    let groups = vec![CompilerSourceGroup::from_source_files(
-        "broken.package",
-        "broken.package",
-        vec![CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }],
-        vec![],
-    )
-    .as_entry()];
+    let groups = vec![
+        CompilerSourceGroup::from_source_files(
+            "broken.package",
+            "broken.package",
+            vec![CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }],
+            vec![],
+        )
+        .as_entry(),
+    ];
     let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("不能生成残缺 HIR");
     // 入口文件没有可索引声明：失败必须保留入口组、文件路径与底层解析原因，
     // 而不是把无法建立入口的文件当成可执行程序继续 lowering。
@@ -49,13 +51,15 @@ fn compiler_selects_reachable_files_from_inventory() {
 
 #[test]
 fn entry_group_parse_failure_fails_closed() {
-    let groups = vec![CompilerSourceGroup::from_source_files(
-        "app",
-        "app",
-        vec![CompilerSourceFile { path: "solution.v".into(), source: "micro broken() { value = }".into() }],
-        vec![],
-    )
-    .as_entry()];
+    let groups = vec![
+        CompilerSourceGroup::from_source_files(
+            "app",
+            "app",
+            vec![CompilerSourceFile { path: "solution.v".into(), source: "micro broken() { value = }".into() }],
+            vec![],
+        )
+        .as_entry(),
+    ];
     let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("入口文件语法错误必须失败");
     assert!(error.to_string().contains("solution.v"), "{error}");
 }
@@ -303,7 +307,7 @@ fn trait_semicolon_signatures_do_not_materialize_callable_instances() {
     assert!(as_trait.default_methods.is_empty(), "semicolon-only trait members must not become default bodies");
     let mir = nyar_language::valkyrie::mir::MirLowerer::lower_module_semantic(&hir);
     assert!(
-        !mir.functions.iter().any(|function| function.symbol.contains("as_type")),
+        !mir.functions.iter().any(|function| function.display_symbol.contains("as_type")),
         "abstract trait signatures must not lower to MIR callables"
     );
 }
@@ -400,8 +404,7 @@ fn multiple_entry_groups_merge_their_frozen_surface_contracts() {
             .as_entry()
             .with_direct_dependencies(vec!["app".into()]),
     ];
-    let output =
-        ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("多个入口组共同产生程序表面");
+    let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("多个入口组共同产生程序表面");
     let linked = &output.canonical().linked;
     // 末尾入口组是程序模块宿主；前序入口组的 [main] 与其自身 [export] 都必须保留。
     assert_eq!(linked.exports.len(), 1, "生成入口组的导出不得因末尾组选择而丢失");
@@ -416,8 +419,6 @@ fn multiple_main_entry_groups_fail_closed_instead_of_overwriting() {
             .as_entry()
             .with_direct_dependencies(vec!["first".into()]),
     ];
-    let error = ValkyrieCompiler::default()
-        .compile_source_groups_to_program(&groups)
-        .expect_err("同一程序不允许两个 [main] 入口");
+    let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("同一程序不允许两个 [main] 入口");
     assert!(error.to_string().contains("多个入口 operation"), "{error}");
 }

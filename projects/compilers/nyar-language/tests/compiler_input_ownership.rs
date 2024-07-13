@@ -14,7 +14,8 @@ fn group(key: &str, source: &str, dependencies: &[&str]) -> CompilerSourceGroup 
 #[test]
 fn unused_inventory_never_materializes_and_names_do_not_affect_selection() {
     for key in ["unused_package", "other_inventory", "third_dependency"] {
-        let groups = [group(key, "micro broken() { value = }", &[]), group("app", "[export] micro run() -> i32 { return 23 }", &[key]).as_entry()];
+        let groups =
+            [group(key, "micro broken() { value = }", &[]), group("app", "[export] micro run() -> i32 { return 23 }", &[key]).as_entry()];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, "wasm32").expect("未被需求的组是合法空模块");
         assert!(modules[0].functions.is_empty());
         assert_eq!(modules[1].functions.len(), 1);
