@@ -108,6 +108,41 @@ fn missing_provider_symbol_fails_closed() {
 }
 
 #[test]
+fn host_provider_resolves_via_callable_identity_not_display_symbol() {
+    let contract_instance = ItemInstanceId::from_index(1).unwrap();
+    let provider_instance = ItemInstanceId::from_index(2).unwrap();
+    let decoy_instance = ItemInstanceId::from_index(99).unwrap();
+    let mut module = module_with_contract_call(contract_instance, provider_instance);
+    module.functions.push(MirFunction {
+        display_symbol: "std.adaptor.clr::write".into(),
+        declaration: Some(ItemId::from_index(99).unwrap()),
+        instance: Some(decoy_instance),
+        return_type: ValkyrieType::Integer32 { signed: true },
+        param_types: Vec::new(),
+        value_types: BTreeMap::new(),
+        entry: MirBlockRef(0),
+        values: Vec::new(),
+        blocks: vec![MirBlock {
+            id: MirBlockRef(0),
+            label: "decoy".into(),
+            parameters: Vec::new(),
+            instructions: Vec::new(),
+            terminator: MirTerminator::Return { value: None },
+        }],
+    });
+    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "std.adaptor.clr::write".into() }];
+
+    apply_host_provider_bindings(&mut module, &[], &bindings).expect("provider must resolve through callable_symbols identity");
+
+    let call = module.functions[0].blocks[0].instructions[0].kind.clone();
+    assert_eq!(
+        call,
+        MirOperation::Call { callee: MirOperand::Callable(provider_instance), arguments: vec![MirOperand::Value(MirValueRef(0))] }
+    );
+    assert!(!module.callable_symbols.contains_key(&decoy_instance));
+}
+
+#[test]
 fn ambiguous_host_contract_fails_closed() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();

@@ -10,7 +10,7 @@ use crate::types::{
 };
 use nyar::SemanticFragment;
 use nyar_types::{ItemInstanceId, VariantId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// `MIR` lowering 阶段产生的编译期诊断。
 ///
@@ -137,6 +137,25 @@ impl MirModule {
 
     pub(crate) fn contains_callable_instance(&self, instance: ItemInstanceId) -> bool {
         self.callable_symbols.contains_key(&instance)
+    }
+}
+
+/// 按已登记的 ABI 标签反查冻结的 `ItemInstanceId`。
+///
+/// 标签是 `ItemInstanceId` 的投影；不得通过 `MirFunction.display_symbol` 反查身份。
+pub(crate) fn resolve_callable_instance_by_label(modules: &[&MirModule], label: &str) -> Result<ItemInstanceId, String> {
+    let mut matches = BTreeSet::new();
+    for module in modules {
+        for (instance, registered) in &module.callable_symbols {
+            if registered == label {
+                matches.insert(*instance);
+            }
+        }
+    }
+    match matches.len() {
+        0 => Err(format!("callable ABI 标签 `{label}` 未在源码闭包中登记")),
+        1 => Ok(*matches.iter().next().expect("唯一匹配")),
+        _ => Err(format!("callable ABI 标签 `{label}` 对应多个 ItemInstanceId")),
     }
 }
 

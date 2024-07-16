@@ -9,7 +9,7 @@ use nyar_types::ItemInstanceId;
 
 use crate::valkyrie::{
     frontend::ParseError,
-    mir::{MirFunction, MirModule, MirOperand, MirOperation},
+    mir::{MirFunction, MirModule, MirOperand, MirOperation, ssa::resolve_callable_instance_by_label},
     symbols::stable_symbol_key,
 };
 
@@ -83,24 +83,17 @@ fn resolve_callable_binding(
         return Ok((*instance, None));
     }
 
-    let consumer_matches =
-        module.functions.iter().filter(|function| function.instance.is_some() && function.display_symbol == symbol).collect::<Vec<_>>();
-    if consumer_matches.len() > 1 {
-        return Err(ParseError::invalid(format!("host provider `{symbol}` 的 callable identity 有歧义")));
-    }
-    if let Some(function) = consumer_matches.first() {
-        return Ok((function.instance.expect("已过滤 callable instance"), None));
-    }
-
-    let candidates = dependency_mirs
+    let modules: Vec<&MirModule> = std::iter::once(module).chain(dependency_mirs.iter()).collect();
+    let provider_instance = resolve_callable_instance_by_label(&modules, symbol)
+        .map_err(|reason| ParseError::invalid(format!("host provider `{symbol}` 未在源码闭包中解析到 callable identity: {reason}")))?;
+    let provider_function = modules
         .iter()
         .flat_map(|dependency| dependency.functions.iter())
-        .filter(|function| function.instance.is_some() && function.display_symbol == symbol)
-        .collect::<Vec<_>>();
-    match candidates.as_slice() {
-        [] => Err(ParseError::invalid(format!("host provider `{symbol}` 未在源码闭包中解析到 callable identity"))),
-        [function] => Ok((function.instance.expect("已过滤 callable instance"), Some((*function).clone()))),
-        _ => Err(ParseError::invalid(format!("host provider `{symbol}` 在依赖闭包中有多个候选"))),
+        .find(|function| function.instance == Some(provider_instance))
+        .cloned();
+    match provider_function {
+        Some(function) => Ok((provider_instance, Some(function))),
+        None => Err(ParseError::invalid(format!("host provider `{symbol}` 已登记 callable identity `{provider_instance}` 但缺少函数体"))),
     }
 }
 
