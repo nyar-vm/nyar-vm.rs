@@ -6,13 +6,15 @@
 use nyar::{CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
+use crate::valkyrie::semantic_closure::DeclarationKey;
+
 /// Resolver 为某个 `[host_provider(...)]` 合同选定的实现绑定。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerHostProviderBinding {
-    /// 与源码 `[host_contract]` 对齐的稳定合同标识。
-    pub contract: String,
-    /// 选定 provider 在语义导出中的符号名。
-    pub symbol: String,
+    /// `[host_contract]` 的冻结声明身份。
+    pub contract: DeclarationKey,
+    /// 选定 `[host_provider]` 实现的冻结声明身份。
+    pub provider: DeclarationKey,
 }
 
 /// Legion 交给 Compiler 的完整构建上下文。

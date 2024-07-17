@@ -107,8 +107,8 @@ fn semantic_closure_hash(groups: &[CompilerSourceGroup], arch: &str) -> String {
 fn host_provider_binding_hash(host_bindings: &[CompilerHostProviderBinding]) -> String {
     let mut parts = Vec::new();
     for binding in host_bindings {
-        parts.push(binding.contract.clone());
-        parts.push(binding.symbol.clone());
+        parts.push(binding.contract.encoded());
+        parts.push(binding.provider.encoded());
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
     combined_content_hash(&borrowed)

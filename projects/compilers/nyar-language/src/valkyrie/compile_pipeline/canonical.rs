@@ -16,6 +16,7 @@ use nyar::SemanticFragment;
 
 use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
+    semantic_closure::DeclarationKey,
     types::hir::ValkyrieType,
 };
 
@@ -65,18 +66,16 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         .map_err(|failure| error(module, "CAN054", format!("sum 物理 payload 类型未完成实例化: {failure}")))?;
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
-    for (symbol, instance) in
-        module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.display_symbol.clone(), instance))).chain(
-            module.external_calls.iter().filter_map(|contract| {
-                contract.instance.map(|instance| (crate::valkyrie::symbols::stable_symbol_key(&contract.symbol), instance))
-            }),
-        )
+    for (instance, key, display) in module
+        .functions
+        .iter()
+        .filter_map(|function| function.instance.map(|instance| (instance, function.declaration_key.as_ref(), function.display_symbol.clone())))
+        .chain(module.external_calls.iter().filter_map(|contract| {
+            contract.instance.map(|instance| (instance, contract.declaration_key.as_ref(), contract.symbol.to_string()))
+        }))
     {
-        let parts = symbol.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>();
-        if parts.is_empty() {
-            return Err(error(module, "CAN040", format!("callable `{symbol}` 没有完整限定 identity")));
-        }
-        let name = QualifiedName::new(parts);
+        let name = qualified_name_from_declaration_key(key)
+            .ok_or_else(|| error(module, "CAN040", format!("callable `{display}` 缺少冻结 declaration_key，无法登记限定名称")))?;
         if let Some(previous) = linked.callable_names.insert(instance, name.clone())
             && previous != name
         {
@@ -979,4 +978,13 @@ fn describe_operation_result_mismatch(
         }
     }
     format!(" (function_symbol=`{symbol}`)")
+}
+
+fn qualified_name_from_declaration_key(key: Option<&DeclarationKey>) -> Option<QualifiedName> {
+    let key = key?;
+    if key.name.is_empty() {
+        return None;
+    }
+    let parts = key.namespace.iter().map(|segment| Identifier::new(segment)).chain([Identifier::new(&key.name)]).collect();
+    Some(QualifiedName::new(parts))
 }

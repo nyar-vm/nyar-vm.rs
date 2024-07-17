@@ -874,6 +874,8 @@ impl ValkyrieCompiler {
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
                 arch,
             )?;
+            hir_module.dependency_key = group.dependency_key.clone();
+            hir_module.source_path = group.sources.first().map(|file| file.path.clone()).unwrap_or_else(|| format!("{}.v", group.name));
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             freeze_module_generic_binders(&mut hir_module);
             bind_declared_nominal_types(&mut hir_module)?;
@@ -2293,6 +2295,8 @@ impl AstToHir {
 
         let mut hir = HirModule {
             name: module_name,
+            dependency_key: String::new(),
+            source_path: String::new(),
             doc: HirDocumentation::default(),
             imports,
             warnings: Vec::new(),

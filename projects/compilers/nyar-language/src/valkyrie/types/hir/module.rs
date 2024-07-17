@@ -15,6 +15,12 @@ use crate::{Identifier, NamePath, SourceSpan};
 pub struct HirModule {
     /// The fully qualified name path of the module.
     pub name: NamePath,
+    /// Resolver 分配的依赖组身份；与语义闭包 `DeclarationKey.dependency_key` 对齐。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub dependency_key: String,
+    /// 本组主源码路径；与语义闭包 `DeclarationKey.source_path` 对齐。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_path: String,
     /// Documentation for the module.
     pub doc: HirDocumentation,
     /// Import statements in this module.
@@ -115,6 +121,8 @@ impl Default for HirModule {
     fn default() -> Self {
         Self {
             name: NamePath::new(vec![Identifier::new("main")]),
+            dependency_key: String::new(),
+            source_path: String::new(),
             doc: HirDocumentation::default(),
             imports: Vec::new(),
             warnings: Vec::new(),

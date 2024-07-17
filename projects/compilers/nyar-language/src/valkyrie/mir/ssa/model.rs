@@ -4,13 +4,15 @@
 //! 不包含 lowering 行为；`MirStruct` / `MirInstruction` 的只读访问器随类型保留。
 
 use super::{MirSumDeclaration, struct_facts::resolve_self_type_with_owner, value_semantics, value_semantics::FlagsLayout};
+use crate::valkyrie::semantic_closure::DeclarationKey;
+
 use crate::types::{
     NamePath,
     hir::{HirPattern, ValkyrieType},
 };
 use nyar::SemanticFragment;
 use nyar_types::{ItemInstanceId, VariantId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// `MIR` lowering 阶段产生的编译期诊断。
 ///
@@ -140,30 +142,13 @@ impl MirModule {
     }
 }
 
-/// 按已登记的 ABI 标签反查冻结的 `ItemInstanceId`。
-///
-/// 标签是 `ItemInstanceId` 的投影；不得通过 `MirFunction.display_symbol` 反查身份。
-pub(crate) fn resolve_callable_instance_by_label(modules: &[&MirModule], label: &str) -> Result<ItemInstanceId, String> {
-    let mut matches = BTreeSet::new();
-    for module in modules {
-        for (instance, registered) in &module.callable_symbols {
-            if registered == label {
-                matches.insert(*instance);
-            }
-        }
-    }
-    match matches.len() {
-        0 => Err(format!("callable ABI 标签 `{label}` 未在源码闭包中登记")),
-        1 => Ok(*matches.iter().next().expect("唯一匹配")),
-        _ => Err(format!("callable ABI 标签 `{label}` 对应多个 ItemInstanceId")),
-    }
-}
-
 /// 由导入语义导出持有的静态解析调用合同。
 ///
 /// 声明签名属于模块级 callable 合同，不复制到单条 Call 上；不得挂分派旁路。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirExternalCallContract {
+    /// 闭包规划冻结的声明身份；host linker 只按此匹配合同。
+    pub declaration_key: Option<DeclarationKey>,
     /// HIR 导出的原始声明身份；导入实例不得按导入顺序重新生成声明。
     pub declaration: Option<nyar_types::ItemId>,
     /// 实例化后的 callable 身份；声明存在但实例缺失即为合同错误。
@@ -278,6 +263,8 @@ pub struct MirField {
 pub struct MirFunction {
     /// 诊断与 ABI 投影用显示名；语义身份以 `declaration` / `instance` 为准。
     pub display_symbol: String,
+    /// 闭包规划冻结的声明身份。
+    pub declaration_key: Option<DeclarationKey>,
     /// HIR 声明对应的 Compiler ItemId；MIR 不再按符号重新铸造实例身份。
     pub declaration: Option<nyar_types::ItemId>,
     /// 由 Compiler 独立实例化阶段分配，不能由声明编号转换。

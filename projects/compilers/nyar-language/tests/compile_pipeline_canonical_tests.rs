@@ -4,11 +4,16 @@ use nyar_language::{
     valkyrie::{
         compile_pipeline::canonical_program_from_semantic_mir,
         mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},
+        semantic_closure::micro_declaration_key,
         types::{Identifier, NamePath},
     },
 };
 use nyar_types::{CanonicalOperation, CanonicalPrimitiveType, CanonicalTypeKind, ImportIndex, ItemId, ItemInstanceId};
 use std::collections::BTreeMap;
+
+fn demo_main_declaration_key() -> nyar_language::valkyrie::semantic_closure::DeclarationKey {
+    micro_declaration_key("demo", "demo.v", &[], "main")
+}
 
 fn source_surface_module() -> MirModule {
     let hir = nyar_language::ValkyrieCompiler::default()
@@ -55,6 +60,7 @@ fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type,
@@ -100,7 +106,7 @@ fn producer_preserves_exact_function_identity_and_type_shape() {
     let program = canonical_program_from_semantic_mir(&module).expect("精确单态函数应进入 canonical");
     assert_eq!(program.linked.item_instances.len(), 1);
     assert_eq!(program.mir.functions.len(), 1);
-    assert_eq!(program.linked.callable_names.values().map(ToString::to_string).collect::<Vec<_>>(), vec!["demo::main"]);
+    assert_eq!(program.linked.callable_names.values().map(ToString::to_string).collect::<Vec<_>>(), vec!["main"]);
     assert!(program.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
 }
 
@@ -216,6 +222,7 @@ fn producer_binds_external_callable_to_import_index_and_signature() {
     let mut module =
         module_with(MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) }, None, BTreeMap::new());
     module.external_calls.push(MirExternalCallContract {
+        declaration_key: Some(micro_declaration_key("demo", "demo.v", &[], "write")),
         declaration: Some(ItemId::from_index(1).unwrap()),
         instance: Some(ItemInstanceId::from_index(1).unwrap()),
         symbol: NamePath::new(vec![Identifier::new("std"), Identifier::new("console"), Identifier::new("write")]),
@@ -261,6 +268,7 @@ fn array_push_operation_canonicalizes_without_symbol_call() {
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: array_ty.clone(),
@@ -333,6 +341,7 @@ fn array_set_operation_canonicalizes_without_symbol_call() {
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Unit,
@@ -405,6 +414,7 @@ fn array_length_operation_canonicalizes_without_symbol_call() {
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: usize_ty.clone(),
@@ -476,6 +486,7 @@ fn array_get_operation_canonicalizes_without_symbol_call() {
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Utf8,
@@ -549,6 +560,7 @@ fn null_intrinsic_operations_canonicalize_without_symbol_call() {
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
+            declaration_key: Some(demo_main_declaration_key()),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: payload_ty.clone(),

@@ -259,7 +259,9 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
 
 pub(super) fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (index, declaration) in module.structs.iter().enumerate() {
-        let duplicate_owner = module.structs[..index].iter().any(|prior| prior.qualified_name() == declaration.qualified_name());
+        let duplicate_owner = module.structs[..index]
+            .iter()
+            .any(|prior| prior.nominal == declaration.nominal || prior.declaration.is_some() && prior.declaration == declaration.declaration);
         let duplicate_binder = declaration
             .generics
             .iter()
@@ -415,20 +417,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                                 .find(|candidate| candidate.instance == Some(*identity))
                                 .map(|target| (&target.parameter_types, &target.return_type))
                         }),
-                    MirOperand::Symbol(symbol) => {
-                        // 已通过 `validate_static_call_resolution` 的 Symbol 只能是内建 intrinsic
-                        // 或携带冻结身份的外部导入合同；本地函数按名字提供签名属于名称认亲，不得作为签名来源。
-                        let target_symbol = crate::valkyrie::symbols::stable_symbol_key(symbol);
-                        let external: Vec<_> = module
-                            .external_calls
-                            .iter()
-                            .filter(|candidate| crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol) == target_symbol)
-                            .collect();
-                        if external.len() > 1 {
-                            return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
-                        }
-                        external.first().map(|target| (&target.parameter_types, &target.return_type))
-                    }
+                    // `Symbol` 只保留给内建 intrinsic；不得按名称反查 external callable 签名。
                     _ => None,
                 };
                 if let Some((parameter_types, return_type)) = signature {
@@ -567,20 +556,11 @@ pub(super) fn validate_static_call_resolution(
     if is_language_builtin_symbol(symbol) {
         return Ok(());
     }
-    // 外部导入合同是装配层冻结的 ABI 声明；只有携带已冻结声明/实例身份时才算身份命中，
-    // 本地函数名与裸名字符串都不是身份。
-    if module
-        .external_calls
-        .iter()
-        .any(|candidate| candidate.symbol == *symbol && (candidate.declaration.is_some() || candidate.instance.is_some()))
-    {
-        return Ok(());
-    }
     Err(SemanticMirContractError {
         code: "SMIR003",
         function: function.display_symbol.clone(),
         location,
-        detail: format!("static callee `{symbol}` carries no frozen callable identity and no dependency-export contract"),
+        detail: format!("static callee `{symbol}` must lower to Callable(ItemInstanceId); symbol-only external calls are rejected"),
     })
 }
 

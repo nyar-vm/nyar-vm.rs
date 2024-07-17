@@ -1,6 +1,6 @@
 use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
 
-use nyar_language::valkyrie::compile_pipeline::CompilerHostProviderBinding;
+use nyar_language::valkyrie::{compile_pipeline::CompilerHostProviderBinding, semantic_closure::micro_declaration_key};
 use nyar_types::{CanonicalCallee, CanonicalOperation, ItemInstanceId};
 
 const TEST_ARCH: &str = "native";
@@ -31,22 +31,23 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
         .as_entry()
         .with_direct_dependencies(vec!["adaptor".into()]),
     ];
-    let bindings = vec![CompilerHostProviderBinding { contract: "demo::write".into(), symbol: "adaptor::write".into() }];
+    let bindings = vec![CompilerHostProviderBinding {
+        contract: micro_declaration_key("app", "demo.v", &[], "write"),
+        provider: micro_declaration_key("adaptor", "adaptor.v", &[], "write"),
+    }];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
         .expect("host provider binding must close across dependency groups");
     let canonical = program.canonical();
     assert_eq!(canonical.linked.imports.len(), 0, "contract import must be rewritten to provider callable");
     let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
-    let provider_instance = canonical
-        .linked
-        .callable_names
-        .iter()
-        .find(|(_, name)| name.to_string().contains("adaptor") && name.to_string().contains("write"))
-        .map(|(instance, _)| *instance)
-        .expect("provider callable");
     let call = invoke_callee(canonical, main_instance).expect("main must call host write");
-    assert_eq!(call, CanonicalCallee::Item(provider_instance));
+    let provider_instance = match call {
+        CanonicalCallee::Item(instance) => instance,
+        other => panic!("host binding must rewrite to local provider callable, got {other:?}"),
+    };
+    assert_ne!(provider_instance, main_instance);
+    assert!(canonical.mir.functions.contains_key(&provider_instance));
 }
 
 #[test]

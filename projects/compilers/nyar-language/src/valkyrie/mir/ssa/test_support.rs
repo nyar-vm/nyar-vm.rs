@@ -136,6 +136,8 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     };
     let module = HirModule {
         name: NamePath::new(vec![Identifier::new("demo")]),
+        dependency_key: "demo".into(),
+        source_path: "demo.v".into(),
         doc: HirDocumentation::default(),
         imports: Vec::new(),
         warnings: Vec::new(),
@@ -175,6 +177,8 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
 pub fn lower_test_module(functions: Vec<HirFunction>, structs: Vec<HirStruct>) -> MirModule {
     super::MirLowerer::lower_module_semantic(&HirModule {
         name: NamePath::new(vec![Identifier::new("demo")]),
+        dependency_key: "demo".into(),
+        source_path: "demo.v".into(),
         doc: HirDocumentation::default(),
         imports: Vec::new(),
         warnings: Vec::new(),

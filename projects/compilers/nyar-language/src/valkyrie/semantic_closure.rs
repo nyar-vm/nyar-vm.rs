@@ -474,66 +474,28 @@ pub fn plan_semantic_closure_with_host_bindings(
 
 fn demand_selected_host_providers(
     host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
-    groups: &[ClosureGroupInput<'_>],
+    _groups: &[ClosureGroupInput<'_>],
     declaration_index: &BTreeMap<DeclarationKey, DeclarationIndexEntry>,
     demanded: &mut BTreeSet<DeclarationKey>,
 ) -> Result<(), SemanticClosureError> {
     for binding in host_bindings {
-        let key = resolve_host_provider_declaration(&binding.symbol, groups, declaration_index)?;
-        demanded.insert(key);
+        if !declaration_index.contains_key(&binding.provider) {
+            return Err(SemanticClosureError::HostProviderNotResolved { symbol: binding.provider.encoded() });
+        }
+        demanded.insert(binding.provider.clone());
     }
     Ok(())
 }
 
-fn resolve_host_provider_declaration(
-    symbol: &str,
-    groups: &[ClosureGroupInput<'_>],
-    declaration_index: &BTreeMap<DeclarationKey, DeclarationIndexEntry>,
-) -> Result<DeclarationKey, SemanticClosureError> {
-    let parts = symbol.split("::").filter(|part| !part.is_empty()).collect::<Vec<_>>();
-    if parts.len() < 2 {
-        return Err(SemanticClosureError::HostProviderNotResolved { symbol: symbol.to_string() });
-    }
-    let name = parts[parts.len() - 1];
-    let candidate_groups = candidate_groups_for_symbol_prefix(&parts[..parts.len() - 1], groups);
-    let matches = declaration_index
-        .keys()
-        .filter(|key| candidate_groups.contains(&key.dependency_key))
-        .filter(|key| key.name == name)
-        .filter(|key| symbol_matches_host_provider_declaration(&parts, key))
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [] => Err(SemanticClosureError::HostProviderNotResolved { symbol: symbol.to_string() }),
-        [key] => Ok((*key).clone()),
-        _ => Err(SemanticClosureError::HostProviderAmbiguous {
-            symbol: symbol.to_string(),
-            declarations: matches.iter().map(|key| key.encoded()).collect(),
-        }),
-    }
-}
-
-fn candidate_groups_for_symbol_prefix(prefix_parts: &[&str], groups: &[ClosureGroupInput<'_>]) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let dotted_prefix = prefix_parts.join(".");
-    for group in groups {
-        if prefix_parts.len() == 1 && (group.module_name == prefix_parts[0] || group.dependency_key == prefix_parts[0]) {
-            out.insert(group.dependency_key.to_string());
-        }
-        if group.module_name == dotted_prefix || group.dependency_key == dotted_prefix {
-            out.insert(group.dependency_key.to_string());
-        }
-    }
-    out
-}
-
-fn symbol_matches_host_provider_declaration(parts: &[&str], key: &DeclarationKey) -> bool {
-    match parts.len() {
-        0 | 1 => false,
-        2 => key.owner.is_none() && matches!(key.kind, DeclarationKind::Micro),
-        _ => {
-            let owner = parts[parts.len() - 2];
-            key.owner.as_deref() == Some(owner) && matches!(key.kind, DeclarationKind::Method | DeclarationKind::ImplyMethod)
-        }
+/// 构造顶层 `micro` 的冻结声明身份。
+pub fn micro_declaration_key(dependency_key: &str, source_path: &str, namespace: &[String], name: &str) -> DeclarationKey {
+    DeclarationKey {
+        dependency_key: dependency_key.to_string(),
+        source_path: source_path.to_string(),
+        namespace: namespace.to_vec(),
+        kind: DeclarationKind::Micro,
+        owner: None,
+        name: name.to_string(),
     }
 }
 

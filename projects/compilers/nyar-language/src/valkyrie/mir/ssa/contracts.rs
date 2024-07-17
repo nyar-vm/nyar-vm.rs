@@ -21,6 +21,12 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                 .filter_map(|function| {
                     let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                     Some(MirExternalCallContract {
+                        declaration_key: Some(crate::valkyrie::semantic_closure::micro_declaration_key(
+                            &module.dependency_key,
+                            &module.source_path,
+                            &function.declaring_namespace.parts().iter().map(|part| part.to_string()).collect::<Vec<_>>(),
+                            function.name.as_str(),
+                        )),
                         declaration: function.declaration,
                         instance: function.instance,
                         symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
@@ -45,6 +51,12 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                     let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                     let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
                     Some(MirExternalCallContract {
+                        declaration_key: Some(crate::valkyrie::semantic_closure::micro_declaration_key(
+                            &export.module.to_string(),
+                            &export.module.to_string(),
+                            &function.declaring_namespace.parts().iter().map(|part| part.to_string()).collect::<Vec<_>>(),
+                            function.name.as_str(),
+                        )),
                         declaration: function.declaration,
                         instance: function.instance,
                         symbol,
