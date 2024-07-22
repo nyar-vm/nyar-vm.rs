@@ -1154,28 +1154,36 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                     *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
                 }
             }
+            ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
+                let path_namespace = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
+                if let Some(declaration) = resolve_declaration(name, &path_namespace, structs, enums)? {
+                    *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+                }
+            }
             ValkyrieType::Apply(base, args) => {
                 for arg in args.iter_mut() {
                     bind_type(arg, namespace, structs, enums)?;
                 }
-                let named_base = match base.as_ref() {
-                    ValkyrieType::Named(name) => Some(name.clone()),
+                let resolved_declaration = match base.as_ref() {
+                    ValkyrieType::Named(name) => resolve_declaration(name, namespace, structs, enums)?,
+                    ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
+                        let path_namespace = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
+                        resolve_declaration(name, &path_namespace, structs, enums)?
+                    }
                     _ => None,
                 };
-                if let Some(name) = named_base {
-                    if let Some(declaration) = resolve_declaration(&name, namespace, structs, enums)? {
-                        // `class Array<T>` 是结构化数组 `[T]` 的声明 owner：`Array<T>` 与
-                        // `[T]` 是同一个类型，数组值在所有阶段只有结构化 `Array` 一个身份。
-                        // owner 归属沿用 `impl_nominal_type_name` 的既定约定，不另造名义类型。
-                        if args.len() == 1 && is_array_owner(declaration, structs) {
-                            let element = args.remove(0);
-                            *ty = ValkyrieType::Array(Box::new(element));
-                            return Ok(());
-                        }
-                        let arguments = std::mem::take(args);
-                        *ty = ValkyrieType::Nominal { declaration, arguments };
+                if let Some(declaration) = resolved_declaration {
+                    // `class Array<T>` 是结构化数组 `[T]` 的声明 owner：`Array<T>` 与
+                    // `[T]` 是同一个类型，数组值在所有阶段只有结构化 `Array` 一个身份。
+                    // owner 归属沿用 `impl_nominal_type_name` 的既定约定，不另造名义类型。
+                    if args.len() == 1 && is_array_owner(declaration, structs) {
+                        let element = args.remove(0);
+                        *ty = ValkyrieType::Array(Box::new(element));
                         return Ok(());
                     }
+                    let arguments = std::mem::take(args);
+                    *ty = ValkyrieType::Nominal { declaration, arguments };
+                    return Ok(());
                 }
                 bind_type(base, namespace, structs, enums)?;
             }

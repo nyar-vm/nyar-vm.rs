@@ -151,6 +151,7 @@ impl CopySemanticsValidator {
             HirType::Tuple(items) => items.iter().all(|item| self.is_copy_compatible(item)),
             HirType::FixedArray { element, .. } => self.is_copy_compatible(element),
             HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
+            HirType::QualifiedPath { .. } => false,
             // 已绑定 declaration：按声明侧值类型登记判断，禁止再按短名回查。
             HirType::Nominal { declaration, .. } => self.value_type_declarations.contains(declaration),
             // 未代入的泛型参数在声明期没有类型事实：`structure Entry<K> { key: K }` 的 `K`

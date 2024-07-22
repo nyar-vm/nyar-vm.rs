@@ -490,7 +490,10 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
         }));
     }
     if parts.len() > 1 && !is_known_builtin_type_namespace(&parts, last) {
-        return ValkyrieType::Named(Identifier::new(&parts.join(".")));
+        return ValkyrieType::QualifiedPath {
+            namespace: parts[..parts.len() - 1].iter().map(|segment| segment.to_string()).collect(),
+            name: Identifier::new(last),
+        };
     }
     // 单段名与已知内建命名空间限定名共用同一解析顺序：作用域别名优先于内建类型。
     resolve_named_type(last)

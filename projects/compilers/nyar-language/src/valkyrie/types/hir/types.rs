@@ -316,6 +316,13 @@ pub enum ValkyrieType {
     Utf16,
     /// 未绑定声明的表面名（泛型形参、尚未解析符号）。不得单独充当名义身份。
     Named(Identifier),
+    /// 待绑定的限定类型路径；绑定阶段按 `namespace` + `name` 冻结为 [`Nominal`]，禁止压成点号字符串。
+    QualifiedPath {
+        /// 类型路径前缀（不含最终短名）。
+        namespace: Vec<String>,
+        /// 类型短名。
+        name: Identifier,
+    },
     /// 已绑定 `ItemId` 的名义类型；`arguments` 为完成代入的类型实参。
     /// Resolver/HIR 成功路径必须使用本变体，禁止把短名改写成限定名再塞回 [`Self::Named`]。
     Nominal {
@@ -369,6 +376,11 @@ impl Default for ValkyrieType {
 }
 
 impl ValkyrieType {
+    /// 诊断用限定路径显示；只投影 `QualifiedPath`，不参与语义匹配。
+    pub fn qualified_path_label(namespace: &[String], name: &Identifier) -> String {
+        if namespace.is_empty() { name.to_string() } else { format!("{}::{}", namespace.join("::"), name) }
+    }
+
     /// 名义声明身份；仅 [`Self::Nominal`]（及历史上仍包在 `Apply` 里的名义基）携带。
     pub fn nominal_declaration(&self) -> Option<nyar_types::ItemId> {
         match self {

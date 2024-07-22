@@ -18,6 +18,7 @@ pub(super) fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::Utf8 => "utf8".to_string(),
         ValkyrieType::Utf16 => "utf16".to_string(),
         ValkyrieType::Named(name) => name.to_string(),
+        ValkyrieType::QualifiedPath { namespace, name } => ValkyrieType::qualified_path_label(namespace, name),
         ValkyrieType::Nominal { declaration, arguments } => {
             if arguments.is_empty() {
                 format!("Nominal({declaration:?})")

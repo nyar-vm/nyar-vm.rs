@@ -76,6 +76,10 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<NyarType, ConcretizeError> {
             Err(ConcretizeError::new("Named(\"Self\") must be substituted before platform lowering"))
         }
         ValkyrieType::Named(name) => Ok(concretize_primitive_named_alias(name.as_str()).unwrap_or_else(|| NyarType::Named(name.clone()))),
+        ValkyrieType::QualifiedPath { namespace, name } => Err(ConcretizeError::new(format!(
+            "qualified type path `{}` must bind to Nominal before platform lowering",
+            ValkyrieType::qualified_path_label(namespace, name)
+        ))),
         // 平台层尚未携带 ItemId 名义形状：成功路径不得把 declaration 压成短名 Named。
         ValkyrieType::Nominal { declaration, .. } => {
             Err(ConcretizeError::new(format!("Nominal declaration `{declaration:?}` 需要平台 NyarType::Nominal，禁止降级为 Named 短名")))

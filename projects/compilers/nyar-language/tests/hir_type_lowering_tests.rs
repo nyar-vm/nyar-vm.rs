@@ -108,7 +108,10 @@ fn dotted_module_type_path_keeps_full_name() {
         ],
         span: oak_span(25),
     }));
-    assert_eq!(lower_type_expression(&path), ValkyrieType::Named(HirIdentifier::new("leetcode.two_sum.Solution")));
+    assert_eq!(
+        lower_type_expression(&path),
+        ValkyrieType::QualifiedPath { namespace: vec!["leetcode".into(), "two_sum".into()], name: HirIdentifier::new("Solution") }
+    );
 }
 
 #[test]

@@ -506,6 +506,7 @@ fn collect_generic_names(ty: &ValkyrieType, names: &mut BTreeSet<Identifier>) {
         | ValkyrieType::Void
         | ValkyrieType::AutoType
         | ValkyrieType::Named(_)
+        | ValkyrieType::QualifiedPath { .. }
         | ValkyrieType::r#SelfType
         | ValkyrieType::Nullable(_)
         | ValkyrieType::Union(_)
