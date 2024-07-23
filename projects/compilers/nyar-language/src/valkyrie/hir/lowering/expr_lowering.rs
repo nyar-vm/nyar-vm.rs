@@ -66,10 +66,10 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
 
 fn lower_statement_expression(expression: &TermExpression, source_id: SourceID, fallback_span: Range<usize>, span: SourceSpan) -> HirExpr {
     match expression {
-        TermExpression::Match { scrutinee, arms, .. } => HirExpr {
+        TermExpression::Match { scrutinee, arms, span: match_span, .. } => HirExpr {
             kind: HirExprKind::Case {
                 scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, fallback_span.clone(), false)),
-                arms: lower_match_arms(arms, source_id, fallback_span, span.clone()),
+                arms: lower_match_arms(arms, source_id, fallback_span, span.clone(), frontend::std_range(match_span)),
             },
             span,
         },
@@ -233,9 +233,9 @@ fn lower_term_expression_with_context(
                 }
             }
         }
-        TermExpression::Match { scrutinee, arms, .. } => HirExprKind::Match {
+        TermExpression::Match { scrutinee, arms, span: match_span, .. } => HirExprKind::Match {
             scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, span_range.clone(), false)),
-            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone()),
+            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), frontend::std_range(match_span)),
         },
         TermExpression::Loop { label, pattern, condition, body, .. } => HirExprKind::Loop {
             label: label.as_ref().map(|value| Identifier::new(value)),
@@ -271,9 +271,9 @@ fn lower_term_expression_with_context(
         TermExpression::Yield { expr, .. } => HirExprKind::Yield(
             expr.as_ref().map(|value| Box::new(lower_term_expression_with_context(value, source_id, span_range.clone(), false))),
         ),
-        TermExpression::Catch { expr, arms, .. } => HirExprKind::Catch {
+        TermExpression::Catch { expr, arms, span: catch_span, .. } => HirExprKind::Catch {
             expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)),
-            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone()),
+            arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), frontend::std_range(catch_span)),
         },
         TermExpression::With { base, updates, .. } => {
             let object = lower_term_expression_with_context(base, source_id, span_range.clone(), false);
@@ -494,7 +494,27 @@ fn lower_postfix_effect_member(member: &str, object: HirExpr) -> Option<HirExprK
     }
 }
 
-fn lower_match_arms(arms: &[MatchArm], source_id: SourceID, fallback_span: Range<usize>, span: SourceSpan) -> Vec<HirMatchArm> {
+fn lower_match_arms(
+    arms: &[MatchArm],
+    source_id: SourceID,
+    fallback_span: Range<usize>,
+    span: SourceSpan,
+    match_span: Range<usize>,
+) -> Vec<HirMatchArm> {
+    if let Some(source) = super::source_context::hir_lower_source() {
+        if super::match_pattern_recovery::match_needs_source_recovery(&source, match_span.clone(), arms) {
+            if let Ok(recovered) = super::match_pattern_recovery::recover_match_arms(&source, match_span) {
+                return recovered
+                    .into_iter()
+                    .map(|(pattern, body)| HirMatchArm {
+                        pattern,
+                        guard: None,
+                        body: Box::new(lower_term_expression_with_context(&body, source_id, fallback_span.clone(), false)),
+                    })
+                    .collect();
+            }
+        }
+    }
     arms.iter()
         .map(|arm| {
             let pattern = lower_pattern(&arm.pattern, source_id, span.clone());

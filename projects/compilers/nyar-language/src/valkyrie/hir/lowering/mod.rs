@@ -252,6 +252,8 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
 }
 
 mod expr_lowering;
+mod match_pattern_recovery;
+mod source_context;
 mod macro_expand;
 mod template_const;
 pub(crate) mod template_expand;
@@ -716,7 +718,9 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, DEFAULT_COMPILE_ARCH)?;
-        let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
+        let hir = source_context::with_hir_lower_source(source, || {
+            self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)
+        })?;
         self.validate_hir_semantic_contract(&hir)?;
         Ok(hir)
     }
@@ -736,7 +740,9 @@ impl ValkyrieCompiler {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, arch)?;
-        let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
+        let hir = source_context::with_hir_lower_source(source, || {
+            AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)
+        })?;
         validate_interop_surface(&hir)?;
         Ok(hir)
     }
@@ -995,9 +1001,11 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
-        AstToHir::new(self.source_id)
-            .lower_prepared_root(root, imported_semantic_exports, module_name)
-            .map_err(|error| ParseError::invalid(format!("source file `{}`: {error}", file.path)))
+        source_context::with_hir_lower_source(&file.source, || {
+            AstToHir::new(self.source_id)
+                .lower_prepared_root(root, imported_semantic_exports, module_name)
+                .map_err(|error| ParseError::invalid(format!("source file `{}`: {error}", file.path)))
+        })
     }
 
     /// Lowers parser output into a HIR module.

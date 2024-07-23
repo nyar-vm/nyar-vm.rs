@@ -172,6 +172,84 @@ micro range_match(value: i64) -> i64 {
 }
 
 #[test]
+fn integer_match_patterns_use_declared_operator_dispatch() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+structure i64 { }
+imply i64 {
+    infix `==`(self, rhs: Self): bool { return true }
+    infix `<`(self, rhs: Self): bool { return true }
+}
+micro literal_match(value: i64) -> i64 {
+    match value {
+        case 7: 1
+        else: 0
+    }
+}
+micro range_match(value: i64) -> i64 {
+    match value {
+        case 2..=8: 1
+        else: 0
+    }
+}
+"#,
+        )
+        .expect("match patterns with declared operators must parse");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        !mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedCallableIdentity { .. })),
+        "pattern compares must bind Callable instances: {:?}",
+        mir.diagnostics
+    );
+    let callable_calls = mir
+        .functions
+        .iter()
+        .flat_map(|function| function.blocks.iter())
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| matches!(instruction.kind, MirOperation::Call { callee: MirOperand::Callable(_), .. }))
+        .count();
+    assert!(callable_calls >= 3, "literal `==` plus inclusive range needs at least three operator calls, got {callable_calls}");
+    nyar_language::valkyrie::mir::validation::validate_semantic_module(&mir).expect("match operator calls must pass semantic contract");
+}
+
+#[test]
+fn integer_match_patterns_without_operators_fail_closed() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+micro literal_match(value: i64) -> i64 {
+    match value {
+        case 7: 1
+        else: 0
+    }
+}
+micro range_match(value: i64) -> i64 {
+    match value {
+        case 2..=8: 1
+        else: 0
+    }
+}
+"#,
+        )
+        .expect("match patterns without operators must still parse");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let mut unresolved = mir
+        .diagnostics
+        .iter()
+        .filter_map(|diagnostic| match diagnostic {
+            MirDiagnostic::UnresolvedCallableIdentity { symbol } => Some(symbol.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    unresolved.sort();
+    let mut expected = vec!["infix <".to_string(), "infix <".to_string(), "infix ==".to_string()];
+    expected.sort();
+    assert_eq!(unresolved, expected);
+    assert!(nyar_language::valkyrie::mir::validation::validate_module(&mir).is_err());
+}
+
+#[test]
 fn u32_infix_subtraction_call_matches_declared_return_type() {
     let hir = ValkyrieCompiler::default()
         .compile_source(

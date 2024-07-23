@@ -573,7 +573,8 @@ impl MirBuilder {
             let (end_constant, _) = lower_literal(end_literal, Some(&actual_type));
             let upper_bound = if inclusive_end {
                 // value <= end ? !(end < value)
-                let lt_end = self.lower_lt_operands(MirOperand::Constant(end_constant), value, &actual_type);
+                let end_operand = self.materialize_pattern_constant_operand(end_constant, &actual_type);
+                let lt_end = self.lower_lt_operands(end_operand, value, &actual_type);
                 self.lower_logical_not_operand(lt_end)
             }
             else {
