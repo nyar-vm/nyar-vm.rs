@@ -104,7 +104,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         );
     }
     let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &mut linked, &mut nominals)?;
-    backfill_nominal_semantics_for_linked_types(&mut linked);
+    register_missing_nominal_semantics_from_module(module, &type_values, &mut linked)?;
     linked.fields = field_records.clone();
     for function in &module.functions {
         let instance = function
@@ -429,6 +429,7 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
         ValkyrieType::Named(_) => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
+        ValkyrieType::QualifiedPath { .. } => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
         ValkyrieType::Apply(base, args) => {
             CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? }
         }
@@ -850,29 +851,66 @@ fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, Structure
     }
 }
 
-fn backfill_nominal_semantics_for_linked_types(linked: &mut LinkedSemanticProgram) {
-    let mut pending = Vec::new();
+/// 为 canonical 名义类型登记 carrier 语义。
+///
+/// 优先消费 MIR 聚合声明；单组测试闭包可对预设内置短名使用占位语义，禁止默认 `Reference` backfill。
+fn register_missing_nominal_semantics_from_module(
+    module: &MirModule,
+    type_values: &BTreeMap<ValkyrieType, TypeId>,
+    linked: &mut LinkedSemanticProgram,
+) -> Result<(), StructuredDiagnosticSet> {
+    use crate::valkyrie::mir::ssa::builtin_nominals::{
+        placeholder_semantics_for_qualified_path, placeholder_semantics_for_surface_name, semantics_for_item_declaration,
+    };
+
     for (type_id, record) in &linked.types {
-        if let CanonicalTypeKind::Nominal { declaration, .. } = &record.kind {
-            if linked.nominal_instances.values().any(|instance| instance.ty == *type_id) {
-                continue;
-            }
-            pending.push((*type_id, *declaration));
+        if !matches!(record.kind, CanonicalTypeKind::Nominal { .. }) {
+            continue;
         }
-    }
-    for (type_id, declaration) in pending {
-        let nominal = NominalInstanceId::from_index(linked.nominal_instances.len() as u32).expect("nominal identity overflow");
+        if linked.nominal_instances.values().any(|row| row.declaration == *type_id) {
+            continue;
+        }
+        let ty = type_values
+            .iter()
+            .find_map(|(key, id)| (id == type_id).then_some(key))
+            .ok_or_else(|| error_without_module("CAN014", format!("名义类型 `{type_id:?}` 缺少 ValkyrieType 事实")))?;
+        let semantics = match ty {
+            ValkyrieType::Nominal { declaration: item_id, arguments } if arguments.is_empty() => {
+                semantics_for_item_declaration(module, *item_id)
+                    .ok_or_else(|| error_without_module("CAN055", format!("名义类型 `{item_id:?}` 缺少 MIR 聚合声明，无法登记 carrier 语义")))?
+            }
+            ValkyrieType::Named(name) => placeholder_semantics_for_surface_name(name.as_str()).ok_or_else(|| {
+                error_without_module(
+                    "CAN055",
+                    format!("未声明的名义类型 `{name}` 缺少 carrier 语义；正式编译须在 core 声明，测试可使用预设内置类型"),
+                )
+            })?,
+            ValkyrieType::QualifiedPath { namespace, name } => {
+                placeholder_semantics_for_qualified_path(namespace, name.as_str()).ok_or_else(|| {
+                    error_without_module(
+                        "CAN055",
+                        format!("未声明的限定名义类型 `{}` 缺少 carrier 语义", ValkyrieType::qualified_path_label(namespace, name)),
+                    )
+                })?
+            }
+            _ => {
+                return Err(error_without_module("CAN055", format!("名义类型 `{ty:?}` 无法解析 carrier 语义")));
+            }
+        };
+        let nominal = NominalInstanceId::from_index(linked.nominal_instances.len() as u32)
+            .ok_or_else(|| error_without_module("CAN020", "NominalInstanceId 溢出"))?;
         linked.nominal_instances.insert(
             nominal,
             NominalInstanceRecord {
-                declaration,
-                ty: type_id,
+                declaration: *type_id,
+                ty: *type_id,
                 substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-                semantics: NominalValueSemantics::Reference,
+                semantics,
                 fields: Vec::new(),
             },
         );
     }
+    Ok(())
 }
 
 fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, StructuredDiagnosticSet> {

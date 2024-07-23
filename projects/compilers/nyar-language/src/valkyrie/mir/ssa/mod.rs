@@ -2,6 +2,7 @@
 
 mod builder;
 pub(crate) mod builtin_helpers;
+pub(crate) mod builtin_nominals;
 mod callable_types;
 mod contracts;
 mod control_flow_context;
