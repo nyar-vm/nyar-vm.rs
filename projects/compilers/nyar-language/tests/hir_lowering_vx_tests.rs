@@ -40,6 +40,8 @@ fn renames_view_method_to_render_with_element_return() {
     };
     let module = HirModule {
         name: NamePath::new(vec![Identifier::new("test")]),
+        dependency_key: String::new(),
+        source_path: "test.v".to_string(),
         doc: HirDocumentation::default(),
         imports: Vec::new(),
         warnings: Vec::new(),

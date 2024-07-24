@@ -330,15 +330,12 @@ impl MirBuilder {
     /// - carrier_type 无法识别时返回 `None`，保留旧异常路径语义（无可恢复值）。
     fn lookup_effectful_resume_type(&self, carrier_type: &Option<ValkyrieType>) -> Option<ValkyrieType> {
         let carrier = carrier_type.as_ref()?;
-        let name = match carrier {
-            ValkyrieType::Named(name) => Some(name.as_str()),
-            ValkyrieType::Apply(base, _) => match base.as_ref() {
-                ValkyrieType::Named(name) => Some(name.as_str()),
-                _ => None,
-            },
+        let declaration = match carrier {
+            ValkyrieType::Nominal { declaration, .. } => Some(*declaration),
+            ValkyrieType::Apply(base, _) => base.nominal_declaration(),
             _ => None,
         }?;
-        if let Some(resume_type) = self.effectful_resume_map.get(name) {
+        if let Some(resume_type) = self.effectful_resume_map.get(&declaration) {
             return Some(resume_type.clone());
         }
         // 载体未声明 Effectful：按约定 Resume = !（Never）。

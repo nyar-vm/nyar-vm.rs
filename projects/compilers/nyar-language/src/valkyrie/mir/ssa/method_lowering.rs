@@ -12,12 +12,9 @@ use std::collections::BTreeMap;
 
 pub(super) fn lower_singleton_method_functions(
     module: &HirModule,
-    struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
-    struct_parent_index: &BTreeMap<String, Vec<String>>,
-    struct_is_value_type: &BTreeMap<String, bool>,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
-    effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
@@ -27,9 +24,6 @@ pub(super) fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
@@ -45,9 +39,6 @@ pub(super) fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 constructor,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
@@ -63,9 +54,6 @@ pub(super) fn lower_singleton_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 finalizer,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
@@ -83,28 +71,21 @@ pub(super) fn lower_singleton_method_functions(
 
 pub(super) fn lower_impl_method_functions(
     module: &HirModule,
-    struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
-    struct_parent_index: &BTreeMap<String, Vec<String>>,
-    struct_is_value_type: &BTreeMap<String, bool>,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
-    effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for impl_block in &module.impls {
-        let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
-        else {
+        let Some(type_name) = impl_owner_type_name(module, &impl_block.target) else {
             continue;
         };
         for method in impl_block.methods.iter().filter(|method| !method.is_abstract) {
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
@@ -122,9 +103,6 @@ pub(super) fn lower_impl_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,
@@ -142,9 +120,6 @@ pub(super) fn lower_impl_method_functions(
             let mut mir_function = lower_function_semantic(
                 module,
                 method,
-                struct_field_layouts,
-                struct_parent_index,
-                struct_is_value_type,
                 aggregate_layouts,
                 singleton_accessors,
                 effectful_resume_map,

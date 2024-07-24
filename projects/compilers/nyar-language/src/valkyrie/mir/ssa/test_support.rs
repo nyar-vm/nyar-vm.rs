@@ -29,9 +29,6 @@ impl TestMirBuilder {
     pub fn new() -> Self {
         Self {
             inner: MirBuilder::new(
-                BTreeMap::new(),
-                BTreeMap::new(),
-                BTreeMap::new(),
                 AggregateLayoutPlan::default(),
                 BTreeMap::new(),
                 BTreeMap::new(),
@@ -160,9 +157,6 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     lower_function_semantic(
         &module,
         &function,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
         &mut AggregateLayoutPlan::default(),
         &BTreeMap::new(),
         &BTreeMap::new(),

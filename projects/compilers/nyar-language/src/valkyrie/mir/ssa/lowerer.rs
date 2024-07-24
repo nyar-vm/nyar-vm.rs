@@ -8,10 +8,7 @@ use super::{
     hir_identity::collect_effectful_resume_map,
     method_lowering::{lower_impl_method_functions, lower_singleton_method_functions},
     model::*,
-    struct_facts::{
-        collect_field_declarations, collect_struct_field_layouts, collect_struct_is_value_type, collect_struct_parent_index,
-        merge_imported_struct_field_layouts, merge_imported_struct_is_value_type, merge_imported_struct_parent_index,
-    },
+    struct_facts::collect_field_declarations,
     type_analysis::type_identity_table,
     value_semantics,
 };
@@ -49,14 +46,7 @@ impl MirLowerer {
         seed_pool: &[MirFunction],
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
     ) -> MirModule {
-        let mut struct_field_layouts = collect_struct_field_layouts(&module.structs);
-        crate::valkyrie::mir::merge_singleton_field_layouts(module, &mut struct_field_layouts);
-        merge_imported_struct_field_layouts(module, &mut struct_field_layouts);
         let singleton_accessors = crate::valkyrie::mir::singleton_accessor_map(module);
-        let mut struct_parent_index = collect_struct_parent_index(&module.structs);
-        merge_imported_struct_parent_index(module, &mut struct_parent_index);
-        let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
-        merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
         let mut diagnostics = Vec::new();
         let structs = collect_field_declarations(module);
@@ -82,9 +72,6 @@ impl MirLowerer {
             functions.push(lower_function_semantic(
                 module,
                 function,
-                &struct_field_layouts,
-                &struct_parent_index,
-                &struct_is_value_type,
                 &mut aggregate_layouts,
                 &singleton_accessors,
                 &effectful_resume_map,
@@ -96,9 +83,6 @@ impl MirLowerer {
         }
         functions.extend(lower_singleton_method_functions(
             module,
-            &struct_field_layouts,
-            &struct_parent_index,
-            &struct_is_value_type,
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,
@@ -107,9 +91,6 @@ impl MirLowerer {
         ));
         functions.extend(lower_impl_method_functions(
             module,
-            &struct_field_layouts,
-            &struct_parent_index,
-            &struct_is_value_type,
             &mut aggregate_layouts,
             &singleton_accessors,
             &effectful_resume_map,

@@ -999,8 +999,10 @@ impl MirBuilder {
                         // resolved constructor, carry the selected formal type
                         // by field position as explicit HIR metadata; do not
                         // infer a sum from the variant name.
+                        let owner = self.struct_construct_result_type(name, resolved.as_ref());
                         let field_ty = self
-                            .lookup_struct_field_type(struct_type_name.as_str(), field_name.as_str())
+                            .field_type_for_semantic_type(&owner, field_name.as_str())
+                            .or_else(|| self.lookup_struct_field_type(struct_type_name.as_str(), field_name.as_str()))
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());

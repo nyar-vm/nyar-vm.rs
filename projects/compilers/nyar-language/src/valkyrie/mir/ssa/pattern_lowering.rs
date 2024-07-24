@@ -638,7 +638,7 @@ impl MirBuilder {
     }
 
     pub(super) fn has_known_struct_layout(&self, struct_name: &str) -> bool {
-        self.struct_field_layouts.contains_key(struct_name) || self.struct_parent_index.contains_key(struct_name)
+        super::MirStruct::has_layout(&self.field_declarations, struct_name)
     }
 
     fn lower_extractor_nested_pattern_match_operand(
@@ -917,35 +917,10 @@ impl MirBuilder {
     }
 
     pub(super) fn lookup_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<ValkyrieType> {
-        self.lookup_struct_field_type_recursive(struct_name, field_name, &mut BTreeSet::new())
-    }
-
-    pub(super) fn lookup_struct_field_type_recursive(
-        &self,
-        struct_name: &str,
-        field_name: &str,
-        visiting: &mut BTreeSet<String>,
-    ) -> Option<ValkyrieType> {
-        if !visiting.insert(struct_name.to_string()) {
-            return None;
-        }
-
-        if let Some(field_type) = self
-            .struct_field_layouts
-            .get(struct_name)
-            .and_then(|fields| fields.iter().find(|(name, _)| name == field_name))
-            .map(|(_, ty)| ty.clone())
-        {
-            visiting.remove(struct_name);
-            return Some(field_type);
-        }
-
-        let result = self
-            .struct_parent_index
-            .get(struct_name)
-            .and_then(|parents| parents.iter().find_map(|parent| self.lookup_struct_field_type_recursive(parent, field_name, visiting)));
-        visiting.remove(struct_name);
-        result
+        let structure = super::MirStruct::find_by_name(&self.field_declarations, struct_name)?;
+        let declaration = structure.declaration?;
+        let owner = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
+        super::MirStruct::lookup_field_type(&self.field_declarations, &owner, field_name, &mut BTreeSet::new())
     }
 
     pub(super) fn struct_has_field(&self, struct_name: &str, field_name: &str) -> bool {
@@ -974,15 +949,7 @@ impl MirBuilder {
     }
 
     pub(super) fn struct_inherits_from(&self, actual_name: &str, expected_name: &str, visiting: &mut BTreeSet<String>) -> bool {
-        if !visiting.insert(actual_name.to_string()) {
-            return false;
-        }
-
-        let found = self.struct_parent_index.get(actual_name).is_some_and(|parents| {
-            parents.iter().any(|parent| parent == expected_name || self.struct_inherits_from(parent, expected_name, visiting))
-        });
-        visiting.remove(actual_name);
-        found
+        super::MirStruct::inherits_from(&self.field_declarations, actual_name, expected_name, visiting)
     }
 
     /// Extractor ???? extractor payload??????????????????

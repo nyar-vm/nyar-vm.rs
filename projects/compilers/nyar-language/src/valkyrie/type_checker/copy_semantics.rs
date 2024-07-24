@@ -172,11 +172,20 @@ impl CopySemanticsValidator {
         }
     }
 
+    /// 声明期字段 copy 兼容：泛型形参在代入前不得按短名判引用。
+    fn is_field_copy_compatible(&self, struct_def: &HirStruct, ty: &HirType) -> bool {
+        match ty {
+            HirType::Named(name) if struct_def.generics.iter().any(|generic| generic.name == *name) => true,
+            HirType::Generic(generic) if struct_def.generics.iter().any(|item| item.name == generic.name) => true,
+            _ => self.is_copy_compatible(ty),
+        }
+    }
+
     /// 在值类型结构体中查找首个引用类型字段，返回该字段引用以便定位违规。
     ///
     /// 值类型应当只包含拷贝兼容的字段；若存在堆数组或未注册命名类型等引用字段，
     /// 则该值类型无法被安全地按拷贝语义传递或返回，违反 copy discipline。
     pub fn find_non_copy_field<'a>(&self, struct_def: &'a HirStruct) -> Option<&'a HirField> {
-        struct_def.fields.iter().find(|field| !self.is_copy_compatible(&field.ty))
+        struct_def.fields.iter().find(|field| !self.is_field_copy_compatible(struct_def, &field.ty))
     }
 }

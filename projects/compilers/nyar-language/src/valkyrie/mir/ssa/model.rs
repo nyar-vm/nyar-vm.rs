@@ -205,6 +205,8 @@ pub struct MirStruct {
     /// 是否为值类型：`true` 表示 `structure` 等按值布局的聚合；
     /// `false` 表示引用类型，例如 `class` 等按引用布局的聚合。
     pub is_value_type: bool,
+    /// 已冻结的父类型声明身份；禁止再用短名索引继承链。
+    pub parent_declarations: Vec<nyar_types::ItemId>,
 }
 
 impl MirStruct {
@@ -244,6 +246,63 @@ impl MirStruct {
         }
         let ty = crate::valkyrie::hir::overload::substitute_type_vars(&declared.ty, &substitutions);
         Some(resolve_self_type_with_owner(&ty, Some(owner)))
+    }
+
+    /// 按声明短名在已冻结的聚合表中查找（仅用于模式 lowering 的遗留表面名输入）。
+    pub fn find_by_name<'a>(declarations: &'a [MirStruct], name: &str) -> Option<&'a MirStruct> {
+        let matches: Vec<&MirStruct> = declarations.iter().filter(|item| item.name == name).collect();
+        if matches.len() == 1 { Some(matches[0]) } else { None }
+    }
+
+    /// 在声明表与父链上查找字段类型；`owner` 提供泛型代入上下文。
+    pub fn lookup_field_type<'a>(
+        declarations: &'a [MirStruct],
+        owner: &ValkyrieType,
+        field_name: &str,
+        visiting: &mut std::collections::BTreeSet<nyar_types::ItemId>,
+    ) -> Option<ValkyrieType> {
+        let declaration = owner.nominal_declaration()?;
+        if !visiting.insert(declaration) {
+            return None;
+        }
+        let structure = Self::find_by_declaration(declarations, declaration)?;
+        if let Some(ty) = structure.instantiate_field(owner, field_name) {
+            visiting.remove(&declaration);
+            return Some(ty);
+        }
+        let inherited = structure.parent_declarations.iter().find_map(|parent| {
+            let parent_owner = ValkyrieType::Nominal { declaration: *parent, arguments: Vec::new() };
+            Self::lookup_field_type(declarations, &parent_owner, field_name, visiting)
+        });
+        visiting.remove(&declaration);
+        inherited
+    }
+
+    /// 判断短名在聚合声明表中是否唯一存在（仅用于模式 lowering 的遗留表面名输入）。
+    pub fn has_layout(declarations: &[MirStruct], name: &str) -> bool {
+        Self::find_by_name(declarations, name).is_some()
+    }
+
+    /// 按已冻结的 `parent_declarations` 判断表面短名继承关系（仅用于模式 lowering）。
+    pub fn inherits_from(declarations: &[MirStruct], actual_name: &str, expected_name: &str, visiting: &mut std::collections::BTreeSet<String>) -> bool {
+        if actual_name == expected_name {
+            return true;
+        }
+        if !visiting.insert(actual_name.to_string()) {
+            return false;
+        }
+        let Some(structure) = Self::find_by_name(declarations, actual_name) else {
+            visiting.remove(actual_name);
+            return false;
+        };
+        let found = structure.parent_declarations.iter().any(|parent| {
+            Self::find_by_declaration(declarations, *parent).is_some_and(|parent_struct| {
+                parent_struct.name == expected_name
+                    || Self::inherits_from(declarations, parent_struct.name.as_str(), expected_name, visiting)
+            })
+        });
+        visiting.remove(actual_name);
+        found
     }
 }
 

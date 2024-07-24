@@ -24,10 +24,7 @@ pub(super) struct MirBuilder {
     pub(super) case_chains: Vec<MirCaseChain>,
     pub(super) bindings: BTreeMap<String, MirOperand>,
     pub(super) value_types: BTreeMap<MirValueRef, ValkyrieType>,
-    pub(super) struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
     pub(super) field_declarations: Vec<MirStruct>,
-    pub(super) struct_parent_index: BTreeMap<String, Vec<String>>,
-    pub(super) struct_is_value_type: BTreeMap<String, bool>,
     pub(super) aggregate_layouts: AggregateLayoutPlan,
     /// sum 的语义声明；实例化使用声明 binder，不以布局恢复类型。
     pub(super) sum_types: Vec<MirSumDeclaration>,
@@ -57,7 +54,7 @@ pub(super) struct MirBuilder {
     ///
     /// 由 [`collect_effectful_resume_map`] 在 lowering 入口预先构造，
     /// 供 `raise` 路径查询用户 effect 载体的 resume 类型，以正确推断 resume 参数类型。
-    pub(super) effectful_resume_map: BTreeMap<String, ValkyrieType>,
+    pub(super) effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
     /// 可在 `catch` 调用点内联的效应函数（函数名 → 函数定义）。
     ///
     /// 由 [`effect_lowering::collect_effectful_inline_targets`] 在 lowering 入口预先构造。
@@ -97,12 +94,9 @@ impl MirBuilder {
     }
 
     pub(super) fn new(
-        struct_field_layouts: BTreeMap<String, Vec<(String, ValkyrieType)>>,
-        struct_parent_index: BTreeMap<String, Vec<String>>,
-        struct_is_value_type: BTreeMap<String, bool>,
         aggregate_layouts: AggregateLayoutPlan,
         singleton_accessors: BTreeMap<String, String>,
-        effectful_resume_map: BTreeMap<String, ValkyrieType>,
+        effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
         effectful_inline_targets: BTreeMap<String, HirFunction>,
         callable_returns: CallableReturnTypes,
         impl_owner_type: Option<ValkyrieType>,
@@ -126,10 +120,7 @@ impl MirBuilder {
             case_chains: Vec::new(),
             bindings: BTreeMap::new(),
             value_types: BTreeMap::new(),
-            struct_field_layouts,
             field_declarations: Vec::new(),
-            struct_parent_index,
-            struct_is_value_type,
             aggregate_layouts,
             sum_types: Vec::new(),
             option_declaration: None,

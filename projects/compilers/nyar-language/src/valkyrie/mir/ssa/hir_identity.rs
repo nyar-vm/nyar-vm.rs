@@ -17,18 +17,18 @@ use std::collections::BTreeMap;
 /// - `ValkyrieType::Apply(base, _)` → 取 `base` 的 nominal 名
 ///
 /// 若同一载体存在多个 impl，后注册者覆盖前者。`Resume` 关联类型未声明的 impl 不产生条目。
-pub(super) fn collect_effectful_resume_map(module: &HirModule) -> BTreeMap<String, ValkyrieType> {
-    let mut map: BTreeMap<String, ValkyrieType> = BTreeMap::new();
+pub(super) fn collect_effectful_resume_map(module: &HirModule) -> BTreeMap<nyar_types::ItemId, ValkyrieType> {
+    let mut map: BTreeMap<nyar_types::ItemId, ValkyrieType> = BTreeMap::new();
     for impl_block in &module.impls {
         if !impl_block.trait_path.as_ref().is_some_and(|path| path.name().as_str() == "Effectful") {
             continue;
         }
-        let Some(carrier_name) = impl_owner_type_name(module, &impl_block.target)
+        let Some(carrier_declaration) = impl_block.target.nominal_declaration()
         else {
             continue;
         };
         if let Some(resume_impl) = impl_block.associated_type_impls.iter().find(|item| item.name.as_str() == "Resume") {
-            map.insert(carrier_name, resume_impl.concrete_type.clone());
+            map.insert(carrier_declaration, resume_impl.concrete_type.clone());
         }
     }
     map

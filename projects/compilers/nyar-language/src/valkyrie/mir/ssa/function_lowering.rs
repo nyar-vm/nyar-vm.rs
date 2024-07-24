@@ -18,12 +18,9 @@ use std::collections::BTreeMap;
 pub(super) fn lower_function_semantic(
     module: &HirModule,
     function: &HirFunction,
-    struct_field_layouts: &BTreeMap<String, Vec<(String, ValkyrieType)>>,
-    struct_parent_index: &BTreeMap<String, Vec<String>>,
-    struct_is_value_type: &BTreeMap<String, bool>,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessors: &BTreeMap<String, String>,
-    effectful_resume_map: &BTreeMap<String, ValkyrieType>,
+    effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     impl_owner_type: Option<ValkyrieType>,
     impl_type_arguments: Vec<ValkyrieType>,
@@ -35,9 +32,6 @@ pub(super) fn lower_function_semantic(
     let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset);
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
-        struct_field_layouts.clone(),
-        struct_parent_index.clone(),
-        struct_is_value_type.clone(),
         aggregate_layouts.clone(),
         singleton_accessors.clone(),
         effectful_resume_map.clone(),

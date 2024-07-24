@@ -1,11 +1,47 @@
 //! 结构体字段布局、继承索引与值类型事实。
 
 use super::model::*;
-use crate::types::hir::{HirModule, ValkyrieType};
+use crate::types::hir::{HirModule, HirParent, ValkyrieType};
 use std::collections::BTreeMap;
 
+fn parent_namespace_matches(struct_namespace: &[crate::Identifier], parent: &HirParent) -> bool {
+    let path = &parent.name;
+    if path.parts().is_empty() {
+        return struct_namespace.is_empty();
+    }
+    if path.parts().len() == 1 {
+        return struct_namespace.is_empty();
+    }
+    let parent_namespace = path.parts()[..path.parts().len() - 1]
+        .iter()
+        .map(|segment| segment.as_str())
+        .collect::<Vec<_>>();
+    struct_namespace.len() == parent_namespace.len()
+        && struct_namespace.iter().zip(parent_namespace).all(|(left, right)| left.as_str() == right)
+}
+
+fn resolve_parent_declarations(module: &HirModule, parents: &[HirParent]) -> Vec<nyar_types::ItemId> {
+    parents
+        .iter()
+        .filter_map(|parent| {
+            let name = parent.name.parts().last()?;
+            module
+                .structs
+                .iter()
+                .chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()))
+                .find(|structure| structure.name.as_str() == name.as_str() && parent_namespace_matches(&structure.namespace, parent))
+                .and_then(|structure| structure.constructor_declaration)
+        })
+        .collect()
+}
+
 /// 将 `HirStruct` 降级为 `MirStruct`，保留字段类型供后端生成 `TypeDef` / `Field`。
-pub(super) fn lower_struct(hir_struct: &crate::types::hir::HirStruct, nominal: usize, field_start: usize) -> MirStruct {
+pub(super) fn lower_struct(
+    module: &HirModule,
+    hir_struct: &crate::types::hir::HirStruct,
+    nominal: usize,
+    field_start: usize,
+) -> MirStruct {
     let fields = hir_struct
         .fields
         .iter()
@@ -25,19 +61,20 @@ pub(super) fn lower_struct(hir_struct: &crate::types::hir::HirStruct, nominal: u
         generics: hir_struct.generics.clone(),
         fields,
         is_value_type: hir_struct.is_value_type,
+        parent_declarations: resolve_parent_declarations(module, &hir_struct.parents),
     }
 }
 
 pub(super) fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
     fn collect(module: &HirModule, declarations: &mut Vec<MirStruct>, next_nominal: &mut usize, next_field: &mut usize) {
         for hir_struct in &module.structs {
-            declarations.push(lower_struct(hir_struct, *next_nominal, *next_field));
+            declarations.push(lower_struct(module, hir_struct, *next_nominal, *next_field));
             *next_nominal += 1;
             *next_field += hir_struct.fields.len();
         }
         for export in &module.imported_semantic_exports {
             for hir_struct in &export.structs {
-                declarations.push(lower_struct(hir_struct, *next_nominal, *next_field));
+                declarations.push(lower_struct(module, hir_struct, *next_nominal, *next_field));
                 *next_nominal += 1;
                 *next_field += hir_struct.fields.len();
             }
@@ -61,6 +98,7 @@ pub(super) fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
                 declaration: None,
                 fields,
                 is_value_type: false,
+                parent_declarations: Vec::new(),
             });
             *next_nominal += 1;
             *next_field += singleton.fields.len();
@@ -113,51 +151,3 @@ pub(super) fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&Val
     }
 }
 
-pub(super) fn collect_struct_field_layouts(structs: &[crate::types::hir::HirStruct]) -> BTreeMap<String, Vec<(String, ValkyrieType)>> {
-    structs
-        .iter()
-        .map(|hir_struct| {
-            (hir_struct.name.to_string(), hir_struct.fields.iter().map(|field| (field.name.to_string(), field.ty.clone())).collect())
-        })
-        .collect()
-}
-
-pub(super) fn collect_struct_parent_index(structs: &[crate::types::hir::HirStruct]) -> BTreeMap<String, Vec<String>> {
-    structs
-        .iter()
-        .map(|hir_struct| {
-            (
-                hir_struct.name.to_string(),
-                hir_struct.parents.iter().filter_map(|parent| parent.name.parts().last().map(|name| name.to_string())).collect(),
-            )
-        })
-        .collect()
-}
-
-pub(super) fn collect_struct_is_value_type(structs: &[crate::types::hir::HirStruct]) -> BTreeMap<String, bool> {
-    structs.iter().map(|hir_struct| (hir_struct.name.to_string(), hir_struct.is_value_type)).collect()
-}
-
-pub(super) fn merge_imported_struct_field_layouts(module: &HirModule, layouts: &mut BTreeMap<String, Vec<(String, ValkyrieType)>>) {
-    for export in &module.imported_semantic_exports {
-        for (name, fields) in collect_struct_field_layouts(&export.structs) {
-            layouts.entry(name).or_insert(fields);
-        }
-    }
-}
-
-pub(super) fn merge_imported_struct_parent_index(module: &HirModule, parents: &mut BTreeMap<String, Vec<String>>) {
-    for export in &module.imported_semantic_exports {
-        for (name, parent_list) in collect_struct_parent_index(&export.structs) {
-            parents.entry(name).or_insert(parent_list);
-        }
-    }
-}
-
-pub(super) fn merge_imported_struct_is_value_type(module: &HirModule, is_value_type: &mut BTreeMap<String, bool>) {
-    for export in &module.imported_semantic_exports {
-        for (name, value) in collect_struct_is_value_type(&export.structs) {
-            is_value_type.entry(name).or_insert(value);
-        }
-    }
-}
