@@ -106,7 +106,11 @@ pub fn link_reachable_dependency_mir(
         else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
-                let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
+                let symbol = contract
+                    .declaration_key
+                    .as_ref()
+                    .map(|key| key.encoded())
+                    .unwrap_or_else(|| crate::valkyrie::symbols::stable_symbol_key(&contract.symbol));
                 if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
                     return Err(ParseError::invalid(detail));
                 }
@@ -280,7 +284,6 @@ fn same_struct_contract(left: &MirStruct, right: &MirStruct) -> bool {
 fn same_sum_contract(left: &MirSumDeclaration, right: &MirSumDeclaration) -> bool {
     left.declaration.is_some()
         && left.declaration == right.declaration
-        && left.name == right.name
         && left.is_unite == right.is_unite
         && left.generics == right.generics
         && left
