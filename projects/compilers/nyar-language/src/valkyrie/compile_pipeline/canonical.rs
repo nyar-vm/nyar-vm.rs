@@ -16,7 +16,7 @@ use nyar::SemanticFragment;
 
 use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
-    semantic_closure::DeclarationKey,
+    semantic_closure::{DeclarationKey, DeclarationKind},
     types::hir::ValkyrieType,
 };
 
@@ -1023,6 +1023,14 @@ fn qualified_name_from_declaration_key(key: Option<&DeclarationKey>) -> Option<Q
     if key.name.is_empty() {
         return None;
     }
-    let parts = key.namespace.iter().map(|segment| Identifier::new(segment)).chain([Identifier::new(&key.name)]).collect();
+    let mut parts = key.namespace.iter().map(|segment| Identifier::new(segment)).collect::<Vec<_>>();
+    if parts.is_empty()
+        && key.owner.is_none()
+        && matches!(key.kind, DeclarationKind::Micro)
+        && !key.dependency_key.is_empty()
+    {
+        parts.push(Identifier::new(&key.dependency_key));
+    }
+    parts.push(Identifier::new(&key.name));
     Some(QualifiedName::new(parts))
 }
