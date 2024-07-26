@@ -4,32 +4,31 @@ use super::model::*;
 use crate::types::hir::{HirModule, HirParent, ValkyrieType};
 use std::collections::BTreeMap;
 
-fn parent_namespace_matches(struct_namespace: &[crate::Identifier], parent: &HirParent) -> bool {
-    let path = &parent.name;
-    if path.parts().is_empty() {
-        return struct_namespace.is_empty();
+fn struct_matches_parent_path(structure: &crate::types::hir::HirStruct, parent: &HirParent) -> bool {
+    let path = parent.name.parts();
+    if path.is_empty() {
+        return false;
     }
-    if path.parts().len() == 1 {
-        return struct_namespace.is_empty();
+    let (namespace_parts, name) = if path.len() == 1 {
+        (&[] as &[crate::Identifier], &path[0])
     }
-    let parent_namespace = path.parts()[..path.parts().len() - 1]
-        .iter()
-        .map(|segment| segment.as_str())
-        .collect::<Vec<_>>();
-    struct_namespace.len() == parent_namespace.len()
-        && struct_namespace.iter().zip(parent_namespace).all(|(left, right)| left.as_str() == right)
+    else {
+        (&path[..path.len() - 1], &path[path.len() - 1])
+    };
+    structure.name.as_str() == name.as_str()
+        && structure.namespace.len() == namespace_parts.len()
+        && structure.namespace.iter().zip(namespace_parts).all(|(left, right)| left.as_str() == right.as_str())
 }
 
 fn resolve_parent_declarations(module: &HirModule, parents: &[HirParent]) -> Vec<nyar_types::ItemId> {
     parents
         .iter()
         .filter_map(|parent| {
-            let name = parent.name.parts().last()?;
             module
                 .structs
                 .iter()
                 .chain(module.imported_semantic_exports.iter().flat_map(|export| export.structs.iter()))
-                .find(|structure| structure.name.as_str() == name.as_str() && parent_namespace_matches(&structure.namespace, parent))
+                .find(|structure| struct_matches_parent_path(structure, parent))
                 .and_then(|structure| structure.constructor_declaration)
         })
         .collect()
