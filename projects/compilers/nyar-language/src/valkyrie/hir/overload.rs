@@ -2084,6 +2084,61 @@ fn try_resolve_call(
         }
     }
 
+    // unite/enum 变体构造（`Some(x)`、`Fine(v)`）在候选上带 `owner`，不能走自由函数路径。
+    let owned_variant_constructors = candidates
+        .iter()
+        .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
+        .filter(|candidate| candidate.owner.is_some() && candidate_variant_constructor_matches(candidate, &callee_name))
+        .filter_map(|candidate| {
+            if let Some(context) = contextual_type {
+                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
+                    if let Some(matched) = match_call_candidate(
+                        &instantiated,
+                        args,
+                        &explicit_generic_arguments,
+                        type_relations,
+                        locals,
+                        struct_fields,
+                        singleton_names,
+                    ) {
+                        return Some(matched);
+                    }
+                }
+            }
+            match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+        })
+        .collect::<Vec<_>>();
+    if let Ok(resolved) = resolve_overload(&owned_variant_constructors) {
+        let has_receiver = candidate_has_receiver_parameter(&resolved);
+        let symbol = overload_symbol_path(&resolved);
+        let return_type = resolved.signature.return_type;
+        let mut call = HirResolvedCall {
+            declaration: resolved.declaration,
+            instance: resolved.instance,
+            sum_owner: resolved.sum_owner,
+            sum_variant: resolved.sum_variant,
+            intrinsic: resolved.intrinsic,
+            symbol,
+            domain: HirCallableDomain::Constructor,
+            return_type,
+            parameter_types: resolved.signature.params,
+            has_receiver,
+            extractor_payload_type: None,
+            requirement: None,
+        };
+        enrich_unite_variant_constructor_facts(
+            callee,
+            args,
+            &mut call,
+            contextual_type,
+            candidates,
+            locals,
+            struct_fields,
+            singleton_names,
+        );
+        return Some(call);
+    }
+
     let enclosing_module = type_relations.enclosing_module();
     let mut filtered = candidates
         .iter()
