@@ -139,6 +139,8 @@ impl MirModule {
 
     pub(crate) fn contains_callable_instance(&self, instance: ItemInstanceId) -> bool {
         self.callable_symbols.contains_key(&instance)
+            || self.functions.iter().any(|function| function.instance == Some(instance))
+            || self.external_calls.iter().any(|contract| contract.instance == Some(instance))
     }
 }
 
