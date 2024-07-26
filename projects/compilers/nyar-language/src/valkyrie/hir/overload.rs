@@ -82,6 +82,8 @@ pub struct OverloadCandidate {
     pub generic_binders: BTreeSet<GenericBinderId>,
     /// 声明级 where 合同；实参代入后必须取得对应 witness。
     pub where_constraints: Vec<HirWhereConstraint>,
+    /// 来自 `imported_semantic_exports` 的顶层函数；无限定调用按导出名匹配，不按 consumer 模块路径。
+    pub imported_dependency_export: bool,
 }
 
 impl OverloadCandidate {
@@ -108,6 +110,7 @@ impl OverloadCandidate {
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
             where_constraints: Vec::new(),
+            imported_dependency_export: false,
         }
     }
 
@@ -152,6 +155,7 @@ impl OverloadCandidate {
             param_specs: Vec::new(),
             generic_binders: BTreeSet::new(),
             where_constraints: Vec::new(),
+            imported_dependency_export: false,
         }
     }
 }
@@ -283,7 +287,7 @@ pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
 
 fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     let mut candidates = Vec::new();
-    candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function)));
+    candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function, false)));
     let local_function_names = module.functions.iter().map(|function| function.name.clone()).collect::<std::collections::BTreeSet<_>>();
     for submodule in &module.submodules {
         candidates.extend(collect_declared_candidates(submodule));
@@ -327,7 +331,7 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
                 .iter()
                 .filter(|function| !local_function_names.contains(&function.name))
                 .filter(|function| crate::valkyrie::backend_contract::interop::function_host_provider_target(function).is_none())
-                .map(|function| build_function_candidate(&export.module, function)),
+                .map(|function| build_function_candidate(&export.module, function, true)),
         );
         for item in &export.structs {
             candidates.push(build_struct_constructor_candidate(item));
@@ -483,6 +487,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::ArrayLen => {
@@ -511,6 +516,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::RefDeref => {
@@ -534,6 +540,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::IsNull => {
@@ -559,6 +566,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::UnwrapNull => {
@@ -585,6 +593,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::ArrayGet => {
@@ -622,6 +631,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         IntrinsicId::ArraySet => {
@@ -660,6 +670,7 @@ fn match_intrinsic_builtin_candidate(
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
                 where_constraints: candidate.where_constraints.clone(),
+                imported_dependency_export: candidate.imported_dependency_export,
             })
         }
         // 其它 Intrinsic 仍走通用形实参路径，直至各自合同闭合。
@@ -763,7 +774,7 @@ fn declaration_intrinsic(function: &HirFunction) -> Option<IntrinsicId> {
     IntrinsicId::resolve_from_segments(&parts)
 }
 
-fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> OverloadCandidate {
+fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
     let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(module_name, function);
     let mut candidate = OverloadCandidate::new(
         symbol,
@@ -773,6 +784,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
         OverloadMatchKind::Row,
     )
     .with_param_specs(function.params.clone());
+    candidate.imported_dependency_export = imported_dependency_export;
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
     // 声明级 `[intrinsic(...)]` 是 intrinsic 身份的唯一来源；调用点不再按符号短名认亲。
@@ -795,6 +807,17 @@ fn symbol_matches_unqualified_free_call(symbol: &NamePath, callee_name: &Identif
             parts == expected.as_slice()
         }
         _ => false,
+    }
+}
+
+/// 依赖语义导出中的顶层函数：consumer 内无限定调用只按导出名匹配，身份由 declaration/instance 冻结。
+fn symbol_matches_imported_dependency_export(candidate: &OverloadCandidate, callee_name: &Identifier) -> bool {
+    if !candidate.imported_dependency_export {
+        return false;
+    }
+    match candidate.symbol.parts() {
+        [name] => name == callee_name,
+        parts => parts.last() == Some(callee_name),
     }
 }
 
@@ -1726,6 +1749,7 @@ pub fn match_call_candidate(
         param_specs: candidate.param_specs.clone(),
         generic_binders: candidate.generic_binders.clone(),
         where_constraints: candidate.where_constraints.clone(),
+        imported_dependency_export: candidate.imported_dependency_export,
     })
 }
 
@@ -2065,7 +2089,9 @@ fn try_resolve_call(
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| {
-            candidate.owner.is_none() && symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+            candidate.owner.is_none()
+                && (symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+                    || symbol_matches_imported_dependency_export(candidate, &callee_name))
         })
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
