@@ -61,6 +61,22 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
             );
         }
     }
+    for singleton in &module.singletons {
+        let owner = ValkyrieType::Named(singleton.name.clone());
+        for method in singleton
+            .methods
+            .iter()
+            .chain(singleton.constructor.iter().map(Box::as_ref))
+            .chain(singleton.finalizer.iter().map(Box::as_ref))
+        {
+            register_callable_return(
+                &mut index,
+                format!("{}.{}", singleton.name, method.name),
+                method,
+                resolve_self_type_with_owner(&method.return_type, Some(&owner)),
+            );
+        }
+    }
     index
 }
 

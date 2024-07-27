@@ -155,6 +155,13 @@ impl MirBuilder {
                 return Some(return_type.clone());
             }
         }
+        if let Some(call) = resolved {
+            if let Some(instance) = call.instance {
+                if let Some(return_type) = self.callable_returns.by_instance.get(&instance) {
+                    return Some(return_type.clone());
+                }
+            }
+        }
         if let MirOperand::Symbol(path) = callee {
             // 只按限定符号取签名；末段短名不是身份，不得回落认亲。
             if let Some(return_type) = self.callable_returns.by_symbol.get(&path.to_string()) {

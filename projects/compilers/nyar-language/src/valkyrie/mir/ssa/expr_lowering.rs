@@ -876,7 +876,16 @@ impl MirBuilder {
                 let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
                     None if resolved.as_ref().is_some_and(|call| call.domain == HirCallableDomain::Constructor) => {
-                        MirOperand::Symbol(resolved.as_ref().expect("constructor call").symbol.clone())
+                        let call = resolved.as_ref().expect("constructor call");
+                        match lower_resolved_callee(call) {
+                            Some(callee) => callee,
+                            None => {
+                                self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                                    symbol: call.symbol.to_string(),
+                                });
+                                return MirOperand::Constant(MirConstant::Unit);
+                            }
+                        }
                     }
                     None => {
                         self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
