@@ -46,7 +46,7 @@ impl MirLowerer {
         seed_pool: &[MirFunction],
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
     ) -> MirModule {
-        let singleton_accessors = crate::valkyrie::mir::singleton_accessor_map(module);
+        let singleton_accessor_instances = crate::valkyrie::mir::singleton_accessor_instance_map(module);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
         let mut diagnostics = Vec::new();
         let structs = collect_field_declarations(module);
@@ -73,7 +73,7 @@ impl MirLowerer {
                 module,
                 function,
                 &mut aggregate_layouts,
-                &singleton_accessors,
+                &singleton_accessor_instances,
                 &effectful_resume_map,
                 &callable_returns,
                 None,
@@ -84,7 +84,7 @@ impl MirLowerer {
         functions.extend(lower_singleton_method_functions(
             module,
             &mut aggregate_layouts,
-            &singleton_accessors,
+            &singleton_accessor_instances,
             &effectful_resume_map,
             &callable_returns,
             &mut diagnostics,
@@ -92,16 +92,18 @@ impl MirLowerer {
         functions.extend(lower_impl_method_functions(
             module,
             &mut aggregate_layouts,
-            &singleton_accessors,
+            &singleton_accessor_instances,
             &effectful_resume_map,
             &callable_returns,
             &mut diagnostics,
         ));
         // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。
+        let accessor_instances = crate::valkyrie::mir::collect_singleton_accessor_contracts(module);
         let local_floor = functions
             .iter()
             .filter_map(|function| function.instance)
             .chain(external_calls.iter().filter_map(|contract| contract.instance))
+            .chain(accessor_instances.iter().map(|(instance, _)| *instance))
             .map(|instance| instance.index())
             .max()
             .map(|index| index.saturating_add(1))
@@ -127,6 +129,10 @@ impl MirLowerer {
                 super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                     .expect("duplicate callable symbol during lowering");
             }
+        }
+        for (instance, symbol) in accessor_instances {
+            super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
+                .expect("duplicate singleton accessor symbol during lowering");
         }
         let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
         let result = MirModule {

@@ -19,7 +19,8 @@ use crate::{
 pub use singleton::{
     AggregateFieldIndex, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD,
     SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, SingletonWitnessEntries, collect_aggregate_field_map,
-    collect_singleton_instance_plans, collect_singleton_witness_entries, merge_singleton_field_layouts, singleton_accessor_map,
+    collect_singleton_accessor_contracts, collect_singleton_instance_plans, collect_singleton_witness_entries, merge_singleton_field_layouts,
+    singleton_accessor_instance_map, singleton_accessor_map,
 };
 pub use ssa::{
     AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant,

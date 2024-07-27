@@ -99,14 +99,56 @@ pub fn collect_singleton_instance_plans(module: &HirModule) -> Vec<SingletonInst
 
 /// Map singleton type name to its instance accessor method.
 pub fn singleton_accessor_map(module: &HirModule) -> std::collections::BTreeMap<String, String> {
-    module
-        .singletons
-        .iter()
-        .map(|singleton| {
+    let mut map = std::collections::BTreeMap::new();
+    collect_singleton_accessor_names(module, &mut map);
+    map
+}
+
+/// Map singleton type name to its frozen accessor `ItemInstanceId`.
+pub fn singleton_accessor_instance_map(module: &HirModule) -> std::collections::BTreeMap<String, nyar_types::ItemInstanceId> {
+    let mut map = std::collections::BTreeMap::new();
+    collect_singleton_accessor_instances(module, &mut map);
+    map
+}
+
+/// `(ItemInstanceId, ABI diagnostic label)` for each singleton accessor in the module tree.
+pub fn collect_singleton_accessor_contracts(module: &HirModule) -> Vec<(nyar_types::ItemInstanceId, String)> {
+    let mut contracts = Vec::new();
+    collect_singleton_accessor_contracts_into(module, &mut contracts);
+    contracts
+}
+
+fn collect_singleton_accessor_names(module: &HirModule, map: &mut std::collections::BTreeMap<String, String>) {
+    for singleton in &module.singletons {
+        let plan = plan_from_singleton(singleton);
+        map.insert(singleton.name.to_string(), plan.accessor_method().to_string());
+    }
+    for submodule in &module.submodules {
+        collect_singleton_accessor_names(submodule, map);
+    }
+}
+
+fn collect_singleton_accessor_instances(module: &HirModule, map: &mut std::collections::BTreeMap<String, nyar_types::ItemInstanceId>) {
+    for singleton in &module.singletons {
+        if let Some(instance) = singleton.accessor_instance {
+            map.insert(singleton.name.to_string(), instance);
+        }
+    }
+    for submodule in &module.submodules {
+        collect_singleton_accessor_instances(submodule, map);
+    }
+}
+
+fn collect_singleton_accessor_contracts_into(module: &HirModule, contracts: &mut Vec<(nyar_types::ItemInstanceId, String)>) {
+    for singleton in &module.singletons {
+        if let Some(instance) = singleton.accessor_instance {
             let plan = plan_from_singleton(singleton);
-            (singleton.name.to_string(), plan.accessor_method().to_string())
-        })
-        .collect()
+            contracts.push((instance, format!("{}.{}", singleton.name, plan.accessor_method())));
+        }
+    }
+    for submodule in &module.submodules {
+        collect_singleton_accessor_contracts_into(submodule, contracts);
+    }
 }
 
 /// Merge singleton field layouts into struct field layout maps used by MIR.

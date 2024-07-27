@@ -19,7 +19,7 @@ pub(super) fn lower_function_semantic(
     module: &HirModule,
     function: &HirFunction,
     aggregate_layouts: &mut AggregateLayoutPlan,
-    singleton_accessors: &BTreeMap<String, String>,
+    singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     impl_owner_type: Option<ValkyrieType>,
@@ -33,7 +33,7 @@ pub(super) fn lower_function_semantic(
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
         aggregate_layouts.clone(),
-        singleton_accessors.clone(),
+        singleton_accessor_instances.clone(),
         effectful_resume_map.clone(),
         effectful_inline_targets,
         callable_returns.clone(),

@@ -180,4 +180,6 @@ pub struct HirSingleton {
     /// never unload, so their finalizer is never called by the runtime.
     /// When `None`, unloading simply clears the global slot.
     pub finalizer: Option<Box<HirFunction>>,
+    /// Compiler-synthesized instance accessor (`instance` / `get_instance`).
+    pub accessor_instance: Option<nyar_types::ItemInstanceId>,
 }

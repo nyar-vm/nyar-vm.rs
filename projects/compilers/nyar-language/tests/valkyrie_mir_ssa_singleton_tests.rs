@@ -41,26 +41,27 @@ fn field_id(mir: &MirModule, name: &str) -> nyar_types::FieldId {
     mir.structs.iter().flat_map(|structure| &structure.fields).find(|field| field.name == name).map(|field| field.id).expect("field identity")
 }
 
-/// Returns the callee symbol path string if the instruction is a call.
-fn call_callee_path(instruction: &MirInstruction) -> Option<String> {
+/// Returns the callee diagnostic label if the instruction is a call.
+fn call_callee_path(instruction: &MirInstruction, mir: &MirModule) -> Option<String> {
     match &instruction.kind {
         MirOperation::Call { callee: MirOperand::Symbol(path), .. } => Some(path.to_string()),
+        MirOperation::Call { callee: MirOperand::Callable(instance), .. } => mir.callable_symbols.get(instance).cloned(),
         _ => None,
     }
 }
 
-/// Collects callee path strings for every Call instruction in instruction order.
-fn ordered_call_paths(function: &MirFunction) -> Vec<String> {
-    all_instructions(function).filter_map(|ins| call_callee_path(ins)).collect()
+/// Collects callee labels for every Call instruction in instruction order.
+fn ordered_call_paths(function: &MirFunction, mir: &MirModule) -> Vec<String> {
+    all_instructions(function).filter_map(|ins| call_callee_path(ins, mir)).collect()
 }
 
-/// Checks whether the function contains a call whose callee path ends with the suffix.
-fn has_call_with_suffix(function: &MirFunction, suffix: &str) -> bool {
-    all_instructions(function).any(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with(suffix)))
+/// Checks whether the function contains a call whose callee label ends with the suffix.
+fn has_call_with_suffix(function: &MirFunction, mir: &MirModule, suffix: &str) -> bool {
+    all_instructions(function).any(|ins| call_callee_path(ins, mir).is_some_and(|p| p.ends_with(suffix)))
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_static_method_call() {
     let mir = compile_mir(
         r#"
@@ -80,7 +81,7 @@ micro main() -> i64 {
     );
     let main = find_function(&mir, "main");
 
-    let calls = ordered_call_paths(main);
+    let calls = ordered_call_paths(main, &mir);
     let accessor_idx = calls.iter().position(|p| p.ends_with("Counter.instance"));
     let method_idx = calls.iter().position(|p| p.ends_with("Counter.increment"));
     assert!(accessor_idx.is_some(), "expected accessor call Counter.instance, got {calls:?}");
@@ -90,7 +91,7 @@ micro main() -> i64 {
     assert!(accessor_idx < method_idx, "accessor must precede method call, got {calls:?}");
 
     let method_call =
-        all_instructions(main).find(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.increment"))).expect("method call");
+        all_instructions(main).find(|ins| call_callee_path(ins, &mir).is_some_and(|p| p.ends_with("Counter.increment"))).expect("method call");
     match &method_call.kind {
         MirOperation::Call { arguments, .. } => {
             assert_eq!(arguments.len(), 1, "method call must receive singleton instance as its single argument");
@@ -100,7 +101,7 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_field_read() {
     let mir = compile_mir(
         r#"
@@ -116,11 +117,11 @@ micro main() -> i64 {
     let main = find_function(&mir, "main");
     let total = field_id(&mir, "total");
 
-    assert!(has_call_with_suffix(main, "Counter.instance"), "expected accessor call Counter.instance before field read");
+    assert!(has_call_with_suffix(main, &mir, "Counter.instance"), "expected accessor call Counter.instance before field read");
 
     let all: Vec<_> = all_instructions(main).collect();
     let accessor_pos =
-        all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
+        all.iter().position(|ins| call_callee_path(ins, &mir).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_get_pos =
         all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldGet { field, .. } if *field == total)).expect("FieldGet for 'total'");
     assert!(
@@ -130,7 +131,7 @@ micro main() -> i64 {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_field_write() {
     let mir = compile_mir(
         r#"
@@ -147,11 +148,11 @@ micro main() {
     let main = find_function(&mir, "main");
     let total = field_id(&mir, "total");
 
-    assert!(has_call_with_suffix(main, "Counter.instance"), "expected accessor call Counter.instance before field write");
+    assert!(has_call_with_suffix(main, &mir, "Counter.instance"), "expected accessor call Counter.instance before field write");
 
     let all: Vec<_> = all_instructions(main).collect();
     let accessor_pos =
-        all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
+        all.iter().position(|ins| call_callee_path(ins, &mir).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_set_pos =
         all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldSet { field, .. } if *field == total)).expect("FieldSet for 'total'");
     assert!(
@@ -161,7 +162,7 @@ micro main() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_method_body_self_field() {
     let mir = compile_mir(
         r#"
@@ -179,7 +180,7 @@ singleton Counter {
     let total = field_id(&mir, "total");
 
     assert!(
-        !has_call_with_suffix(increment, "Counter.instance") && !has_call_with_suffix(increment, "Counter.get_instance"),
+        !has_call_with_suffix(increment, &mir, "Counter.instance") && !has_call_with_suffix(increment, &mir, "Counter.get_instance"),
         "method body must use self parameter directly, not emit an accessor call"
     );
 
@@ -214,7 +215,7 @@ singleton Counter {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn lower_singleton_eager_vs_lazy_accessor() {
     let eager_mir = compile_mir(
         r#"
@@ -250,15 +251,15 @@ micro main() -> i64 {
     let eager_main = find_function(&eager_mir, "main");
     let lazy_main = find_function(&lazy_mir, "main");
 
-    assert!(has_call_with_suffix(eager_main, "Counter.instance"), "eager singleton must use 'instance' accessor");
-    assert!(!has_call_with_suffix(eager_main, "Counter.get_instance"), "eager singleton must not use 'get_instance' accessor");
+    assert!(has_call_with_suffix(eager_main, &eager_mir, "Counter.instance"), "eager singleton must use 'instance' accessor");
+    assert!(!has_call_with_suffix(eager_main, &eager_mir, "Counter.get_instance"), "eager singleton must not use 'get_instance' accessor");
 
-    assert!(has_call_with_suffix(lazy_main, "Counter.get_instance"), "lazy singleton must use 'get_instance' accessor");
-    assert!(!has_call_with_suffix(lazy_main, "Counter.instance"), "lazy singleton must not use 'instance' accessor");
+    assert!(has_call_with_suffix(lazy_main, &lazy_mir, "Counter.get_instance"), "lazy singleton must use 'get_instance' accessor");
+    assert!(!has_call_with_suffix(lazy_main, &lazy_mir, "Counter.instance"), "lazy singleton must not use 'instance' accessor");
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn singleton_trait_witness_entries_dispatch_serialize() {
     use nyar_language::valkyrie::mir::collect_singleton_witness_entries;
 
@@ -303,7 +304,7 @@ singleton Settings: Serializable {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn demo_voa_todo_store_parses_through_hir() {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9400 })
         .compile_source(
@@ -355,7 +356,7 @@ singleton TodoStore {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: singleton fixture syntax / SMIR003 pending"]
 fn swiss_table_find_slot_passes_semantic_mir_contract() {
     let mir = compile_mir(
         r#"

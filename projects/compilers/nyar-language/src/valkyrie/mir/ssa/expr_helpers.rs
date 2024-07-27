@@ -66,7 +66,7 @@ impl MirBuilder {
             HirExprKind::Path(path) if path.parts().len() >= 2 => {
                 let parts = path.parts();
                 let root = parts[0].as_str();
-                if self.singleton_accessors.contains_key(root) {
+                if self.singleton_accessor_instances.contains_key(root) {
                     let method_name = parts.last()?.clone();
                     let receiver_operand = self.emit_singleton_instance_operand(root);
                     return Some((receiver_operand, method_name));
@@ -96,11 +96,13 @@ impl MirBuilder {
     }
 
     pub(super) fn emit_singleton_instance_operand(&mut self, singleton_name: &str) -> MirOperand {
-        let accessor = self.singleton_accessors.get(singleton_name).cloned().unwrap_or_else(|| "instance".to_string());
-        let value = self.push_call(
-            MirOperand::Symbol(NamePath::new(vec![Identifier::new(singleton_name), Identifier::new(accessor.as_str())])),
-            Vec::new(),
-        );
+        let Some(instance) = self.singleton_accessor_instances.get(singleton_name) else {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                symbol: format!("singleton accessor `{singleton_name}`"),
+            });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
+        let value = self.push_call(MirOperand::Callable(*instance), Vec::new());
         self.value_types.insert(value, ValkyrieType::Named(Identifier::new(singleton_name)));
         MirOperand::Value(value)
     }
@@ -144,10 +146,10 @@ impl MirBuilder {
 
     pub(super) fn lower_singleton_field_object(&mut self, object: &HirExpr) -> Option<MirOperand> {
         match &object.kind {
-            HirExprKind::Variable(identifier) if self.singleton_accessors.contains_key(identifier.name.as_str()) => {
+            HirExprKind::Variable(identifier) if self.singleton_accessor_instances.contains_key(identifier.name.as_str()) => {
                 Some(self.emit_singleton_instance_operand(identifier.name.as_str()))
             }
-            HirExprKind::Path(path) if path.parts().len() == 1 && self.singleton_accessors.contains_key(path.parts()[0].as_str()) => {
+            HirExprKind::Path(path) if path.parts().len() == 1 && self.singleton_accessor_instances.contains_key(path.parts()[0].as_str()) => {
                 Some(self.emit_singleton_instance_operand(path.parts()[0].as_str()))
             }
             _ => None,

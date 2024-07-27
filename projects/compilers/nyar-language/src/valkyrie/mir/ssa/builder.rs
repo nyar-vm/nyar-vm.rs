@@ -32,7 +32,7 @@ pub(super) struct MirBuilder {
     pub(super) option_declaration: Option<nyar_types::ItemId>,
     /// 模块内唯一可解析的 Result sum 声明；歧义或缺失则为 `None`（fail-closed）。
     pub(super) result_declaration: Option<nyar_types::ItemId>,
-    pub(super) singleton_accessors: BTreeMap<String, String>,
+    pub(super) singleton_accessor_instances: BTreeMap<String, nyar_types::ItemInstanceId>,
     pub(super) static_bindings: BTreeMap<String, HirExpr>,
     pub(super) terminator: Option<MirTerminator>,
     pub(super) value_seed: u32,
@@ -95,7 +95,7 @@ impl MirBuilder {
 
     pub(super) fn new(
         aggregate_layouts: AggregateLayoutPlan,
-        singleton_accessors: BTreeMap<String, String>,
+        singleton_accessor_instances: BTreeMap<String, nyar_types::ItemInstanceId>,
         effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
         effectful_inline_targets: BTreeMap<String, HirFunction>,
         callable_returns: CallableReturnTypes,
@@ -125,7 +125,7 @@ impl MirBuilder {
             sum_types: Vec::new(),
             option_declaration: None,
             result_declaration: None,
-            singleton_accessors,
+            singleton_accessor_instances,
             static_bindings: BTreeMap::new(),
             terminator: None,
             value_seed: 0,

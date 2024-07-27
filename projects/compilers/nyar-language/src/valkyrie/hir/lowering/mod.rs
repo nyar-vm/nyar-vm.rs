@@ -1627,6 +1627,7 @@ fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
             }
         }
         for singleton in &module.singletons {
+            consider(singleton.accessor_instance, max);
             for method in
                 singleton.methods.iter().chain(singleton.constructor.iter().map(Box::as_ref)).chain(singleton.finalizer.iter().map(Box::as_ref))
             {
@@ -1717,6 +1718,12 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
         }
     }
     for singleton in &mut module.singletons {
+        if singleton.accessor_instance.is_some() {
+            return Err(ParseError::invalid("单例 accessor 实例不能重复注册"));
+        }
+        singleton.accessor_instance =
+            Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
+        *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
         for method in singleton
             .methods
             .iter_mut()
@@ -2626,6 +2633,7 @@ impl AstToHir {
             instance_name: Identifier::new(crate::valkyrie::mir::SINGLETON_INSTANCE_FIELD),
             constructor,
             finalizer,
+            accessor_instance: None,
         }
     }
 
