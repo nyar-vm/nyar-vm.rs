@@ -23,8 +23,13 @@ pub(super) fn register_callable_return(index: &mut CallableReturnTypes, symbol: 
 
 pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableReturnTypes {
     let mut index = CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() };
+    collect_callable_return_types_into(module, &mut index);
+    index
+}
+
+fn collect_callable_return_types_into(module: &HirModule, index: &mut CallableReturnTypes) {
     for function in &module.functions {
-        register_callable_return(&mut index, stable_hir_function_symbol(&module.name, function), function, function.return_type.clone());
+        register_callable_return(index, stable_hir_function_symbol(&module.name, function), function, function.return_type.clone());
     }
     for impl_block in &module.impls {
         let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
@@ -33,7 +38,7 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
         };
         for method in &impl_block.methods {
             register_callable_return(
-                &mut index,
+                index,
                 format!("{type_name}.{}", method.name),
                 method,
                 resolve_self_type_with_owner(&method.return_type, Some(&impl_block.target)),
@@ -44,7 +49,7 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
         let owner = ValkyrieType::Named(item.name.clone());
         for method in &item.methods {
             register_callable_return(
-                &mut index,
+                index,
                 format!("{}.{}", item.name, method.name),
                 method,
                 resolve_self_type_with_owner(&method.return_type, Some(&owner)),
@@ -54,7 +59,7 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
     for trait_def in &module.traits {
         for method in &trait_def.default_methods {
             register_callable_return(
-                &mut index,
+                index,
                 format!("{}.{}", trait_def.name, method.name),
                 method,
                 resolve_self_type_with_owner(&method.return_type, None),
@@ -70,14 +75,19 @@ pub(super) fn collect_callable_return_types(module: &HirModule) -> CallableRetur
             .chain(singleton.finalizer.iter().map(Box::as_ref))
         {
             register_callable_return(
-                &mut index,
+                index,
                 format!("{}.{}", singleton.name, method.name),
                 method,
                 resolve_self_type_with_owner(&method.return_type, Some(&owner)),
             );
         }
+        if let Some(instance) = singleton.accessor_instance {
+            index.by_instance.insert(instance, owner);
+        }
     }
-    index
+    for submodule in &module.submodules {
+        collect_callable_return_types_into(submodule, index);
+    }
 }
 
 pub(super) fn impl_type_arguments_from_generics(generics: &[crate::types::hir::GenericType]) -> Vec<ValkyrieType> {
