@@ -27,6 +27,7 @@ use crate::{
     valkyrie::{
         hir::PatternRefutability,
         mir::{AggregateFieldIndex, collect_aggregate_field_map},
+        operator_members,
     },
 };
 use nyar_types::IntrinsicId;
@@ -2137,6 +2138,34 @@ fn try_resolve_call(
             singleton_names,
         );
         return Some(call);
+    }
+
+    // 平坦运算符调用（`a + b` → `infix +(a, b)`）以首实参为接收者，必须走实例成员解析。
+    if matches!(&callee.kind, HirExprKind::Path(path) if path.parts().len() == 1)
+        && operator_members::is_operator_member_name(callee_name.as_str())
+        && let Some(first) = args.first()
+    {
+        let method_args = if callee_name.as_str().starts_with("prefix ") && args.len() == 1 {
+            &[]
+        }
+        else if args.len() > 1 {
+            &args[1..]
+        }
+        else {
+            &[]
+        };
+        if let Some(resolved) = try_resolve_instance_method(
+            &first.value,
+            &callee_name,
+            method_args,
+            candidates,
+            type_relations,
+            locals,
+            struct_fields,
+            singleton_names,
+        ) {
+            return Some(resolved);
+        }
     }
 
     let enclosing_module = type_relations.enclosing_module();

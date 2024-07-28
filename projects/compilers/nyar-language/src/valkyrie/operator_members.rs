@@ -89,6 +89,11 @@ pub(crate) fn declared_member_name(declared: &str, annotations: &[Attribute]) ->
     fixed_member_name(fixity, declared)
 }
 
+/// 调用点/声明侧的普通成员名是否为运算符成员（`{fixity} {lexeme}` 或 `deref_read`）。
+pub(crate) fn is_operator_member_name(name: &str) -> bool {
+    name.starts_with("prefix ") || name.starts_with("infix ") || name.starts_with("suffix ") || name == DEREF_READ_MEMBER
+}
+
 /// 声明是否带有指定修饰注解。
 fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
     annotations.iter().any(|attribute| attribute.name.name == name)
