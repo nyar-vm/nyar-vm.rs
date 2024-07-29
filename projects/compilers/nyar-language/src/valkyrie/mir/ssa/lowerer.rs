@@ -76,6 +76,7 @@ impl MirLowerer {
                 &singleton_accessor_instances,
                 &effectful_resume_map,
                 &callable_returns,
+                dispatch,
                 None,
                 Vec::new(),
                 &mut diagnostics,
@@ -87,6 +88,7 @@ impl MirLowerer {
             &singleton_accessor_instances,
             &effectful_resume_map,
             &callable_returns,
+            dispatch,
             &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
@@ -95,6 +97,7 @@ impl MirLowerer {
             &singleton_accessor_instances,
             &effectful_resume_map,
             &callable_returns,
+            dispatch,
             &mut diagnostics,
         ));
         // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。

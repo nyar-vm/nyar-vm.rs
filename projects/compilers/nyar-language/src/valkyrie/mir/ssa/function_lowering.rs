@@ -22,6 +22,7 @@ pub(super) fn lower_function_semantic(
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
+    member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     impl_owner_type: Option<ValkyrieType>,
     impl_type_arguments: Vec<ValkyrieType>,
     diagnostics: &mut Vec<MirDiagnostic>,
@@ -37,6 +38,7 @@ pub(super) fn lower_function_semantic(
         effectful_resume_map.clone(),
         effectful_inline_targets,
         callable_returns.clone(),
+        member_dispatch.to_vec(),
         impl_owner_type.clone(),
     );
     // Option/Result 身份只来自 HIR 已冻结的 call.sum_owner / Nominal{ItemId}，禁止按短名缓存。

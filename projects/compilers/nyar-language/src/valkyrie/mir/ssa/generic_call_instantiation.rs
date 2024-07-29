@@ -10,7 +10,7 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::types::hir::{GenericBinderId, HirModule, ValkyrieType};
 
-use super::{MirCallRequirement, MirDiagnostic, MirFunction, MirOperand, MirOperation};
+use super::{MirCallRequirement, MirDiagnostic, MirFunction, MirOperand, MirOperation, hir_identity::nominal_type_name};
 
 /// 声明期已冻结的成员分派条目。
 ///
@@ -196,6 +196,40 @@ pub(crate) fn unify_generic_instantiation(
                     .all(|(template_param, concrete_param)| unify_generic_instantiation(template_param, concrete_param, substitutions))
                 && unify_generic_instantiation(&template_fn.return_type, &concrete_fn.return_type, substitutions)
         }
+        _ => false,
+    }
+}
+
+/// 按接收者类型与成员名查找已冻结的 callable 实例（inherent 成员/运算符）。
+pub(crate) fn lookup_member_dispatch(
+    dispatch: &[MirDispatchEntry],
+    subject: &ValkyrieType,
+    member: &crate::Identifier,
+    trait_declaration: Option<ItemId>,
+) -> Option<ItemInstanceId> {
+    let mut matches = Vec::new();
+    for entry in dispatch {
+        if entry.member != *member || entry.trait_declaration != trait_declaration {
+            continue;
+        }
+        if dispatch_subject_matches(&entry.target, subject) {
+            matches.push(entry.instance);
+        }
+    }
+    match matches.len() {
+        0 => None,
+        1 => Some(matches[0]),
+        _ => None,
+    }
+}
+
+fn dispatch_subject_matches(entry_target: &ValkyrieType, subject: &ValkyrieType) -> bool {
+    let mut substitutions = BTreeMap::new();
+    if unify_generic_instantiation(entry_target, subject, &mut substitutions) {
+        return true;
+    }
+    match (nominal_type_name(entry_target), nominal_type_name(subject)) {
+        (Some(left), Some(right)) => left == right,
         _ => false,
     }
 }

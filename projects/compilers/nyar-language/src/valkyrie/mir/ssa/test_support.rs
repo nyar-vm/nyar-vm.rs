@@ -8,9 +8,11 @@ use crate::types::{
     },
 };
 
+use nyar_types::ItemInstanceId;
+
 use super::{
-    AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirDiagnostic, MirFunction, MirInstruction, MirModule, MirOperand, MirSuspendPoint,
-    MirValue, MirValueRef, lower_function_semantic, lower_literal,
+    AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirDiagnostic, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation,
+    MirSuspendPoint, MirValue, MirValueOrigin, MirValueRef, generic_call_instantiation::MirDispatchEntry, lower_function_semantic, lower_literal,
 };
 
 /// `MIR` 集成测试使用的只读构建器包装。
@@ -34,6 +36,7 @@ impl TestMirBuilder {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
+                Vec::new(),
                 None,
             ),
         }
@@ -57,6 +60,56 @@ impl TestMirBuilder {
     /// 降低整数/常量相等比较谓词，便于测试未绑定 callable 的失败形状。
     pub fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
         self.inner.lower_eq_constant_operand(lhs, rhs, ty)
+    }
+
+    /// 降低范围比较所需的 `<` 谓词。
+    pub fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
+        self.inner.lower_lt_operands(lhs, rhs, ty)
+    }
+
+    /// 登记成员分派表项，供模式比较测试使用。
+    pub fn register_member_dispatch(&mut self, target: ValkyrieType, member: &str, instance: ItemInstanceId) {
+        self.inner.member_dispatch.push(MirDispatchEntry {
+            trait_declaration: None,
+            target,
+            member: Identifier::new(member),
+            instance,
+        });
+    }
+
+    /// 为 SSA 值操作数登记类型事实。
+    pub fn register_operand_type(&mut self, operand: MirOperand, ty: ValkyrieType) {
+        if let MirOperand::Value(value) = operand {
+            self.inner.value_types.insert(value, ty);
+        }
+    }
+
+    /// 分配带类型的 SSA 值操作数。
+    pub fn typed_value_operand(&mut self, ty: ValkyrieType) -> MirOperand {
+        let value = self.inner.next_value(MirValueOrigin::Temporary);
+        self.inner.value_types.insert(value, ty);
+        MirOperand::Value(value)
+    }
+
+    /// 收集已发射的 `Call` 指令的 callee（含已刷入基本块的指令）。
+    pub fn call_callees(&self) -> Vec<MirOperand> {
+        let mut callees = self
+            .inner
+            .instructions
+            .iter()
+            .filter_map(|instruction| match &instruction.kind {
+                MirOperation::Call { callee, .. } => Some(callee.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for block in &self.inner.blocks {
+            for instruction in &block.instructions {
+                if let MirOperation::Call { callee, .. } = &instruction.kind {
+                    callees.push(callee.clone());
+                }
+            }
+        }
+        callees
     }
 
     /// 读取 lowering 阶段累计的诊断。
@@ -161,6 +214,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         &BTreeMap::new(),
         &BTreeMap::new(),
         &super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
+        &[],
         None,
         Vec::new(),
         &mut Vec::new(),

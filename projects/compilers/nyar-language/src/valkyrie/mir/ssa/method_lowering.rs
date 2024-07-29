@@ -16,6 +16,7 @@ pub(super) fn lower_singleton_method_functions(
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
+    member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -28,6 +29,7 @@ pub(super) fn lower_singleton_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
@@ -43,6 +45,7 @@ pub(super) fn lower_singleton_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
@@ -58,6 +61,7 @@ pub(super) fn lower_singleton_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
                 diagnostics,
@@ -75,6 +79,7 @@ pub(super) fn lower_impl_method_functions(
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
+    member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -90,6 +95,7 @@ pub(super) fn lower_impl_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(impl_block.target.clone()),
                 impl_type_arguments_from_generics(&impl_block.generics),
                 diagnostics,
@@ -107,6 +113,7 @@ pub(super) fn lower_impl_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(ValkyrieType::Named(item.name.clone())),
                 impl_type_arguments_from_generics(&item.generics),
                 diagnostics,
@@ -124,6 +131,7 @@ pub(super) fn lower_impl_method_functions(
                 singleton_accessor_instances,
                 effectful_resume_map,
                 callable_returns,
+                member_dispatch,
                 Some(ValkyrieType::Named(trait_def.name.clone())),
                 impl_type_arguments_from_generics(&trait_def.generics),
                 diagnostics,

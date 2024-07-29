@@ -63,6 +63,8 @@ pub(super) struct MirBuilder {
     pub(super) effectful_inline_targets: BTreeMap<String, HirFunction>,
     /// HIR 冻结的 callable 返回类型；`Call` SSA 结果须与 MIR 定义签名一致。
     pub(super) callable_returns: CallableReturnTypes,
+    /// 声明期冻结的成员分派表；模式比较与延迟要求共用。
+    pub(super) member_dispatch: Vec<super::generic_call_instantiation::MirDispatchEntry>,
     /// 当前 impl 方法的 owner 类型名（如 `FilterIterator`）。
     ///
     /// 用于把 `self` 参数的 `AutoType`/`SelfType` 解析为具体命名类型，
@@ -99,6 +101,7 @@ impl MirBuilder {
         effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
         effectful_inline_targets: BTreeMap<String, HirFunction>,
         callable_returns: CallableReturnTypes,
+        member_dispatch: Vec<super::generic_call_instantiation::MirDispatchEntry>,
         impl_owner_type: Option<ValkyrieType>,
     ) -> Self {
         let entry = MirBlockRef(0);
@@ -139,6 +142,7 @@ impl MirBuilder {
             effectful_resume_map,
             effectful_inline_targets,
             callable_returns,
+            member_dispatch,
             impl_owner_type,
             impl_type_arguments: Vec::new(),
             workload_phase: None,

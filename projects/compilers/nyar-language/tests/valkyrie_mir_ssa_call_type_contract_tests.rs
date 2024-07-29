@@ -1,8 +1,9 @@
 use nyar_language::{
     Identifier, NamePath, ValkyrieCompiler,
-    types::hir::{HirExprKind, ValkyrieType},
-    valkyrie::mir::ssa::{MirDiagnostic, MirLowerer, MirOperand, MirOperation, test_support::TestMirBuilder},
+    types::hir::{HirExprKind, HirLiteral, HirPattern, ValkyrieType},
+    valkyrie::mir::ssa::{MirConstant, MirDiagnostic, MirLowerer, MirOperand, MirOperation, test_support::TestMirBuilder},
 };
+use nyar_types::ItemInstanceId;
 
 #[test]
 fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
@@ -138,37 +139,33 @@ micro apply(left: Number, right: Number) -> bool { left + right }
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
-fn integer_pattern_comparisons_fail_without_operator_callable_contracts() {
-    let hir = ValkyrieCompiler::default()
-        .compile_source(
-            r#"
-micro literal_match(value: i64) -> i64 {
-    return match value {
-        case 7: 1
-        else: 0
-    };
+fn pattern_literal_compare_uses_dispatch_bound_infix_eq() {
+    let owner = ValkyrieType::Named(Identifier::new("i64"));
+    let eq_instance = ItemInstanceId::from_index(1).expect("instance");
+    let mut builder = TestMirBuilder::new();
+    builder.register_member_dispatch(owner.clone(), "infix ==", eq_instance);
+    let lhs = builder.typed_value_operand(owner.clone());
+    let _ = builder.lower_eq_constant_operand(lhs, MirConstant::Int(7), &owner);
+    assert!(builder.diagnostics().is_empty());
+    assert_eq!(builder.call_callees(), vec![MirOperand::Callable(eq_instance)]);
 }
-micro range_match(value: i64) -> i64 {
-    return match value {
-        case 2..=8: 1
-        else: 0
-    };
-}
-"#,
-        )
-        .expect("pattern source must parse and resolve types");
-    let mir = MirLowerer::lower_module_semantic(&hir);
-    let unresolved = mir
-        .diagnostics
-        .iter()
-        .filter_map(|diagnostic| match diagnostic {
-            MirDiagnostic::UnresolvedCallableIdentity { symbol } => Some(symbol.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(unresolved, vec!["infix <".to_string(); 2]);
-    assert!(nyar_language::valkyrie::mir::validation::validate_module(&mir).is_err());
+
+#[test]
+fn pattern_range_compare_uses_dispatch_bound_infix_lt() {
+    let owner = ValkyrieType::Named(Identifier::new("i64"));
+    let lt_instance = ItemInstanceId::from_index(2).expect("instance");
+    let mut builder = TestMirBuilder::new();
+    builder.register_member_dispatch(owner.clone(), "infix <", lt_instance);
+    let value = builder.typed_value_operand(owner.clone());
+    let pattern = HirPattern::Range { start: Some(HirLiteral::Integer64(2)), end: Some(HirLiteral::Integer64(8)), inclusive_end: true };
+    let _ = builder.lower_pattern_match_operand(&pattern, value);
+    let lt_calls = builder
+        .call_callees()
+        .into_iter()
+        .filter(|callee| matches!(callee, MirOperand::Callable(instance) if *instance == lt_instance))
+        .count();
+    assert_eq!(lt_calls, 2, "inclusive range `2..=8` lowers to two infix < calls");
+    assert!(builder.diagnostics().is_empty());
 }
 
 #[test]

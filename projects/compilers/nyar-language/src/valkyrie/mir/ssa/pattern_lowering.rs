@@ -479,7 +479,8 @@ impl MirBuilder {
     }
 
     pub(super) fn lower_literal_pattern_match_operand(&mut self, literal: &HirLiteral, value: MirOperand) -> MirOperand {
-        let (constant, expected_type) = lower_literal(literal, None);
+        let actual_type_hint = infer_builder_operand_type(&value, &self.value_types);
+        let (constant, expected_type) = lower_literal(literal, actual_type_hint.as_ref());
         match literal {
             HirLiteral::Bool(expected) => {
                 let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
@@ -492,16 +493,19 @@ impl MirBuilder {
                 if *expected { value } else { self.lower_logical_not_operand(value) }
             }
             HirLiteral::Integer64(_) | HirLiteral::Float64(_) => {
-                let Some(expected_type) = expected_type
-                else {
-                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
-                };
                 let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
                 else {
                     return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
                 };
-                if actual_type != expected_type {
-                    return MirOperand::Constant(MirConstant::Bool(false));
+                if !super::expr_helpers::is_integer_literal_formal_type(&actual_type, &self.field_declarations) {
+                    return self.lower_fallback_pattern_match(HirPattern::Literal(literal.clone()), value);
+                }
+                if let Some(expected_type) = expected_type {
+                    if actual_type != expected_type
+                        && !super::expr_helpers::is_integer_literal_formal_type(&expected_type, &self.field_declarations)
+                    {
+                        return MirOperand::Constant(MirConstant::Bool(false));
+                    }
                 }
                 self.lower_eq_constant_operand(value, constant, &actual_type)
             }
@@ -548,16 +552,7 @@ impl MirBuilder {
             return self.lower_fallback_pattern_match(HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end }, value);
         };
 
-        if !matches!(
-            actual_type,
-            ValkyrieType::Integer8 { .. }
-                | ValkyrieType::Integer16 { .. }
-                | ValkyrieType::Integer32 { .. }
-                | ValkyrieType::Integer64 { .. }
-                | ValkyrieType::Integer128 { .. }
-                | ValkyrieType::Float32
-                | ValkyrieType::Float64
-        ) {
+        if !super::expr_helpers::is_integer_literal_formal_type(&actual_type, &self.field_declarations) {
             return self.lower_fallback_pattern_match(HirPattern::Range { start: start.cloned(), end: end.cloned(), inclusive_end }, value);
         }
 
@@ -783,17 +778,43 @@ impl MirBuilder {
     }
 
     pub(super) fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
-        let _ = (lhs, rhs, ty);
-        self.reject_unbound_member_call("infix ==")
+        let rhs_operand = self.materialize_pattern_constant_operand(rhs, ty);
+        self.lower_binary_operator_operand("infix ==", lhs, rhs_operand, ty)
     }
 
     pub(super) fn lower_lt_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
-        self.lower_lt_operands(lhs, MirOperand::Constant(rhs), ty)
+        let rhs_operand = self.materialize_pattern_constant_operand(rhs, ty);
+        self.lower_lt_operands(lhs, rhs_operand, ty)
     }
 
     pub(super) fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
-        let _ = (lhs, rhs, ty);
-        self.reject_unbound_member_call("infix <")
+        self.lower_binary_operator_operand("infix <", lhs, rhs, ty)
+    }
+
+    fn materialize_pattern_constant_operand(&mut self, constant: MirConstant, ty: &ValkyrieType) -> MirOperand {
+        if matches!(constant, MirConstant::Unit) && matches!(ty, ValkyrieType::Unit) {
+            return MirOperand::Constant(constant);
+        }
+        let value = self.next_value(MirValueOrigin::Literal);
+        self.push_instruction(MirOperation::LoadConstant { constant, ty: Some(ty.clone()) }, vec![value]);
+        self.value_types.insert(value, ty.clone());
+        MirOperand::Value(value)
+    }
+
+    fn lower_binary_operator_operand(
+        &mut self,
+        member: &str,
+        lhs: MirOperand,
+        rhs: MirOperand,
+        subject: &ValkyrieType,
+    ) -> MirOperand {
+        let member_id = Identifier::new(member);
+        let Some(instance) =
+            super::generic_call_instantiation::lookup_member_dispatch(&self.member_dispatch, subject, &member_id, None)
+        else {
+            return self.reject_unbound_member_call(member);
+        };
+        self.push_call_returning(MirOperand::Callable(instance), vec![lhs, rhs], ValkyrieType::Boolean)
     }
 
     /// 模式比较所需的成员 callable 未绑定：按普通 callable 身份缺失失败关闭。
