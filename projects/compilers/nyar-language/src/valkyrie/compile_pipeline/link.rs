@@ -315,9 +315,12 @@ fn freeze_aggregate_identities(
     let mut global_structs: Vec<MirStruct> = Vec::new();
     let mut global_sums: Vec<MirSumDeclaration> = Vec::new();
     let mut remaps = Vec::with_capacity(modules.len());
+    // 字段身份只由 HIR 注册阶段生产；链接器只校验跨模块副本一致，不得重新编号。
+    let mut field_owners: BTreeMap<FieldId, String> = BTreeMap::new();
     for module in modules {
         let mut remap = AggregateRemap::default();
         for declaration in &module.structs {
+            let owner = struct_field_owner(declaration);
             if let Some(existing) =
                 global_structs.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
             {
@@ -326,6 +329,15 @@ fn freeze_aggregate_identities(
                 }
                 remap.nominals.insert(declaration.nominal, existing.nominal);
                 for (local, global) in declaration.fields.iter().zip(&existing.fields) {
+                    if local.id != global.id {
+                        return Err(ParseError::invalid(format!(
+                            "聚合声明 `{}` 的字段身份不一致；local={}; global={}",
+                            declaration.qualified_name(),
+                            local.id,
+                            global.id
+                        )));
+                    }
+                    claim_field_identity(&mut field_owners, local.id, &owner)?;
                     if remap.fields.insert(local.id, global.id).is_some() {
                         return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
                     }
@@ -337,11 +349,9 @@ fn freeze_aggregate_identities(
                 let mut frozen = declaration.clone();
                 frozen.nominal = nominal;
                 remap.nominals.insert(declaration.nominal, nominal);
-                let field_start = total_field_count(&global_structs, &global_sums);
-                for (index, field) in frozen.fields.iter_mut().enumerate() {
-                    let id = FieldId::from_index((field_start + index) as u32).ok_or_else(|| ParseError::invalid("FieldId 溢出"))?;
-                    remap.fields.insert(field.id, id);
-                    field.id = id;
+                for field in &frozen.fields {
+                    claim_field_identity(&mut field_owners, field.id, &owner)?;
+                    remap.fields.insert(field.id, field.id);
                 }
                 global_structs.push(frozen);
             }
@@ -355,8 +365,16 @@ fn freeze_aggregate_identities(
                 }
                 remap.nominals.insert(declaration.nominal, existing.nominal);
                 for (local_variant, global_variant) in declaration.variants.iter().zip(&existing.variants) {
+                    let owner = sum_field_owner(declaration, local_variant);
                     remap.variants.insert(local_variant.id, global_variant.id);
                     for (local, global) in local_variant.fields.iter().zip(&global_variant.fields) {
+                        if local.id != global.id {
+                            return Err(ParseError::invalid(format!(
+                                "sum 声明 `{}` 变体 `{}` 的字段身份不一致；local={}; global={}",
+                                declaration.name, local_variant.name, local.id, global.id
+                            )));
+                        }
+                        claim_field_identity(&mut field_owners, local.id, &owner)?;
                         if remap.fields.insert(local.id, global.id).is_some() {
                             return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
                         }
@@ -369,19 +387,17 @@ fn freeze_aggregate_identities(
                     .ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
                 remap.nominals.insert(declaration.nominal, global_nominal);
                 frozen.nominal = global_nominal;
-                let mut next_field = total_field_count(&global_structs, &global_sums);
                 for (variant_index, variant) in frozen.variants.iter_mut().enumerate() {
                     let global_variant = nyar_types::VariantId::from_index(
                         global_sums.iter().flat_map(|sum| sum.variants.iter()).count() as u32 + variant_index as u32,
                     )
                     .ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
+                    let owner = sum_field_owner(declaration, variant);
                     remap.variants.insert(variant.id, global_variant);
                     variant.id = global_variant;
-                    for field in &mut variant.fields {
-                        let id = FieldId::from_index(next_field as u32).ok_or_else(|| ParseError::invalid("FieldId 溢出"))?;
-                        next_field += 1;
-                        remap.fields.insert(field.id, id);
-                        field.id = id;
+                    for field in &variant.fields {
+                        claim_field_identity(&mut field_owners, field.id, &owner)?;
+                        remap.fields.insert(field.id, field.id);
                     }
                 }
                 global_sums.push(frozen);
@@ -392,9 +408,29 @@ fn freeze_aggregate_identities(
     Ok((global_structs, global_sums, remaps))
 }
 
-fn total_field_count(structs: &[MirStruct], sums: &[MirSumDeclaration]) -> usize {
-    structs.iter().map(|declaration| declaration.fields.len()).sum::<usize>()
-        + sums.iter().flat_map(|declaration| &declaration.variants).map(|variant| variant.fields.len()).sum::<usize>()
+fn struct_field_owner(declaration: &MirStruct) -> String {
+    match declaration.declaration {
+        Some(identity) => format!("struct#{identity}"),
+        None => format!("anonymous:{}", declaration.qualified_name()),
+    }
+}
+
+fn sum_field_owner(declaration: &MirSumDeclaration, variant: &crate::valkyrie::mir::MirSumVariant) -> String {
+    match variant.declaration {
+        Some(identity) => format!("variant#{identity}"),
+        None => format!("sum:{}::{}", declaration.name, variant.name),
+    }
+}
+
+fn claim_field_identity(owners: &mut BTreeMap<FieldId, String>, id: FieldId, owner: &str) -> Result<(), ParseError> {
+    match owners.get(&id) {
+        Some(existing) if existing == owner => Ok(()),
+        Some(existing) => Err(ParseError::invalid(format!("字段身份 `{id}` 被 `{owner}` 与 `{existing}` 同时占用"))),
+        None => {
+            owners.insert(id, owner.to_string());
+            Ok(())
+        }
+    }
 }
 
 fn remap_function_aggregates(function: &mut MirFunction, remap: &AggregateRemap) -> Result<(), ParseError> {

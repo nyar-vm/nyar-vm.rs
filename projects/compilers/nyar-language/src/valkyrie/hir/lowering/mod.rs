@@ -512,12 +512,19 @@ pub fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_ty
     Ok(compiled_program)
 }
 
-pub(crate) fn compute_nominal_declarations(module: &HirModule, nominal_offset: u32) -> (Vec<MirSumDeclaration>, Vec<FlagsLayout>) {
-    (collect_sum_declarations(module, nominal_offset), collect_flags_layouts(module))
+pub(crate) fn compute_nominal_declarations(
+    module: &HirModule,
+    nominal_offset: u32,
+    diagnostics: &mut Vec<crate::mir::MirDiagnostic>,
+) -> (Vec<MirSumDeclaration>, Vec<FlagsLayout>) {
+    (collect_sum_declarations(module, nominal_offset, diagnostics), collect_flags_layouts(module))
 }
 
-fn collect_sum_declarations(module: &HirModule, nominal_offset: u32) -> Vec<MirSumDeclaration> {
-    let mut next_field = 0usize;
+fn collect_sum_declarations(
+    module: &HirModule,
+    nominal_offset: u32,
+    diagnostics: &mut Vec<crate::mir::MirDiagnostic>,
+) -> Vec<MirSumDeclaration> {
     let mut next_nominal = nominal_offset;
     let mut next_variant = 0u32;
     let mut layouts = module
@@ -543,10 +550,12 @@ fn collect_sum_declarations(module: &HirModule, nominal_offset: u32) -> Vec<MirS
                         fields: variant
                             .fields
                             .iter()
-                            .map(|field| {
-                                let id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
-                                next_field += 1;
-                                crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() }
+                            .filter_map(|field| {
+                                let Some(id) = field.id else {
+                                    diagnostics.push(crate::mir::MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
+                                    return None;
+                                };
+                                Some(crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() })
                             })
                             .collect(),
                         result_type: variant.result_type.clone(),
@@ -587,10 +596,12 @@ fn collect_sum_declarations(module: &HirModule, nominal_offset: u32) -> Vec<MirS
                         fields: variant
                             .fields
                             .iter()
-                            .map(|field| {
-                                let id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
-                                next_field += 1;
-                                crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() }
+                            .filter_map(|field| {
+                                let Some(id) = field.id else {
+                                    diagnostics.push(crate::mir::MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
+                                    return None;
+                                };
+                                Some(crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() })
                             })
                             .collect(),
                         result_type: variant.result_type.clone(),
@@ -868,6 +879,7 @@ impl ValkyrieCompiler {
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
         let mut next_instance = 0u32;
+        let mut next_field = 0u32;
         for (group, selection) in groups.iter().zip(&closure.groups) {
             let dependency_exports = group
                 .direct_dependencies
@@ -889,6 +901,7 @@ impl ValkyrieCompiler {
             hir_module.dependency_key = group.dependency_key.clone();
             hir_module.source_path = group.sources.first().map(|file| file.path.clone()).unwrap_or_else(|| format!("{}.v", group.name));
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
+            register_field_declarations(&mut hir_module, &mut next_field)?;
             freeze_module_generic_binders(&mut hir_module);
             bind_declared_nominal_types(&mut hir_module)?;
             trait_binding::bind_trait_declarations(&mut hir_module)?;
@@ -1832,6 +1845,40 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
     Ok(())
 }
 
+/// 为结构体、枚举变体与 singleton 字段分配全局唯一 [`nyar_types::FieldId`]。
+///
+/// 字段身份属于 frontend 事实：MIR 仅消费 `HirField::id`，不得按字段名或布局
+/// 重新编号。源码组闭包共享同一计数器，依赖导出在注册后克隆，因此消费方与
+/// 生产方看到同一字段身份。
+fn register_field_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), ParseError> {
+    fn register_fields(fields: &mut [HirField], next: &mut u32) -> Result<(), ParseError> {
+        for field in fields {
+            if field.id.is_some() {
+                return Err(ParseError::invalid(format!("字段 `{}` 身份不能重复分配", field.name)));
+            }
+            let id = nyar_types::FieldId::from_index(*next).ok_or_else(|| ParseError::invalid("FieldId 字段空间耗尽"))?;
+            field.id = Some(id);
+            *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("FieldId 字段空间耗尽"))?;
+        }
+        Ok(())
+    }
+    for structure in &mut module.structs {
+        register_fields(&mut structure.fields, next)?;
+    }
+    for enum_definition in &mut module.enums {
+        for variant in &mut enum_definition.variants {
+            register_fields(&mut variant.fields, next)?;
+        }
+    }
+    for singleton in &mut module.singletons {
+        register_fields(&mut singleton.fields, next)?;
+    }
+    for submodule in &mut module.submodules {
+        register_field_declarations(submodule, next)?;
+    }
+    Ok(())
+}
+
 fn freeze_generic_binders(generics: &mut [GenericType], owner: nyar_types::ItemId) {
     for (ordinal, generic) in generics.iter_mut().enumerate() {
         if generic.binder.is_none() {
@@ -2278,6 +2325,7 @@ impl AstToHir {
             return Err(ParseError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
+        register_field_declarations(&mut hir, &mut 0)?;
         freeze_module_generic_binders(&mut hir);
         bind_declared_nominal_types(&mut hir)?;
         trait_binding::bind_trait_declarations(&mut hir)?;
@@ -3048,6 +3096,7 @@ pub(super) fn lower_parent(parent: &Parent) -> HirParent {
 
 fn lower_field(field: &FieldDeclaration) -> HirField {
     HirField {
+        id: None,
         name: Identifier::new(&field.name.name),
         doc: lower_documentation(&field.annotations),
         ty: lower_type_expression(&field.typing),

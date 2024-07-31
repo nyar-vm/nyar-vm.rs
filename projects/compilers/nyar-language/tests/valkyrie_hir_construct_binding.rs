@@ -9,6 +9,7 @@ use nyar_language::{
 
 fn field(name: &str) -> HirField {
     HirField {
+        id: None,
         name: Identifier::new(name),
         doc: HirDocumentation::default(),
         ty: ValkyrieType::Integer64 { signed: true },

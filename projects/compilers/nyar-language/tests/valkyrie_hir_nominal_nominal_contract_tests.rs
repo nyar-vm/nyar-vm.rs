@@ -21,6 +21,7 @@ fn option_unite() -> HirEnum {
             name: Identifier::new("Some"),
             doc: HirDocumentation::default(),
             fields: vec![HirField {
+                id: None,
                 name: Identifier::new("value"),
                 doc: HirDocumentation::default(),
                 ty: ValkyrieType::Integer32 { signed: true },
@@ -52,6 +53,7 @@ fn gadt_unite() -> HirEnum {
             name: Identifier::new("Literal"),
             doc: HirDocumentation::default(),
             fields: vec![HirField {
+                id: None,
                 name: Identifier::new("value"),
                 doc: HirDocumentation::default(),
                 ty: ValkyrieType::Float64,
@@ -67,6 +69,7 @@ fn gadt_unite() -> HirEnum {
             doc: HirDocumentation::default(),
             fields: vec![
                 HirField {
+                    id: None,
                     name: Identifier::new("condition"),
                     doc: HirDocumentation::default(),
                     ty: ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Expr"))), vec![ValkyrieType::Boolean]),
@@ -74,6 +77,7 @@ fn gadt_unite() -> HirEnum {
                     is_mutable: false,
                 },
                 HirField {
+                    id: None,
                     name: Identifier::new("then_branch"),
                     doc: HirDocumentation::default(),
                     ty: ValkyrieType::Apply(

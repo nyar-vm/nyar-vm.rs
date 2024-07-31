@@ -34,21 +34,24 @@ fn resolve_parent_declarations(module: &HirModule, parents: &[HirParent]) -> Vec
         .collect()
 }
 
-/// 将 `HirStruct` 降级为 `MirStruct`，保留字段类型供后端生成 `TypeDef` / `Field`。
+/// 将 `HirStruct` 降级为 `MirStruct`，保留字段身份与类型供后端生成 `TypeDef` / `Field`。
+///
+/// `FieldId` 只来自 HIR 注册阶段；缺失时记录结构化诊断，不得按顺序补造身份。
 pub(super) fn lower_struct(
     module: &HirModule,
     hir_struct: &crate::types::hir::HirStruct,
     nominal: usize,
-    field_start: usize,
+    diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirStruct {
     let fields = hir_struct
         .fields
         .iter()
-        .enumerate()
-        .map(|(index, field)| MirField {
-            id: nyar_types::FieldId::from_index((field_start + index) as u32).expect("field identity overflow"),
-            name: field.name.to_string(),
-            ty: field.ty.clone(),
+        .filter_map(|field| {
+            let Some(id) = field.id else {
+                diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
+                return None;
+            };
+            Some(MirField { id, name: field.name.to_string(), ty: field.ty.clone() })
         })
         .collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
@@ -64,29 +67,33 @@ pub(super) fn lower_struct(
     }
 }
 
-pub(super) fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
-    fn collect(module: &HirModule, declarations: &mut Vec<MirStruct>, next_nominal: &mut usize, next_field: &mut usize) {
+pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut Vec<MirDiagnostic>) -> Vec<MirStruct> {
+    fn collect(
+        module: &HirModule,
+        declarations: &mut Vec<MirStruct>,
+        next_nominal: &mut usize,
+        diagnostics: &mut Vec<MirDiagnostic>,
+    ) {
         for hir_struct in &module.structs {
-            declarations.push(lower_struct(module, hir_struct, *next_nominal, *next_field));
+            declarations.push(lower_struct(module, hir_struct, *next_nominal, diagnostics));
             *next_nominal += 1;
-            *next_field += hir_struct.fields.len();
         }
         for export in &module.imported_semantic_exports {
             for hir_struct in &export.structs {
-                declarations.push(lower_struct(module, hir_struct, *next_nominal, *next_field));
+                declarations.push(lower_struct(module, hir_struct, *next_nominal, diagnostics));
                 *next_nominal += 1;
-                *next_field += hir_struct.fields.len();
             }
         }
         for singleton in &module.singletons {
             let fields = singleton
                 .fields
                 .iter()
-                .enumerate()
-                .map(|(index, field)| MirField {
-                    id: nyar_types::FieldId::from_index((*next_field + index) as u32).expect("field identity overflow"),
-                    name: field.name.to_string(),
-                    ty: field.ty.clone(),
+                .filter_map(|field| {
+                    let Some(id) = field.id else {
+                        diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
+                        return None;
+                    };
+                    Some(MirField { id, name: field.name.to_string(), ty: field.ty.clone() })
                 })
                 .collect();
             declarations.push(MirStruct {
@@ -100,16 +107,14 @@ pub(super) fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
                 parent_declarations: Vec::new(),
             });
             *next_nominal += 1;
-            *next_field += singleton.fields.len();
         }
         for submodule in &module.submodules {
-            collect(submodule, declarations, next_nominal, next_field);
+            collect(submodule, declarations, next_nominal, diagnostics);
         }
     }
     let mut declarations = Vec::new();
     let mut next_nominal = 0usize;
-    let mut next_field = 0usize;
-    collect(module, &mut declarations, &mut next_nominal, &mut next_field);
+    collect(module, &mut declarations, &mut next_nominal, diagnostics);
     let mut unique = Vec::new();
     for declaration in declarations {
         if !declaration.declaration.is_some_and(|identity| unique.iter().any(|existing: &MirStruct| existing.declaration == Some(identity))) {

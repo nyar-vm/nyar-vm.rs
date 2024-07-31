@@ -372,6 +372,10 @@ impl AbstractPropertyRequirement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirField {
+    /// 字段的结构化身份；由 HIR 声明注册阶段分配，MIR 只能消费。
+    ///
+    /// `None` 仅表示源码 lowering 产物尚未注册，不得作为语义事实进入 MIR。
+    pub id: Option<nyar_types::FieldId>,
     /// The name of the field.
     pub name: Identifier,
     /// Documentation for the field.

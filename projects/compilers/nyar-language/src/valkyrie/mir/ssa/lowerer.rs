@@ -65,20 +65,12 @@ impl MirLowerer {
         let singleton_accessor_instances = crate::valkyrie::mir::singleton_accessor_instance_map(module);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
         let mut diagnostics = Vec::new();
-        let structs = collect_field_declarations(module);
+        let structs = collect_field_declarations(module, &mut diagnostics);
         let nominal_offset = u32::try_from(structs.len()).expect("aggregate nominal identity overflow");
-        let (mut sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset);
+        let (sum_types, flags_types) =
+            crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
-        let mut next_field = structs.iter().map(|declaration| declaration.fields.len()).sum::<usize>();
-        for sum in &mut sum_types {
-            for variant in &mut sum.variants {
-                for field in &mut variant.fields {
-                    field.id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
-                    next_field += 1;
-                }
-            }
-        }
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let mut external_calls = collect_external_call_contracts(module);
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {

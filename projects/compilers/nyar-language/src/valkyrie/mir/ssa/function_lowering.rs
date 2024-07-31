@@ -29,9 +29,9 @@ pub(super) fn lower_function_semantic(
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
-    let field_declarations = collect_field_declarations(module);
+    let field_declarations = collect_field_declarations(module, diagnostics);
     let nominal_offset = u32::try_from(field_declarations.len()).expect("aggregate nominal identity overflow");
-    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset);
+    let (sum_types, _) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset, diagnostics);
     value_semantics::ensure_unite_layouts_for_sums(aggregate_layouts, &sum_types);
     let mut builder = MirBuilder::new(
         aggregate_layouts.clone(),

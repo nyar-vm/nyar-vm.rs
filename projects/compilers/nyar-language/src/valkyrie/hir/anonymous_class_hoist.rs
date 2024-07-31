@@ -93,6 +93,7 @@ fn hoist_expr(expr: &mut HirExpr, context: &mut HoistContext, locals: &BTreeMap<
             let mut struct_fields = captures
                 .iter()
                 .map(|capture| HirField {
+                    id: None,
                     name: capture_field_name(&capture.identifier.name),
                     doc: HirDocumentation::default(),
                     ty: capture.ty.clone(),
@@ -103,6 +104,7 @@ fn hoist_expr(expr: &mut HirExpr, context: &mut HoistContext, locals: &BTreeMap<
 
             for (name, init) in fields.iter() {
                 struct_fields.push(HirField {
+                    id: None,
                     name: name.clone(),
                     doc: HirDocumentation::default(),
                     ty: infer_simple_expr_type(init, locals).unwrap_or(ValkyrieType::Unit),
