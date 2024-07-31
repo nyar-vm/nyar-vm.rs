@@ -1,6 +1,6 @@
 {
     "name": "@nyar/nyar",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "description": "Nyar VM host CLI (@vmz/commander) and orthogonal nyar-napi bindings.",
     "type": "module",
     "license": "MIT",
