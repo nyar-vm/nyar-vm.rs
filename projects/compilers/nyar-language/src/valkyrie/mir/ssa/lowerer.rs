@@ -135,6 +135,23 @@ impl MirLowerer {
             &host_runtime_callables,
             &mut diagnostics,
         ));
+        // 编译器内建宿主合同只在函数真正发射 begin/end phase 调用时进入外部调用闭包。
+        // 全局注册表存在本身不构成依赖，否则每个模块都会凭空多出未使用的导入。
+        let used_callable_instances = functions
+            .iter()
+            .flat_map(|function| function.blocks.iter())
+            .flat_map(|block| block.instructions.iter())
+            .filter_map(|instruction| match &instruction.kind {
+                MirOperation::Call { callee: MirOperand::Callable(instance), .. } => Some(*instance),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        external_calls.retain(|contract| match contract.instance {
+            Some(instance) if host_runtime_callables.values().any(|host| *host == instance) => {
+                used_callable_instances.contains(&instance)
+            }
+            _ => true,
+        });
         // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。
         let accessor_instances = crate::valkyrie::mir::collect_singleton_accessor_contracts(module);
         let local_floor = functions

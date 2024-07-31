@@ -16,7 +16,7 @@ use crate::{
         type_relation::{ParameterMatchResult, TypeRelationContext},
     },
     types::{
-        Identifier, NamePath, QualifiedName,
+        Identifier, NamePath,
         hir::{
             GenericBinderId, GenericType, HirAttribute, HirBlock, HirCallArgument, HirCallableDomain, HirDependencySemanticExport, HirEnum,
             HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction, HirIdentifier, HirLiteral, HirMatchArm, HirModule, HirParam,
@@ -2175,7 +2175,10 @@ fn try_resolve_call(
         .filter(|candidate| {
             candidate.owner.is_none()
                 && (symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
-                    || symbol_matches_imported_dependency_export(candidate, &callee_name))
+                    || symbol_matches_imported_dependency_export(candidate, &callee_name)
+                    // intrinsic 的身份由 [`IntrinsicId`] 承载，`builtin.array.push` 等路径只是
+                    // 语言内建的用户可见拼写，允许按末段命中后由结构化 intrinsic 合同裁决。
+                    || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name)))
         })
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
@@ -2297,11 +2300,12 @@ fn try_resolve_qualified_free_function(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
-    let canonical_text = QualifiedName::new(path.parts().to_vec()).to_string();
-    let canonical_path = NamePath::new(vec![Identifier::new(&canonical_text)]);
+    let canonical_key = crate::valkyrie::symbols::stable_symbol_key(path);
     let filtered = candidates
         .iter()
-        .filter(|candidate| candidate.owner.is_none() && candidate.symbol == canonical_path)
+        .filter(|candidate| {
+            candidate.owner.is_none() && crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol) == canonical_key
+        })
         .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;

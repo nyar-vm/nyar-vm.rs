@@ -243,7 +243,7 @@ micro answer(): i64 {
         panic!("expected resolved helper call");
     };
     assert_eq!(resolved.domain, HirCallableDomain::Function);
-    assert_eq!(resolved.symbol.to_string(), "main::answer");
+    assert_eq!(resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>(), vec!["main", "answer"]);
 }
 
 #[test]
@@ -268,7 +268,7 @@ micro invoke(): unit { library.console.emit(true) }
     else {
         panic!("qualified call must resolve");
     };
-    assert_eq!(resolved.symbol.to_string(), "library::console::emit");
+    assert_eq!(resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>(), vec!["library", "console", "emit"]);
 }
 
 #[test]
@@ -301,7 +301,7 @@ imply Client {
     else {
         panic!("qualified imply call must resolve");
     };
-    assert_eq!(resolved.symbol.to_string(), "library::console::emit");
+    assert_eq!(resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>(), vec!["library", "console", "emit"]);
 }
 
 #[test]

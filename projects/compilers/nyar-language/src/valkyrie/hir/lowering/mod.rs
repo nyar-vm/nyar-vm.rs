@@ -3168,7 +3168,16 @@ fn lower_trait_path_from_type(ty: &TypeExpression) -> NamePath {
 }
 
 fn lower_name_path(path: &AstNamePath) -> NamePath {
-    NamePath::new(path.parts.iter().map(|part| Identifier::new(&part.name)).collect())
+    // Oak 对 namespace library.console; 这类点分命名空间保留为单个语法片段，
+    // 而调用点路径按段拆分。HIR 的 NamePath 以段为身份单位，因此在语法到语义
+    // 边界统一按点号归一化，禁止让带分隔符的整串成为第二种名称形态。
+    let parts = path
+        .parts
+        .iter()
+        .flat_map(|part| part.name.split('.').filter(|segment| !segment.is_empty()))
+        .map(Identifier::new)
+        .collect();
+    NamePath::new(parts)
 }
 
 fn default_module_name() -> NamePath {
