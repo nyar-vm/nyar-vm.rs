@@ -17,6 +17,7 @@ pub(super) fn lower_singleton_method_functions(
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
+    host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -32,6 +33,7 @@ pub(super) fn lower_singleton_method_functions(
                 member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
@@ -48,6 +50,7 @@ pub(super) fn lower_singleton_method_functions(
                 member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
@@ -64,6 +67,7 @@ pub(super) fn lower_singleton_method_functions(
                 member_dispatch,
                 Some(ValkyrieType::Named(singleton.name.clone())),
                 impl_type_arguments_from_generics(&singleton.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, finalizer.name);
@@ -80,6 +84,7 @@ pub(super) fn lower_impl_method_functions(
     effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
+    host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
@@ -98,6 +103,7 @@ pub(super) fn lower_impl_method_functions(
                 member_dispatch,
                 Some(impl_block.target.clone()),
                 impl_type_arguments_from_generics(&impl_block.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{type_name}.{}", method.name);
@@ -116,6 +122,7 @@ pub(super) fn lower_impl_method_functions(
                 member_dispatch,
                 Some(ValkyrieType::Named(item.name.clone())),
                 impl_type_arguments_from_generics(&item.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", item.name, method.name);
@@ -134,6 +141,7 @@ pub(super) fn lower_impl_method_functions(
                 member_dispatch,
                 Some(ValkyrieType::Named(trait_def.name.clone())),
                 impl_type_arguments_from_generics(&trait_def.generics),
+                host_runtime_callables,
                 diagnostics,
             );
             mir_function.display_symbol = format!("{}.{}", trait_def.name, method.name);

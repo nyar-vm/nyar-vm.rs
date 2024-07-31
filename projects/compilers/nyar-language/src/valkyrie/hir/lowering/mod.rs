@@ -805,20 +805,26 @@ impl ValkyrieCompiler {
         let mut hir_groups = self.resolve_source_groups_with_host_bindings(groups, host_bindings, arch)?;
         let final_index = hir_groups.len().checked_sub(1).ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        // monomorph 必须接在整份闭包 HIR 实例号之后，避免与后包声明实例撞号。
+        let all_hirs = std::iter::once(&final_hir).chain(hir_groups.iter()).collect::<Vec<_>>();
+        let host_runtime = crate::valkyrie::mir::ssa::contracts::allocate_program_host_runtime(&all_hirs);
+        // monomorph 与 host runtime 均接在整份闭包 HIR 实例池之后，避免跨组撞号。
         let mut mono_counter = Some(
-            std::iter::once(&final_hir)
-                .chain(hir_groups.iter())
-                .filter_map(max_hir_callable_instance_index)
+            host_runtime
+                .by_name
+                .values()
+                .map(|instance| instance.index())
                 .max()
                 .map(|index| index.saturating_add(1))
                 .unwrap_or(0),
         );
         let mut mir_groups = hir_groups
             .iter()
-            .map(|hir| crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(hir, &mut mono_counter))
+            .map(|hir| {
+                crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter_and_host(hir, &mut mono_counter, Some(&host_runtime), false)
+            })
             .collect::<Vec<_>>();
-        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter(&final_hir, &mut mono_counter);
+        let mut final_mir =
+            crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter_and_host(&final_hir, &mut mono_counter, Some(&host_runtime), true);
         // 程序模块是全部入口组共同的链接根宿主：非末尾入口组的 `[export]` / `[main]`
         // 必须按已冻结合同身份并入，而不是只让最后一个组决定产物表面。
         for index in entry_indices {
@@ -1598,8 +1604,69 @@ fn propagate_impl_owner_type_generics(module: &mut HirModule) {
     }
 }
 
+/// 整份 HIR 模块（含子模块）已冻结 `ItemId` 的最大下标。
+pub(crate) fn max_hir_declaration_index(module: &HirModule) -> Option<u32> {
+    fn consider(declaration: Option<nyar_types::ItemId>, max: &mut Option<u32>) {
+        if let Some(declaration) = declaration {
+            let index = declaration.index();
+            *max = Some(max.map_or(index, |current| current.max(index)));
+        }
+    }
+    fn walk(module: &HirModule, max: &mut Option<u32>) {
+        for function in &module.functions {
+            consider(function.declaration, max);
+        }
+        for structure in &module.structs {
+            consider(structure.constructor_declaration, max);
+            for method in &structure.methods {
+                consider(method.declaration, max);
+            }
+            for property in &structure.properties {
+                for accessor in property.getter.iter().chain(property.setter.iter()) {
+                    consider(accessor.declaration, max);
+                }
+            }
+        }
+        for enum_definition in &module.enums {
+            consider(enum_definition.declaration, max);
+            for variant in &enum_definition.variants {
+                consider(variant.declaration, max);
+            }
+        }
+        for singleton in &module.singletons {
+            for method in
+                singleton.methods.iter().chain(singleton.constructor.iter().map(Box::as_ref)).chain(singleton.finalizer.iter().map(Box::as_ref))
+            {
+                consider(method.declaration, max);
+            }
+        }
+        for trait_definition in &module.traits {
+            consider(trait_definition.declaration, max);
+            for method in trait_definition.methods.iter().chain(trait_definition.default_methods.iter()) {
+                consider(method.declaration, max);
+            }
+        }
+        for implementation in &module.impls {
+            for method in &implementation.methods {
+                consider(method.declaration, max);
+            }
+        }
+        for widget in &module.widgets {
+            for method in &widget.methods {
+                consider(method.declaration, max);
+            }
+        }
+        for submodule in &module.submodules {
+            walk(submodule, max);
+        }
+    }
+    let mut max = None;
+    walk(module, &mut max);
+    max
+}
+
 /// 整份 HIR 模块（含子模块）已冻结 callable `ItemInstanceId` 的最大下标。
-fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
+pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32> {
     fn consider(instance: Option<nyar_types::ItemInstanceId>, max: &mut Option<u32>) {
         if let Some(instance) = instance {
             let index = instance.index();

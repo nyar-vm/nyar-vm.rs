@@ -25,6 +25,7 @@ pub(super) fn lower_function_semantic(
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     impl_owner_type: Option<ValkyrieType>,
     impl_type_arguments: Vec<ValkyrieType>,
+    host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
 ) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
@@ -40,6 +41,7 @@ pub(super) fn lower_function_semantic(
         callable_returns.clone(),
         member_dispatch.to_vec(),
         impl_owner_type.clone(),
+        host_runtime_callables.clone(),
     );
     // Option/Result 身份只来自 HIR 已冻结的 call.sum_owner / Nominal{ItemId}，禁止按短名缓存。
     builder.option_declaration = None;

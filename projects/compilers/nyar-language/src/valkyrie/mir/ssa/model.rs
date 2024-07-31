@@ -527,17 +527,6 @@ pub enum MirValueOrigin {
     Temporary,
 }
 
-/// 声明期无法闭合、待单态化按完整代入选择 witness 的调用要求。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MirCallRequirement {
-    /// 待代入的接收者类型（通常是泛型 binder）。
-    pub subject: ValkyrieType,
-    /// 成员选择名；运算符使用声明侧成员名。
-    pub member: crate::Identifier,
-    /// 已声明 bound 的 trait 身份；无 trait 的成员/运算符为 `None`。
-    pub trait_declaration: Option<nyar_types::ItemId>,
-}
-
 /// `MIR` 操作数。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirOperand {
@@ -547,10 +536,6 @@ pub enum MirOperand {
     Constant(MirConstant),
     /// Compiler 在依赖闭包冻结后分配的 callable identity。
     Callable(ItemInstanceId),
-    /// 待单态化解析的成员要求；不得进入 Canonical 成功值。
-    Requirement(MirCallRequirement),
-    /// HIR/链接阶段尚未完成 identity 冻结的结构化名称；不得进入 Canonical 成功值。
-    Symbol(NamePath),
 }
 
 /// `MIR` 常量。
@@ -675,11 +660,12 @@ pub enum MirOperation {
     },
     /// 调用指令，统一语义为 `Invoke(callee, arguments)`。
     Call {
-        /// 可调用操作数。过渡期日后成为 `Invoke.callee`（`Item` | `Value`）。
-        /// 不得携带 dispatch / witness / intrinsic / generic 旁路。
+        /// 可调用操作数：`Callable(ItemInstanceId)` 或函数值 `Value`。
         callee: MirOperand,
         /// 语义实参（有 receiver 时显式为第 0 个）。
         arguments: Vec<MirOperand>,
+        /// 单态化前待闭合的 HIR 成员要求；进入 Canonical 前必须清空并冻结 `callee`。
+        deferred_member: Option<crate::types::hir::HirCallRequirement>,
     },
     /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {

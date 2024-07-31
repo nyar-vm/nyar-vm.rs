@@ -103,6 +103,8 @@ fn gadt_unite() -> HirEnum {
 fn module_with_imported_unite(enum_def: HirEnum) -> HirModule {
     HirModule {
         name: NamePath::new(vec![Identifier::new("consumer")]),
+        dependency_key: "consumer".into(),
+        source_path: "consumer.v".into(),
         doc: HirDocumentation::default(),
         imports: vec![],
         warnings: Vec::new(),

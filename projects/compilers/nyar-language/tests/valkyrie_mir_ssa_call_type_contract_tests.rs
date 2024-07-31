@@ -82,7 +82,7 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         let mut matches = 0;
         for function in &mir.functions {
             for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-                if let MirOperation::Call { callee: MirOperand::Callable(callee), arguments } = &instruction.kind {
+                if let MirOperation::Call { callee: MirOperand::Callable(callee), arguments, deferred_member: None } = &instruction.kind {
                     if *callee == instance {
                         matches += 1;
                         assert!(arguments.is_empty(), "无 self 声明不得增加接收者");
@@ -129,7 +129,9 @@ micro apply(left: Number, right: Number) -> bool { left + right }
         .iter()
         .flat_map(|block| &block.instructions)
         .filter_map(|instruction| match &instruction.kind {
-            MirOperation::Call { callee: MirOperand::Callable(callee), arguments } if *callee == instance => Some((instruction, arguments)),
+            MirOperation::Call { callee: MirOperand::Callable(callee), arguments, deferred_member: None } if *callee == instance => {
+                Some((instruction, arguments))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();

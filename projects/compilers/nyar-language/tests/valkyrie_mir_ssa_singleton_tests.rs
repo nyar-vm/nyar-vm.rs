@@ -44,7 +44,6 @@ fn field_id(mir: &MirModule, name: &str) -> nyar_types::FieldId {
 /// Returns the callee diagnostic label if the instruction is a call.
 fn call_callee_path(instruction: &MirInstruction, mir: &MirModule) -> Option<String> {
     match &instruction.kind {
-        MirOperation::Call { callee: MirOperand::Symbol(path), .. } => Some(path.to_string()),
         MirOperation::Call { callee: MirOperand::Callable(instance), .. } => mir.callable_symbols.get(instance).cloned(),
         _ => None,
     }
@@ -435,12 +434,6 @@ imply SwissTable<K, V> {
                     MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => Some(nyar_language::types::hir::ValkyrieType::Utf8),
                     MirOperand::Callable(identity) => {
                         panic!("block {} jump to {} arg {} contains callable identity {:?}", block.id.0, target.0, index, identity);
-                    }
-                    MirOperand::Symbol(symbol) => {
-                        panic!("block {} jump to {} arg {} is bare symbol {:?}", block.id.0, target.0, index, symbol);
-                    }
-                    MirOperand::Requirement(requirement) => {
-                        panic!("block {} jump to {} arg {} is an unresolved requirement {:?}", block.id.0, target.0, index, requirement);
                     }
                 };
                 assert!(ty.is_some(), "block {} jump to {} arg {} has no SSA type: {:?}", block.id.0, target.0, index, argument);

@@ -10,7 +10,8 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::types::hir::{GenericBinderId, HirModule, ValkyrieType};
 
-use super::{MirCallRequirement, MirDiagnostic, MirFunction, MirOperand, MirOperation, hir_identity::nominal_type_name};
+use super::{MirDiagnostic, MirFunction, MirOperand, MirOperation, hir_identity::nominal_type_name};
+use crate::types::hir::HirCallRequirement;
 
 /// 声明期已冻结的成员分派条目。
 ///
@@ -244,7 +245,7 @@ type MonomorphCache = BTreeMap<(ItemInstanceId, BTreeMap<GenericBinderId, Valkyr
 ///
 /// `seed_pool` 提供已 lowering 的依赖模块泛型种子：consumer 的调用点必须能在
 /// 完整源码闭包内实例化依赖函数，不能因为种子不在本模块而跳过。
-/// `dispatch` 是声明期冻结的成员分派表，用于解析 [`MirOperand::Requirement`]。
+/// `dispatch` 是声明期冻结的成员分派表，用于解析 `Call.deferred_member`。
 pub(super) fn materialize_generic_call_instances(
     functions: &mut Vec<MirFunction>,
     next_instance: &mut u32,
@@ -291,8 +292,11 @@ pub(super) fn materialize_generic_call_instances(
                 .and_then(|result| functions[cursor].value_types.get(result).cloned());
             match resolve_requirement_callee(&requirement, result_type.as_ref(), functions, seed_pool, dispatch, next_instance, &mut cache) {
                 Ok(mono) => {
-                    if let MirOperation::Call { callee, .. } = &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind {
+                    if let MirOperation::Call { callee, deferred_member, .. } =
+                        &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind
+                    {
                         *callee = MirOperand::Callable(mono);
+                        *deferred_member = None;
                     }
                 }
                 Err(detail) => diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: detail }),
@@ -330,7 +334,7 @@ fn instantiate_seed(
 ///
 /// 0 个或多个匹配都必须结构化失败；不得按同名候选、默认 impl 或目标特判补选。
 fn resolve_requirement_callee(
-    requirement: &MirCallRequirement,
+    requirement: &HirCallRequirement,
     result_type: Option<&ValkyrieType>,
     functions: &mut Vec<MirFunction>,
     seed_pool: &[MirFunction],
@@ -377,11 +381,11 @@ fn resolve_requirement_callee(
         .ok_or_else(|| format!("member `{}` witness cannot be fully substituted", requirement.member))
 }
 
-fn collect_requirement_sites(function: &MirFunction) -> Vec<(usize, usize, MirCallRequirement)> {
+fn collect_requirement_sites(function: &MirFunction) -> Vec<(usize, usize, HirCallRequirement)> {
     let mut sites = Vec::new();
     for (block_index, block) in function.blocks.iter().enumerate() {
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            if let MirOperation::Call { callee: MirOperand::Requirement(requirement), .. } = &instruction.kind {
+            if let MirOperation::Call { deferred_member: Some(requirement), .. } = &instruction.kind {
                 sites.push((block_index, instruction_index, requirement.clone()));
             }
         }
@@ -397,7 +401,7 @@ fn collect_instantiation_sites(
     let mut sites = Vec::new();
     for (block_index, block) in function.blocks.iter().enumerate() {
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            let MirOperation::Call { callee: MirOperand::Callable(seed), arguments } = &instruction.kind
+            let MirOperation::Call { callee: MirOperand::Callable(seed), arguments, deferred_member: None } = &instruction.kind
             else {
                 continue;
             };
@@ -500,7 +504,7 @@ fn specialize_operation(operation: &mut MirOperation, substitutions: &BTreeMap<G
         }
         // 种子内的延迟成员要求随种子代入改写接收者；未闭合的要求保留到下一次
         // 实例化，由分派表按完整代入选择 witness。
-        MirOperation::Call { callee: MirOperand::Requirement(requirement), .. } => {
+        MirOperation::Call { deferred_member: Some(requirement), .. } => {
             requirement.subject = apply_type_substitution(&requirement.subject, substitutions);
         }
         _ => {}

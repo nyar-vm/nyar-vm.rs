@@ -102,7 +102,7 @@ impl MirBuilder {
             });
             return MirOperand::Constant(MirConstant::Unit);
         };
-        let value = self.push_call(MirOperand::Callable(*instance), Vec::new());
+        let value = self.push_call(MirOperand::Callable(*instance), Vec::new(), None);
         self.value_types.insert(value, ValkyrieType::Named(Identifier::new(singleton_name)));
         MirOperand::Value(value)
     }
@@ -172,8 +172,6 @@ pub(super) fn infer_builder_operand_type(operand: &MirOperand, value_types: &BTr
         MirOperand::Value(value_ref) => value_types.get(value_ref).cloned(),
         MirOperand::Constant(constant) => infer_builder_constant_type(constant),
         MirOperand::Callable(_) => None,
-        MirOperand::Requirement(_) => None,
-        MirOperand::Symbol(_) => None,
     }
 }
 
@@ -371,12 +369,8 @@ pub(super) fn lower_callee_operand(
             return None;
         }
         // 未声明 bound 的泛型接收者：保留结构化要求，由单态化按完整代入选择 witness。
-        if let Some(requirement) = &resolved.requirement {
-            return Some(MirOperand::Requirement(super::MirCallRequirement {
-                subject: requirement.subject.clone(),
-                member: requirement.member.clone(),
-                trait_declaration: requirement.trait_declaration,
-            }));
+        if resolved.requirement.is_some() {
+            return None;
         }
         if let Some(instance) = resolved.instance {
             return Some(MirOperand::Callable(instance));
@@ -384,7 +378,8 @@ pub(super) fn lower_callee_operand(
         if resolved.declaration.is_some() {
             return None;
         }
-        return Some(MirOperand::Symbol(resolved.symbol.clone()));
+        builder.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved.symbol.to_string() });
+        return None;
     }
     match &expr.kind {
         HirExprKind::Path(_) | HirExprKind::Variable(_) | HirExprKind::FieldAccess { .. } => None,
@@ -398,13 +393,7 @@ pub(super) fn lower_callee_operand(
 /// 源码声明已有实例身份时只能使用 `Callable`；声明存在但实例缺失是合同错误，
 /// 不能退回名称。只有明确没有源码声明的外部合同才保留 ABI 符号。
 pub(super) fn lower_resolved_callee(resolved: &crate::types::hir::HirResolvedCall) -> Option<MirOperand> {
-    if let Some(instance) = resolved.instance {
-        return Some(MirOperand::Callable(instance));
-    }
-    if resolved.declaration.is_some() {
-        return None;
-    }
-    Some(MirOperand::Symbol(resolved.symbol.clone()))
+    resolved.instance.map(MirOperand::Callable)
 }
 
 /// 尝试将表达式解析为 `NamePath`。

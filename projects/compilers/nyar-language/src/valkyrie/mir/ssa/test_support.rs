@@ -38,6 +38,7 @@ impl TestMirBuilder {
                 super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
                 Vec::new(),
                 None,
+                BTreeMap::new(),
             ),
         }
     }
@@ -217,6 +218,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         &[],
         None,
         Vec::new(),
+        &BTreeMap::new(),
         &mut Vec::new(),
     )
 }

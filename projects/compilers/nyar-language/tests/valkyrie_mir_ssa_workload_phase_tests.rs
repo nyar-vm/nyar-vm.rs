@@ -3,6 +3,15 @@
 use nyar_language::{types::SourceID, valkyrie::hir::ValkyrieCompiler};
 
 use nyar_language::valkyrie::mir::ssa::{MirConstant, MirFunction, MirLowerer, MirModule, MirOperand, MirOperation};
+use nyar_types::ItemInstanceId;
+
+fn host_call_instance(mir: &MirModule, name: &str) -> ItemInstanceId {
+    mir.external_calls
+        .iter()
+        .find(|contract| contract.symbol.name().as_str() == name)
+        .and_then(|contract| contract.instance)
+        .unwrap_or_else(|| panic!("missing host contract `{name}`"))
+}
 
 fn compile_mir(source: &str) -> MirModule {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9501 }).compile_source(source).expect("compile");
@@ -30,6 +39,8 @@ micro handle() -> i32 {
     );
     let function = find_function(&mir, "handle");
     let entry = &function.blocks[function.entry.0 as usize];
+    let begin_phase = host_call_instance(&mir, "begin_phase");
+    let end_phase = host_call_instance(&mir, "end_phase");
 
     let mut saw_begin = false;
     let mut saw_utf8_request = false;
@@ -38,11 +49,8 @@ micro handle() -> i32 {
             MirOperation::LoadConstant { constant: MirConstant::Utf8(text), .. } if text == "request" => {
                 saw_utf8_request = true;
             }
-            MirOperation::Call { callee: MirOperand::Symbol(path), .. } => {
-                let name = path.to_string();
-                if name.ends_with("begin_phase") || name == "begin_phase" {
-                    saw_begin = true;
-                }
+            MirOperation::Call { callee: MirOperand::Callable(instance), deferred_member: None, .. } if *instance == begin_phase => {
+                saw_begin = true;
             }
             _ => {}
         }
@@ -53,9 +61,8 @@ micro handle() -> i32 {
     let mut saw_end = false;
     for block in &function.blocks {
         for instruction in &block.instructions {
-            if let MirOperation::Call { callee: MirOperand::Symbol(path), .. } = &instruction.kind {
-                let name = path.to_string();
-                if name.ends_with("end_phase") || name == "end_phase" {
+            if let MirOperation::Call { callee: MirOperand::Callable(instance), deferred_member: None, .. } = &instruction.kind {
+                if *instance == end_phase {
                     saw_end = true;
                 }
             }

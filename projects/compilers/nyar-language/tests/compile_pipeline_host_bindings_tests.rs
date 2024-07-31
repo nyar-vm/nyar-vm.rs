@@ -78,7 +78,11 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
                 label: "entry".into(),
                 parameters: Vec::new(),
                 instructions: vec![MirInstruction::from_operation_with_results(
-                    MirOperation::Call { callee: MirOperand::Callable(contract_instance), arguments: vec![MirOperand::Value(MirValueRef(0))] },
+                    MirOperation::Call {
+                        callee: MirOperand::Callable(contract_instance),
+                        arguments: vec![MirOperand::Value(MirValueRef(0))],
+                        deferred_member: None,
+                    },
                     vec![],
                 )],
                 terminator: MirTerminator::Return { value: Some(MirOperand::Value(MirValueRef(0))) },
@@ -128,7 +132,11 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
     let call = module.functions[0].blocks[0].instructions[0].kind.clone();
     assert_eq!(
         call,
-        MirOperation::Call { callee: MirOperand::Callable(provider_instance), arguments: vec![MirOperand::Value(MirValueRef(0))] }
+        MirOperation::Call {
+            callee: MirOperand::Callable(provider_instance),
+            arguments: vec![MirOperand::Value(MirValueRef(0))],
+            deferred_member: None,
+        }
     );
     assert!(module.external_calls.is_empty());
     assert!(!module.callable_symbols.contains_key(&contract_instance));
@@ -190,7 +198,11 @@ fn host_provider_ignores_decoy_with_same_display_symbol() {
     let call = module.functions[0].blocks[0].instructions[0].kind.clone();
     assert_eq!(
         call,
-        MirOperation::Call { callee: MirOperand::Callable(provider_instance), arguments: vec![MirOperand::Value(MirValueRef(0))] }
+        MirOperation::Call {
+            callee: MirOperand::Callable(provider_instance),
+            arguments: vec![MirOperand::Value(MirValueRef(0))],
+            deferred_member: None,
+        }
     );
 }
 

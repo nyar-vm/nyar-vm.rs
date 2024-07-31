@@ -125,7 +125,11 @@ micro declaration(message: utf8): unit;
     let semantic_mir = nyar_language::valkyrie::mir::MirLowerer::lower_module_semantic(
         &compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"),
     );
-    assert_eq!(semantic_mir.external_calls.len(), 1);
+    assert_eq!(
+        semantic_mir.external_calls.iter().filter(|contract| contract.symbol.name().as_str() == "declaration").count(),
+        1,
+        "user host contracts must not be conflated with compiler workload phase callables"
+    );
 }
 
 #[test]

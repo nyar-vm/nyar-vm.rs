@@ -1,6 +1,6 @@
 use nyar_language::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
-    types::hir::ValkyrieType,
+    types::hir::{HirCallRequirement, ValkyrieType},
     valkyrie::{
         compile_pipeline::canonical_program_from_semantic_mir,
         mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},
@@ -106,7 +106,7 @@ fn producer_preserves_exact_function_identity_and_type_shape() {
     let program = canonical_program_from_semantic_mir(&module).expect("精确单态函数应进入 canonical");
     assert_eq!(program.linked.item_instances.len(), 1);
     assert_eq!(program.mir.functions.len(), 1);
-    assert_eq!(program.linked.callable_names.values().map(ToString::to_string).collect::<Vec<_>>(), vec!["main"]);
+    assert_eq!(program.linked.callable_names.values().map(ToString::to_string).collect::<Vec<_>>(), vec!["demo::main"]);
     assert!(program.linked.types.values().any(|record| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
 }
 
@@ -161,7 +161,15 @@ fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
 #[test]
 fn producer_rejects_unresolved_callable_without_name_fallback() {
     let module = module_with(
-        MirOperation::Call { callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("new")])), arguments: Vec::new() },
+        MirOperation::Call {
+            callee: MirOperand::Constant(MirConstant::Unit),
+            arguments: Vec::new(),
+            deferred_member: Some(HirCallRequirement {
+                subject: ValkyrieType::Named(Identifier::new("T")),
+                member: Identifier::new("new"),
+                trait_declaration: None,
+            }),
+        },
         None,
         BTreeMap::new(),
     );

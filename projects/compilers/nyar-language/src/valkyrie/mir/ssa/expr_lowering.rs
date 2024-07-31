@@ -20,12 +20,7 @@ impl MirBuilder {
     pub(super) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
         // 声明冻结的 intrinsic 身份优先；符号路径反查只作为迁移期通道，服务于
         // 尚未带结构化身份的私有种子（`__array_len` 等）。
-        resolved.and_then(|call| call.intrinsic).or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol))).or_else(|| {
-            match callee {
-                MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
-                _ => None,
-            }
-        })
+        resolved.and_then(|call| call.intrinsic).or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)))
     }
 
     fn try_lower_ref_deref_intrinsic(
@@ -537,28 +532,6 @@ impl MirBuilder {
                 Some(ValkyrieType::Function(func)) => Some(func.as_ref().clone()),
                 _ => None,
             },
-            MirOperand::Symbol(path) if path.parts().len() == 1 => {
-                let name = path.parts()[0].as_str();
-                if let Some(MirOperand::Value(value)) = self.bindings.get(name) {
-                    return match self.value_types.get(value) {
-                        Some(ValkyrieType::Function(func)) => Some(func.as_ref().clone()),
-                        _ => None,
-                    };
-                }
-                self.values.iter().find_map(|value| match &value.origin {
-                    MirValueOrigin::Parameter { name: n, .. }
-                    | MirValueOrigin::LetBinding { name: n }
-                    | MirValueOrigin::BlockParameter { name: n, .. }
-                        if n == name =>
-                    {
-                        match self.value_types.get(&value.id) {
-                            Some(ValkyrieType::Function(func)) => Some(func.as_ref().clone()),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                })
-            }
             _ => None,
         }
     }
@@ -620,7 +593,8 @@ impl MirBuilder {
                 if let Some(bound) = self.bindings.get(identifier.name.as_str()).cloned() {
                     return bound;
                 }
-                MirOperand::Symbol(NamePath::new(vec![identifier.name.clone()]))
+                self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: identifier.name.to_string() });
+                MirOperand::Constant(MirConstant::Unit)
             }
             HirExprKind::Path(path) => {
                 let value = self.next_value(MirValueOrigin::Path);
@@ -720,13 +694,9 @@ impl MirBuilder {
                         }
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
-                    // 未声明 bound 的泛型接收者：保留结构化要求，由单态化按完整代入选择 witness。
-                    let callee = if let Some(requirement) = &resolved_call.requirement {
-                        MirOperand::Requirement(super::MirCallRequirement {
-                            subject: requirement.subject.clone(),
-                            member: requirement.member.clone(),
-                            trait_declaration: requirement.trait_declaration,
-                        })
+                    let deferred_member = resolved_call.requirement.clone();
+                    let callee = if deferred_member.is_some() {
+                        MirOperand::Constant(MirConstant::Unit)
                     }
                     else {
                         let Some(callee) = lower_resolved_callee(resolved_call)
@@ -737,11 +707,13 @@ impl MirBuilder {
                         };
                         callee
                     };
-                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
+                    if deferred_member.is_none() {
+                        if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
+                            return operand;
+                        }
                     }
                     let return_type = self.return_type_for_resolved_call(&callee, resolved_call);
-                    return self.push_call_returning(callee, arguments, return_type);
+                    return self.push_call_returning(callee, arguments, return_type, deferred_member);
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -774,7 +746,7 @@ impl MirBuilder {
                         let return_type =
                             resolved.as_ref().expect("function-typed field call requires resolved call contract").return_type.clone();
                         // `unit` ?????? value ??BPHYS001???
-                        return self.push_call_returning(MirOperand::Value(callee_value), arguments, return_type);
+                        return self.push_call_returning(MirOperand::Value(callee_value), arguments, return_type, None);
                     }
 
                     // `obj.field.method()` where `obj` is not yet in bindings (e.g. nested
@@ -800,7 +772,7 @@ impl MirBuilder {
                     };
                     let return_type = self.return_type_for_resolved_call(&callee, resolved_call);
                     // `unit` ?????? value ??BPHYS001???
-                    return self.push_call_returning(callee, arguments, return_type);
+                    return self.push_call_returning(callee, arguments, return_type, None);
                 }
                 let is_prefix_not = callee_name_matches(&callee.kind, "prefix !");
                 let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
@@ -873,7 +845,12 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 }
-                let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
+                let deferred_member = resolved.as_ref().and_then(|call| call.requirement.clone());
+                let callee = if deferred_member.is_some() {
+                    MirOperand::Constant(MirConstant::Unit)
+                }
+                else {
+                    match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
                     None if resolved.as_ref().is_some_and(|call| call.domain == HirCallableDomain::Constructor) => {
                         let call = resolved.as_ref().expect("constructor call");
@@ -893,24 +870,24 @@ impl MirBuilder {
                         });
                         return MirOperand::Constant(MirConstant::Unit);
                     }
+                    }
                 };
-                if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                    return operand;
+                if deferred_member.is_none() {
+                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
+                        return operand;
+                    }
+                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
+                    }
                 }
                 let function_ty = self.function_type_of_callee(&callee);
-                if arguments.len() == 1 {
-                    if let MirOperand::Symbol(path) = &callee {
-                        let _surface = path.parts().last().map(|part| part.as_str());
-                        if self.is_option_is_some_call(resolved.as_ref()) && self.option_shaped_type(&arguments[0], None, None).is_some() {
-                            if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone(), resolved.as_ref()) {
-                                return operand;
-                            }
+                if arguments.len() == 1 && deferred_member.is_none() {
+                    if self.is_option_is_some_call(resolved.as_ref()) && self.option_shaped_type(&arguments[0], None, None).is_some() {
+                        if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone(), resolved.as_ref()) {
+                            return operand;
                         }
                     }
                 }
@@ -927,7 +904,7 @@ impl MirBuilder {
                     return MirOperand::Constant(MirConstant::Unit);
                 };
                 let return_type = super::expr_helpers::refine_call_return_type(return_type, expected_type);
-                self.push_call_returning(callee, arguments, return_type)
+                self.push_call_returning(callee, arguments, return_type, deferred_member)
             }
             HirExprKind::ArrayNew { element_type, length } => {
                 let length_operand = self.lower_expr_to_operand(length);

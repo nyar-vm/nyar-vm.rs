@@ -2,12 +2,62 @@
 
 use super::model::*;
 use crate::types::{
-    Identifier,
-    hir::{HirModule, parse_export_spec_from_annotations, resolve_attribute_id},
+    Identifier, NamePath,
+    hir::{HirModule, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id},
 };
 use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
-use nyar_types::builtin_attribute;
+use nyar_types::{ExternalImportLink, ItemInstanceId, builtin_attribute};
 use std::collections::BTreeMap;
+
+const HOST_RUNTIME_DEPENDENCY_KEY: &str = "__compiler_host_runtime__";
+const HOST_RUNTIME_SOURCE_PATH: &str = "__host_runtime.v";
+
+fn host_runtime_declaration_key(name: &str) -> crate::valkyrie::semantic_closure::DeclarationKey {
+    crate::valkyrie::semantic_closure::micro_declaration_key(HOST_RUNTIME_DEPENDENCY_KEY, HOST_RUNTIME_SOURCE_PATH, &[], name)
+}
+
+/// 编译器内建的 workload phase 宿主调用；实例身份在 lowering 前冻结。
+pub(crate) struct HostRuntimeCallables {
+    pub contracts: Vec<MirExternalCallContract>,
+    pub by_name: BTreeMap<String, ItemInstanceId>,
+}
+
+/// 跨源码组程序闭包：在全部 HIR 实例池之后分配唯一 host runtime 身份。
+pub(crate) fn allocate_program_host_runtime(modules: &[&HirModule]) -> HostRuntimeCallables {
+    let declaration_base = modules
+        .iter()
+        .filter_map(|module| crate::valkyrie::hir::lowering::max_hir_declaration_index(module))
+        .max()
+        .map(|index| index.saturating_add(1))
+        .unwrap_or(0);
+    let instance_base = modules
+        .iter()
+        .filter_map(|module| crate::valkyrie::hir::lowering::max_hir_callable_instance_index(module))
+        .max()
+        .map(|index| index.saturating_add(1))
+        .unwrap_or(0);
+    collect_host_runtime_callables(declaration_base, instance_base)
+}
+
+pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_base: u32) -> HostRuntimeCallables {
+    let mut contracts = Vec::new();
+    let mut by_name = BTreeMap::new();
+    for (offset, name) in [(0u32, "begin_phase"), (1u32, "end_phase")] {
+        let declaration = nyar_types::ItemId::from_index(declaration_base + offset).expect("host runtime declaration");
+        let instance = ItemInstanceId::from_index(instance_base + offset).expect("host runtime instance");
+        by_name.insert(name.to_string(), instance);
+        contracts.push(MirExternalCallContract {
+            declaration_key: Some(host_runtime_declaration_key(name)),
+            declaration: Some(declaration),
+            instance: Some(instance),
+            symbol: NamePath::new(vec![Identifier::new(name)]),
+            link: ExternalImportLink::host(None, vec![name.to_string()]),
+            parameter_types: vec![ValkyrieType::Utf8],
+            return_type: ValkyrieType::Unit,
+        });
+    }
+    HostRuntimeCallables { contracts, by_name }
+}
 
 pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallContract> {
     fn collect_abstract_functions(module: &HirModule, out: &mut Vec<MirExternalCallContract>) {

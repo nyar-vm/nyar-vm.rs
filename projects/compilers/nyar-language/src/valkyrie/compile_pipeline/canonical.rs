@@ -669,14 +669,14 @@ fn lower_operation(
         _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")),
     };
     match operation {
-        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke {
+        MirOperation::Call { callee: MirOperand::Callable(identity), arguments, deferred_member: None } => Ok(CanonicalOperation::Invoke {
             callee: CanonicalCallee::Item(*identity),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::Call { callee: MirOperand::Symbol(_), .. } => {
-            Err(error_without_module("CAN007", "Semantic MIR 仍包含未冻结的 callable 名称"))
+        MirOperation::Call { deferred_member: Some(_), .. } => {
+            Err(error_without_module("CAN007", "Semantic MIR 仍包含未闭合的成员要求"))
         }
-        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke {
+        MirOperation::Call { callee: MirOperand::Value(callee), arguments, deferred_member: None } => Ok(CanonicalOperation::Invoke {
             callee: CanonicalCallee::Value(
                 MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?,
             ),

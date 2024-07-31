@@ -2,7 +2,10 @@
 
 use super::{
     callable_types::collect_callable_return_types,
-    contracts::{collect_external_call_contracts, collect_semantic_fragments, collect_surface_contracts},
+    contracts::{
+        HostRuntimeCallables, collect_external_call_contracts, collect_host_runtime_callables, collect_semantic_fragments,
+        collect_surface_contracts,
+    },
     function_lowering::lower_function_semantic,
     generic_call_instantiation,
     hir_identity::collect_effectful_resume_map,
@@ -26,7 +29,7 @@ impl MirLowerer {
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
         let mut next_mono = None;
         let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_closure_context(module, &mut next_mono, &[], &dispatch)
+        Self::lower_module_semantic_with_closure_context(module, &mut next_mono, &[], &dispatch, None, true)
     }
 
     /// 跨包闭包：`mono_counter` 为全局实例游标；`None` 时回退为本模块 `max+1`。
@@ -35,7 +38,18 @@ impl MirLowerer {
     /// [`Self::lower_module_semantic_with_closure_context`]。
     pub fn lower_module_semantic_with_mono_counter(module: &HirModule, mono_counter: &mut Option<u32>) -> MirModule {
         let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch)
+        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch, None, true)
+    }
+
+    /// 跨包闭包 lowering；`shared_host` 为程序级冻结的 workload phase 身份。
+    pub fn lower_module_semantic_with_mono_counter_and_host(
+        module: &HirModule,
+        mono_counter: &mut Option<u32>,
+        shared_host: Option<&HostRuntimeCallables>,
+        attach_host_contracts: bool,
+    ) -> MirModule {
+        let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
+        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch, shared_host, attach_host_contracts)
     }
 
     /// 跨包闭包上下文：`seed_pool` 提供已 lowering 的依赖模块函数，
@@ -45,6 +59,8 @@ impl MirLowerer {
         mono_counter: &mut Option<u32>,
         seed_pool: &[MirFunction],
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
+        shared_host: Option<&HostRuntimeCallables>,
+        attach_host_contracts: bool,
     ) -> MirModule {
         let singleton_accessor_instances = crate::valkyrie::mir::singleton_accessor_instance_map(module);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
@@ -64,7 +80,23 @@ impl MirLowerer {
             }
         }
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
-        let external_calls = collect_external_call_contracts(module);
+        let mut external_calls = collect_external_call_contracts(module);
+        let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {
+            (shared.by_name.clone(), if attach_host_contracts { shared.contracts.clone() } else { Vec::new() })
+        }
+        else {
+            let host_declaration_base = crate::valkyrie::hir::lowering::max_hir_declaration_index(module)
+                .or_else(|| external_calls.iter().filter_map(|contract| contract.declaration).map(|declaration| declaration.index()).max())
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0);
+            let host_instance_base = crate::valkyrie::hir::lowering::max_hir_callable_instance_index(module)
+                .or_else(|| external_calls.iter().filter_map(|contract| contract.instance).map(|instance| instance.index()).max())
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0);
+            let host_runtime = collect_host_runtime_callables(host_declaration_base, host_instance_base);
+            (host_runtime.by_name, host_runtime.contracts)
+        };
+        external_calls.extend(host_contracts);
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
@@ -79,6 +111,7 @@ impl MirLowerer {
                 dispatch,
                 None,
                 Vec::new(),
+                &host_runtime_callables,
                 &mut diagnostics,
             ));
         }
@@ -89,6 +122,7 @@ impl MirLowerer {
             &effectful_resume_map,
             &callable_returns,
             dispatch,
+            &host_runtime_callables,
             &mut diagnostics,
         ));
         functions.extend(lower_impl_method_functions(
@@ -98,6 +132,7 @@ impl MirLowerer {
             &effectful_resume_map,
             &callable_returns,
             dispatch,
+            &host_runtime_callables,
             &mut diagnostics,
         ));
         // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。

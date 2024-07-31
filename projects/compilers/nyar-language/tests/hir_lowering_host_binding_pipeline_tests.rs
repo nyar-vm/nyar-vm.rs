@@ -5,6 +5,18 @@ use nyar_types::{CanonicalCallee, CanonicalOperation, ItemInstanceId};
 
 const TEST_ARCH: &str = "native";
 
+fn user_linked_import_count(canonical: &nyar_types::CanonicalProgram) -> usize {
+    canonical
+        .linked
+        .imports
+        .values()
+        .filter(|import| {
+            let label = import.capability.to_string();
+            !label.ends_with("::begin_phase") && !label.ends_with("::end_phase")
+        })
+        .count()
+}
+
 fn invoke_callee(canonical: &nyar_types::CanonicalProgram, instance: ItemInstanceId) -> Option<CanonicalCallee> {
     canonical.mir.functions.get(&instance)?.blocks.values().flat_map(|block| block.instructions.iter()).find_map(|instruction| {
         match &instruction.operation {
@@ -39,7 +51,7 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
         .compile_source_groups_to_program_with_host_bindings(&groups, &bindings, TEST_ARCH)
         .expect("host provider binding must close across dependency groups");
     let canonical = program.canonical();
-    assert_eq!(canonical.linked.imports.len(), 0, "contract import must be rewritten to provider callable");
+    assert_eq!(user_linked_import_count(canonical), 0, "contract import must be rewritten to provider callable");
     let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
     let call = invoke_callee(canonical, main_instance).expect("main must call host write");
     let provider_instance = match call {
@@ -71,5 +83,5 @@ fn missing_host_provider_binding_keeps_contract_import() {
         .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)
         .expect("unbound contract import remains a valid external contract");
     let canonical = program.canonical();
-    assert_eq!(canonical.linked.imports.len(), 1);
+    assert_eq!(user_linked_import_count(canonical), 1);
 }

@@ -710,7 +710,7 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         };
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::Call { callee, arguments: vec![value.clone()] }, vec![output]);
+        self.push_instruction(MirOperation::Call { callee, arguments: vec![value.clone()], deferred_member: None }, vec![output]);
         self.value_types.insert(output, resolved.return_type.clone());
         MirOperand::Value(output)
     }
@@ -814,7 +814,7 @@ impl MirBuilder {
         else {
             return self.reject_unbound_member_call(member);
         };
-        self.push_call_returning(MirOperand::Callable(instance), vec![lhs, rhs], ValkyrieType::Boolean)
+        self.push_call_returning(MirOperand::Callable(instance), vec![lhs, rhs], ValkyrieType::Boolean, None)
     }
 
     /// 模式比较所需的成员 callable 未绑定：按普通 callable 身份缺失失败关闭。

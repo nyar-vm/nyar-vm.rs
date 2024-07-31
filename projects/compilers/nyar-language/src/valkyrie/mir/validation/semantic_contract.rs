@@ -1,7 +1,6 @@
 //! Semantic MIR 合同校验：stable-ID、聚合字段、名义结构与静态调用。
 
 use super::{
-    symbols::is_language_builtin_symbol,
     type_inference::{
         bare_named_matches_generic_apply_return, call_site_type_compatible, infer_operand_static_type, mir_return_operand_type_compatible,
     },
@@ -361,9 +360,6 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
         MirOperand::Constant(MirConstant::Float64(_)) => Some(ValkyrieType::Float64),
         MirOperand::Constant(MirConstant::Unit) => Some(ValkyrieType::Unit),
         MirOperand::Callable(_) => None,
-        // 未解析的成员要求没有 SSA 静态类型；进入校验前必须已被单态化替换。
-        MirOperand::Requirement(_) => None,
-        MirOperand::Symbol(_) => None,
     };
     for block in &function.blocks {
         for (index, parameter) in block.parameters.iter().enumerate() {
@@ -401,7 +397,14 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     }
                 }
             }
-            if let MirOperation::Call { callee, arguments } = &instruction.kind {
+            if let MirOperation::Call { callee, arguments, deferred_member } = &instruction.kind {
+                if deferred_member.is_some() {
+                    return Err(error(
+                        "SMIR003",
+                        location.clone(),
+                        "deferred member requirement must be materialized before semantic validation".to_string(),
+                    ));
+                }
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
                 // Callable 必须按 ItemInstanceId 取签名；禁止再按短名聚合多个实例后判歧义。
                 let signature = match callee {
@@ -534,33 +537,11 @@ pub(super) fn validate_static_call_resolution(
             detail: "indirect call requires a function-typed callee SSA value".to_string(),
         });
     }
-    // 延迟成员要求必须在单态化阶段由分派表解析；进入 Canonical 时仍保留
-    // Requirement 即视为未闭合，禁止按名称或默认实现补选。
-    if let MirOperand::Requirement(requirement) = callee {
-        return Err(SemanticMirContractError {
-            code: "SMIR003",
-            function: function.display_symbol.clone(),
-            location,
-            detail: format!("deferred member requirement `{}` must be materialized before Canonical", requirement.member),
-        });
-    }
-    let MirOperand::Symbol(symbol) = callee
-    else {
-        return Err(SemanticMirContractError {
-            code: "SMIR003",
-            function: function.display_symbol.clone(),
-            location,
-            detail: "static call requires a frozen callable identity".to_string(),
-        });
-    };
-    if is_language_builtin_symbol(symbol) {
-        return Ok(());
-    }
     Err(SemanticMirContractError {
         code: "SMIR003",
         function: function.display_symbol.clone(),
         location,
-        detail: format!("static callee `{symbol}` must lower to Callable(ItemInstanceId); symbol-only external calls are rejected"),
+        detail: "static call requires Callable(ItemInstanceId) or function-typed Value callee".to_string(),
     })
 }
 
