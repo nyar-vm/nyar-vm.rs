@@ -1182,10 +1182,14 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                 }
             }
             ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
-                let path_namespace = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
-                if let Some(declaration) = resolve_declaration(name, &path_namespace, structs, enums)? {
-                    *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
-                }
+                let path = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
+                let Some(declaration) = resolve_declaration(name, &path, structs, enums)? else {
+                    return Err(ParseError::invalid(format!(
+                        "限定类型路径 `{}` 未绑定声明身份",
+                        ValkyrieType::qualified_path_label(path_namespace, name)
+                    )));
+                };
+                *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
             }
             ValkyrieType::Apply(base, args) => {
                 for arg in args.iter_mut() {

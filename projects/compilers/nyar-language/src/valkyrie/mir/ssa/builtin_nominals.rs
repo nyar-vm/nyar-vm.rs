@@ -27,8 +27,3 @@ pub(crate) fn semantics_for_item_declaration(module: &super::model::MirModule, i
 pub(crate) fn placeholder_semantics_for_surface_name(name: &str) -> Option<NominalValueSemantics> {
     if VALUE_TYPE_NAMES.contains(&name) { Some(NominalValueSemantics::Value) } else { None }
 }
-
-/// `core.primitive` 命名空间下的占位声明；正式编译由依赖组提供完整 `structure`。
-pub(crate) fn placeholder_semantics_for_qualified_path(namespace: &[String], name: &str) -> Option<NominalValueSemantics> {
-    if namespace == ["core", "primitive"] { placeholder_semantics_for_surface_name(name) } else { None }
-}

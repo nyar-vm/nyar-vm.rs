@@ -429,7 +429,12 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
         ValkyrieType::Named(_) => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
-        ValkyrieType::QualifiedPath { .. } => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
+        ValkyrieType::QualifiedPath { namespace, name } => {
+            return Err(error_without_module(
+                "CAN003",
+                format!("限定类型路径 `{}` 未绑定声明身份，禁止进入 canonical 类型表", ValkyrieType::qualified_path_label(namespace, name)),
+            ));
+        }
         ValkyrieType::Apply(base, args) => {
             CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? }
         }
@@ -860,7 +865,7 @@ fn register_missing_nominal_semantics_from_module(
     linked: &mut LinkedSemanticProgram,
 ) -> Result<(), StructuredDiagnosticSet> {
     use crate::valkyrie::mir::ssa::builtin_nominals::{
-        placeholder_semantics_for_qualified_path, placeholder_semantics_for_surface_name, semantics_for_item_declaration,
+        placeholder_semantics_for_surface_name, semantics_for_item_declaration,
     };
 
     for (type_id, record) in &linked.types {
@@ -886,12 +891,10 @@ fn register_missing_nominal_semantics_from_module(
                 )
             })?,
             ValkyrieType::QualifiedPath { namespace, name } => {
-                placeholder_semantics_for_qualified_path(namespace, name.as_str()).ok_or_else(|| {
-                    error_without_module(
-                        "CAN055",
-                        format!("未声明的限定名义类型 `{}` 缺少 carrier 语义", ValkyrieType::qualified_path_label(namespace, name)),
-                    )
-                })?
+                return Err(error_without_module(
+                    "CAN055",
+                    format!("限定类型路径 `{}` 未绑定声明身份，无法登记 carrier 语义", ValkyrieType::qualified_path_label(namespace, name)),
+                ));
             }
             _ => {
                 return Err(error_without_module("CAN055", format!("名义类型 `{ty:?}` 无法解析 carrier 语义")));

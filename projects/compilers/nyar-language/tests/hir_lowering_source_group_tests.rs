@@ -50,6 +50,18 @@ fn compiler_selects_reachable_files_from_inventory() {
 }
 
 #[test]
+fn unresolved_qualified_type_path_fails_before_canonical() {
+    let groups = vec![
+        CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { let value: missing.module.Solution = 0; return value }")
+            .as_entry(),
+    ];
+    let error = ValkyrieCompiler::default()
+        .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+        .expect_err("未绑定限定类型路径不得进入 HIR 成功类型集合");
+    assert!(error.to_string().contains("限定类型路径"), "{error}");
+}
+
+#[test]
 fn entry_group_parse_failure_fails_closed() {
     let groups = vec![
         CompilerSourceGroup::from_source_files(
