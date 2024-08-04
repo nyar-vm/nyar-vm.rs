@@ -30,8 +30,8 @@ mod value_semantics;
 
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
-    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, layout_key_for_type, storage_kind_for_type,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirStorageKind, SumTypeLayout, SumVariantLayout,
+    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, storage_kind_for_type,
 };
 
 // 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。

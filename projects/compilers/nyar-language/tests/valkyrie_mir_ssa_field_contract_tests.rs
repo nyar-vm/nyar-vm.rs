@@ -82,6 +82,7 @@ fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout
             id: 1,
             name: "Parcel".into(),
             namespace: String::new(),
+            key: None,
             storage: nyar_language::mir::MirStorageKind::Reference,
             size: 8,
             align: 8,

@@ -15,7 +15,7 @@ use crate::{
     types::hir::{HirModule, HirStruct, ValkyrieType},
 };
 
-pub use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout};
+pub use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SumTypeLayout, SumVariantLayout};
 
 /// Physical storage class for aggregate values at lowering time.
 ///
@@ -35,12 +35,19 @@ pub fn storage_kind_for_type(ty: &ValkyrieType, value_type_declarations: &BTreeS
     }
 }
 
-/// 为合成 tuple / fixed array 类型生成布局键；名义类型返回 `None`。
-pub fn layout_key_for_type(ty: &ValkyrieType) -> Option<String> {
-    // 仅合成 tuple / fixedarray 键；名义类型必须走 declaration_to_layout，禁止 Named 短名键。
+/// 为合成 tuple / fixed array 类型生成结构化布局键；名义类型返回 `None`。
+///
+/// 键只由平台类型身份构成；元素类型无法严格 concretize 时不产生键，
+/// 由后续布局构造失败关闭，禁止回落到名称。
+fn synthetic_layout_key(ty: &ValkyrieType) -> Option<LayoutKey> {
     match ty {
-        ValkyrieType::Tuple(types) => Some(format!("__tuple_{}", types.iter().map(type_layout_key_component).collect::<Vec<_>>().join("_"))),
-        ValkyrieType::FixedArray { element, length } => Some(format!("__fixedarray_{length}_{}", type_layout_key_component(element))),
+        ValkyrieType::Tuple(types) => {
+            let elements = types.iter().map(concretize_type).collect::<Result<Vec<_>, _>>().ok()?;
+            Some(LayoutKey::Tuple(elements))
+        }
+        ValkyrieType::FixedArray { element, length } => {
+            Some(LayoutKey::FixedArray { element: Box::new(concretize_type(element).ok()?), length: *length })
+        }
         _ => None,
     }
 }
@@ -84,9 +91,9 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
     if let Some(declaration) = ty.nominal_declaration() {
         return plan.declaration_to_layout.get(&declaration).copied();
     }
-    // 合成 tuple / fixedarray 键；禁止 Future/Promise 等短名透明解包。
-    let key = layout_key_for_type(ty)?;
-    plan.type_name_to_layout.get(&key).copied()
+    // 合成 tuple / fixedarray 结构键；禁止 Future/Promise 等短名透明解包。
+    let key = synthetic_layout_key(ty)?;
+    plan.synthetic_layouts.get(&key).copied()
 }
 
 /// 从 HIR 收集聚合布局计划：结构体、导入结构体与 singleton 载体。
@@ -200,20 +207,22 @@ pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: 
 }
 
 pub fn layout_for_tuple(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) -> AggregateLayout {
-    let name = layout_key_for_type(&ValkyrieType::Tuple(element_types.to_vec())).unwrap_or_else(|| "__tuple".to_string());
-    build_aggregate_layout(next_layout_id(plan), &name, String::new(), MirStorageKind::Value, element_fields(element_types, plan))
+    let mut layout =
+        build_aggregate_layout(next_layout_id(plan), "tuple", String::new(), MirStorageKind::Value, element_fields(element_types, plan));
+    layout.key = synthetic_layout_key(&ValkyrieType::Tuple(element_types.to_vec()));
+    layout
 }
 
 pub fn layout_for_fixed_array(element_type: &ValkyrieType, length: usize, plan: &AggregateLayoutPlan) -> AggregateLayout {
-    let name = layout_key_for_type(&ValkyrieType::FixedArray { element: Box::new(element_type.clone()), length })
-        .unwrap_or_else(|| "__fixedarray".to_string());
     let fields = (0..length)
         .map(|index| {
             let (size, align) = scalar_layout(element_type, plan);
             FieldSpec { name: index.to_string(), ty: element_type.clone(), size, align }
         })
         .collect::<Vec<_>>();
-    build_aggregate_layout(next_layout_id(plan), &name, String::new(), MirStorageKind::Value, fields)
+    let mut layout = build_aggregate_layout(next_layout_id(plan), "fixedarray", String::new(), MirStorageKind::Value, fields);
+    layout.key = synthetic_layout_key(&ValkyrieType::FixedArray { element: Box::new(element_type.clone()), length });
+    layout
 }
 
 fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage: MirStorageKind) -> AggregateLayout {
@@ -229,10 +238,6 @@ fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage
     build_aggregate_layout(next_layout_id(plan), &hir_struct.name.to_string(), namespace, storage, fields)
 }
 
-fn layout_qualified_key(layout: &AggregateLayout) -> String {
-    if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
-}
-
 fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStruct, layout: AggregateLayout) {
     let Some(item) = declaration.constructor_declaration
     else {
@@ -246,19 +251,21 @@ fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStr
     if layout.storage == MirStorageKind::Value {
         plan.value_type_declarations.insert(item);
     }
-    // 禁止把名义结构体写入 type_name_to_layout；该表仅服务合成 tuple/fixedarray 键。
-    // 后端须读 layout.storage / value_type_declarations；按名称的存储视图表已删除。
+    // 名义结构体不得写入合成布局表；后端须读 layout.storage / value_type_declarations。
     plan.layouts.push(layout);
 }
 
-/// 仅登记合成 tuple / fixedarray 布局；键为 `layout_key_for_type` 产物。
+/// 仅登记合成 tuple / fixedarray 布局；键为结构化 [`LayoutKey`]。
 fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
-    let qualified = layout_qualified_key(&layout);
-    if plan.type_name_to_layout.contains_key(&qualified) {
+    let Some(key) = layout.key.clone()
+    else {
+        // 无结构键的布局不能进入合成表。
+        return;
+    };
+    if plan.synthetic_layouts.contains_key(&key) {
         return;
     }
-    // 合成键只进 type_name_to_layout；存储类以 layout.storage 为准，不按名称建档。
-    plan.type_name_to_layout.insert(qualified, layout.id);
+    plan.synthetic_layouts.insert(key, layout.id);
     plan.layouts.push(layout);
 }
 
@@ -308,7 +315,7 @@ pub fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, stora
     // Empty aggregates would otherwise get size=0 and fail SMIR010; language-level
     // empty structs still need a non-zero carrier for layout contracts.
     let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
-    AggregateLayout { id, name: name.to_string(), namespace, storage, size, align: max_align.max(1), fields }
+    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, size, align: max_align.max(1), fields }
 }
 
 fn scalar_layout(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> (u32, u32) {
@@ -355,27 +362,4 @@ fn align_offset(offset: u32, align: u32) -> u32 {
         return offset;
     }
     ((offset + align - 1) / align) * align
-}
-
-fn type_layout_key_component(ty: &ValkyrieType) -> String {
-    match ty {
-        ValkyrieType::Named(name) => name.to_string(),
-        ValkyrieType::Boolean => "bool".to_string(),
-        ValkyrieType::Character => "char".to_string(),
-        ValkyrieType::Integer8 { signed } => format!("i8_{signed}"),
-        ValkyrieType::Integer16 { signed } => format!("i16_{signed}"),
-        ValkyrieType::Integer32 { signed } => format!("i32_{signed}"),
-        ValkyrieType::Integer64 { signed } => format!("i64_{signed}"),
-        ValkyrieType::Integer128 { signed } => format!("i128_{signed}"),
-        ValkyrieType::Float32 => "f32".to_string(),
-        ValkyrieType::Float64 => "f64".to_string(),
-        ValkyrieType::Utf8 => "utf8".to_string(),
-        ValkyrieType::Utf16 => "utf16".to_string(),
-        ValkyrieType::Tuple(types) => format!("tuple_{}", types.iter().map(type_layout_key_component).collect::<Vec<_>>().join("_")),
-        ValkyrieType::FixedArray { element, length } => {
-            format!("arr{length}_{}", type_layout_key_component(element))
-        }
-        ValkyrieType::Array(inner) => format!("heaparr_{}", type_layout_key_component(inner)),
-        _ => "ref".to_string(),
-    }
 }

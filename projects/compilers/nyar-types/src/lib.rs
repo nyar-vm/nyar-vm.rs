@@ -21,9 +21,9 @@ pub use self::{
     },
     external_import::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, InternalCallEdge},
     layout::{
-        AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR,
-        SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan,
-        StorageKind, SumTypeLayout, SumVariantLayout,
+        AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SINGLETON_CONSTRUCTOR_NAME,
+        SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR,
+        SingletonInstancePlan, StorageKind, SumTypeLayout, SumVariantLayout,
     },
     neutral_contract::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,

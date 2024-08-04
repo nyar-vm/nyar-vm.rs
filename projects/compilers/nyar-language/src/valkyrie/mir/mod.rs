@@ -23,10 +23,10 @@ pub use singleton::{
     singleton_accessor_instance_map, singleton_accessor_map,
 };
 pub use ssa::{
-    AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant,
-    MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction, MirInstruction,
-    MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirValue, MirValueOrigin, MirValueRef,
-    SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_type, storage_kind_for_type,
+    AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirBlock, MirBlockRef,
+    MirConstant, MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction,
+    MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirValue, MirValueOrigin,
+    MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, layout_id_for_type, storage_kind_for_type,
 };
 
 impl ValkyrieCompiler {

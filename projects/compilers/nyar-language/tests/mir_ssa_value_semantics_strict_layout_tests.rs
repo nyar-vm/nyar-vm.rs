@@ -12,7 +12,7 @@ fn unite_tagged_layout_uses_strict_concretize() {
     let declaration = nyar_types::ItemId::from_index(7).expect("test ItemId");
     let id = ensure_unite_tagged_layout(&mut plan, declaration, "Option");
     assert_eq!(plan.declaration_to_layout.get(&declaration).copied(), Some(id));
-    assert!(!plan.type_name_to_layout.contains_key("Option"), "unite 布局不得按短名键合并");
+    assert!(plan.synthetic_layouts.is_empty(), "unite 布局不得进入合成布局表");
     let layout = plan.layouts.iter().find(|layout| layout.id == id).expect("layout");
     assert_eq!(layout.fields[0].ty, NyarType::Integer32 { signed: true });
     assert_eq!(layout.fields[1].ty, NyarType::Utf8);

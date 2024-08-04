@@ -205,48 +205,54 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
     Ok(())
 }
 
-/// 按 declaration identity 合并依赖的聚合布局；外部测试入口。
+/// 按 declaration identity / 合成结构键合并依赖的聚合布局；外部测试入口。
 #[doc(hidden)]
 pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {
     let mut merged = consumer.aggregate_layouts.clone();
     for module in dependencies {
         for layout in &module.aggregate_layouts.layouts {
             let owner = declaration_for_layout(module, layout);
-            let existing = owner
-                .and_then(|item| merged.declaration_to_layout.get(&item).copied())
-                .and_then(|id| merged.layouts.iter().find(|candidate| candidate.id == id));
-            if let Some(existing) = existing {
-                if existing.storage != layout.storage
-                    || existing.size != layout.size
-                    || existing.align != layout.align
-                    || existing.fields != layout.fields
+            if let Some(item) = owner {
+                if let Some(existing_id) = merged.declaration_to_layout.get(&item).copied()
+                    && let Some(existing) = merged.layouts.iter().find(|candidate| candidate.id == existing_id)
                 {
-                    return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", qualified_layout_name(layout))));
+                    if layout_contract_differs(existing, layout) {
+                        return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", layout_diagnostic_label(layout))));
+                    }
+                    continue;
                 }
-                continue;
             }
-            let qualified = qualified_layout_name(layout);
-            // 只按声明身份合并；名称或物理形状相同不能补出语义身份。
+            else if let Some(key) = layout.key.as_ref() {
+                // 合成 tuple / fixedarray 以结构键认亲；键相同即同一物理形状。
+                if let Some(existing_id) = merged.synthetic_layouts.get(key).copied() {
+                    let existing = merged.layouts.iter().find(|candidate| candidate.id == existing_id);
+                    if let Some(existing) = existing {
+                        if layout_contract_differs(existing, layout) {
+                            return Err(ParseError::invalid(format!("布局键 `{key:?}` 合同冲突")));
+                        }
+                        continue;
+                    }
+                }
+            }
+            else {
+                return Err(ParseError::invalid(format!("布局 `{}` 缺少 declaration identity，禁止按名合并", layout_diagnostic_label(layout))));
+            }
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
             copied.id = new_id;
             if let Some(item) = owner {
+                // 只按声明身份合并；名称或物理形状相同不能补出语义身份。
                 if merged.declaration_to_layout.insert(item, new_id).is_some() {
-                    return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", qualified_layout_name(layout))));
+                    return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", layout_diagnostic_label(layout))));
                 }
                 if copied.storage == nyar_types::layout::StorageKind::Value {
                     merged.value_type_declarations.insert(item);
                 }
             }
-            else if is_synthetic_layout_key(&qualified) {
-                // 仅合成 tuple/fixedarray 保留名称键；名义布局不得进 type_name_to_layout。
-                // 存储类以 layout.storage 为准；旧的名称视图表已删除。
-                if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
-                    return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
+            else if let Some(key) = layout.key.clone() {
+                if merged.synthetic_layouts.insert(key, new_id).is_some() {
+                    return Err(ParseError::invalid(format!("布局键 `{:?}` 重复", layout.key)));
                 }
-            }
-            else {
-                return Err(ParseError::invalid(format!("布局 `{}` 缺少 declaration identity，禁止按名合并", qualified_layout_name(layout))));
             }
             merged.layouts.push(copied);
         }
@@ -258,12 +264,15 @@ fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Optio
     module.aggregate_layouts.declaration_to_layout.iter().find_map(|(item, id)| (*id == layout.id).then_some(*item))
 }
 
-fn qualified_layout_name(layout: &AggregateLayout) -> String {
-    if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
+fn layout_contract_differs(existing: &AggregateLayout, incoming: &AggregateLayout) -> bool {
+    existing.storage != incoming.storage
+        || existing.size != incoming.size
+        || existing.align != incoming.align
+        || existing.fields != incoming.fields
 }
 
-fn is_synthetic_layout_key(key: &str) -> bool {
-    key.starts_with("__tuple_") || key.starts_with("__fixedarray_")
+fn layout_diagnostic_label(layout: &AggregateLayout) -> String {
+    if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
 }
 
 #[derive(Default)]

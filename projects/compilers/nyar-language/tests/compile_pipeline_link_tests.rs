@@ -15,6 +15,7 @@ fn identical_layout_names_without_identity_do_not_merge() {
         id: 1,
         name: "Record".into(),
         namespace: "example".into(),
+        key: None,
         storage: nyar_types::layout::StorageKind::Value,
         size: 0,
         align: 1,
@@ -22,7 +23,6 @@ fn identical_layout_names_without_identity_do_not_merge() {
     };
     consumer.aggregate_layouts = AggregateLayoutPlan::default();
     consumer.aggregate_layouts.layouts.push(layout.clone());
-    consumer.aggregate_layouts.type_name_to_layout.insert("example.Record".into(), 1);
     let dependency = consumer.clone();
     let original = consumer.clone();
     assert!(merge_aggregate_layouts(&consumer, &[dependency]).is_err());
@@ -40,6 +40,7 @@ fn repeated_layout_declaration_merges_by_identity() {
         id: 1,
         name: "Record".into(),
         namespace: "example".into(),
+        key: None,
         storage: nyar_types::layout::StorageKind::Value,
         size: 0,
         align: 1,

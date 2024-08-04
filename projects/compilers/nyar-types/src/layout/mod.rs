@@ -50,15 +50,34 @@ pub struct FieldLayout {
     pub align: u32,
 }
 
+/// 匿名聚合（tuple / 定长数组）的结构化布局键。
+///
+/// 以平台类型身份区分合成布局，不再用 `__tuple_...` / `__fixedarray_...`
+/// 字符串认亲；名义类型恒走 [`AggregateLayoutPlan::declaration_to_layout`]。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LayoutKey {
+    /// 匿名 tuple，按元素类型身份区分。
+    Tuple(Vec<NyarType>),
+    /// 定长数组，按元素类型身份与长度区分。
+    FixedArray {
+        /// 元素类型。
+        element: Box<NyarType>,
+        /// 元素个数。
+        length: usize,
+    },
+}
+
 /// Memory layout for one aggregate type (structure, tuple, or fixed array).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AggregateLayout {
     /// Layout identifier.
     pub id: LayoutId,
-    /// Type simple name (or synthetic tuple/array key).
+    /// Type simple name；合成布局只作诊断显示，不参与身份匹配。
     pub name: String,
     /// Dot-separated namespace (empty for global).
     pub namespace: String,
+    /// 合成 tuple / fixedarray 的结构键；名义布局为 `None`。
+    pub key: Option<LayoutKey>,
     /// Value vs reference storage class.
     pub storage: StorageKind,
     /// Total size in bytes.
@@ -74,8 +93,8 @@ pub struct AggregateLayout {
 pub struct AggregateLayoutPlan {
     /// Registered layouts.
     pub layouts: Vec<AggregateLayout>,
-    /// 合成 tuple / fixedarray 布局键到布局 id 的映射；名义类型不得写入或按名称回查。
-    pub type_name_to_layout: BTreeMap<String, LayoutId>,
+    /// 合成 tuple / fixedarray 结构键到布局 id 的映射；名义类型不得写入。
+    pub synthetic_layouts: BTreeMap<LayoutKey, LayoutId>,
     /// 结构声明到布局的稳定绑定；语义消费者不得从名称反查布局。
     pub declaration_to_layout: BTreeMap<crate::ItemId, LayoutId>,
     /// 按 declaration 登记的 value 存储结构；禁止靠短名判断 `MirStorageKind::Value`。
@@ -188,4 +207,4 @@ impl SingletonInstancePlan {
 // 已删除 `layout_key_for_nyar_type` / `nyar_type_layout_key_component`：
 // 它们把 `NyarType::Named` 短名直接当成 layout 键，是「按名称回查布局」的来源。
 // 名义类型只能经已冻结声明身份解析；合成 tuple / fixedarray 键由前端
-// `layout_key_for_type`（`ValkyrieType` 形状）生产。
+// 以 [`LayoutKey`] 的结构化类型身份生产。
