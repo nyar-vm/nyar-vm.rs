@@ -20,7 +20,6 @@ pub(super) fn lower_function_semantic(
     function: &HirFunction,
     aggregate_layouts: &mut AggregateLayoutPlan,
     singleton_accessor_instances: &BTreeMap<String, nyar_types::ItemInstanceId>,
-    effectful_resume_map: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
     callable_returns: &CallableReturnTypes,
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     impl_owner_type: Option<ValkyrieType>,
@@ -36,7 +35,6 @@ pub(super) fn lower_function_semantic(
     let mut builder = MirBuilder::new(
         aggregate_layouts.clone(),
         singleton_accessor_instances.clone(),
-        effectful_resume_map.clone(),
         effectful_inline_targets,
         callable_returns.clone(),
         member_dispatch.to_vec(),

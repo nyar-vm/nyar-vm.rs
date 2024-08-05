@@ -50,11 +50,6 @@ pub(super) struct MirBuilder {
     pub(super) current_return_type: ValkyrieType,
     /// `MIR` lowering 过程中收集的编译期诊断。
     pub(super) diagnostics: Vec<MirDiagnostic>,
-    /// 模块级 `Effectful::Resume` 关联类型映射（载体类型名 → Resume 类型）。
-    ///
-    /// 由 [`collect_effectful_resume_map`] 在 lowering 入口预先构造，
-    /// 供 `raise` 路径查询用户 effect 载体的 resume 类型，以正确推断 resume 参数类型。
-    pub(super) effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
     /// 可在 `catch` 调用点内联的效应函数（函数名 → 函数定义）。
     ///
     /// 由 [`effect_lowering::collect_effectful_inline_targets`] 在 lowering 入口预先构造。
@@ -100,7 +95,6 @@ impl MirBuilder {
     pub(super) fn new(
         aggregate_layouts: AggregateLayoutPlan,
         singleton_accessor_instances: BTreeMap<String, nyar_types::ItemInstanceId>,
-        effectful_resume_map: BTreeMap<nyar_types::ItemId, ValkyrieType>,
         effectful_inline_targets: BTreeMap<String, HirFunction>,
         callable_returns: CallableReturnTypes,
         member_dispatch: Vec<super::generic_call_instantiation::MirDispatchEntry>,
@@ -142,7 +136,6 @@ impl MirBuilder {
             control_flow: MirBuilderControlFlow::default(),
             current_return_type: ValkyrieType::Unit,
             diagnostics: Vec::new(),
-            effectful_resume_map,
             effectful_inline_targets,
             callable_returns,
             member_dispatch,

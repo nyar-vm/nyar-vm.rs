@@ -7,32 +7,6 @@ use crate::types::{
     Identifier,
     hir::{HirModule, ValkyrieType},
 };
-use std::collections::BTreeMap;
-
-/// 收集模块中所有 `imply T: Effectful { type Resume = X }` 实现，构造载体类型名到 `Resume` 类型的映射。
-///
-/// 仅匹配 `trait_path` 最后一段为 `Effectful` 的 impl 块。载体类型按其 nominal 名提取：
-/// - `ValkyrieType::Named(name)` → 直接使用 `name`
-/// - `ValkyrieType::Nominal{ItemId}` → 按 declaration 反查结构/sum 名
-/// - `ValkyrieType::Apply(base, _)` → 取 `base` 的 nominal 名
-///
-/// 若同一载体存在多个 impl，后注册者覆盖前者。`Resume` 关联类型未声明的 impl 不产生条目。
-pub(super) fn collect_effectful_resume_map(module: &HirModule) -> BTreeMap<nyar_types::ItemId, ValkyrieType> {
-    let mut map: BTreeMap<nyar_types::ItemId, ValkyrieType> = BTreeMap::new();
-    for impl_block in &module.impls {
-        if !impl_block.trait_path.as_ref().is_some_and(|path| path.name().as_str() == "Effectful") {
-            continue;
-        }
-        let Some(carrier_declaration) = impl_block.target.nominal_declaration()
-        else {
-            continue;
-        };
-        if let Some(resume_impl) = impl_block.associated_type_impls.iter().find(|item| item.name.as_str() == "Resume") {
-            map.insert(carrier_declaration, resume_impl.concrete_type.clone());
-        }
-    }
-    map
-}
 
 /// 提取 `ValkyrieType` 的表面 nominal 名（Named / 内置形状）。
 ///

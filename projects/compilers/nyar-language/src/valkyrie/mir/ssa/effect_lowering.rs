@@ -323,24 +323,18 @@ impl MirBuilder {
         self.lower_perform_effect_with_carrier("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type, carrier_type)
     }
 
-    /// 查询当前模块的 `Effectful::Resume` 关联类型映射。
+    /// `raise` 载体的 resume 类型。
     ///
-    /// - 若 carrier_type 为 `Named(n)` 或 `Apply(Named(n), _)` 且 map 中存在 `n`，返回对应的 Resume 类型；
-    /// - 若 carrier_type 可识别但未在 map 中找到，说明未声明 `Effectful`，按 Valkyrie 约定 resume 类型为 `Never`；
-    /// - carrier_type 无法识别时返回 `None`，保留旧异常路径语义（无可恢复值）。
+    /// MIR 不持有 `Effectful::Resume` 的关联类型选择表，也不按 trait/载体名重建；
+    /// 当前没有该关联类型的声明绑定事实时，按 Valkyrie 约定视为 `!`。
+    /// 非名义载体不携带效应声明，返回 `None` 交由调用点保留原有路径。
     fn lookup_effectful_resume_type(&self, carrier_type: &Option<ValkyrieType>) -> Option<ValkyrieType> {
         let carrier = carrier_type.as_ref()?;
-        let declaration = match carrier {
-            ValkyrieType::Nominal { declaration, .. } => Some(*declaration),
-            ValkyrieType::Apply(base, _) => base.nominal_declaration(),
+        match carrier {
+            ValkyrieType::Nominal { .. } => Some(ValkyrieType::Void),
+            ValkyrieType::Apply(base, _) => base.nominal_declaration().map(|_| ValkyrieType::Void),
             _ => None,
-        }?;
-        if let Some(resume_type) = self.effectful_resume_map.get(&declaration) {
-            return Some(resume_type.clone());
         }
-        // 载体未声明 Effectful：按约定 Resume = !（Never）。
-        // 不返回的控制流使用语言底类型，不通过类型名称补语义。
-        Some(ValkyrieType::Void)
     }
 
     /// 与 [`lower_perform_effect`] 同构，但允许携带用户 effect 载体类型。

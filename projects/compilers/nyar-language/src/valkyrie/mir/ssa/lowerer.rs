@@ -8,7 +8,6 @@ use super::{
     },
     function_lowering::lower_function_semantic,
     generic_call_instantiation,
-    hir_identity::collect_effectful_resume_map,
     method_lowering::{lower_impl_method_functions, lower_singleton_method_functions},
     model::*,
     struct_facts::collect_field_declarations,
@@ -70,7 +69,6 @@ impl MirLowerer {
         let (sum_types, flags_types) =
             crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
-        let effectful_resume_map = collect_effectful_resume_map(module);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let mut external_calls = collect_external_call_contracts(module);
         let (host_runtime_callables, host_contracts) = if let Some(shared) = shared_host {
@@ -98,7 +96,6 @@ impl MirLowerer {
                 function,
                 &mut aggregate_layouts,
                 &singleton_accessor_instances,
-                &effectful_resume_map,
                 &callable_returns,
                 dispatch,
                 None,
@@ -111,7 +108,6 @@ impl MirLowerer {
             module,
             &mut aggregate_layouts,
             &singleton_accessor_instances,
-            &effectful_resume_map,
             &callable_returns,
             dispatch,
             &host_runtime_callables,
@@ -121,7 +117,6 @@ impl MirLowerer {
             module,
             &mut aggregate_layouts,
             &singleton_accessor_instances,
-            &effectful_resume_map,
             &callable_returns,
             dispatch,
             &host_runtime_callables,
