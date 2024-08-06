@@ -541,10 +541,7 @@ fn infer_static_expr_type(expr: &HirExpr, state: &HirValidationState) -> Option<
             let value_type = infer_static_expr_type(value, state)?;
             future_resume_type(&value_type)
         }
-        HirExprKind::Call { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
-        HirExprKind::Construct { name, resolved, .. } => {
-            resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| Some(ValkyrieType::Named(name.clone())))
-        }
+        HirExprKind::Call { resolved, .. } | HirExprKind::Construct { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::TryPropagate { inner, .. } => infer_static_expr_type(inner, state).and_then(|ty| {
             nullable_payload_type(&ty).or_else(|| {
                 if is_option_apply_type(&ty) {

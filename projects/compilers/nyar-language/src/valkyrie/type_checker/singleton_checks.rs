@@ -271,9 +271,11 @@ impl SingletonChecker {
 
     fn walk_expr(&mut self, expr: &HirExpr, env: &mut BTreeMap<Identifier, ValkyrieType>) {
         match &expr.kind {
-            HirExprKind::Construct { name, args, .. } => {
-                if self.singleton_names.contains(name) {
-                    self.errors.push(SingletonError::constructor_forbidden(name.clone(), Some(expr.span.clone())));
+            HirExprKind::Construct { path, args, .. } => {
+                if let Some(name) = path.parts().last() {
+                    if self.singleton_names.contains(name) {
+                        self.errors.push(SingletonError::constructor_forbidden(name.clone(), Some(expr.span.clone())));
+                    }
                 }
                 for arg in args {
                     self.walk_expr(arg, env);

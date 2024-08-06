@@ -174,11 +174,9 @@ pub enum HirExprKind {
     /// A constructor call.
     Construct {
         /// Fully qualified constructor path as written in source.
-        /// The final segment is mirrored by `name` for legacy field lookup;
-        /// Semantic MIR must use this path when resolving nominal variants.
+        /// Semantic MIR resolves nominal variants from `resolved` declarations,
+        /// never from the final path segment.
         path: NamePath,
-        /// The type name.
-        name: Identifier,
         /// The arguments.
         args: Vec<HirExpr>,
         /// HIR overload resolution result for constructor calls.

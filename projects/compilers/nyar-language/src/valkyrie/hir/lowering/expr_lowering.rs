@@ -390,7 +390,6 @@ fn lower_object_expression(
     span: SourceSpan,
 ) -> HirExprKind {
     let path = extract_name_path(callee).unwrap_or_else(|| NamePath::new(vec![Identifier::new("_")]));
-    let name = path.parts().last().cloned().unwrap_or_else(|| Identifier::new("_"));
     let args = fields
         .iter()
         .map(|(field, value)| {
@@ -404,7 +403,7 @@ fn lower_object_expression(
             HirExpr { kind: HirExprKind::FieldInit { name: Identifier::new(&field.name), value: Box::new(value) }, span: span.clone() }
         })
         .collect();
-    HirExprKind::Construct { path, name, args, resolved: None }
+    HirExprKind::Construct { path, args, resolved: None }
 }
 
 fn lower_anonymous_class(literal: &AnonymousClass, source_id: SourceID, fallback_span: Range<usize>) -> HirExprKind {

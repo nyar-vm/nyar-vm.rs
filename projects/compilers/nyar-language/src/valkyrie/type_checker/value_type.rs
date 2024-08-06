@@ -165,7 +165,7 @@ impl ValueTypeChecker {
                     })
                     .or_else(|| {
                         initializer.as_ref().and_then(|init| match &init.kind {
-                            HirExprKind::Construct { name, .. } if self.value_types.contains(name) => Some(name.clone()),
+                            HirExprKind::Construct { path, .. } => path.parts().last().filter(|name| self.value_types.contains(*name)).cloned(),
                             _ => None,
                         })
                     });

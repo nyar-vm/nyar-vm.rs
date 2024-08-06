@@ -971,8 +971,9 @@ impl MirBuilder {
                 self.value_types.insert(tuple_value, tuple_type);
                 MirOperand::Value(tuple_value)
             }
-            HirExprKind::Construct { path, name, args, resolved } => {
-                let struct_type_name = self.struct_new_owner_name(name);
+            HirExprKind::Construct { path, args, resolved } => {
+                let name = path.parts().last().cloned().unwrap_or_else(|| Identifier::new("_"));
+                let struct_type_name = self.struct_new_owner_name(&name);
                 let mut fields = Vec::with_capacity(args.len());
                 let mut field_values = Vec::with_capacity(args.len());
                 for (arg_index, arg) in args.iter().enumerate() {
@@ -985,7 +986,7 @@ impl MirBuilder {
                         // resolved constructor, carry the selected formal type
                         // by field position as explicit HIR metadata; do not
                         // infer a sum from the variant name.
-                        let owner = self.struct_construct_result_type(name, resolved.as_ref());
+                        let owner = self.struct_construct_result_type(&name, resolved.as_ref());
                         let field_ty = self
                             .field_type_for_semantic_type(&owner, field_name.as_str())
                             .or_else(|| self.lookup_struct_field_type(struct_type_name.as_str(), field_name.as_str()))
@@ -1049,7 +1050,7 @@ impl MirBuilder {
                     }
                 }
                 let value = self.next_value(MirValueOrigin::Temporary);
-                let result_type = self.struct_construct_result_type(name, resolved.as_ref());
+                let result_type = self.struct_construct_result_type(&name, resolved.as_ref());
                 let Some(declaration_id) = result_type.nominal_declaration().or_else(|| resolved.as_ref().and_then(|call| call.declaration))
                 else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: struct_type_name });

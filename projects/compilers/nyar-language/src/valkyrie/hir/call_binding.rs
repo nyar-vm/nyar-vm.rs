@@ -163,7 +163,6 @@ fn map_literal_expr(entries: Vec<(Identifier, HirExpr)>, span: SourceSpan) -> Hi
     HirExpr {
         kind: HirExprKind::Construct {
             path: NamePath::new(vec![Identifier::new("Map")]),
-            name: Identifier::new("Map"),
             args: entries
                 .into_iter()
                 .map(|(name, value)| HirExpr { kind: HirExprKind::FieldInit { name, value: Box::new(value) }, span: span.clone() })

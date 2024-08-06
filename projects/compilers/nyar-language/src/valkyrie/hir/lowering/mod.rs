@@ -148,11 +148,11 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
                 validate_expr_call_contracts(&arg.value, function)?;
             }
         }
-        HirExprKind::Construct { name, path, args, resolved, .. } => {
+        HirExprKind::Construct { path, args, resolved } => {
             if resolved.is_none() {
                 return Err(ParseError::invalid(format!(
-                    "SMIR003 unresolved constructor contract `{}` / `{}` in `{function}` at {:?}",
-                    name, path, expr.span
+                    "SMIR003 unresolved constructor contract `{path}` in `{function}` at {:?}",
+                    expr.span
                 )));
             }
             for arg in args {
@@ -1280,13 +1280,12 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                     }
                 }
             }
-            HirExprKind::Construct { path, name, args, resolved } => {
+            HirExprKind::Construct { path, args, resolved } => {
                 // `Self { … }` 在声明作用域内构造 owner 声明本身；这里的改写只是把
                 // `Self` 解析到声明路径，候选匹配仍由已冻结的声明身份完成。
                 if let Some(owner) = self_owner {
                     if path.parts().len() == 1 && path.parts()[0].as_str() == "Self" {
                         *path = owner.construct_path.clone();
-                        *name = owner.name.clone();
                     }
                 }
                 for arg in args {

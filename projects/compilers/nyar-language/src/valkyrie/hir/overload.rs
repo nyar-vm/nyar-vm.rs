@@ -859,15 +859,15 @@ fn candidate_variant_constructor_matches(candidate: &OverloadCandidate, variant_
         && matches!(candidate.symbol.parts(), [name] if name == variant_name)
 }
 
-/// 聚合构造候选：结构化路径与 `Construct` 的 `path`/`name` 对齐，禁止跨 owner 末段碰撞。
-fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &NamePath, name: &Identifier) -> bool {
+/// 聚合构造候选：结构化路径对齐，禁止跨 owner 末段碰撞。
+fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &NamePath) -> bool {
     if candidate.domain != OverloadDomain::Constructor {
         return false;
     }
     if candidate.owner.is_some() {
-        return candidate_variant_constructor_matches(candidate, name);
+        return path.parts().last().is_some_and(|name| candidate_variant_constructor_matches(candidate, name));
     }
-    candidate.symbol.parts() == path.parts() || matches!(candidate.symbol.parts(), [single] if single == name)
+    candidate.symbol.parts() == path.parts() || matches!(candidate.symbol.parts(), [single] if path.parts().last() == Some(single))
 }
 
 /// 模式 extractors：`Owner.member` 与候选 `owner` + 单段符号精确对齐。
@@ -1338,16 +1338,18 @@ fn resolve_expr_calls_at(
                 *resolved_ok_variant = operand_type.as_ref().and_then(|ty| try_resolve_try_propagate_ok_variant(ty, candidates));
             }
         }
-        HirExprKind::Construct { path, name, args, resolved, .. } => {
+        HirExprKind::Construct { path, args, resolved } => {
+            let constructor_name = path.parts().last().cloned();
             for arg in args.iter_mut() {
                 let field_context = match &arg.kind {
-                    HirExprKind::FieldInit { name: field_name, .. } => struct_fields
-                        .fields_of(&ValkyrieType::Named(name.clone()))
+                    HirExprKind::FieldInit { name: field_name, .. } => constructor_name
+                        .as_ref()
+                        .and_then(|name| struct_fields.fields_of(&ValkyrieType::Named(name.clone())))
                         .and_then(|fields| fields.iter().find(|field| field.name == *field_name).map(|field| &field.ty))
                         .or_else(|| {
-                            candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path, name)).find_map(
-                                |candidate| candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty),
-                            )
+                            candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path)).find_map(|candidate| {
+                                candidate.param_specs.iter().find(|param| param.name.name == *field_name).map(|param| &param.ty)
+                            })
                         }),
                     _ => None,
                 };
@@ -1370,7 +1372,7 @@ fn resolve_expr_calls_at(
                 *resolved =
                     try_resolve_constructor(path, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }
-            if let Some(resolved) = resolved.as_mut() {
+            if let (Some(resolved), Some(name)) = (resolved.as_mut(), constructor_name.as_ref()) {
                 enrich_construct_unite_variant_facts(name, args, resolved, contextual_type, candidates);
             }
         }
@@ -3214,12 +3216,7 @@ fn try_rewrite_nullary_variant_reference(
     };
     *expr = HirExpr {
         span: expr.span.clone(),
-        kind: HirExprKind::Construct {
-            path: NamePath::new(vec![name.clone()]),
-            name: name.clone(),
-            args: Vec::new(),
-            resolved: Some(resolved),
-        },
+        kind: HirExprKind::Construct { path: NamePath::new(vec![name.clone()]), args: Vec::new(), resolved: Some(resolved) },
     };
 }
 

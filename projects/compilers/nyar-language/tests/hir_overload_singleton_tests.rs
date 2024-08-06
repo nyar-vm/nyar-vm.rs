@@ -857,9 +857,9 @@ imply char {
     let mut constructs = Vec::new();
     fn walk(expr: &HirExpr, out: &mut Vec<String>) {
         match &expr.kind {
-            HirExprKind::Construct { name, resolved, .. } => {
+            HirExprKind::Construct { path, resolved, .. } => {
                 out.push(format!(
-                    "{name} => {}",
+                    "{path} => {}",
                     resolved
                         .as_ref()
                         .map(|call| format!("domain={:?} sum={}/{}", call.domain, call.sum_owner.is_some(), call.sum_variant.is_some()))
