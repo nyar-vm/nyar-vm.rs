@@ -46,11 +46,8 @@ impl MirBuilder {
     }
 
     /// Some/Fine/Fail 短名命中但缺少 sum 身份时失败关闭，禁止回落 Invoke。
-    fn fail_unresolved_sum_variant_call(&mut self, resolved: Option<&HirResolvedCall>, fallback_variant: &str) -> MirOperand {
-        let variant =
-            resolved.and_then(|call| call.symbol.parts().last().map(|part| part.to_string())).unwrap_or_else(|| fallback_variant.to_string());
-        let sum_type =
-            resolved.and_then(|call| sum_owner_name(&call.return_type).map(|owner| owner.to_string())).unwrap_or_else(|| variant.clone());
+    fn fail_unresolved_sum_variant_call(&mut self, resolved: Option<&HirResolvedCall>) -> MirOperand {
+        let (sum_type, variant) = unresolved_variant_labels(resolved);
         self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
         MirOperand::Constant(MirConstant::Unit)
     }
@@ -642,11 +639,11 @@ impl MirBuilder {
                                     .is_some_and(|sum| sum.generics.len() == 2);
                                 return if binary {
                                     self.try_lower_result_variant_constructor("", &args[0].value, resolved.as_ref(), expected_type)
-                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "variant"))
+                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref()))
                                 }
                                 else {
                                     self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type)
-                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref(), "variant"))
+                                        .unwrap_or_else(|| self.fail_unresolved_sum_variant_call(resolved.as_ref()))
                                 };
                             }
                         }
@@ -839,8 +836,7 @@ impl MirBuilder {
                             self.value_types.insert(value, return_type);
                             return MirOperand::Value(value);
                         }
-                        let variant = call.symbol.parts().last().map(|part| part.to_string()).unwrap_or_else(|| "None".to_string());
-                        let sum_type = sum_owner_name(&call.return_type).map(|owner| owner.to_string()).unwrap_or_else(|| variant.clone());
+                        let (sum_type, variant) = unresolved_variant_labels(Some(call));
                         self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                         return MirOperand::Constant(MirConstant::Unit);
                     }
@@ -1014,8 +1010,6 @@ impl MirBuilder {
                             let value = self.next_value(MirValueOrigin::CallResult);
                             let ctor_return = call.return_type.clone();
                             let type_args = type_args_from_sum_shaped(&ctor_return);
-                            let variant = call.symbol.parts().last().map(|part| part.to_string()).unwrap_or_else(|| name.to_string());
-                            let sum_type = sum_owner_name(&ctor_return).map(|owner| owner.to_string()).unwrap_or_else(|| variant.clone());
                             let payload_type = call.parameter_types.first().cloned();
                             let payload = match field_values.len() {
                                 0 => None,
@@ -1024,6 +1018,7 @@ impl MirBuilder {
                             };
                             let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration)
                             else {
+                                let (sum_type, variant) = unresolved_variant_labels(Some(call));
                                 self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
@@ -1042,8 +1037,7 @@ impl MirBuilder {
                             return MirOperand::Value(value);
                         }
                         if call.sum_owner.is_some() || call.sum_variant.is_some() {
-                            let variant = call.symbol.parts().last().map(|part| part.to_string()).unwrap_or_else(|| name.to_string());
-                            let sum_type = sum_owner_name(&call.return_type).map(|owner| owner.to_string()).unwrap_or_else(|| variant.clone());
+                            let (sum_type, variant) = unresolved_variant_labels(Some(call));
                             self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                             return MirOperand::Constant(MirConstant::Unit);
                         }
@@ -1287,17 +1281,12 @@ fn same_sum_owner(left: &ValkyrieType, right: &ValkyrieType) -> bool {
     }
 }
 
-fn sum_owner_name(ty: &ValkyrieType) -> Option<&str> {
-    match ty {
-        ValkyrieType::Named(name) => Some(name.as_str()),
-        ValkyrieType::Apply(base, _) => match base.as_ref() {
-            ValkyrieType::Named(name) => Some(name.as_str()),
-            _ => None,
-        },
-        // Nominal 诊断名应走 declaration；此处不回退短名。
-        ValkyrieType::Nominal { .. } => None,
-        _ => None,
-    }
+/// 失败诊断只引用已冻结的声明身份；缺失时给出稳定占位，禁止从拼写重发现 variant。
+fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (String, String) {
+    let sum_type = resolved.and_then(|call| call.sum_owner).map_or_else(|| "<unresolved sum owner>".to_string(), |owner| owner.to_string());
+    let variant =
+        resolved.and_then(|call| call.sum_variant).map_or_else(|| "<unresolved sum variant>".to_string(), |variant| variant.to_string());
+    (sum_type, variant)
 }
 
 /// 按 sum_owner + sum_variant + 已冻结实参代入 payload；禁止 Fine/Some/Fail 拼写选槽。
