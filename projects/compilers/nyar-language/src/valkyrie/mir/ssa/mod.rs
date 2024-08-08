@@ -59,7 +59,6 @@ use std::collections::BTreeMap;
 use crate::types::hir::{HirExpr, HirFunction, HirMatchArm, HirModule, HirPattern, HirStatementKind, ValkyrieType};
 
 use super::MirSumDeclaration;
-use builtin_helpers::plain_type_pattern_matches;
 use control_flow_context::{MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{
     callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, lower_resolved_callee, named_type_name,

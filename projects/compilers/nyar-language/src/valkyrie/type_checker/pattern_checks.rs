@@ -223,7 +223,7 @@ impl PatternRefutabilityChecker {
             },
             HirPattern::Or(items) => items.iter().map(|p| self.pattern_to_string(p)).collect::<Vec<_>>().join(" | "),
             HirPattern::Name(path) => path.to_string(),
-            HirPattern::Type(path) => format!("{} :: type", path),
+            HirPattern::Type { path, .. } => format!("{} :: type", path),
             HirPattern::TypedBind { identifier, ty } => format!("{} : {}", identifier.name, ty),
             HirPattern::Object { name, fields, rest, .. } => {
                 let field_strs = fields.iter().map(|(n, p)| format!("{}: {}", n, self.pattern_to_string(p))).collect::<Vec<_>>().join(", ");

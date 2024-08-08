@@ -187,7 +187,7 @@ fn describe_pattern(pattern: &HirPattern) -> String {
         HirPattern::Else => "else".to_string(),
         HirPattern::Variable(name) => format!("var({})", name.name),
         HirPattern::Literal(lit) => format!("lit({lit:?})"),
-        HirPattern::Name(name) | HirPattern::Type(name) => {
+        HirPattern::Name(name) | HirPattern::Type { path: name, .. } => {
             format!("name({})", name.parts().iter().map(|p| p.as_str()).collect::<Vec<_>>().join("."))
         }
         HirPattern::Extractor(HirExtractorPattern::Constructor { name, fields, .. }) => {
@@ -256,7 +256,9 @@ fn is_pattern_covered(pattern: &HirPattern, covered: &CoveredSet) -> bool {
             last_name(name).map(|variant| covered.variants.contains(&variant)).unwrap_or(false)
         }
         HirPattern::Object { name: Some(name), .. } => last_name(name).map(|variant| covered.variants.contains(&variant)).unwrap_or(false),
-        HirPattern::Name(name) | HirPattern::Type(name) => last_name(name).map(|variant| covered.variants.contains(&variant)).unwrap_or(false),
+        HirPattern::Name(name) | HirPattern::Type { path: name, .. } => {
+            last_name(name).map(|variant| covered.variants.contains(&variant)).unwrap_or(false)
+        }
         // 复合嵌套 pattern (tuple/range/array/bind/mut/pin/object-without-name 等)
         // 保守不报不可达。
         _ => false,
@@ -302,7 +304,7 @@ fn add_pattern_to_covered(pattern: &HirPattern, covered: &mut CoveredSet) {
                 }
             }
         }
-        HirPattern::Name(name) | HirPattern::Type(name) => {
+        HirPattern::Name(name) | HirPattern::Type { path: name, .. } => {
             if let Some(variant) = last_name(name) {
                 covered.variants.insert(variant);
             }

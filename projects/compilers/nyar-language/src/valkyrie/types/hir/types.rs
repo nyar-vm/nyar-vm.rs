@@ -629,7 +629,13 @@ pub enum HirPattern {
     /// 名称路径模式。
     Name(crate::NamePath),
     /// 类型测试模式。
-    Type(crate::NamePath),
+    Type {
+        /// 类型路径（仅保留源码拼写）。
+        path: crate::NamePath,
+        /// HIR 解析出的名义声明身份；缺失即结构化失败，MIR 不得按名称重建类型关系。
+        #[cfg_attr(feature = "serde", serde(default))]
+        declaration: Option<nyar_types::ItemId>,
+    },
     /// 带类型注解的绑定。
     TypedBind {
         /// 绑定标识符。
@@ -641,6 +647,9 @@ pub enum HirPattern {
     Object {
         /// 类型路径（可选）。
         name: Option<crate::NamePath>,
+        /// HIR 解析出的期望类型声明身份；缺失即结构化失败。
+        #[cfg_attr(feature = "serde", serde(default))]
+        type_declaration: Option<nyar_types::ItemId>,
         /// 命名字段子模式。
         fields: Vec<(Identifier, HirPattern)>,
         /// 与 `fields` 一一对应的字段身份；HIR 绑定阶段冻结，MIR 只按 `FieldId` 读取。
@@ -685,7 +694,7 @@ impl HirPattern {
                     Irrefutable
                 }
             }
-            HirPattern::Literal(_) | HirPattern::Range { .. } | HirPattern::Extractor(_) | HirPattern::Name(_) | HirPattern::Type(_) => {
+            HirPattern::Literal(_) | HirPattern::Range { .. } | HirPattern::Extractor(_) | HirPattern::Name(_) | HirPattern::Type { .. } => {
                 Refutable
             }
             HirPattern::Or(items) => {

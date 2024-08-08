@@ -250,12 +250,6 @@ impl MirStruct {
         Some(resolve_self_type_with_owner(&ty, Some(owner)))
     }
 
-    /// 按声明短名在已冻结的聚合表中查找（仅用于模式 lowering 的遗留表面名输入）。
-    pub fn find_by_name<'a>(declarations: &'a [MirStruct], name: &str) -> Option<&'a MirStruct> {
-        let matches: Vec<&MirStruct> = declarations.iter().filter(|item| item.name == name).collect();
-        if matches.len() == 1 { Some(matches[0]) } else { None }
-    }
-
     /// 在声明表与父链上查找字段类型；`owner` 提供泛型代入上下文。
     pub fn lookup_field_type<'a>(
         declarations: &'a [MirStruct],
@@ -278,28 +272,6 @@ impl MirStruct {
         });
         visiting.remove(&declaration);
         inherited
-    }
-
-    /// 按已冻结的 `parent_declarations` 判断表面短名继承关系（仅用于模式 lowering）。
-    pub fn inherits_from(declarations: &[MirStruct], actual_name: &str, expected_name: &str, visiting: &mut std::collections::BTreeSet<String>) -> bool {
-        if actual_name == expected_name {
-            return true;
-        }
-        if !visiting.insert(actual_name.to_string()) {
-            return false;
-        }
-        let Some(structure) = Self::find_by_name(declarations, actual_name) else {
-            visiting.remove(actual_name);
-            return false;
-        };
-        let found = structure.parent_declarations.iter().any(|parent| {
-            Self::find_by_declaration(declarations, *parent).is_some_and(|parent_struct| {
-                parent_struct.name == expected_name
-                    || Self::inherits_from(declarations, parent_struct.name.as_str(), expected_name, visiting)
-            })
-        });
-        visiting.remove(actual_name);
-        found
     }
 }
 

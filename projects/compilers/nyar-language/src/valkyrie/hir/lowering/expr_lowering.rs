@@ -106,7 +106,7 @@ fn lower_class_pattern(pattern: &ClassPattern, source_id: SourceID, span: Source
         })
         .collect::<Vec<_>>();
     let field_ids = vec![None; fields.len()];
-    HirPattern::Object { name: Some(name), fields, field_ids, rest: None }
+    HirPattern::Object { name: Some(name), type_declaration: None, fields, field_ids, rest: None }
 }
 
 fn parse_pattern_literal(value: &str) -> HirLiteral {

@@ -7,7 +7,7 @@ use crate::types::{
 
 use super::{
     MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
-    MirValueRef, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name, plain_type_pattern_matches,
+    MirValueRef, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name,
     value_semantics::{LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type, storage_kind_for_type},
 };
 use crate::hir::nullable_payload_type;
@@ -82,7 +82,7 @@ impl MirBuilder {
     ) {
         match pattern {
             HirPattern::Wildcard => {}
-            HirPattern::Else | HirPattern::Literal(_) | HirPattern::Range { .. } | HirPattern::Name(_) | HirPattern::Type(_) => {}
+            HirPattern::Else | HirPattern::Literal(_) | HirPattern::Range { .. } | HirPattern::Name(_) | HirPattern::Type { .. } => {}
             HirPattern::Variable(identifier) => {
                 let name = identifier.name.to_string();
                 let value = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
@@ -222,10 +222,14 @@ impl MirBuilder {
             }
             HirPattern::Tuple(items) => self.lower_tuple_pattern_match_operand(items, value),
             HirPattern::Extractor(extractor) => self.lower_extractor_pattern_match_operand(extractor, value),
-            HirPattern::Name(name) => self.lower_name_pattern_match_operand(name, value),
-            HirPattern::Type(name) => self.lower_type_pattern_match_operand(name, value),
-            HirPattern::TypedBind { ty, .. } => self.lower_type_pattern_match_operand(ty, value),
-            HirPattern::Object { name, fields, field_ids, .. } => self.lower_object_pattern_match_operand(name, fields, field_ids, value),
+            HirPattern::Name(name) => self.lower_fallback_pattern_match(HirPattern::Name(name.clone()), value),
+            HirPattern::Type { path, declaration } => self.lower_type_pattern_match_operand(path, *declaration, value),
+            HirPattern::TypedBind { identifier, ty } => {
+                self.lower_fallback_pattern_match(HirPattern::TypedBind { identifier: identifier.clone(), ty: ty.clone() }, value)
+            }
+            HirPattern::Object { name, type_declaration, fields, field_ids, .. } => {
+                self.lower_object_pattern_match_operand(name, *type_declaration, fields, field_ids, value)
+            }
             HirPattern::Or(patterns) => self.lower_or_pattern_match_operand(patterns, value),
             HirPattern::Bind { pattern, .. } => self.lower_pattern_match_operand(pattern, value),
             HirPattern::Mut(pattern) => self.lower_pattern_match_operand(pattern, value),
@@ -253,22 +257,22 @@ impl MirBuilder {
         }
     }
 
-    pub(super) fn lower_type_pattern_match_operand(&mut self, name: &NamePath, value: MirOperand) -> MirOperand {
+    pub(super) fn lower_type_pattern_match_operand(
+        &mut self,
+        name: &NamePath,
+        declaration: Option<nyar_types::ItemId>,
+        value: MirOperand,
+    ) -> MirOperand {
+        let Some(declaration) = declaration
+        else {
+            return self.lower_fallback_pattern_match(HirPattern::Type { path: name.clone(), declaration: None }, value);
+        };
         let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
         else {
-            return self.lower_fallback_pattern_match(HirPattern::Type(name.clone()), value);
+            return self.lower_fallback_pattern_match(HirPattern::Type { path: name.clone(), declaration: Some(declaration) }, value);
         };
 
-        MirOperand::Constant(MirConstant::Bool(self.type_pattern_matches(&actual_type, name)))
-    }
-
-    pub(super) fn lower_name_pattern_match_operand(&mut self, name: &NamePath, value: MirOperand) -> MirOperand {
-        let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
-        else {
-            return self.lower_fallback_pattern_match(HirPattern::Name(name.clone()), value);
-        };
-
-        MirOperand::Constant(MirConstant::Bool(plain_type_pattern_matches(&actual_type, name)))
+        MirOperand::Constant(MirConstant::Bool(self.type_pattern_matches(&actual_type, declaration)))
     }
 
     /// Match a sum scrutinee by `SumVariantIs`. Requires HIR `sum_owner` + `sum_variant` on the
@@ -583,18 +587,24 @@ impl MirBuilder {
     pub(super) fn lower_object_pattern_match_operand(
         &mut self,
         name: &Option<NamePath>,
+        type_declaration: Option<nyar_types::ItemId>,
         fields: &[(Identifier, HirPattern)],
         field_ids: &[Option<nyar_types::FieldId>],
         value: MirOperand,
     ) -> MirOperand {
-        let fallback = || HirPattern::Object { name: name.clone(), fields: fields.to_vec(), field_ids: field_ids.to_vec(), rest: None };
+        let fallback =
+            || HirPattern::Object { name: name.clone(), type_declaration, fields: fields.to_vec(), field_ids: field_ids.to_vec(), rest: None };
         let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
         else {
             return self.lower_fallback_pattern_match(fallback(), value);
         };
 
-        if let Some(name) = name {
-            if !self.type_pattern_matches(&actual_type, name) {
+        if name.is_some() {
+            let Some(declaration) = type_declaration
+            else {
+                return self.lower_fallback_pattern_match(fallback(), value);
+            };
+            if !self.type_pattern_matches(&actual_type, declaration) {
                 return MirOperand::Constant(MirConstant::Bool(false));
             }
         }
@@ -942,29 +952,32 @@ impl MirBuilder {
         }
     }
 
-    pub(super) fn type_pattern_matches(&self, actual_type: &ValkyrieType, pattern_name: &NamePath) -> bool {
-        let Some(expected_name) = pattern_name.parts().last().map(|identifier| identifier.as_str())
+    /// 类型模式只按已冻结的声明身份判定；缺失时由调用方返回结构化失败，禁止按拼写重建继承关系。
+    pub(super) fn type_pattern_matches(&self, actual_type: &ValkyrieType, expected: nyar_types::ItemId) -> bool {
+        let Some(actual) = actual_type.nominal_declaration()
         else {
             return false;
         };
-
-        match actual_type {
-            ValkyrieType::Named(name) => self.named_or_parent_matches(name.as_str(), expected_name),
-            ValkyrieType::Apply(base, _) => self.type_pattern_matches(base, pattern_name),
-            _ => plain_type_pattern_matches(actual_type, pattern_name),
-        }
+        self.declaration_inherits_from(actual, expected, &mut BTreeSet::new())
     }
 
-    pub(super) fn named_or_parent_matches(&self, actual_name: &str, expected_name: &str) -> bool {
-        if actual_name == expected_name {
+    fn declaration_inherits_from(
+        &self,
+        actual: nyar_types::ItemId,
+        expected: nyar_types::ItemId,
+        visiting: &mut BTreeSet<nyar_types::ItemId>,
+    ) -> bool {
+        if actual == expected {
             return true;
         }
-
-        self.struct_inherits_from(actual_name, expected_name, &mut BTreeSet::new())
-    }
-
-    pub(super) fn struct_inherits_from(&self, actual_name: &str, expected_name: &str, visiting: &mut BTreeSet<String>) -> bool {
-        super::MirStruct::inherits_from(&self.field_declarations, actual_name, expected_name, visiting)
+        if !visiting.insert(actual) {
+            return false;
+        }
+        let found = super::MirStruct::find_by_declaration(&self.field_declarations, actual).is_some_and(|structure| {
+            structure.parent_declarations.iter().any(|parent| self.declaration_inherits_from(*parent, expected, visiting))
+        });
+        visiting.remove(&actual);
+        found
     }
 
     /// Extractor ???? extractor payload??????????????????

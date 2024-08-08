@@ -1585,7 +1585,7 @@ fn resolve_pattern_calls(
             }
             if let Some(actual_type) = scrutinee_type {
                 if should_resolve_name_pattern_as_type(name, actual_type) {
-                    *pattern = HirPattern::Type(name.clone());
+                    *pattern = HirPattern::Type { path: name.clone(), declaration: pattern_type_declaration(name, type_relations) };
                 }
                 else {
                     // Nullary unite/enum arm (`case LeftBrace:`) must become an Extractor so
@@ -1637,7 +1637,7 @@ fn resolve_pattern_calls(
                 resolve_pattern_calls(item, candidates, type_relations, scrutinee_type, struct_fields);
             }
         }
-        HirPattern::Object { name, fields, field_ids, rest, .. } => {
+        HirPattern::Object { name, type_declaration, fields, field_ids, rest, .. } => {
             if rest.is_none() {
                 if let Some(name_path) = name.clone() {
                     if let Some(actual_type) = scrutinee_type {
@@ -1676,13 +1676,20 @@ fn resolve_pattern_calls(
                     }
                 }
             }
+            if type_declaration.is_none() {
+                *type_declaration = name.as_ref().and_then(|name_path| pattern_type_declaration(name_path, type_relations));
+            }
+            // 字段身份按模式声明的聚合类型冻结；无声明时退回 scrutinee 类型。
+            let field_owner = type_declaration
+                .map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new() })
+                .or_else(|| scrutinee_type.cloned());
             for (index, (field_name, item)) in fields.iter_mut().enumerate() {
                 let field_scrutinee = object_field_scrutinee_type(name.as_ref(), field_name, struct_fields);
                 resolve_pattern_calls(item, candidates, type_relations, field_scrutinee, struct_fields);
                 // 字段身份在 HIR 一次冻结；MIR 不得再按字段名回查聚合布局。
-                if let (Some(actual_type), Some(slot)) = (scrutinee_type, field_ids.get_mut(index)) {
+                if let Some(slot) = field_ids.get_mut(index) {
                     if slot.is_none() {
-                        *slot = field_identity_from_type(actual_type, field_name, struct_fields);
+                        *slot = field_owner.as_ref().and_then(|owner| field_identity_from_type(owner, field_name, struct_fields));
                     }
                 }
             }
@@ -3768,6 +3775,16 @@ fn compute_call_match_kind(
     else {
         Some(OverloadMatchKind::NominalExact)
     }
+}
+
+/// 模式类型身份的唯一解析入口：只接受单段名并解析到已冻结的声明身份。
+/// 限定路径与未声明名称不在此兜底；MIR 会按缺失身份结构化失败。
+fn pattern_type_declaration(path: &NamePath, type_relations: &TypeRelationContext) -> Option<nyar_types::ItemId> {
+    let [name] = path.parts()
+    else {
+        return None;
+    };
+    type_relations.nominal_type_for_name(name).and_then(|ty| ty.nominal_declaration())
 }
 
 fn should_resolve_name_pattern_as_type(name: &NamePath, actual_type: &ValkyrieType) -> bool {

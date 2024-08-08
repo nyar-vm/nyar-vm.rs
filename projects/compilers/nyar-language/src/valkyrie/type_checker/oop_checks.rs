@@ -333,7 +333,7 @@ fn covered_variants(pattern: &HirPattern) -> Vec<Identifier> {
             last_name(name).or_else(|| last_name(canonical_callee)).into_iter().collect()
         }
         HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, .. }) => last_name(canonical_callee).into_iter().collect(),
-        HirPattern::Name(name) | HirPattern::Type(name) => {
+        HirPattern::Name(name) | HirPattern::Type { path: name, .. } => {
             // Name→Extractor transitional paths may still carry `Variant.extractor`.
             if let Some(variant) = variant_head_before_extractor(name) {
                 return vec![variant];
