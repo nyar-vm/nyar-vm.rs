@@ -20,18 +20,6 @@ impl MirBuilder {
             .map(|field| field.id)
     }
 
-    pub(super) fn field_identity_for_nominal(
-        &mut self,
-        nominal: nyar_types::NominalInstanceId,
-        field_name: &str,
-    ) -> Option<nyar_types::FieldId> {
-        self.field_declarations
-            .iter()
-            .find(|declaration| declaration.nominal == nominal)
-            .and_then(|declaration| declaration.fields.iter().find(|field| field.name == field_name))
-            .map(|field| field.id)
-    }
-
     pub(super) fn resolve_static_expr(&self, expr: &HirExpr) -> Option<HirExpr> {
         match &expr.kind {
             HirExprKind::Variable(identifier) => self.static_bindings.get(identifier.name.as_str()).cloned().or_else(|| Some(expr.clone())),
@@ -53,7 +41,7 @@ impl MirBuilder {
 
     pub(super) fn extract_method_call(&mut self, callee: &HirExpr) -> Option<(MirOperand, Identifier)> {
         match &callee.kind {
-            HirExprKind::FieldAccess { object, field } => {
+            HirExprKind::FieldAccess { object, field, .. } => {
                 // Always lower FieldAccess callees as method calls (receiver + method name).
                 // Requiring a root binding incorrectly collapsed nested field chains like
                 // `plan.source_closure.package_names.length()` into a dotted Symbol with no args.
@@ -85,8 +73,10 @@ impl MirBuilder {
                     span: span.clone(),
                 };
                 for field in &parts[1..parts.len() - 1] {
-                    receiver_hir =
-                        HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(receiver_hir), field: field.clone() }, span: span.clone() };
+                    receiver_hir = HirExpr {
+                        kind: HirExprKind::FieldAccess { object: Box::new(receiver_hir), field: field.clone(), field_id: None },
+                        span: span.clone(),
+                    };
                 }
                 let receiver_operand = self.lower_expr_to_operand(&receiver_hir);
                 Some((receiver_operand, method_name))
@@ -406,7 +396,7 @@ pub(super) fn try_resolve_as_path(expr: &HirExpr) -> Option<NamePath> {
     match &expr.kind {
         HirExprKind::Variable(identifier) => Some(NamePath::new(vec![identifier.name.clone()])),
         HirExprKind::Path(path) => Some(path.clone()),
-        HirExprKind::FieldAccess { object, field } => {
+        HirExprKind::FieldAccess { object, field, .. } => {
             let mut path = try_resolve_as_path(object)?;
             path.append(field.clone());
             Some(path)

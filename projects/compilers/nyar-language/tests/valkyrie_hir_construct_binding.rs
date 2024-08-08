@@ -26,6 +26,7 @@ fn field_init(name: &str, value: i64) -> HirExpr {
                 kind: HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Integer64(value)),
                 span: nyar_language::types::SourceSpan::new(nyar_language::types::SourceID::default(), 0, 0),
             }),
+            field_id: None,
         },
         span: nyar_language::types::SourceSpan::new(nyar_language::types::SourceID::default(), 0, 0),
     }

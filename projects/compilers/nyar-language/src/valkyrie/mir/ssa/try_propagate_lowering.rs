@@ -174,26 +174,34 @@ impl MirBuilder {
             struct_fields.push((name.to_string(), self.lower_expr_to_operand(init)));
         }
         let value = self.next_value(MirValueOrigin::Temporary);
-        let matches: Vec<_> = self
+        // 匿名类提升时按 captures → 声明字段的顺序生成 `HirStruct`，字段身份由 HIR 注册；
+        // 此处只按同一顺序消费已冻结的 `FieldId`，不按名称重新解析。
+        let mut matches = self
             .field_declarations
             .iter()
-            .filter(|item| item.name == class_name.as_str())
-            .filter_map(|item| item.declaration.map(|declaration| (declaration, item.nominal)))
-            .collect();
-        let Some((declaration, nominal)) = (if matches.len() == 1 { matches.into_iter().next() } else { None })
+            .enumerate()
+            .filter(|(_, item)| item.name == class_name.as_str() && item.declaration.is_some())
+            .map(|(index, _)| index);
+        let Some(index) = matches.next()
         else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
-        let fields = struct_fields
-            .into_iter()
-            .map(|(name, value)| self.field_identity_for_nominal(nominal, &name).map(|field| (field, value)))
-            .collect::<Option<Vec<_>>>();
-        let Some(fields) = fields
+        if matches.next().is_some() {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        }
+        let structure = &self.field_declarations[index];
+        let (Some(declaration), nominal) = (structure.declaration, structure.nominal)
         else {
-            self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "try propagation aggregate".to_string() });
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
+        if structure.fields.len() != struct_fields.len() {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "try propagation aggregate".to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        }
+        let fields = structure.fields.iter().map(|field| field.id).zip(struct_fields.into_iter().map(|(_, value)| value)).collect::<Vec<_>>();
         self.instructions.push(MirInstruction::from_operation(MirOperation::StructNew { nominal, fields }));
         self.value_types.insert(value, ValkyrieType::Nominal { declaration, arguments: Vec::new() });
         MirOperand::Value(value)

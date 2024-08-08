@@ -285,7 +285,7 @@ fn infer_scrutinee_nominal_type(
             let name = last_name(path)?;
             nominal_type_name(env.get(&name)?)
         }
-        HirExprKind::FieldAccess { object, field } => {
+        HirExprKind::FieldAccess { object, field, .. } => {
             let owner_type = infer_scrutinee_nominal_type(object, env, struct_fields)?;
             let field_ty = struct_fields.get(&owner_type)?.get(field)?;
             nominal_type_name(field_ty)
@@ -527,7 +527,7 @@ impl VisibilityChecker {
 
     fn walk_expr(&mut self, expr: &HirExpr, context: &AccessContext, env: &mut BTreeMap<Identifier, ValkyrieType>) {
         match &expr.kind {
-            HirExprKind::FieldAccess { object, field } | HirExprKind::StoreField { object, field, .. } => {
+            HirExprKind::FieldAccess { object, field, .. } | HirExprKind::StoreField { object, field, .. } => {
                 self.walk_expr(object, context, env);
                 if let HirExprKind::StoreField { value, .. } = &expr.kind {
                     self.walk_expr(value, context, env);
@@ -539,7 +539,7 @@ impl VisibilityChecker {
                 }
             }
             HirExprKind::Call { callee, args, .. } => {
-                if let HirExprKind::FieldAccess { object, field } = &callee.kind {
+                if let HirExprKind::FieldAccess { object, field, .. } = &callee.kind {
                     self.walk_expr(object, context, env);
                     if let Some(owner) = resolve_owner_type(object, env, &self.singleton_names) {
                         if let Some((visibility, namespace)) = self.members.get(&(owner.clone(), field.clone())).cloned() {

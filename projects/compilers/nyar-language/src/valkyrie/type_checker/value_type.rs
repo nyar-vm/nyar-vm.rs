@@ -213,7 +213,7 @@ impl ValueTypeChecker {
             | HirExprKind::Path(_)
             | HirExprKind::Continue { .. }
             | HirExprKind::Fallthrough => {}
-            HirExprKind::StoreField { object, field, value } => {
+            HirExprKind::StoreField { object, field, value, .. } => {
                 if let Some(value_type_name) = self.resolve_object_value_type(class_name, object, locals) {
                     errors.push(ValueTypeError::value_type_field_mutation(value_type_name, field.clone(), Some(object.span.clone())));
                 }

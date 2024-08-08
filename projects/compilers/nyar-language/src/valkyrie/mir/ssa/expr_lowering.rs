@@ -501,15 +501,7 @@ impl MirBuilder {
             return None;
         }
         let nominal = declaration.nominal;
-        let field_names = declaration.fields.iter().map(|field| field.name.clone()).collect::<Vec<_>>();
-        let fields = field_names
-            .iter()
-            .zip(arguments.iter())
-            .filter_map(|(name, value)| self.field_identity_for_nominal(nominal, name).map(|id| (id, value.clone())))
-            .collect::<Vec<_>>();
-        if fields.len() != arguments.len() {
-            return None;
-        }
+        let fields = declaration.fields.iter().map(|field| field.id).zip(arguments.iter().cloned()).collect::<Vec<_>>();
         let value = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(MirOperation::StructNew { nominal, fields }, vec![value]);
         self.value_types.insert(value, call.return_type.clone());
@@ -717,11 +709,11 @@ impl MirBuilder {
                 // value via FieldGet, then `Call { dispatch: Indirect, callee: <value> }`.
                 // This lets backends emit `Delegate::DynamicInvoke` / `call_ref` etc.
                 // instead of treating the field name as a static method symbol.
-                if let HirExprKind::FieldAccess { object, field } = &callee.kind {
+                if let HirExprKind::FieldAccess { object, field, field_id } = &callee.kind {
                     let receiver_operand = self.lower_expr_to_operand(object);
                     let field_ty = self.field_type_for_object_operand(&receiver_operand, field);
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
-                        let Some(field_id) = self.field_identity_for_object(&receiver_operand, field)
+                        let Some(field_id) = *field_id
                         else {
                             self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
                             return MirOperand::Constant(MirConstant::Unit);
@@ -970,22 +962,17 @@ impl MirBuilder {
             HirExprKind::Construct { path, args, resolved } => {
                 let name = path.parts().last().cloned().unwrap_or_else(|| Identifier::new("_"));
                 let struct_type_name = self.struct_new_owner_name(&name);
-                let mut fields = Vec::with_capacity(args.len());
+                let mut fields: Vec<(nyar_types::FieldId, MirOperand)> = Vec::with_capacity(args.len());
                 let mut field_values = Vec::with_capacity(args.len());
                 for (arg_index, arg) in args.iter().enumerate() {
-                    if let HirExprKind::FieldInit { name: field_name, value } = &arg.kind {
+                    if let HirExprKind::FieldInit { name: field_name, value, field_id } = &arg.kind {
                         // Empty `[]` without a hint defaults to `i32[]` (see
                         // `infer_array_literal_element_type`). Pass the struct field type so
                         // `visited: [utf8] = []` lowers as `string[]`, not `int32[]`.
-                        // Prefer the nominal field registry.  For generated
-                        // structures whose declaration is imported through a
-                        // resolved constructor, carry the selected formal type
-                        // by field position as explicit HIR metadata; do not
-                        // infer a sum from the variant name.
+                        // 字段身份只消费 HIR 冻结结果；缺失即结构化失败。
                         let owner = self.struct_construct_result_type(&name, resolved.as_ref());
                         let field_ty = self
                             .field_type_for_semantic_type(&owner, field_name.as_str())
-                            .or_else(|| self.lookup_struct_field_type(struct_type_name.as_str(), field_name.as_str()))
                             .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
                             .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
@@ -997,8 +984,13 @@ impl MirBuilder {
                         if let (Some(declared_ty), MirOperand::Value(value_ref)) = (&field_ty, &value_operand) {
                             self.value_types.insert(*value_ref, declared_ty.clone());
                         }
+                        let Some(field_id) = *field_id
+                        else {
+                            self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
+                            return MirOperand::Constant(MirConstant::Unit);
+                        };
                         field_values.push(value_operand.clone());
-                        fields.push((field_name.to_string(), value_operand));
+                        fields.push((field_id, value_operand));
                     }
                 }
                 // Unite/enum constructors lower as `SumNew` only when HIR already closed
@@ -1055,32 +1047,28 @@ impl MirBuilder {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: struct_type_name });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
-                let fields = fields
-                    .into_iter()
-                    .map(|(name, value)| self.field_identity_for_nominal(nominal, &name).map(|field| (field, value)))
-                    .collect::<Option<Vec<_>>>();
-                let Some(fields) = fields
-                else {
-                    self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "struct initializer".to_string() });
-                    return MirOperand::Constant(MirConstant::Unit);
-                };
                 self.push_instruction(MirOperation::StructNew { nominal, fields }, vec![value]);
                 self.value_types.insert(value, result_type);
                 MirOperand::Value(value)
             }
-            HirExprKind::FieldAccess { object, field } => {
+            HirExprKind::FieldAccess { object, field, field_id } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 // 禁止按字段名 `length` 改写成 ArrayLength；数组长度只能来自
                 // 已在 HIR 解析的 IntrinsicId::ArrayLen Call / 明确 ArrayLength 节点。
-                self.lower_object_field_operand(object_operand, field)
+                let Some(field_id) = *field_id
+                else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                self.lower_object_field_get_operand(object_operand, field_id, field)
             }
-            HirExprKind::StoreField { object, field, value } => {
+            HirExprKind::StoreField { object, field, value, field_id } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 let storage = self.storage_for_object_operand(&object_operand);
                 let layout_id = self.layout_id_for_object_operand(&object_operand);
                 let field_type = self.field_type_for_object_operand(&object_operand, field);
                 let value_operand = self.lower_expr_to_operand_with_hint(value, field_type.as_ref());
-                let Some(field_id) = self.field_identity_for_object(&object_operand, field)
+                let Some(field_id) = *field_id
                 else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
                     return MirOperand::Constant(MirConstant::Unit);

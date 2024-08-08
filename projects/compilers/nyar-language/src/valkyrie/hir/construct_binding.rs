@@ -31,7 +31,7 @@ pub enum ConstructBindingError {
 pub fn bind_construct_fields(fields: &[HirField], args: &[HirExpr]) -> Result<Vec<HirExpr>, ConstructBindingError> {
     let mut bound: Vec<Option<HirExpr>> = vec![None; fields.len()];
     for arg in args {
-        let HirExprKind::FieldInit { name, value } = &arg.kind
+        let HirExprKind::FieldInit { name, value, .. } = &arg.kind
         else {
             return Err(ConstructBindingError::NotAFieldInit);
         };

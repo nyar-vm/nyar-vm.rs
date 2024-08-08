@@ -195,6 +195,9 @@ pub enum HirExprKind {
         name: Identifier,
         /// The field value.
         value: Box<HirExpr>,
+        /// HIR 绑定阶段冻结的字段身份；缺失即结构化失败，MIR 不得按名称回查。
+        #[cfg_attr(feature = "serde", serde(default))]
+        field_id: Option<nyar_types::FieldId>,
     },
     /// 数组创建表达式：`new [ElementType](length)`。
     ///
@@ -228,6 +231,9 @@ pub enum HirExprKind {
         object: Box<HirExpr>,
         /// 字段名。
         field: Identifier,
+        /// HIR 绑定阶段冻结的字段身份；作为成员选择名时可以为 `None`。
+        #[cfg_attr(feature = "serde", serde(default))]
+        field_id: Option<nyar_types::FieldId>,
     },
     /// 字段赋值表达式：`object.field = value`。
     ///
@@ -240,6 +246,9 @@ pub enum HirExprKind {
         field: Identifier,
         /// 要写入的值。
         value: Box<HirExpr>,
+        /// HIR 绑定阶段冻结的字段身份；缺失即结构化失败，MIR 不得按名称回查。
+        #[cfg_attr(feature = "serde", serde(default))]
+        field_id: Option<nyar_types::FieldId>,
     },
     /// Explicit generic application on a value path or callable.
     GenericApply {

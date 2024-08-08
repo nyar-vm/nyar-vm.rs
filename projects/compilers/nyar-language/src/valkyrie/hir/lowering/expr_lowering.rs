@@ -184,7 +184,7 @@ fn lower_term_expression_with_context(
                 kind
             }
             else {
-                HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member) }
+                HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None }
             }
         }
         TermExpression::Index { receiver, index, .. } => lower_operator_member_call(
@@ -283,6 +283,7 @@ fn lower_term_expression_with_context(
                     kind: HirExprKind::FieldInit {
                         name: Identifier::new(&field.name),
                         value: Box::new(lower_term_expression_with_context(value, source_id, span_range.clone(), false)),
+                        field_id: None,
                     },
                     span: span.clone(),
                 })
@@ -365,7 +366,7 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
             let value = Box::new(lower_term_expression_with_context(rhs, source_id, fallback_span, false));
             match target.kind {
                 HirExprKind::Variable(identifier) => HirExprKind::Assign { target: identifier.name, value },
-                HirExprKind::FieldAccess { object, field } => HirExprKind::StoreField { object, field, value },
+                HirExprKind::FieldAccess { object, field, field_id } => HirExprKind::StoreField { object, field, value, field_id },
                 _ => panic!("Oak 已验证的赋值位置不能降低为其他表达式"),
             }
         }
@@ -400,7 +401,10 @@ fn lower_object_expression(
                     kind: HirExprKind::Variable(HirIdentifier { name: Identifier::new(&field.name), shadow_index: 0, span: span.clone() }),
                     span: span.clone(),
                 });
-            HirExpr { kind: HirExprKind::FieldInit { name: Identifier::new(&field.name), value: Box::new(value) }, span: span.clone() }
+            HirExpr {
+                kind: HirExprKind::FieldInit { name: Identifier::new(&field.name), value: Box::new(value), field_id: None },
+                span: span.clone(),
+            }
         })
         .collect();
     HirExprKind::Construct { path, args, resolved: None }

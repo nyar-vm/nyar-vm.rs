@@ -1197,7 +1197,7 @@ fn try_resolve_value_member_access(
     singleton_names: &BTreeSet<Identifier>,
     contextual_type: Option<&ValkyrieType>,
 ) -> bool {
-    let HirExprKind::FieldAccess { object, field } = &mut expr.kind
+    let HirExprKind::FieldAccess { object, field, .. } = &mut expr.kind
     else {
         return false;
     };
@@ -1218,6 +1218,36 @@ fn try_resolve_value_member_access(
     };
     expr.kind = HirExprKind::Call { callee: Box::new(callee), args, resolved: Some(resolved) };
     true
+}
+
+/// 把局部根的 `a.b.c` 点分路径规范化为嵌套 `FieldAccess`，并冻结每级字段身份。
+///
+/// 非局部根（包/模块限定名）与无字段事实的中间段保持原样，由后续结构化校验失败；
+/// 这里禁止按短名补造字段身份。
+fn normalize_local_field_chain(expr: &mut HirExpr, locals: &BTreeMap<String, ValkyrieType>, struct_fields: &AggregateFieldIndex) {
+    let HirExprKind::Path(path) = &expr.kind
+    else {
+        return;
+    };
+    let parts = path.parts().to_vec();
+    if parts.len() < 2 {
+        return;
+    }
+    let Some(mut current_type) = locals.get(parts[0].as_str()).cloned()
+    else {
+        return;
+    };
+    let span = expr.span.clone();
+    let mut current = HirExpr {
+        kind: HirExprKind::Variable(HirIdentifier { name: parts[0].clone(), shadow_index: 0, span: span.clone() }),
+        span: span.clone(),
+    };
+    for part in &parts[1..] {
+        let field_id = field_identity_from_type(&current_type, part, struct_fields);
+        current_type = lookup_struct_field_type(&current_type, part, struct_fields).unwrap_or(ValkyrieType::AutoType);
+        current = HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(current), field: part.clone(), field_id }, span: span.clone() };
+    }
+    expr.kind = current.kind;
 }
 
 /// 表达式在父节点中的位置。
@@ -1253,6 +1283,9 @@ fn resolve_expr_calls_at(
     position: ExprPosition,
 ) {
     try_resolve_nullary_variant_expr(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+    // 局部根的点链统一规范化为 `FieldAccess`，字段身份在 HIR 一次冻结；
+    // 下游不得再按点分 Path 或字段名重新解析。
+    normalize_local_field_chain(expr, locals, struct_fields);
     // 值位置成员访问先于按形状分发：命中后节点已经是普通调用，不再走字段访问分支。
     if position == ExprPosition::Value
         && try_resolve_value_member_access(expr, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
@@ -1294,8 +1327,13 @@ fn resolve_expr_calls_at(
                 );
             }
         }
-        HirExprKind::FieldAccess { object, .. } => {
+        HirExprKind::FieldAccess { object, field, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            if field_id.is_none() {
+                *field_id = infer_scrutinee_type(object, locals, struct_fields, singleton_names)
+                    .as_ref()
+                    .and_then(|object_type| field_identity_from_type(object_type, field, struct_fields));
+            }
         }
         // `GenericApply` 的内层是调用选择名（`peel_explicit_generic_arguments` 会剥开它），
         // 因此与 `Call.callee` 同为被调用者位置。
@@ -1319,9 +1357,14 @@ fn resolve_expr_calls_at(
         | HirExprKind::Assign { value: callee, .. } => {
             resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
         }
-        HirExprKind::StoreField { object, value, .. } => {
+        HirExprKind::StoreField { object, field, value, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
+            if field_id.is_none() {
+                *field_id = infer_scrutinee_type(object, locals, struct_fields, singleton_names)
+                    .as_ref()
+                    .and_then(|object_type| field_identity_from_type(object_type, field, struct_fields));
+            }
         }
         HirExprKind::ArrayNew { length, .. } => {
             resolve_expr_calls(length, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
@@ -1374,6 +1417,15 @@ fn resolve_expr_calls_at(
             }
             if let (Some(resolved), Some(name)) = (resolved.as_mut(), constructor_name.as_ref()) {
                 enrich_construct_unite_variant_facts(name, args, resolved, contextual_type, candidates);
+            }
+            if let Some(call) = resolved.as_ref() {
+                for arg in args.iter_mut() {
+                    if let HirExprKind::FieldInit { name, field_id, .. } = &mut arg.kind {
+                        if field_id.is_none() {
+                            *field_id = field_identity_from_type(&call.return_type, name, struct_fields);
+                        }
+                    }
+                }
             }
         }
         HirExprKind::Cast { expr, .. } => {
@@ -1997,7 +2049,7 @@ fn try_resolve_call(
 
     // `receiver.method(args)` — virtual dispatch: prepend receiver, match imply/class methods.
     // Typechecker may also flatten `args.length` into a Path whose root is a local/param.
-    if let HirExprKind::FieldAccess { object, field } = &callee.kind {
+    if let HirExprKind::FieldAccess { object, field, .. } = &callee.kind {
         return try_resolve_instance_method(object, field, args, candidates, type_relations, locals, struct_fields, singleton_names);
     }
     if let HirExprKind::Path(path) = &callee.kind {
@@ -2009,7 +2061,10 @@ fn try_resolve_call(
                 span: span.clone(),
             };
             for field in &path.parts()[1..path.parts().len() - 1] {
-                receiver = HirExpr { kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone() }, span: span.clone() };
+                receiver = HirExpr {
+                    kind: HirExprKind::FieldAccess { object: Box::new(receiver), field: field.clone(), field_id: None },
+                    span: span.clone(),
+                };
             }
             return try_resolve_instance_method(
                 &receiver,
@@ -2358,7 +2413,7 @@ fn member_call_argument_contexts(
     // 成员调用有两种等价表示：`FieldAccess` callee，以及解析器保留的扁平
     // `Path([receiver, ..fields, method])`；后者根必须是本地绑定。
     let (receiver_type, field) = match &callee.kind {
-        HirExprKind::FieldAccess { object, field } => {
+        HirExprKind::FieldAccess { object, field, .. } => {
             let receiver_type =
                 infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names));
             (receiver_type, field.clone())
@@ -3815,7 +3870,7 @@ pub fn infer_scrutinee_type(
             }
             Some(current)
         }
-        HirExprKind::FieldAccess { object, field } => {
+        HirExprKind::FieldAccess { object, field, .. } => {
             if let Some(singleton_name) = extract_singleton_type_name(object, locals, singleton_names) {
                 return lookup_struct_field_type(&ValkyrieType::Named(singleton_name), field, struct_fields);
             }
@@ -3828,6 +3883,15 @@ pub fn infer_scrutinee_type(
 
 fn lookup_struct_field_type(object_type: &ValkyrieType, field: &Identifier, struct_fields: &AggregateFieldIndex) -> Option<ValkyrieType> {
     struct_fields.fields_of(object_type).and_then(|fields| fields.iter().find(|item| item.name == *field).map(|item| item.ty.clone()))
+}
+
+/// 字段身份的唯一冻结入口：按已注册聚合布局读取 `HirField::id`，不在此重新编号。
+fn field_identity_from_type(
+    object_type: &ValkyrieType,
+    field: &Identifier,
+    struct_fields: &AggregateFieldIndex,
+) -> Option<nyar_types::FieldId> {
+    struct_fields.fields_of(object_type)?.iter().find(|item| item.name == *field)?.id
 }
 
 fn payload_field_scrutinee_types(payload: &ValkyrieType, struct_fields: &AggregateFieldIndex) -> Vec<Option<ValkyrieType>> {

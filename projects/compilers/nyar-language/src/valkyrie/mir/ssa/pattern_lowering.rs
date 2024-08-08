@@ -762,6 +762,22 @@ impl MirBuilder {
         }
     }
 
+    /// 表达式字段读取：身份由 HIR 冻结，MIR 只按 `FieldId` 发出 `FieldGet`。
+    pub(super) fn lower_object_field_get_operand(
+        &mut self,
+        object: MirOperand,
+        field: nyar_types::FieldId,
+        field_name: &Identifier,
+    ) -> MirOperand {
+        let field_type = self.field_type_for_object_operand(&object, field_name);
+        let output = self.next_value(MirValueOrigin::Temporary);
+        self.push_instruction(MirOperation::FieldGet { object, field }, vec![output]);
+        if let Some(field_type) = field_type {
+            self.value_types.insert(output, field_type);
+        }
+        MirOperand::Value(output)
+    }
+
     pub(super) fn lower_object_field_operand(&mut self, object: MirOperand, field_name: &Identifier) -> MirOperand {
         let field_type = self.field_type_for_object_operand(&object, field_name);
         let Some(field) = self.field_identity_for_object(&object, field_name)
