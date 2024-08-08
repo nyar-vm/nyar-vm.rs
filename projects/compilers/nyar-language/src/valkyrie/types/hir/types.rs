@@ -643,6 +643,9 @@ pub enum HirPattern {
         name: Option<crate::NamePath>,
         /// 命名字段子模式。
         fields: Vec<(Identifier, HirPattern)>,
+        /// 与 `fields` 一一对应的字段身份；HIR 绑定阶段冻结，MIR 只按 `FieldId` 读取。
+        #[cfg_attr(feature = "serde", serde(default))]
+        field_ids: Vec<Option<nyar_types::FieldId>>,
         /// 剩余字段绑定（若有）。
         rest: Option<HirIdentifier>,
     },

@@ -12,14 +12,6 @@ impl MirBuilder {
         super::MirStruct::find_by_declaration(&self.field_declarations, declaration).map(|structure| structure.nominal)
     }
 
-    pub(super) fn field_identity_for_object(&mut self, object: &MirOperand, field_name: &Identifier) -> Option<nyar_types::FieldId> {
-        let object_type = infer_builder_operand_type(object, &self.value_types)?;
-        let declaration = object_type.nominal_declaration()?;
-        super::MirStruct::find_by_declaration(&self.field_declarations, declaration)
-            .and_then(|structure| structure.fields.iter().find(|field| field.name == field_name.as_str()))
-            .map(|field| field.id)
-    }
-
     pub(super) fn resolve_static_expr(&self, expr: &HirExpr) -> Option<HirExpr> {
         match &expr.kind {
             HirExprKind::Variable(identifier) => self.static_bindings.get(identifier.name.as_str()).cloned().or_else(|| Some(expr.clone())),

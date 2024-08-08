@@ -161,7 +161,7 @@ impl MirBuilder {
                 };
                 self.bind_extractor_pattern_from_payload(extractor, payload);
             }
-            HirPattern::Object { fields, rest, .. } => {
+            HirPattern::Object { fields, field_ids, rest, .. } => {
                 // Unite 花括号臂（`Include { value }`）经 probe 传来 payload 时：
                 // 变体字段直接绑定到 payload（单字段变体 payload 已是 `value` 的类型），
                 // 不可再按 scrutinee（WitDefinition）做 struct FieldGet。
@@ -183,7 +183,7 @@ impl MirBuilder {
                     }
                 }
                 else {
-                    self.bind_object_pattern_from_operand(fields, rest.as_ref(), operand);
+                    self.bind_object_pattern_from_operand(fields, field_ids, rest.as_ref(), operand);
                 }
             }
             HirPattern::Bind { identifier, pattern } => {
@@ -225,7 +225,7 @@ impl MirBuilder {
             HirPattern::Name(name) => self.lower_name_pattern_match_operand(name, value),
             HirPattern::Type(name) => self.lower_type_pattern_match_operand(name, value),
             HirPattern::TypedBind { ty, .. } => self.lower_type_pattern_match_operand(ty, value),
-            HirPattern::Object { name, fields, .. } => self.lower_object_pattern_match_operand(name, fields, value),
+            HirPattern::Object { name, fields, field_ids, .. } => self.lower_object_pattern_match_operand(name, fields, field_ids, value),
             HirPattern::Or(patterns) => self.lower_or_pattern_match_operand(patterns, value),
             HirPattern::Bind { pattern, .. } => self.lower_pattern_match_operand(pattern, value),
             HirPattern::Mut(pattern) => self.lower_pattern_match_operand(pattern, value),
@@ -584,11 +584,13 @@ impl MirBuilder {
         &mut self,
         name: &Option<NamePath>,
         fields: &[(Identifier, HirPattern)],
+        field_ids: &[Option<nyar_types::FieldId>],
         value: MirOperand,
     ) -> MirOperand {
+        let fallback = || HirPattern::Object { name: name.clone(), fields: fields.to_vec(), field_ids: field_ids.to_vec(), rest: None };
         let Some(actual_type) = infer_builder_operand_type(&value, &self.value_types)
         else {
-            return self.lower_fallback_pattern_match(HirPattern::Object { name: name.clone(), fields: fields.to_vec(), rest: None }, value);
+            return self.lower_fallback_pattern_match(fallback(), value);
         };
 
         if let Some(name) = name {
@@ -601,21 +603,18 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Bool(true));
         }
 
-        let Some(struct_name) = named_type_name(&actual_type)
-        else {
-            return MirOperand::Constant(MirConstant::Bool(false));
-        };
-
-        if !self.has_known_struct_layout(struct_name) {
-            return self.lower_fallback_pattern_match(HirPattern::Object { name: name.clone(), fields: fields.to_vec(), rest: None }, value);
+        if !self.has_known_struct_layout(&actual_type) {
+            return self.lower_fallback_pattern_match(fallback(), value);
         }
 
         let mut accumulated: Option<MirOperand> = None;
-        for (field_name, field_pattern) in fields {
-            if !self.struct_has_field(struct_name, field_name.as_str()) {
+        for (index, (field_name, field_pattern)) in fields.iter().enumerate() {
+            // 字段身份已由 HIR 冻结；缺失即结构化失败，不按字段名回查布局。
+            let Some(field_id) = field_ids.get(index).copied().flatten()
+            else {
                 return MirOperand::Constant(MirConstant::Bool(false));
-            }
-            let field_operand = self.lower_object_field_operand(value.clone(), field_name);
+            };
+            let field_operand = self.lower_object_field_get_operand(value.clone(), field_id, field_name);
             let field_match = self.lower_pattern_match_operand(field_pattern, field_operand);
             accumulated = Some(self.merge_pattern_match_operands(accumulated, field_match));
         }
@@ -632,8 +631,13 @@ impl MirBuilder {
         accumulated.unwrap_or(MirOperand::Constant(MirConstant::Bool(false)))
     }
 
-    pub(super) fn has_known_struct_layout(&self, struct_name: &str) -> bool {
-        super::MirStruct::has_layout(&self.field_declarations, struct_name)
+    pub(super) fn has_known_struct_layout(&self, actual_type: &ValkyrieType) -> bool {
+        match actual_type {
+            ValkyrieType::Nominal { declaration, .. } => {
+                super::MirStruct::find_by_declaration(&self.field_declarations, *declaration).is_some()
+            }
+            _ => false,
+        }
     }
 
     fn lower_extractor_nested_pattern_match_operand(
@@ -770,21 +774,6 @@ impl MirBuilder {
         field_name: &Identifier,
     ) -> MirOperand {
         let field_type = self.field_type_for_object_operand(&object, field_name);
-        let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::FieldGet { object, field }, vec![output]);
-        if let Some(field_type) = field_type {
-            self.value_types.insert(output, field_type);
-        }
-        MirOperand::Value(output)
-    }
-
-    pub(super) fn lower_object_field_operand(&mut self, object: MirOperand, field_name: &Identifier) -> MirOperand {
-        let field_type = self.field_type_for_object_operand(&object, field_name);
-        let Some(field) = self.field_identity_for_object(&object, field_name)
-        else {
-            self.diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
-            return MirOperand::Constant(MirConstant::Unit);
-        };
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(MirOperation::FieldGet { object, field }, vec![output]);
         if let Some(field_type) = field_type {
@@ -953,17 +942,6 @@ impl MirBuilder {
         }
     }
 
-    pub(super) fn lookup_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<ValkyrieType> {
-        let structure = super::MirStruct::find_by_name(&self.field_declarations, struct_name)?;
-        let declaration = structure.declaration?;
-        let owner = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
-        super::MirStruct::lookup_field_type(&self.field_declarations, &owner, field_name, &mut BTreeSet::new())
-    }
-
-    pub(super) fn struct_has_field(&self, struct_name: &str, field_name: &str) -> bool {
-        self.lookup_struct_field_type(struct_name, field_name).is_some()
-    }
-
     pub(super) fn type_pattern_matches(&self, actual_type: &ValkyrieType, pattern_name: &NamePath) -> bool {
         let Some(expected_name) = pattern_name.parts().last().map(|identifier| identifier.as_str())
         else {
@@ -1040,6 +1018,7 @@ impl MirBuilder {
     pub(super) fn bind_object_pattern_from_operand(
         &mut self,
         fields: &[(Identifier, HirPattern)],
+        field_ids: &[Option<nyar_types::FieldId>],
         rest: Option<&crate::types::hir::HirIdentifier>,
         operand: MirOperand,
     ) {
@@ -1054,18 +1033,7 @@ impl MirBuilder {
             return;
         };
 
-        let Some(struct_name) = named_type_name(&actual_type)
-        else {
-            for (_, field_pattern) in fields {
-                self.bind_unknown_pattern_bindings(field_pattern);
-            }
-            if let Some(rest) = rest {
-                self.bind_unknown_pattern_bindings(&HirPattern::Variable(rest.clone()));
-            }
-            return;
-        };
-
-        if !self.has_known_struct_layout(struct_name) {
+        if !self.has_known_struct_layout(&actual_type) {
             for (_, field_pattern) in fields {
                 self.bind_unknown_pattern_bindings(field_pattern);
             }
@@ -1075,13 +1043,15 @@ impl MirBuilder {
             return;
         }
 
-        for (field_name, field_pattern) in fields {
-            if !self.struct_has_field(struct_name, field_name.as_str()) {
+        for (index, (field_name, field_pattern)) in fields.iter().enumerate() {
+            // 字段身份已由 HIR 冻结；缺失即结构化失败，不按字段名回查布局。
+            let Some(field_id) = field_ids.get(index).copied().flatten()
+            else {
                 self.bind_unknown_pattern_bindings(field_pattern);
                 continue;
-            }
+            };
 
-            let extracted = self.lower_object_field_operand(operand.clone(), field_name);
+            let extracted = self.lower_object_field_get_operand(operand.clone(), field_id, field_name);
             self.bind_pattern_from_operand(field_pattern, extracted, None);
         }
         if let Some(rest) = rest {

@@ -1637,7 +1637,7 @@ fn resolve_pattern_calls(
                 resolve_pattern_calls(item, candidates, type_relations, scrutinee_type, struct_fields);
             }
         }
-        HirPattern::Object { name, fields, rest, .. } => {
+        HirPattern::Object { name, fields, field_ids, rest, .. } => {
             if rest.is_none() {
                 if let Some(name_path) = name.clone() {
                     if let Some(actual_type) = scrutinee_type {
@@ -1676,9 +1676,15 @@ fn resolve_pattern_calls(
                     }
                 }
             }
-            for (field_name, item) in fields.iter_mut() {
+            for (index, (field_name, item)) in fields.iter_mut().enumerate() {
                 let field_scrutinee = object_field_scrutinee_type(name.as_ref(), field_name, struct_fields);
                 resolve_pattern_calls(item, candidates, type_relations, field_scrutinee, struct_fields);
+                // 字段身份在 HIR 一次冻结；MIR 不得再按字段名回查聚合布局。
+                if let (Some(actual_type), Some(slot)) = (scrutinee_type, field_ids.get_mut(index)) {
+                    if slot.is_none() {
+                        *slot = field_identity_from_type(actual_type, field_name, struct_fields);
+                    }
+                }
             }
         }
         HirPattern::Bind { pattern, .. } | HirPattern::Mut(pattern) | HirPattern::Pin { pattern, .. } => {

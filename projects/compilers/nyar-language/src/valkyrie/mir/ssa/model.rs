@@ -280,11 +280,6 @@ impl MirStruct {
         inherited
     }
 
-    /// 判断短名在聚合声明表中是否唯一存在（仅用于模式 lowering 的遗留表面名输入）。
-    pub fn has_layout(declarations: &[MirStruct], name: &str) -> bool {
-        Self::find_by_name(declarations, name).is_some()
-    }
-
     /// 按已冻结的 `parent_declarations` 判断表面短名继承关系（仅用于模式 lowering）。
     pub fn inherits_from(declarations: &[MirStruct], actual_name: &str, expected_name: &str, visiting: &mut std::collections::BTreeSet<String>) -> bool {
         if actual_name == expected_name {

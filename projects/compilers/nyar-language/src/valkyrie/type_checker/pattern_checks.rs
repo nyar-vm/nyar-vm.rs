@@ -225,7 +225,7 @@ impl PatternRefutabilityChecker {
             HirPattern::Name(path) => path.to_string(),
             HirPattern::Type(path) => format!("{} :: type", path),
             HirPattern::TypedBind { identifier, ty } => format!("{} : {}", identifier.name, ty),
-            HirPattern::Object { name, fields, rest } => {
+            HirPattern::Object { name, fields, rest, .. } => {
                 let field_strs = fields.iter().map(|(n, p)| format!("{}: {}", n, self.pattern_to_string(p))).collect::<Vec<_>>().join(", ");
                 let rest_str = rest.as_ref().map(|r| format!("..{}", r.name)).unwrap_or_default();
                 let all = if field_strs.is_empty() {
