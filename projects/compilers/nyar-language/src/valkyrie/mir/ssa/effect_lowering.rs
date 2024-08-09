@@ -250,7 +250,6 @@ impl MirBuilder {
         payload: Option<&MirOperand>,
         resume_parameter_count: usize,
         continuation_index: Option<usize>,
-        carrier_type: Option<ValkyrieType>,
     ) {
         let payload_type = payload.and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
         let spill_candidates: Vec<MirValueRef> = self
@@ -273,7 +272,6 @@ impl MirBuilder {
             payload_type,
             spill_candidates,
             continuation_index,
-            carrier_type,
         });
     }
 
@@ -291,7 +289,7 @@ impl MirBuilder {
         self.current_block = current_block;
         self.current_label = current_label.clone();
         let continuation_index = self.control_flow.current_resume().map(|ctx| ctx.continuation);
-        self.record_suspend_point(effect, current_block, resume_block, payload.as_ref(), 1, continuation_index, None);
+        self.record_suspend_point(effect, current_block, resume_block, payload.as_ref(), 1, continuation_index);
         self.terminate(MirTerminator::PerformEffect { effect, payload, resume_target: resume_block });
         self.flush_block(&current_label);
         self.current_block = resume_block;
@@ -308,7 +306,7 @@ impl MirBuilder {
         self.current_block = current_block;
         self.current_label = current_label.clone();
         let continuation_index = self.control_flow.current_resume().map(|ctx| ctx.continuation);
-        self.record_suspend_point(effect, current_block, resume_block, payload.as_ref(), 0, continuation_index, None);
+        self.record_suspend_point(effect, current_block, resume_block, payload.as_ref(), 0, continuation_index);
         self.terminate(MirTerminator::PerformEffect { effect, payload, resume_target: resume_block });
         self.flush_block(&current_label);
         self.current_block = resume_block;
@@ -319,61 +317,26 @@ impl MirBuilder {
 
     pub(super) fn lower_uncaught_raise(&mut self, payload: Option<MirOperand>) -> MirOperand {
         let carrier_type = payload.as_ref().and_then(|operand| infer_builder_operand_type(operand, &self.value_types));
-        let resume_parameter_type = self.lookup_effectful_resume_type(&carrier_type);
-        self.lower_perform_effect_with_carrier("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type, carrier_type)
+        let resume_parameter_type = self.default_raise_resume_type(&carrier_type);
+        self.lower_perform_effect("raise_resume", MirEffectKind::Raise, payload, resume_parameter_type)
     }
 
-    /// `raise` 载体的 resume 类型。
+    /// `raise` 载体的恢复类型。
     ///
-    /// MIR 不持有 `Effectful::Resume` 的关联类型选择表，也不按 trait/载体名重建；
-    /// 当前没有该关联类型的声明绑定事实时，按 Valkyrie 约定视为 `!`。
-    /// 非名义载体不携带效应声明，返回 `None` 交由调用点保留原有路径。
-    fn lookup_effectful_resume_type(&self, carrier_type: &Option<ValkyrieType>) -> Option<ValkyrieType> {
+    /// 当前没有 `Effectful::Resume` 关联类型的实现事实进入 HIR，按 Valkyrie 规范默认值
+    /// `Resume = !` 处理名义载体；基本类型载荷（如 `raise 42`）保留随载荷推断。
+    fn default_raise_resume_type(&self, carrier_type: &Option<ValkyrieType>) -> Option<ValkyrieType> {
         let carrier = carrier_type.as_ref()?;
-        match carrier {
-            ValkyrieType::Nominal { .. } => Some(ValkyrieType::Void),
-            ValkyrieType::Apply(base, _) => base.nominal_declaration().map(|_| ValkyrieType::Void),
-            _ => None,
-        }
-    }
-
-    /// 与 [`lower_perform_effect`] 同构，但允许携带用户 effect 载体类型。
-    ///
-    /// 仅 `Raise` 路径使用：被 raise 的值的类型即为载体类型，用于后续查询
-    /// `Effectful::Resume` 关联类型以推断 resume 参数类型。
-    fn lower_perform_effect_with_carrier(
-        &mut self,
-        label: &str,
-        effect: MirEffectKind,
-        payload: Option<MirOperand>,
-        resume_parameter_type: Option<ValkyrieType>,
-        carrier_type: Option<ValkyrieType>,
-    ) -> MirOperand {
-        let current_block = self.current_block;
-        let current_label = self.current_label.clone();
-        let resume_block = self.new_block(label);
-        let resume_value = self.ensure_block_parameter(resume_block, label, resume_parameter_type);
-        self.current_block = current_block;
-        self.current_label = current_label.clone();
-        let continuation_index = self.control_flow.current_resume().map(|ctx| ctx.continuation);
-        self.record_suspend_point(effect, current_block, resume_block, payload.as_ref(), 1, continuation_index, carrier_type.clone());
-        self.terminate(MirTerminator::PerformEffect { effect, payload, resume_target: resume_block });
-        self.flush_block(&current_label);
-        self.current_block = resume_block;
-        self.current_label = label.to_string();
-        self.instructions.clear();
-        self.terminator = None;
-        MirOperand::Value(resume_value)
+        if carrier.nominal_declaration().is_some() { Some(ValkyrieType::Void) } else { None }
     }
 
     pub(super) fn lower_handler_raise(&mut self, handler_index: usize, payload: Option<MirOperand>) -> MirOperand {
         let payload = payload.unwrap_or(MirOperand::Constant(MirConstant::Unit));
         let payload_type = infer_builder_operand_type(&payload, &self.value_types);
-        let carrier_type = payload_type.clone();
         // 用户 effect 载体：catch arm 内 resume 的类型应来自 `Effectful::Resume`，
         // 而非沿用 payload 类型。这保证 `raise Read{} → resume("data")` 中
         // `let data = raise Read{}` 推断为 `utf8` 而非 `Read`。
-        let resume_parameter_type = self.lookup_effectful_resume_type(&carrier_type).or_else(|| payload_type.clone());
+        let resume_parameter_type = self.default_raise_resume_type(&payload_type).or_else(|| payload_type.clone());
         let current_block = self.current_block;
         let current_label = self.current_label.clone();
         let dispatch_block = self.new_block("catch_dispatch");
@@ -399,7 +362,6 @@ impl MirBuilder {
             resume_parameter: resume_value,
             resume_parameter_type: resume_parameter_type.clone(),
             handler_exit,
-            carrier_type,
         });
         if arms.is_empty() {
             self.terminate(MirTerminator::Jump { target: handler_exit, arguments: Vec::new() });

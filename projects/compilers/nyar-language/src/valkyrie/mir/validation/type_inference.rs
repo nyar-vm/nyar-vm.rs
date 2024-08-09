@@ -1,7 +1,7 @@
 //! 操作数静态类型推断与调用类型兼容判定。
 
 use crate::{
-    mir::{MirBlockRef, MirConstant, MirEffectKind, MirFunction, MirOperand, MirValueOrigin},
+    mir::{MirConstant, MirEffectKind, MirFunction, MirOperand, MirValueOrigin},
     types::hir::ValkyrieType,
 };
 
@@ -19,26 +19,15 @@ pub(super) fn infer_operand_static_type(function: &MirFunction, operand: &MirOpe
     }
 }
 
-pub(super) fn infer_effect_resume_static_type(
-    effect: MirEffectKind,
-    payload_type: Option<&ValkyrieType>,
-    carrier_type: Option<&ValkyrieType>,
-) -> Option<ValkyrieType> {
+pub(super) fn infer_effect_resume_static_type(effect: MirEffectKind, payload_type: Option<&ValkyrieType>) -> Option<ValkyrieType> {
     match effect {
         MirEffectKind::Yield | MirEffectKind::DelegateYield => Some(ValkyrieType::Unit),
         MirEffectKind::Await | MirEffectKind::AsyncBlock => payload_type.and_then(future_resume_type),
         MirEffectKind::AsyncSpawn => None,
-        MirEffectKind::Raise => carrier_type.map(|_ty| ValkyrieType::Void),
+        // `raise` 的恢复类型来自 `Effectful::Resume`；当前 HIR 没有该关联类型的
+        // 实现事实，校验阶段不猜测恢复参数类型。
+        MirEffectKind::Raise => None,
     }
-}
-
-/// 查找与给定 resume_target 关联的 suspend point 的 carrier_type。
-///
-/// 校验阶段需要 carrier_type 来推断 `Raise` 路径的 resume 参数类型；该函数从函数的
-/// `suspend_points` 中匹配 `resume_target` 一致的挂起点并返回其 carrier_type。
-pub(super) fn carrier_type_for_block(_function: &MirFunction, _resume_target: MirBlockRef) -> Option<&ValkyrieType> {
-    // suspend_points 不再挂在 Semantic MirFunction 上。
-    None
 }
 
 pub(super) fn infer_constant_type(constant: &MirConstant) -> ValkyrieType {

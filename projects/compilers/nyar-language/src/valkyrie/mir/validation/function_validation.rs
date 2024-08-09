@@ -6,7 +6,7 @@ use super::{
         validate_effect_payload, validate_effect_payload_static_type, validate_effect_resume_target,
         validate_resume_block_parameter_static_type,
     },
-    type_inference::{carrier_type_for_block, infer_effect_resume_static_type, infer_operand_static_type},
+    type_inference::{infer_effect_resume_static_type, infer_operand_static_type},
 };
 use crate::{
     mir::{MirFunction, MirTerminator},
@@ -42,7 +42,6 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), ParseError
                     infer_effect_resume_static_type(
                         *effect,
                         payload.as_ref().and_then(|payload| infer_operand_static_type(function, payload)).as_ref(),
-                        carrier_type_for_block(function, *resume_target),
                     ),
                     block_map.get(resume_target),
                 ) {

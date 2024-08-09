@@ -348,11 +348,6 @@ pub struct MirContinuation {
     pub resume_parameter_type: Option<ValkyrieType>,
     /// Handler 退出块。
     pub handler_exit: MirBlockRef,
-    /// 触发该 continuation 的用户 effect 载体类型。
-    ///
-    /// 仅在 `MirEffectKind::Raise` 且被 raise 值具备可识别的载体类型时填入；
-    /// 用于查询 `Effectful::Resume` 关联类型。其他 effect 或纯异常路径保持 `None`。
-    pub carrier_type: Option<ValkyrieType>,
 }
 
 /// `match / case` 链路元数据，描述分发、汇合与各 arm 结构。
@@ -410,38 +405,6 @@ pub struct MirSuspendPoint {
     pub spill_candidates: Vec<MirValueRef>,
     /// 若该挂起点位于 catch arm body 内，对应 continuation 的索引。
     pub continuation_index: Option<usize>,
-    /// 触发该挂起点的用户 effect 载体类型。
-    ///
-    /// 仅 `MirEffectKind::Raise` 且被 raise 值具备可识别载体类型时填入；
-    /// 用于查询 `Effectful::Resume` 关联类型以推断 resume 参数类型。
-    /// 其他 effect 类别或纯异常路径保持 `None`。
-    pub carrier_type: Option<ValkyrieType>,
-}
-
-/// 单个 suspend 点对应的 frame layout，描述跨挂起点需要保留的槽位。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MirFrameLayout {
-    /// 该 layout 所属的状态机编号。
-    pub state_id: u32,
-    /// 该 layout 所属的 effect 类别。
-    pub effect: MirEffectKind,
-    /// 恢复时跳转到的 block。
-    pub resume_target: MirBlockRef,
-    /// Frame 中需要保留的 spill 槽位。
-    pub slots: Vec<MirFrameSlot>,
-    /// 触发该 frame 的用户 effect 载体类型（仅 `Raise` 时填入）。
-    pub carrier_type: Option<ValkyrieType>,
-}
-
-/// Frame 中的单个 spill 槽位。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MirFrameSlot {
-    /// Frame 中的稳定槽位序号。
-    pub slot_index: usize,
-    /// 被保存的 SSA 值。
-    pub value: MirValueRef,
-    /// 当前已知的槽位静态类型。
-    pub value_type: Option<ValkyrieType>,
 }
 
 /// `MIR` SSA 值引用。
