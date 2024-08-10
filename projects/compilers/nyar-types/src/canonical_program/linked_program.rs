@@ -7,8 +7,7 @@
 use crate::{
     AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalImportLink, FlagsLayout, Identifier, QualifiedName, SumTypeLayout,
     semantic_ids::{
-        EvidenceId, FieldId, ImportCapability, ImportIndex, ItemId, ItemInstanceId, NominalInstanceId, SubstitutionId, TypeId, TypeInstanceId,
-        VariantId,
+        EvidenceId, FieldId, ImportCapability, ImportIndex, ItemId, ItemInstanceId, NominalInstanceId, TypeId, TypeInstanceId, VariantId,
     },
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,8 +123,6 @@ pub struct EntryRecord;
 pub struct ItemInstanceRecord {
     /// 已声明的 callable identity。
     pub declaration: ItemId,
-    /// 完成泛型代入后的 substitution identity。
-    pub substitution: SubstitutionId,
     /// 完成代入后的参数类型身份，顺序与调用 ABI 一致。
     pub parameter_types: Vec<TypeId>,
     /// 完成代入后的返回类型身份。
@@ -148,8 +145,6 @@ pub struct NominalInstanceRecord {
     pub declaration: TypeId,
     /// 完成泛型代入的完整实例类型；不同实参不得共用字段或 variant 合同。
     pub ty: TypeId,
-    /// 完成代入后的类型实例身份。
-    pub substitution: SubstitutionId,
     /// 声明决定的值/引用语义，不能由字段数量或目标布局推断。
     pub semantics: NominalValueSemantics,
     /// 该实例声明的全部字段，顺序为语言声明顺序。

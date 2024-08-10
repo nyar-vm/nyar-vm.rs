@@ -7,8 +7,7 @@ use nyar_types::{
     CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
     CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind, FieldId, FieldRecord, Identifier,
     ImportCapability, ImportIndex, ImportRecord, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId,
-    NominalInstanceId, NominalInstanceRecord, NominalValueSemantics, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
-    TypeRecord,
+    NominalInstanceId, NominalInstanceRecord, NominalValueSemantics, QualifiedName, StructuredDiagnosticSet, TypeId, TypeRecord,
     canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord},
 };
 
@@ -98,13 +97,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
         linked.nominal_instances.insert(
             *nominal,
-            NominalInstanceRecord {
-                declaration: *declaration,
-                ty: *declaration,
-                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-                semantics: *semantics,
-                fields: nominal_fields,
-            },
+            NominalInstanceRecord { declaration: *declaration, ty: *declaration, semantics: *semantics, fields: nominal_fields },
         );
     }
     let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &mut linked, &mut nominals)?;
@@ -114,13 +107,13 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let instance = function
             .instance
             .ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.display_symbol)))?;
+        ensure_instantiated_signature(function)?;
         linked.item_instances.insert(
             instance,
             ItemInstanceRecord {
                 declaration: function
                     .declaration
                     .ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.display_symbol)))?,
-                substitution: monomorphic_substitution(function)?,
                 parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
                 return_type: type_id(&type_values, &function.return_type)?,
             },
@@ -149,7 +142,6 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
                 declaration: contract
                     .declaration
                     .ok_or_else(|| error(module, "CAN053", format!("导入 `{}` 缺少声明 identity", contract.symbol)))?,
-                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
                 parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
                 return_type: type_id(&type_values, &contract.return_type)?,
             },
@@ -474,7 +466,6 @@ fn register_sum_nominal_instances(
         linked.nominal_instances.entry(sum.nominal).or_insert(NominalInstanceRecord {
             declaration,
             ty: declaration,
-            substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
             semantics: NominalValueSemantics::Reference,
             fields: Vec::new(),
         });
@@ -507,13 +498,7 @@ fn register_sum_nominal_instances(
         }
         linked.nominal_instances.insert(
             nominal,
-            NominalInstanceRecord {
-                declaration,
-                ty: *concrete_ty,
-                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-                semantics: NominalValueSemantics::Reference,
-                fields: Vec::new(),
-            },
+            NominalInstanceRecord { declaration, ty: *concrete_ty, semantics: NominalValueSemantics::Reference, fields: Vec::new() },
         );
         let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
@@ -906,31 +891,24 @@ fn register_missing_nominal_semantics_from_module(
         };
         let nominal = NominalInstanceId::from_index(linked.nominal_instances.len() as u32)
             .ok_or_else(|| error_without_module("CAN020", "NominalInstanceId 溢出"))?;
-        linked.nominal_instances.insert(
-            nominal,
-            NominalInstanceRecord {
-                declaration: *type_id,
-                ty: *type_id,
-                substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
-                semantics,
-                fields: Vec::new(),
-            },
-        );
+        linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration: *type_id, ty: *type_id, semantics, fields: Vec::new() });
     }
     Ok(())
 }
 
-fn monomorphic_substitution(function: &MirFunction) -> Result<SubstitutionId, StructuredDiagnosticSet> {
+/// 函数签名必须已经完成 `Self`/关联类型代入；泛型 binder 由调用点冻结的
+/// `ItemInstanceId` 闭合，canonical 不再登记独立的 substitution 占位事实。
+fn ensure_instantiated_signature(function: &MirFunction) -> Result<(), StructuredDiagnosticSet> {
     if function
         .param_types
         .iter()
         .chain(std::iter::once(&function.return_type))
         .any(crate::valkyrie::mir::ssa::type_contains_non_monomorphic_signature_reference)
     {
-        Err(error_without_module("CAN013", format!("函数 `{}` 仍包含未代入类型参数", function.display_symbol)))
+        Err(error_without_module("CAN013", format!("函数 `{}` 签名仍包含 Self/关联类型占位", function.display_symbol)))
     }
     else {
-        Ok(SubstitutionId::from_index(0).expect("monomorphic substitution"))
+        Ok(())
     }
 }
 fn type_id(ids: &BTreeMap<ValkyrieType, TypeId>, ty: &ValkyrieType) -> Result<TypeId, StructuredDiagnosticSet> {

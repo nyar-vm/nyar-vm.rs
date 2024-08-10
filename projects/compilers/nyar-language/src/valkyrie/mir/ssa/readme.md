@@ -47,8 +47,9 @@ These are unfinished items in current sources:
 3. **`compile_pipeline/link.rs`** — builds dependency pools by function symbol; `mod.rs` `callable_identity_table`
    sorts/deduplicates/numbers names, then `resolve_callable_operands` rewrites calls. Late numbering is not declaration
    identity carried from the front.
-4. **`compile_pipeline/canonical.rs`** — generates declarations from instance numbers, type-checks, then uses fixed
-   monomorphic substitution. That does not prove generic call instances and evidence environments are wired end-to-end.
+4. **`compile_pipeline/canonical.rs`** — item and nominal instance rows no longer carry placeholder
+   substitution identities; the frozen instance id plus the fully substituted signature is the identity.
+   Trait/impl evidence bindings are still not materialized into `linked.evidence`; that gap is not closed.
 
 Remediation is one vertical feature: establish a single front-end declaration/instance table, migrate HIR, dependency
 closure, MIR, Canonical, and all consumers, then delete name-binding APIs. Do not keep old resolution branches, dual

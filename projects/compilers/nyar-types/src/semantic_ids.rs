@@ -145,7 +145,7 @@ impl IdKind for ItemInstanceIdKind {
     const NAME: &'static str = "ItemInstanceId";
 }
 /// 已链接的项实例（替换后的函数 / 方法 / adaptor 绑定）。
-/// 链接器旁表将其关联到 [`ItemId`] + [`SubstitutionId`] + evidence 环境。
+/// 实例身份本身冻结声明、完整替换后的签名与 evidence 环境，不再另设替换旁表。
 pub type ItemInstanceId = SemanticId<ItemInstanceIdKind>;
 
 /// [`NominalInstanceId`] 的类型标记。
@@ -184,15 +184,6 @@ impl IdKind for FieldIdKind {
 }
 /// 结构体 / 聚合 / 变体载荷内已声明的字段身份。
 pub type FieldId = SemanticId<FieldIdKind>;
-
-/// [`SubstitutionId`] 的类型标记。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SubstitutionIdKind;
-impl IdKind for SubstitutionIdKind {
-    const NAME: &'static str = "SubstitutionId";
-}
-/// 泛型替换身份。
-pub type SubstitutionId = SemanticId<SubstitutionIdKind>;
 
 /// [`EffectSiteId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

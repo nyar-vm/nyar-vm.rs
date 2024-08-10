@@ -60,7 +60,7 @@ fn source_aggregate_semantics_reach_the_representation_plan_without_construction
 #[test]
 #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn planner_requires_each_complete_nominal_type_before_representation() {
-    use nyar_types::{NominalInstanceId, SubstitutionId, TypeId, TypeRecord};
+    use nyar_types::{NominalInstanceId, TypeId, TypeRecord};
 
     let output = nyar_language::ValkyrieCompiler::default()
         .compile_source_to_program(
@@ -86,7 +86,6 @@ fn planner_requires_each_complete_nominal_type_before_representation() {
         );
         let mut record = original.clone();
         record.ty = ty;
-        record.substitution = SubstitutionId::from_index(100 + index as u32).unwrap();
         program.linked.nominal_instances.insert(nominal, record);
         function.parameters[0].1 = ty;
         function.return_type = ty;

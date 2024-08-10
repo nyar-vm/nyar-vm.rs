@@ -14,15 +14,9 @@ fn canonical_program_is_success_only() {
     let item = ItemInstanceId::from_index(0).unwrap();
     let ty = TypeId::from_index(0).unwrap();
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-    linked.item_instances.insert(
-        item,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        },
-    );
+    linked
+        .item_instances
+        .insert(item, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
     let instance = ItemInstanceId::from_index(0).unwrap();
     let function = CanonicalFunction {
         instance,
@@ -54,15 +48,9 @@ fn canonical_mir_rejects_unknown_callee_before_planning() {
     let instance = ItemInstanceId::from_index(0).unwrap();
     let unknown = ItemInstanceId::from_index(1).unwrap();
     let ty = TypeId::from_index(0).unwrap();
-    linked.item_instances.insert(
-        instance,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        },
-    );
+    linked
+        .item_instances
+        .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
     let function = CanonicalFunction {
         instance,
@@ -115,12 +103,7 @@ fn canonical_array_contract_checks_inputs_and_results_before_planning() {
     }
     linked.item_instances.insert(
         instance,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![array_type, integer],
-            return_type: integer,
-        },
+        ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![array_type, integer], return_type: integer },
     );
     let function = CanonicalFunction {
         instance,
@@ -167,15 +150,9 @@ fn canonical_effect_terminator_preserves_payload_and_resume_contract() {
     let resume_value = MirValueId::from_index(1).unwrap();
     let mut linked = LinkedSemanticProgram::default();
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-    linked.item_instances.insert(
-        instance,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![ty],
-            return_type: ty,
-        },
-    );
+    linked
+        .item_instances
+        .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![ty], return_type: ty });
     let function = CanonicalFunction {
         instance,
         parameters: vec![(payload, ty)],
@@ -217,15 +194,9 @@ fn canonical_effect_terminator_rejects_missing_payload() {
     let ty = TypeId::from_index(0).unwrap();
     let mut linked = LinkedSemanticProgram::default();
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-    linked.item_instances.insert(
-        instance,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        },
-    );
+    linked
+        .item_instances
+        .insert(instance, ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: Vec::new(), return_type: ty });
     let function = CanonicalFunction {
         instance,
         parameters: Vec::new(),
@@ -261,12 +232,7 @@ fn typed_call_program() -> CanonicalProgram {
     for instance in [caller, callee] {
         linked.item_instances.insert(
             instance,
-            ItemInstanceRecord {
-                declaration: ItemId::from_index(instance.index()).unwrap(),
-                substitution: SubstitutionId::from_index(0).unwrap(),
-                parameter_types: vec![ty],
-                return_type: ty,
-            },
+            ItemInstanceRecord { declaration: ItemId::from_index(instance.index()).unwrap(), parameter_types: vec![ty], return_type: ty },
         );
     }
     let function = CanonicalFunction {
@@ -308,13 +274,7 @@ fn nominal_program() -> CanonicalProgram {
         .insert(field_type, TypeRecord { declaration: field_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool) });
     program.linked.nominal_instances.insert(
         nominal,
-        NominalInstanceRecord {
-            declaration,
-            ty: declaration,
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            semantics: NominalValueSemantics::Reference,
-            fields: vec![field],
-        },
+        NominalInstanceRecord { declaration, ty: declaration, semantics: NominalValueSemantics::Reference, fields: vec![field] },
     );
     program.linked.fields.insert(field, FieldRecord { owner: nominal, ty: field_type });
     program
@@ -352,7 +312,6 @@ fn canonical_nominal_instances_cannot_disagree_on_declaration_semantics() {
     let mut program = nominal_program();
     let mut other = program.linked.nominal_instances.values().next().unwrap().clone();
     other.fields.clear();
-    other.substitution = SubstitutionId::from_index(1).unwrap();
     other.ty = TypeId::from_index(2).unwrap();
     program.linked.types.insert(
         other.ty,
@@ -404,13 +363,7 @@ fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_
     let second_field = FieldId::from_index(1).unwrap();
     program.linked.nominal_instances.insert(
         second,
-        NominalInstanceRecord {
-            declaration,
-            ty: second_type,
-            substitution: SubstitutionId::from_index(1).unwrap(),
-            semantics: NominalValueSemantics::Reference,
-            fields: vec![second_field],
-        },
+        NominalInstanceRecord { declaration, ty: second_type, semantics: NominalValueSemantics::Reference, fields: vec![second_field] },
     );
     program.linked.fields.insert(second_field, FieldRecord { owner: second, ty: boolean });
     for (index, owner) in [(0, first), (1, second)] {
@@ -423,12 +376,7 @@ fn instantiated_nominal_operation_program(operation: CanonicalOperation, result_
     let return_type = result_type.unwrap_or(boolean);
     program.linked.item_instances.insert(
         instance,
-        ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![first_type, boolean],
-            return_type,
-        },
+        ItemInstanceRecord { declaration: ItemId::from_index(0).unwrap(), parameter_types: vec![first_type, boolean], return_type },
     );
     let mut value_types = BTreeMap::from([(object, first_type), (payload, boolean)]);
     if let Some(ty) = result_type {
@@ -784,7 +732,6 @@ fn typed_function_value_program() -> CanonicalProgram {
         caller,
         ItemInstanceRecord {
             declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
             parameter_types: vec![function_type, value_type],
             return_type: value_type,
         },
