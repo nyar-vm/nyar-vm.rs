@@ -106,11 +106,7 @@ pub fn link_reachable_dependency_mir(
         else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
                 linked.external_calls.push((*contract).clone());
-                let symbol = contract
-                    .declaration_key
-                    .as_ref()
-                    .map(|key| key.encoded())
-                    .unwrap_or_else(|| crate::valkyrie::symbols::stable_symbol_key(&contract.symbol));
+                let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
                 if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
                     return Err(ParseError::invalid(detail));
                 }

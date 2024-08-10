@@ -855,7 +855,9 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, host_bindings)?;
+        // host provider 绑定在 HIR 物化后映射为冻结实例身份；Semantic MIR 不保存声明索引 key。
+        let resolved_host_bindings = crate::valkyrie::compile_pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
+        crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }

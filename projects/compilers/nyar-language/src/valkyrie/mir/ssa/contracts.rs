@@ -9,13 +9,6 @@ use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
 use nyar_types::{ExternalImportLink, ItemInstanceId, builtin_attribute};
 use std::collections::BTreeMap;
 
-const HOST_RUNTIME_DEPENDENCY_KEY: &str = "__compiler_host_runtime__";
-const HOST_RUNTIME_SOURCE_PATH: &str = "__host_runtime.v";
-
-fn host_runtime_declaration_key(name: &str) -> crate::valkyrie::semantic_closure::DeclarationKey {
-    crate::valkyrie::semantic_closure::micro_declaration_key(HOST_RUNTIME_DEPENDENCY_KEY, HOST_RUNTIME_SOURCE_PATH, &[], name)
-}
-
 /// 编译器内建的 workload phase 宿主调用；实例身份在 lowering 前冻结。
 pub(crate) struct HostRuntimeCallables {
     pub contracts: Vec<MirExternalCallContract>,
@@ -47,7 +40,6 @@ pub(crate) fn collect_host_runtime_callables(declaration_base: u32, instance_bas
         let instance = ItemInstanceId::from_index(instance_base + offset).expect("host runtime instance");
         by_name.insert(name.to_string(), instance);
         contracts.push(MirExternalCallContract {
-            declaration_key: Some(host_runtime_declaration_key(name)),
             declaration: Some(declaration),
             instance: Some(instance),
             symbol: NamePath::new(vec![Identifier::new(name)]),
@@ -71,12 +63,6 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                 .filter_map(|function| {
                     let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                     Some(MirExternalCallContract {
-                        declaration_key: Some(crate::valkyrie::semantic_closure::micro_declaration_key(
-                            &module.dependency_key,
-                            &module.source_path,
-                            &function.declaring_namespace.parts().iter().map(|part| part.to_string()).collect::<Vec<_>>(),
-                            function.name.as_str(),
-                        )),
                         declaration: function.declaration,
                         instance: function.instance,
                         symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
@@ -101,12 +87,6 @@ pub(super) fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExte
                     let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                     let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
                     Some(MirExternalCallContract {
-                        declaration_key: Some(crate::valkyrie::semantic_closure::micro_declaration_key(
-                            &export.module.to_string(),
-                            &export.module.to_string(),
-                            &function.declaring_namespace.parts().iter().map(|part| part.to_string()).collect::<Vec<_>>(),
-                            function.name.as_str(),
-                        )),
                         declaration: function.declaration,
                         instance: function.instance,
                         symbol,

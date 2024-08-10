@@ -10,7 +10,7 @@ use super::{
     value_semantics::AggregateLayoutPlan,
 };
 use crate::{
-    symbols::stable_hir_function_symbol,
+    symbols::{stable_hir_function_name_path, stable_symbol_key},
     types::hir::{HirFunction, HirModule, ValkyrieType, parse_workload_phase_from_annotations},
 };
 use std::collections::BTreeMap;
@@ -133,15 +133,10 @@ pub(super) fn lower_function_semantic(
         })
         .collect();
     diagnostics.append(&mut builder.diagnostics);
-    let declaration_key = Some(crate::valkyrie::semantic_closure::micro_declaration_key(
-        &module.dependency_key,
-        &module.source_path,
-        &function.declaring_namespace.parts().iter().map(|part| part.to_string()).collect::<Vec<_>>(),
-        function.name.as_str(),
-    ));
-    let mut mir_function = MirFunction {
-        display_symbol: stable_hir_function_symbol(&module.name, function),
-        declaration_key,
+    let symbol = stable_hir_function_name_path(&module.name, function);
+    let mir_function = MirFunction {
+        display_symbol: stable_symbol_key(&symbol),
+        symbol,
         declaration: function.declaration,
         instance: function.instance,
         return_type: resolved_return_type,

@@ -1,34 +1,25 @@
 use nyar::ExternalImportLink;
 use nyar_language::{
-    CompilerHostProviderBinding, Identifier, NamePath,
+    Identifier, NamePath,
     types::hir::ValkyrieType,
     valkyrie::{
+        compile_pipeline::{ResolvedHostProviderBinding, apply_host_provider_bindings},
         mir::{
             AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirFunction, MirInstruction, MirModule, MirOperand,
             MirOperation, MirTerminator, MirValueRef,
         },
-        semantic_closure::micro_declaration_key,
     },
 };
 use nyar_types::{ItemId, ItemInstanceId};
 
-use nyar_language::valkyrie::compile_pipeline::apply_host_provider_bindings;
 use std::collections::BTreeMap;
-
-fn demo_write_contract_key() -> nyar_language::valkyrie::semantic_closure::DeclarationKey {
-    micro_declaration_key("demo", "demo.v", &[], "write")
-}
-
-fn adaptor_write_provider_key() -> nyar_language::valkyrie::semantic_closure::DeclarationKey {
-    micro_declaration_key("adaptor", "adaptor.v", &[], "write")
-}
 
 fn provider_dependency_module(provider_instance: ItemInstanceId) -> MirModule {
     MirModule {
         name: "adaptor".into(),
         functions: vec![MirFunction {
             display_symbol: "std.adaptor.clr::write".into(),
-            declaration_key: Some(adaptor_write_provider_key()),
+            symbol: NamePath::new(vec![Identifier::new("adaptor"), Identifier::new("write")]),
             declaration: Some(ItemId::from_index(2).unwrap()),
             instance: Some(provider_instance),
             return_type: ValkyrieType::Integer32 { signed: true },
@@ -65,7 +56,7 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
         name: "demo".into(),
         functions: vec![MirFunction {
             display_symbol: "demo::main".into(),
-            declaration_key: None,
+            symbol: NamePath::new(vec![Identifier::new("demo"), Identifier::new("main")]),
             declaration: Some(ItemId::from_index(0).unwrap()),
             instance: Some(ItemInstanceId::from_index(0).unwrap()),
             return_type: ValkyrieType::Integer32 { signed: true },
@@ -91,7 +82,6 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
         structs: Vec::new(),
         imports: Vec::new(),
         external_calls: vec![MirExternalCallContract {
-            declaration_key: Some(demo_write_contract_key()),
             declaration: Some(ItemId::from_index(1).unwrap()),
             instance: Some(contract_instance),
             symbol: NamePath::new(vec![Identifier::new("demo"), Identifier::new("write")]),
@@ -116,8 +106,8 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
     }
 }
 
-fn binding() -> CompilerHostProviderBinding {
-    CompilerHostProviderBinding { contract: demo_write_contract_key(), provider: adaptor_write_provider_key() }
+fn binding(contract_instance: ItemInstanceId, provider_instance: ItemInstanceId) -> ResolvedHostProviderBinding {
+    ResolvedHostProviderBinding { contract_instance, provider_instance }
 }
 
 #[test]
@@ -127,7 +117,8 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     let dependency = provider_dependency_module(provider_instance);
 
-    apply_host_provider_bindings(&mut module, &[dependency], &[binding()]).expect("host provider binding must close adaptor contract");
+    apply_host_provider_bindings(&mut module, &[dependency], &[binding(contract_instance, provider_instance)])
+        .expect("host provider binding must close adaptor contract");
 
     let call = module.functions[0].blocks[0].instructions[0].kind.clone();
     assert_eq!(
@@ -151,19 +142,22 @@ fn unreferenced_host_contract_selection_is_ignored() {
     module.external_calls.clear();
     let dependency = provider_dependency_module(provider_instance);
 
-    apply_host_provider_bindings(&mut module, &[dependency], &[binding()]).expect("未被入口闭包引用的 contract 不要求 provider 身份");
+    apply_host_provider_bindings(&mut module, &[dependency], &[binding(contract_instance, provider_instance)])
+        .expect("未被入口闭包引用的 contract 不要求 provider 身份");
 
     assert!(module.external_calls.is_empty());
     assert!(module.callable_symbols.contains_key(&contract_instance));
 }
 
 #[test]
-fn missing_provider_declaration_fails_closed() {
+fn missing_provider_definition_fails_closed() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
+    let missing_provider = ItemInstanceId::from_index(99).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
 
-    let error = apply_host_provider_bindings(&mut module, &[], &[binding()]).expect_err("missing provider must fail");
+    let error = apply_host_provider_bindings(&mut module, &[], &[binding(contract_instance, missing_provider)])
+        .expect_err("missing provider must fail");
     assert!(error.to_string().contains("host provider"));
 }
 
@@ -175,7 +169,7 @@ fn host_provider_ignores_decoy_with_same_display_symbol() {
     let mut module = module_with_contract_call(contract_instance, provider_instance);
     module.functions.push(MirFunction {
         display_symbol: "std.adaptor.clr::write".into(),
-        declaration_key: Some(micro_declaration_key("decoy", "decoy.v", &[], "write")),
+        symbol: NamePath::new(vec![Identifier::new("decoy"), Identifier::new("write")]),
         declaration: Some(ItemId::from_index(99).unwrap()),
         instance: Some(decoy_instance),
         return_type: ValkyrieType::Integer32 { signed: true },
@@ -193,7 +187,8 @@ fn host_provider_ignores_decoy_with_same_display_symbol() {
     });
     let dependency = provider_dependency_module(provider_instance);
 
-    apply_host_provider_bindings(&mut module, &[dependency], &[binding()]).expect("provider must resolve through declaration identity");
+    apply_host_provider_bindings(&mut module, &[dependency], &[binding(contract_instance, provider_instance)])
+        .expect("provider must resolve through declaration identity");
 
     let call = module.functions[0].blocks[0].instructions[0].kind.clone();
     assert_eq!(
@@ -207,15 +202,18 @@ fn host_provider_ignores_decoy_with_same_display_symbol() {
 }
 
 #[test]
-fn ambiguous_host_contract_fails_closed() {
+fn conflicting_host_contract_bindings_fail_closed() {
     let contract_instance = ItemInstanceId::from_index(1).unwrap();
     let provider_instance = ItemInstanceId::from_index(2).unwrap();
+    let other_provider = ItemInstanceId::from_index(3).unwrap();
     let mut module = module_with_contract_call(contract_instance, provider_instance);
-    let mut duplicate = module.external_calls[0].clone();
-    duplicate.instance = Some(ItemInstanceId::from_index(3).unwrap());
-    module.external_calls.push(duplicate);
-    let dependency = provider_dependency_module(provider_instance);
+    let dependencies = [provider_dependency_module(provider_instance), provider_dependency_module(other_provider)];
 
-    let error = apply_host_provider_bindings(&mut module, &[dependency], &[binding()]).expect_err("ambiguous contract must fail");
+    let error = apply_host_provider_bindings(
+        &mut module,
+        &dependencies,
+        &[binding(contract_instance, provider_instance), binding(contract_instance, other_provider)],
+    )
+    .expect_err("ambiguous contract must fail");
     assert!(error.to_string().contains("多个"));
 }
