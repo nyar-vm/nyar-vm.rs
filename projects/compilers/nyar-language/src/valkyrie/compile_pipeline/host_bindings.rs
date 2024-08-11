@@ -10,8 +10,8 @@ use nyar_types::ItemInstanceId;
 use crate::valkyrie::{
     frontend::ParseError,
     mir::{MirFunction, MirModule, MirOperand, MirOperation},
-    semantic_closure::{DeclarationKey, micro_declaration_key},
-    types::hir::{HirFunction, HirModule},
+    semantic_closure::{DeclarationKey, DeclarationKind},
+    types::hir::{HirFunction, HirModule, ValkyrieType},
 };
 
 use super::context::CompilerHostProviderBinding;
@@ -57,26 +57,69 @@ pub fn resolve_host_provider_bindings(
     Ok(resolved)
 }
 
-/// HIR 顶层函数身份 → inventory 声明身份的唯一映射。
+/// HIR 已注册 callable 身份 → inventory 声明身份的唯一映射。
 ///
 /// 映射只消费 HIR 已注册的 `declaration` / `instance`；同一声明身份对应多个实例
-/// 或同一实例对应多个声明身份都按结构化失败处理。
+/// 或同一实例对应多个声明身份都按结构化失败处理。声明种类与拥有者必须与语义闭包
+/// `collect_item` / `collect_members` / `collect_imply` 的登记一致，否则成员合同
+/// 会被当成“未进入闭包”而静默跳过。
 fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKey, ItemInstanceId>, ParseError> {
     let mut collected = BTreeMap::<DeclarationKey, BTreeSet<ItemInstanceId>>::new();
     for module in hirs {
         for function in &module.functions {
             collect_callable_instance(
                 &mut collected,
-                micro_declaration_key(&module.dependency_key, &module.source_path, &function_namespace(function), function.name.as_str()),
+                declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str()),
                 function,
             );
+        }
+        for structure in &module.structs {
+            let namespace: Vec<String> = structure.namespace.iter().map(|part| part.as_str().to_string()).collect();
+            for method in &structure.methods {
+                collect_callable_instance(
+                    &mut collected,
+                    declaration_key(module, DeclarationKind::Method, &namespace, Some(structure.name.as_str()), method.name.as_str()),
+                    method,
+                );
+            }
+        }
+        for trait_decl in &module.traits {
+            let namespace = namespace_parts(&trait_decl.declaring_namespace);
+            for method in trait_decl.methods.iter().chain(trait_decl.default_methods.iter()) {
+                collect_callable_instance(
+                    &mut collected,
+                    declaration_key(module, DeclarationKind::Method, &namespace, Some(trait_decl.name.as_str()), method.name.as_str()),
+                    method,
+                );
+            }
+        }
+        for implementation in &module.impls {
+            let Some(owner) = target_owner_name(&implementation.target)
+            else {
+                continue;
+            };
+            let namespace = namespace_parts(&implementation.declaring_namespace);
+            for method in &implementation.methods {
+                collect_callable_instance(
+                    &mut collected,
+                    declaration_key(module, DeclarationKind::ImplyMethod, &namespace, Some(owner), method.name.as_str()),
+                    method,
+                );
+            }
         }
         for export in &module.imported_semantic_exports {
             let module_name = export.module.to_string();
             for function in &export.functions {
                 collect_callable_instance(
                     &mut collected,
-                    micro_declaration_key(&module_name, &module_name, &function_namespace(function), function.name.as_str()),
+                    DeclarationKey {
+                        dependency_key: module_name.clone(),
+                        source_path: module_name.clone(),
+                        namespace: namespace_parts(&function.declaring_namespace),
+                        kind: DeclarationKind::Micro,
+                        owner: None,
+                        name: function.name.as_str().to_string(),
+                    },
                     function,
                 );
             }
@@ -98,8 +141,29 @@ fn collect_callable_instance(collected: &mut BTreeMap<DeclarationKey, BTreeSet<I
     }
 }
 
-fn function_namespace(function: &HirFunction) -> Vec<String> {
-    function.declaring_namespace.parts().iter().map(|part| part.as_str().to_string()).collect()
+fn declaration_key(module: &HirModule, kind: DeclarationKind, namespace: &[String], owner: Option<&str>, name: &str) -> DeclarationKey {
+    DeclarationKey {
+        dependency_key: module.dependency_key.clone(),
+        source_path: module.source_path.clone(),
+        namespace: namespace.to_vec(),
+        kind,
+        owner: owner.map(str::to_string),
+        name: name.to_string(),
+    }
+}
+
+fn namespace_parts(namespace: &crate::NamePath) -> Vec<String> {
+    namespace.parts().iter().map(|part| part.as_str().to_string()).collect()
+}
+
+/// `imply` 目标类型的聚合短名：与闭包 `imply_owner_name` 保持同一事实来源。
+fn target_owner_name(ty: &ValkyrieType) -> Option<&str> {
+    match ty {
+        ValkyrieType::Named(name) => Some(name.as_str()),
+        ValkyrieType::QualifiedPath { name, .. } => Some(name.as_str()),
+        ValkyrieType::Apply(base, _) => target_owner_name(base),
+        _ => None,
+    }
 }
 
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR。
