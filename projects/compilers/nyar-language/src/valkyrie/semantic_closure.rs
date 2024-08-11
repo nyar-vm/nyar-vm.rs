@@ -30,6 +30,7 @@ const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 
 /// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DeclarationKind {
     /// 函数（`micro`）声明。
     Micro,
@@ -100,6 +101,7 @@ type ScopedReference = (Vec<String>, ReferencePath);
 
 /// 预 HIR 声明身份：依赖组 + 源文件 + namespace + 种类 + 名字；成员方法另带拥有者聚合名。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeclarationKey {
     /// Resolver 分配的依赖组身份。
     pub dependency_key: String,
