@@ -400,6 +400,11 @@ pub fn plan_semantic_closure_with_host_bindings(
             });
         }
     }
+    // Resolver 选定的 host provider 是需求 seed，与入口声明同等对待：必须先进入固定点，
+    // 才能把 provider 引用的类型、成员与辅助函数纳入闭包。若在固定点之后才插入 demanded，
+    // provider 的引用永远不被遍历，被引用的聚合不会进入依赖组 HIR，随后类型绑定必然失败。
+    enqueue_selected_host_providers(host_bindings, &declaration_index, &mut queue)?;
+
     let empty_visibility = BTreeSet::new();
     loop {
         while let Some(key) = queue.pop_front() {
@@ -449,8 +454,6 @@ pub fn plan_semantic_closure_with_host_bindings(
         queue.extend(promoted);
     }
 
-    demand_selected_host_providers(host_bindings, groups, &declaration_index, &mut demanded)?;
-
     let mut closure_groups = Vec::with_capacity(groups.len());
     for group in groups.iter() {
         let dependency_key = group.dependency_key;
@@ -474,17 +477,16 @@ pub fn plan_semantic_closure_with_host_bindings(
     Ok(SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations: demanded, unindexed_source_files, digest })
 }
 
-fn demand_selected_host_providers(
+fn enqueue_selected_host_providers(
     host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
-    _groups: &[ClosureGroupInput<'_>],
     declaration_index: &BTreeMap<DeclarationKey, DeclarationIndexEntry>,
-    demanded: &mut BTreeSet<DeclarationKey>,
+    queue: &mut VecDeque<DeclarationKey>,
 ) -> Result<(), SemanticClosureError> {
     for binding in host_bindings {
         if !declaration_index.contains_key(&binding.provider) {
             return Err(SemanticClosureError::HostProviderNotResolved { symbol: binding.provider.encoded() });
         }
-        demanded.insert(binding.provider.clone());
+        queue.push_back(binding.provider.clone());
     }
     Ok(())
 }
