@@ -28,144 +28,16 @@ use crate::valkyrie::{
 /// 闭包规划版本；规划语义变化必须递增，旧摘要不得跨版本复用。
 const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 
-/// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum DeclarationKind {
-    /// 函数（`micro`）声明。
-    Micro,
-    /// 结构体声明。
-    Structure,
-    /// 类声明。
-    Class,
-    /// trait 声明。
-    Trait,
-    /// enum 声明。
-    Enum,
-    /// unite 声明。
-    Union,
-    /// flags 声明。
-    Flags,
-    /// 类型别名声明。
-    TypeAlias,
-    /// 类型函数声明。
-    TypeFunction,
-    /// 成员方法声明。
-    Method,
-    /// trait 实现方法声明。
-    ImplyMethod,
-}
-
-/// 显式入口注解身份：入口组 seed 的唯一事实来源。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum EntryPointKind {
-    /// `[export]`：产物导出入口。
-    Export,
-    /// `[main]`：程序入口。
-    Main,
-}
-
-impl DeclarationKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Micro => "micro",
-            Self::Structure => "structure",
-            Self::Class => "class",
-            Self::Trait => "trait",
-            Self::Enum => "enum",
-            Self::Union => "union",
-            Self::Flags => "flags",
-            Self::TypeAlias => "type_alias",
-            Self::TypeFunction => "type_function",
-            Self::Method => "method",
-            Self::ImplyMethod => "imply_method",
-        }
-    }
-
-    /// 是否携带需要 lowering 的函数体。
-    pub fn is_body_bearing(self) -> bool {
-        matches!(self, Self::Micro | Self::TypeFunction | Self::Method | Self::ImplyMethod)
-    }
-
-    /// 是否为成员声明：成员身份只能由「拥有者聚合身份 + 选择名」产生，不进入短名索引。
-    fn is_member(self) -> bool {
-        matches!(self, Self::Method | Self::ImplyMethod)
-    }
-}
-
-/// 名字引用路径（`std::collection::hash_utf8` → `["std","collection","hash_utf8"]`）。
-pub type ReferencePath = Vec<String>;
+// ---------------------------------------------------------------------------
+// Declaration 索引中立数据结构（生产权在 nyar-language frontend inventory）
+// 定义在 nyar_types::compiler_input，本模块 re-export 供内部使用。
+// ---------------------------------------------------------------------------
+pub use nyar_types::compiler_input::{
+    DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath,
+};
 
 /// namespace 段 + 文件名路径引用的组合（文件级语句所属 namespace 与它引用的名字）。
 type ScopedReference = (Vec<String>, ReferencePath);
-
-/// 预 HIR 声明身份：依赖组 + 源文件 + namespace + 种类 + 名字；成员方法另带拥有者聚合名。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct DeclarationKey {
-    /// Resolver 分配的依赖组身份。
-    pub dependency_key: String,
-    /// 仓相对源码路径。
-    pub source_path: String,
-    /// 声明所在 namespace 段；`namespace a::b;` → `["a","b"]`，无 namespace → 空。
-    pub namespace: Vec<String>,
-    /// 顶层声明种类。
-    pub kind: DeclarationKind,
-    /// 成员方法所属的结构/类/trait 名；自由声明为 `None`。
-    pub owner: Option<String>,
-    /// 声明短名。
-    pub name: String,
-}
-
-impl DeclarationKey {
-    /// 稳定编码身份；只用于审核与诊断，身份匹配必须使用结构字段。
-    pub fn encoded(&self) -> String {
-        format!(
-            "{}::{}::{}::{}::{}::{}",
-            self.dependency_key,
-            self.source_path,
-            self.kind.as_str(),
-            self.namespace.join("::"),
-            self.owner.as_deref().unwrap_or(""),
-            self.name
-        )
-    }
-}
-
-/// 声明的结构关联：一个声明在解析后还应指向哪个**声明身份**。
-///
-/// 成员身份只能由「拥有者聚合身份 + 选择名」产生，类型别名不是独立名义聚合，
-/// 因此二者都必须先解析出被指向的声明身份，而不是按名字直接连接。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeclarationLink {
-    /// 成员声明指向其拥有者聚合的引用路径（`imply i64: Hash` → `["i64"]`）。
-    MemberOwner(ReferencePath),
-    /// 类型别名指向其目标聚合的引用路径（`type utf8 = Utf8Text` → `["Utf8Text"]`）。
-    AliasTarget(ReferencePath),
-}
-
-/// 单条声明索引：不降低函数体，只记录该声明签名与函数体引用的名字路径。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeclarationIndexEntry {
-    /// 稳定声明身份。
-    pub key: DeclarationKey,
-    /// 结构关联引用：成员声明指向其拥有者聚合，类型别名指向其目标聚合；自由声明为 `None`。
-    ///
-    /// 关联必须在整个 inventory 索引完成后按**声明身份**解析，不能按「拥有者短名 + namespace」
-    /// 直接连接：成员与其拥有者可以在不同依赖组（`imply i64: Hash` 在 std，`structure i64` 在 core）。
-    pub link: Option<DeclarationLink>,
-    /// 显式入口身份（`[export]` / `[main]`）；只有它能让入口组产生 seed。
-    pub entry_point: Option<EntryPointKind>,
-    /// 该声明签名与函数体内出现的名字路径（未解析）。
-    pub references: BTreeSet<ReferencePath>,
-    /// 该声明签名与函数体内出现的**成员选择名**（`x.get(…)`、`a + b`、`a[i]`）。
-    ///
-    /// 选择名不是自由名引用：它只能与拥有聚合的声明身份结合参与成员提升，
-    /// 不进入声明解析，否则同名自由函数会被误拉进闭包。
-    pub selectors: BTreeSet<String>,
-    /// 文件级 `using` 路径；当前解析器不消费 import，这里只保留为诊断与后续绑定输入。
-    pub import_paths: BTreeSet<String>,
-}
 
 /// 单组语义闭包切片。
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -43,7 +43,10 @@ pub use control_flow_validation::{
     function_body_contains_await, function_body_contains_block_on, function_body_contains_yield, function_can_effect_handle,
     function_can_suspend, function_has_suspend_effects, function_is_async, function_needs_suspend_fragment, validate_control_flow_module,
 };
-pub use lowering::{AstToHir, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler};
+pub use lowering::{
+    AstToHir, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler,
+    build_generated_group, build_source_input_with_generated, compose_source_input_groups,
+};
 pub use nominal_registry::{NominalTypeRegistry, variant_constructor_param_types};
 pub use try_propagate::{
     TryPropagateKind, classify_try_operand, is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type,

@@ -1,4 +1,5 @@
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+use nyar_language::valkyrie::hir::{build_generated_group, build_source_input_with_generated, compose_source_input_groups};
 use nyar_language::{
     CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler,
     nyar::{CanonicalTarget, ClrSuspendStrategy},
@@ -41,7 +42,7 @@ fn compile_evidence_is_stable_for_the_same_source_closure() {
 fn generated_source_input_is_composed_and_bound_into_evidence() {
     let groups = vec![CompilerSourceGroup::single_source("app", "app", "[main] micro main() -> bool { return true }").as_entry()];
     let generated = vec![
-        GeneratedSourceGroup::new(
+        build_generated_group(
             "asgard.awsl.wasm",
             CompilerSourceGroup::single_source("asgard.generated", "asgard.generated", "[export] micro hydrate() -> bool { return false }")
                 .as_entry()
@@ -49,9 +50,9 @@ fn generated_source_input_is_composed_and_bound_into_evidence() {
         )
         .expect("生成组必须由 producer 与显式入口建立"),
     ];
-    let input = CompilerSourceInput::with_generated(groups, generated).expect("生成组追加在应用组之后");
+    let input = build_source_input_with_generated(groups, generated).expect("生成组追加在应用组之后");
 
-    let composed = input.compose().expect("合成唯一源码闭包");
+    let composed = compose_source_input_groups(&input).expect("合成唯一源码闭包");
     assert_eq!(composed.len(), 2);
     assert!(composed.last().is_some_and(|group| group.dependency_key == "asgard.generated"));
 
@@ -66,20 +67,20 @@ fn generated_source_input_is_composed_and_bound_into_evidence() {
 #[test]
 fn generated_source_group_must_be_an_entry_group() {
     let group = CompilerSourceGroup::single_source("asgard.generated", "asgard.generated", "[export] micro hydrate() -> bool { return false }");
-    let error = GeneratedSourceGroup::new("asgard.awsl.wasm", group).expect_err("生成组不能依赖顺序推断入口");
+    let error = build_generated_group("asgard.awsl.wasm", group).expect_err("生成组不能依赖顺序推断入口");
     assert!(error.to_string().contains("必须显式标记入口"), "{error}");
 }
 
 #[test]
 fn generated_source_group_must_depend_on_already_provided_groups() {
     let groups = vec![CompilerSourceGroup::single_source("app", "app", "[main] micro main() -> bool { return true }").as_entry()];
-    let generated = GeneratedSourceGroup::new(
+    let generated = build_generated_group(
         "asgard.awsl.wasm",
         CompilerSourceGroup::single_source("asgard.generated", "asgard.generated", "[export] micro hydrate() -> bool { return false }")
             .as_entry()
             .with_direct_dependencies(vec!["missing.package".into()]),
     )
     .expect("producer 与入口身份成立");
-    let error = CompilerSourceInput::with_generated(groups, vec![generated]).expect_err("未提供的依赖必须 fail-closed");
+    let error = build_source_input_with_generated(groups, vec![generated]).expect_err("未提供的依赖必须 fail-closed");
     assert!(error.to_string().contains("未在此之前提供"), "{error}");
 }

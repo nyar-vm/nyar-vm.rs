@@ -70,7 +70,8 @@ pub fn compile_source_groups_to_artifacts(
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<CompilerArtifactReport> {
-    let groups = input.compose().map_err(|error| miette!("Compiler source input composition failed: {error}"))?;
+    let groups = crate::valkyrie::hir::lowering::compose_source_input_groups(input)
+        .map_err(|error| miette!("Compiler source input composition failed: {error}"))?;
     let bundle = compile_source_groups_to_backend_bundle(compiler, &groups, context)?;
     let evidence = CompilerCompileEvidence::from_success_with_generated(
         &groups,

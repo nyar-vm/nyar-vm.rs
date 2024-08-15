@@ -3,6 +3,9 @@
 //! Rust seed 路径共用的最小类型与语义身份。
 
 pub use self::{
+    compiler_input::{
+        DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath,
+    },
     canonical_program::{
         CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
         CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperand,
@@ -44,6 +47,8 @@ pub use self::{
 pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 
 pub mod canonical_program;
+/// Compiler 输入与声明索引的中立数据结构（Legion / Compiler 之间的数据传输合同）。
+pub mod compiler_input;
 /// 产物 / cache 合同版本（identity / MIR / layout）。
 pub mod contract_versions;
 pub mod core_surface;
