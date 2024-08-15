@@ -264,13 +264,19 @@ fn resolve_submodule_calls(
         }
     }
     for item in &mut module.traits {
+        // trait 成员是容器作用域内的声明：作用域取 trait 的 namespace，而不是
+        // 合并后的组名；成员函数自身的 declaring_namespace 为空。
+        let scoped = (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
+        let relations = scoped.as_ref().unwrap_or(type_relations);
         for method in item.methods.iter_mut().chain(item.default_methods.iter_mut()) {
-            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, None);
+            resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, None);
         }
     }
     for item in &mut module.impls {
+        let scoped = (!item.declaring_namespace.parts().is_empty()).then(|| type_relations.with_enclosing_module(&item.declaring_namespace));
+        let relations = scoped.as_ref().unwrap_or(type_relations);
         for method in &mut item.methods {
-            resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, Some(&item.target));
+            resolve_function_calls(method, candidates, relations, struct_fields, singleton_names, Some(&item.target));
         }
     }
     for submodule in &mut module.submodules {
@@ -1116,6 +1122,13 @@ fn resolve_function_calls(
     singleton_names: &BTreeSet<Identifier>,
     owner_type: Option<&ValkyrieType>,
 ) {
+    // 无限定自由函数按声明所在 namespace 解析：完整源码组会把多个文件合并成
+    // 组名的扁平模块，声明符号仍保留 `declaring_namespace`。若继续用组名作
+    // 作用域，`namespace core::primitive` 内的同命名空间调用会被误判为不可见。
+    let type_relations = match function.declaring_namespace.parts() {
+        [] => type_relations.clone(),
+        _ => type_relations.with_enclosing_module(&function.declaring_namespace),
+    };
     let type_relations = type_relations.with_callable_constraints(&function.where_constraints);
     let mut locals = function
         .params
