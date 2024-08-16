@@ -1,6 +1,6 @@
 {
     "name": "@nyar/nyar-unknown-wasm32",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "description": "Nyar Wasm collect — wasm32-unknown-unknown host artifacts",
     "license": "MIT",
     "type": "module",

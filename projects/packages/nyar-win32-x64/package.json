@@ -1,6 +1,6 @@
 {
     "name": "@nyar/nyar-win32-x64",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "description": "Nyar native collect — Windows x64 (Node-API host)",
     "type": "module",
     "license": "MIT",
