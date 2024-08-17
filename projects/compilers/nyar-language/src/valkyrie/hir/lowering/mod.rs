@@ -36,6 +36,8 @@ use crate::{
     },
 };
 mod trait_binding;
+pub mod errors;
+pub use errors::HirError;
 use nyar_types::NyarType;
 use ordered_float::OrderedFloat;
 
@@ -689,7 +691,7 @@ impl ValkyrieCompiler {
 
     /// Parses `.vx` source (Valkyrie + X-Grammar) and lowers into HIR with `view` → `render` normalization.
     pub fn compile_vx_source(&self, source: &str) -> Result<HirModule, ParseError> {
-        Err(ParseError::invalid("Oak frontend does not support `.vx` source yet"))
+        Err(HirError::VxUnsupported.into())
     }
 
     /// Parses a `.vx` file and lowers it into HIR with `view` → `render` normalization.
