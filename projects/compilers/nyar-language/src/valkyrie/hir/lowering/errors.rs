@@ -134,6 +134,26 @@ pub enum HirError {
 
 impl HirError {
     /// 确定性生成 variant 的 machine code。
+    /// Construct generic lowering failure (fallback for ParseError::invalid during migration).
+    pub fn invalid(message: impl Into<String>) -> Self {
+        Self::LoweringFailed {
+            scenario: message.into(),
+            details: Vec::new(),
+            source: nyar_types::DiagnosticSource { id: "<unknown>".into(), revision: None },
+            span: nyar_types::DiagnosticSpan { start: 0, end: 0 },
+        }
+    }
+
+    /// Construct lowering failure with explicit span.
+    pub fn invalid_at(message: impl Into<String>, span: nyar_types::DiagnosticSpan) -> Self {
+        Self::LoweringFailed {
+            scenario: message.into(),
+            details: Vec::new(),
+            source: nyar_types::DiagnosticSource { id: "<unknown>".into(), revision: None },
+            span,
+        }
+    }
+
     fn code(&self) -> &'static str {
         match self {
             Self::UnresolvedCall { .. } => "valkyrie.hir.unresolved_call",
@@ -254,15 +274,33 @@ fn other_span(error: &HirError) -> &DiagnosticSpan {
     }
 }
 
-// ---------- 临时桥接：HirError → ParseError ----------
-// Phase 2 完成前 lowering 模块内部还保留 ParseError 签名。这个 impl 让 .map_err(HirError::into)
-// 桥接到旧签名，但 code/args/phase/owner 信息会丢失。等 lowering 全链换 HirError 后删除。
+// ---------- 升级桥接：ParseError → HirError ----------
+// lowering 合法调用 frontend::parse_source，后者返回 ParseError。
+// 这个桥接让 .map_err(HirError::from) 把 parser 输出升级为 HirError。
 
-/// 临时桥接：HirError → ParseError（信息降级）。
-impl From<HirError> for crate::frontend::error::ParseError {
-    fn from(error: HirError) -> Self {
-        let row: DiagnosticRow = error.into();
-        let message = format!("[{}] {}", row.code, row.internal_message.unwrap_or_default());
-        crate::frontend::error::ParseError::invalid(message)
+impl From<crate::valkyrie::frontend::ParseError> for HirError {
+    fn from(error: crate::valkyrie::frontend::ParseError) -> Self {
+        Self::invalid(error.to_string())
+    }
+}
+
+impl std::fmt::Display for HirError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HirError::LoweringFailed { scenario, .. } => write!(f, "{scenario}"),
+            HirError::InvalidDiscriminator { scenario, variant: Some(v), value: Some(vv), .. } => {
+                write!(f, "{scenario}: variant={v}, value={vv}")
+            }
+            HirError::UnresolvedCall { selector, context, .. } => {
+                write!(f, "unresolved call `{selector}` in {context}")
+            }
+            HirError::UnresolvedConstructor { name, context, .. } => {
+                write!(f, "unresolved constructor `{name}` in {context}")
+            }
+            _ => {
+                let row: nyar_types::DiagnosticRow = self.clone().into();
+                write!(f, "{}", row.code)
+            }
+        }
     }
 }
