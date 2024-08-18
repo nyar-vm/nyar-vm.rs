@@ -188,7 +188,7 @@ impl MirLowerer {
             callable_symbols,
             type_identities,
             aggregate_layouts,
-            sum_types,
+            sum_types: sum_types.to_vec(),
             flags_types,
             singleton_instances: crate::valkyrie::mir::collect_singleton_instance_plans(module),
             semantic_fragments,

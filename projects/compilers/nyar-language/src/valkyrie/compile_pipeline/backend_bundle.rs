@@ -9,9 +9,9 @@ use miette::{Result, miette};
 use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
-use crate::{
-    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler,
-    valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
+use crate::valkyrie::{
+    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler, HirError,
+    assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program,
 };
 
 use super::{context::CompilerBuildContext, evidence::CompilerCompileEvidence};

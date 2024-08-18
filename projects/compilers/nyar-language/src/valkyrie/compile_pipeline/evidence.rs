@@ -2,7 +2,7 @@
 
 use nyar_types::{CompiledProgram, combined_content_hash};
 
-use crate::{CompilerSourceGroup, GeneratedSourceGroup};
+use crate::valkyrie::{CompilerSourceGroup, GeneratedSourceGroup};
 
 use super::context::CompilerHostProviderBinding;
 
