@@ -133,6 +133,9 @@ fn validate_block_call_contracts(block: &HirBlock, function: &str) -> Result<(),
 
 #[doc(hidden)]
 pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), ParseError> {
+    let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
+    let unknown_span = DiagnosticSpan { start: 0, end: 0 };
+
     match &expr.kind {
         HirExprKind::Call { callee, args, resolved, .. } => {
             if resolved.is_none() {
@@ -140,10 +143,12 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
                     HirExprKind::Path(path) => path.to_string(),
                     _ => "<computed>".to_string(),
                 };
-                return Err(ParseError::invalid(format!(
-                    "SMIR003 unresolved call contract `{callee_name}` in `{function}` at {:?}",
-                    expr.span
-                )));
+                return Err(HirError::UnresolvedCall {
+                    selector: callee_name,
+                    context: function.to_string(),
+                    source: unknown_source.clone(),
+                    span: unknown_span.clone(),
+                }.into());
             }
             validate_expr_call_contracts(callee, function)?;
             for arg in args {
@@ -152,10 +157,12 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
         }
         HirExprKind::Construct { path, args, resolved } => {
             if resolved.is_none() {
-                return Err(ParseError::invalid(format!(
-                    "SMIR003 unresolved constructor contract `{path}` in `{function}` at {:?}",
-                    expr.span
-                )));
+                return Err(HirError::UnresolvedConstructor {
+                    name: path.to_string(),
+                    context: function.to_string(),
+                    source: unknown_source.clone(),
+                    span: unknown_span.clone(),
+                }.into());
             }
             for arg in args {
                 validate_expr_call_contracts(arg, function)?;
@@ -814,7 +821,12 @@ impl ValkyrieCompiler {
                     exports
                         .get(name)
                         .cloned()
-                        .ok_or_else(|| ParseError::invalid(format!("semantic dependency export `{name}` is unavailable for `{}`", group.name)))
+                        .ok_or_else(|| HirError::LoweringFailed {
+                            scenario: "dependency_export_unavailable".into(),
+                            details: vec![("export".into(), name.clone()), ("group".into(), group.name.clone())],
+                            source: DiagnosticSource { id: "unknown".into(), revision: None },
+                            span: DiagnosticSpan { start: 0, end: 0 },
+                        }.into())
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut hir_module = self.parse_source_files_without_call_resolution(
@@ -841,7 +853,12 @@ impl ValkyrieCompiler {
                 impls: hir_module.impls.clone(),
             };
             if exports.insert(group.dependency_key.clone(), export).is_some() {
-                return Err(ParseError::invalid(format!("semantic dependency export identity collision for `{}`", group.dependency_key)));
+                return Err(HirError::LoweringFailed {
+                scenario: "dependency_export_identity_collision".into(),
+                details: vec![("dependency_key".into(), group.dependency_key.clone())],
+                source: DiagnosticSource { id: "unknown".into(), revision: None },
+                span: DiagnosticSpan { start: 0, end: 0 },
+            }.into());
             }
             hir_groups.push(hir_module);
         }
@@ -880,7 +897,11 @@ impl ValkyrieCompiler {
             prepared.push((file, root));
         }
         if prepared.is_empty() {
-            return Err(ParseError::invalid(format!("semantic source group `{}` has no body-lowering source files", group.dependency_key)));
+            return Err(HirError::NoBodySourceInGroup {
+                dependency_key: group.dependency_key.clone(),
+                source: DiagnosticSource { id: group.dependency_key.clone(), revision: None },
+                span: DiagnosticSpan { start: 0, end: 0 },
+            }.into());
         }
         // 类型别名作用域是组级事实：本组全部文件的 `type` 声明 + 可见依赖导出的别名。
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
@@ -1032,26 +1053,45 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
     }
     fn unique_struct<'a>(name: &Identifier, namespace: &NamePath, structs: &'a [HirStruct]) -> Result<Option<&'a HirStruct>, ParseError> {
+        let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
+        let unknown_span = DiagnosticSpan { start: 0, end: 0 };
         let exact: Vec<&HirStruct> = structs
             .iter()
             .filter(|item| qualified_struct(item) == *name || (item.name == *name && NamePath::new(item.namespace.clone()) == *namespace))
             .collect();
         if exact.len() > 1 {
-            return Err(ParseError::invalid(format!("名义类型 `{name}` 在作用域内歧义，无法冻结 declaration identity")));
+            return Err(HirError::NominalAmbiguous {
+                name: name.to_string(),
+                candidate_count: exact.len(),
+                source: unknown_source.clone(),
+                span: unknown_span.clone(),
+            }.into());
         }
         if exact.len() == 1 {
             return Ok(Some(exact[0]));
         }
         let short: Vec<&HirStruct> = structs.iter().filter(|item| &item.name == name).collect();
         if short.len() > 1 {
-            return Err(ParseError::invalid(format!("名义类型短名 `{name}` 对应多个声明，禁止按短名猜测 identity")));
+            return Err(HirError::NominalAmbiguous {
+                name: name.to_string(),
+                candidate_count: short.len(),
+                source: unknown_source.clone(),
+                span: unknown_span.clone(),
+            }.into());
         }
         Ok(short.into_iter().next())
     }
     fn unique_enum<'a>(name: &Identifier, enums: &'a [HirEnum]) -> Result<Option<&'a HirEnum>, ParseError> {
+        let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
+        let unknown_span = DiagnosticSpan { start: 0, end: 0 };
         let matches: Vec<&HirEnum> = enums.iter().filter(|item| &item.name == name).collect();
         if matches.len() > 1 {
-            return Err(ParseError::invalid(format!("sum/unite `{name}` 对应多个声明，禁止按短名猜测 identity")));
+            return Err(HirError::SumUniteAmbiguous {
+                name: name.to_string(),
+                candidate_count: matches.len(),
+                source: unknown_source.clone(),
+                span: unknown_span.clone(),
+            }.into());
         }
         Ok(matches.into_iter().next())
     }
@@ -2493,14 +2533,29 @@ impl AstToHir {
                 impls.push(self.lower_imply(imply, namespace));
                 Ok(())
             }
-            StatementNode::Union(union_decl) => Err(ParseError::invalid(format!("named union `{}` is not yet lowered", union_decl.name.name))),
+            StatementNode::Union(union_decl) => Err(HirError::LoweringFailed {
+                scenario: "named_union_not_lowered".into(),
+                details: vec![("union_name".into(), union_decl.name.name.clone())],
+                source: DiagnosticSource { id: "unknown".into(), revision: None },
+                span: DiagnosticSpan { start: 0, end: 0 },
+            }.into()),
             StatementNode::Using(_)
             | StatementNode::Namespace(_)
             | StatementNode::Let(_)
             | StatementNode::ExprStmt(_)
             | StatementNode::Statement(_) => Ok(()),
-            StatementNode::Template(_) => Err(ParseError::invalid("未展开的 TGrammar 模板节点进入 HIR lowering")),
-            unsupported => Err(ParseError::invalid(format!("unsupported Oak root item is not yet lowered: {unsupported:?}"))),
+            StatementNode::Template(_) => Err(HirError::LoweringFailed {
+                scenario: "unexpanded_tgrammar_template".into(),
+                details: vec![],
+                source: DiagnosticSource { id: "unknown".into(), revision: None },
+                span: DiagnosticSpan { start: 0, end: 0 },
+            }.into()),
+            unsupported => Err(HirError::LoweringFailed {
+                scenario: "unsupported_oak_root_item".into(),
+                details: vec![("item".into(), format!("{unsupported:?}"))],
+                source: DiagnosticSource { id: "unknown".into(), revision: None },
+                span: DiagnosticSpan { start: 0, end: 0 },
+            }.into()),
         }
     }
 
