@@ -38,7 +38,7 @@ use crate::{
 mod trait_binding;
 pub mod errors;
 pub use errors::HirError;
-use nyar_types::NyarType;
+use nyar_types::{DiagnosticSource, DiagnosticSpan, NyarType};
 use ordered_float::OrderedFloat;
 
 thread_local! {
@@ -63,7 +63,7 @@ fn take_compile_warnings() -> Vec<HirCompileWarning> {
 }
 
 /// 前端统一验证调用身份、枚举判别与完整语义合同，不按错误文本放行。
-fn validate_hir_contract(hir: &HirModule) -> Result<(), ParseError> {
+fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
     validate_resolved_call_contracts(hir)?;
     validate_enum_discriminators(hir)?;
     validate_semantic_module(hir)
@@ -591,8 +591,7 @@ fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: 
     Ok(())
 }
 
-#[doc(hidden)]
-pub fn validate_enum_discriminators(module: &HirModule) -> Result<(), ParseError> {
+#[doc(hidden)]`npub fn validate_enum_discriminators(module: &HirModule) -> Result<(), HirError> {
     for enum_def in &module.enums {
         validate_sum_type_discriminators(&enum_def.name, &enum_def.variants)?;
     }

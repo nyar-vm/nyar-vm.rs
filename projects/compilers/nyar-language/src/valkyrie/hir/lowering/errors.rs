@@ -253,3 +253,16 @@ fn other_span(error: &HirError) -> &DiagnosticSpan {
         HirError::VxUnsupported => unreachable!(),
     }
 }
+
+// ---------- 临时桥接：HirError → ParseError ----------
+// Phase 2 完成前 lowering 模块内部还保留 ParseError 签名。这个 impl 让 .map_err(HirError::into)
+// 桥接到旧签名，但 code/args/phase/owner 信息会丢失。等 lowering 全链换 HirError 后删除。
+
+/// 临时桥接：HirError → ParseError（信息降级）。
+impl From<HirError> for crate::frontend::error::ParseError {
+    fn from(error: HirError) -> Self {
+        let row: DiagnosticRow = error.into();
+        let message = format!("[{}] {}", row.code, row.internal_message.unwrap_or_default());
+        crate::frontend::error::ParseError::invalid(message)
+    }
+}
