@@ -44,7 +44,7 @@ pub(super) fn lower_function_semantic(
     // Option/Result 身份只来自 HIR 已冻结的 call.sum_owner / Nominal{ItemId}，禁止按短名缓存。
     builder.option_declaration = None;
     builder.result_declaration = None;
-    builder.sum_types = sum_types;
+    builder.sum_types = sum_types.to_vec();
     builder.impl_type_arguments = impl_type_arguments;
     builder.field_declarations = field_declarations;
     // Imply/struct methods declare `: Self`; keep MIR return/params on the owner

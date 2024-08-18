@@ -44,7 +44,7 @@ pub use control_flow_validation::{
     function_can_suspend, function_has_suspend_effects, function_is_async, function_needs_suspend_fragment, validate_control_flow_module,
 };
 pub use lowering::{
-    AstToHir, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler,
+    AstToHir, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, HirError, ValkyrieCompiler,
     build_generated_group, build_source_input_with_generated, compose_source_input_groups,
 };
 pub use nominal_registry::{NominalTypeRegistry, variant_constructor_param_types};
