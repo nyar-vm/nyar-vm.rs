@@ -13,14 +13,14 @@ use crate::{
         Identifier,
         hir::{HirModule, ValkyrieType},
     },
-    valkyrie::frontend::ParseError,
+    valkyrie::HirError,
 };
 
 /// 语义层校验：sealed match 穷尽性、值类型 copy 纪律、字面量穷尽性等，并复用控制流校验。
 ///
-/// 该函数聚合所有 checker 产生的错误消息后统一返回 `ParseError`，而不是在首个错误处早返回，
+/// 该函数聚合所有 checker 产生的错误消息后统一返回 `HirError`，而不是在首个错误处早返回，
 /// 以便一次性向用户呈现尽可能多的诊断信息。
-pub fn validate_semantic_module(module: &HirModule) -> Result<(), ParseError> {
+pub fn validate_semantic_module(module: &HirModule) -> Result<(), HirError> {
     validate_try_propagate_module(module)?;
     let mut all_errors: Vec<String> = Vec::new();
     let mut value_checker = ValueTypeChecker::new();
@@ -58,13 +58,13 @@ pub fn validate_semantic_module(module: &HirModule) -> Result<(), ParseError> {
     }
     if !all_errors.is_empty() {
         let joined = all_errors.join("; ");
-        return Err(ParseError::invalid(joined));
+        return Err(HirError::invalid(joined));
     }
     check_pattern_refutability(module)?;
     ControlFlowScheduler::validate_hir_module(module)
 }
 
-/// 在编译流水线中执行 `CopySemanticsValidator` 校验，并将违规转为 `ParseError`。
+/// 在编译流水线中执行 `CopySemanticsValidator` 校验，并将违规转为 `HirError`。
 ///
 /// 该函数遍历模块中的函数、结构体方法与 `impl` 块方法，对参数类型与返回类型
 /// 调用 `CopySemanticsValidator` 的 `validate_parameter_passing` 与 `validate_return`。
@@ -74,7 +74,7 @@ pub fn validate_semantic_module(module: &HirModule) -> Result<(), ParseError> {
 ///    任何在参数/返回路径上使用该值类型的位置都会被标记为 copy discipline 违规；
 /// 2. 防御性检查：若值类型参数/返回被 `CopySemanticsValidator` 标记为 `Reference` 语义
 ///    （当前校验器逻辑下不会发生，但保留以应对未来分类逻辑变更）。
-fn run_copy_semantics_validator(module: &HirModule) -> Result<(), ParseError> {
+fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
     let mut validator = CopySemanticsValidator::new();
     for class in &module.structs {
         validator.register_value_type(class);
@@ -204,7 +204,7 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), ParseError> {
     }
     if !violations.is_empty() {
         let joined = violations.join("; ");
-        return Err(ParseError::invalid(joined));
+        return Err(HirError::invalid(joined));
     }
     Ok(())
 }
@@ -215,12 +215,12 @@ pub struct ControlFlowScheduler;
 
 impl ControlFlowScheduler {
     /// 校验 `HIR` 控制流约束是否已闭合。
-    pub fn validate_hir_module(module: &HirModule) -> Result<(), ParseError> {
+    pub fn validate_hir_module(module: &HirModule) -> Result<(), HirError> {
         validate_control_flow_module(module)
     }
 
     /// 校验 `MIR` 控制流图的 block / terminator 一致性。
-    pub fn validate_mir_module(module: &MirModule) -> Result<(), ParseError> {
+    pub fn validate_mir_module(module: &MirModule) -> Result<(), HirError> {
         validate_mir_module(module)
     }
 }

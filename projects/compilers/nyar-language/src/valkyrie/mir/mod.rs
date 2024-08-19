@@ -13,7 +13,7 @@ use crate::{
     hir::ValkyrieCompiler,
     types::hir::HirModule,
     validation::ControlFlowScheduler,
-    valkyrie::frontend::{ParseError, ValkyrieRoot},
+    valkyrie::{HirError, frontend::ValkyrieRoot},
 };
 
 pub use singleton::{
@@ -31,13 +31,13 @@ pub use ssa::{
 
 impl ValkyrieCompiler {
     /// 将 AST 沿正式 HIR 合同降低为分析用 Semantic MIR，不生产目标产物。
-    pub fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, ParseError> {
+    pub fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, HirError> {
         let hir = self.lower_root(root)?;
         self.validate_hir_semantic_contract(&hir)?;
         self.lower_validated_hir_to_mir(&hir)
     }
 
-    fn lower_validated_hir_to_mir(&self, hir: &HirModule) -> Result<MirModule, ParseError> {
+    fn lower_validated_hir_to_mir(&self, hir: &HirModule) -> Result<MirModule, HirError> {
         ControlFlowScheduler::validate_hir_module(hir)?;
         let mir = MirLowerer::lower_module_semantic(hir);
         ControlFlowScheduler::validate_mir_module(&mir)?;
@@ -45,7 +45,7 @@ impl ValkyrieCompiler {
     }
 
     /// 消费正式源码到 HIR 的展开与验证结果，不另建 parser 路线。
-    pub fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, ParseError> {
+    pub fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, HirError> {
         let hir = self.compile_source(source)?;
         self.lower_validated_hir_to_mir(&hir)
     }

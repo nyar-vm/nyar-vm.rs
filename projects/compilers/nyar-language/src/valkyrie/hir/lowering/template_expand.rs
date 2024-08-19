@@ -1,9 +1,11 @@
 //! 在 HIR lowering 前按 `arch` 展开 Oak 结构化 TGrammar 节点。
 
-use crate::valkyrie::frontend::{
-    ParseError,
-    ast::{Block, Statement, StatementNode, TemplateIf, TemplateLoop, TemplateMatch, TemplateNode, ValkyrieRoot},
-    parse_source_with_language, production_language,
+use crate::valkyrie::{
+    HirError,
+    frontend::{
+        ast::{Block, Statement, StatementNode, TemplateIf, TemplateLoop, TemplateMatch, TemplateNode, ValkyrieRoot},
+        parse_source_with_language, production_language,
+    },
 };
 
 use oak_core::TokenType;
@@ -20,7 +22,7 @@ pub const DEFAULT_COMPILE_ARCH: &str = "native";
 /// 展开根节点与声明体中的 TGrammar 模板。
 
 #[doc(hidden)]
-pub fn expand_templates_in_root(root: &mut ValkyrieRoot, source: &str, arch: &str) -> Result<(), ParseError> {
+pub fn expand_templates_in_root(root: &mut ValkyrieRoot, source: &str, arch: &str) -> Result<(), HirError> {
     expand_statement_nodes(&mut root.items, source, arch)?;
 
     expand_declaration_bodies(&mut root.items, source, arch)?;
@@ -28,7 +30,7 @@ pub fn expand_templates_in_root(root: &mut ValkyrieRoot, source: &str, arch: &st
     Ok(())
 }
 
-fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &str) -> Result<(), ParseError> {
+fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &str) -> Result<(), HirError> {
     for item in items {
         match item {
             StatementNode::Micro(micro) => expand_block(&mut micro.body, source, arch)?,
@@ -62,11 +64,11 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
     Ok(())
 }
 
-fn expand_block(block: &mut Block, source: &str, arch: &str) -> Result<(), ParseError> {
+fn expand_block(block: &mut Block, source: &str, arch: &str) -> Result<(), HirError> {
     expand_statements(&mut block.statements, source, arch)
 }
 
-fn expand_statements(statements: &mut Vec<Statement>, source: &str, arch: &str) -> Result<(), ParseError> {
+fn expand_statements(statements: &mut Vec<Statement>, source: &str, arch: &str) -> Result<(), HirError> {
     let mut index = 0;
 
     while index < statements.len() {
@@ -91,7 +93,7 @@ fn expand_statements(statements: &mut Vec<Statement>, source: &str, arch: &str) 
     Ok(())
 }
 
-fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &str) -> Result<(), ParseError> {
+fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &str) -> Result<(), HirError> {
     let mut index = 0;
 
     while index < items.len() {
@@ -130,7 +132,7 @@ fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &s
     Ok(())
 }
 
-fn expand_template_to_statement_nodes(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<StatementNode>, ParseError> {
+fn expand_template_to_statement_nodes(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     match template {
         TemplateNode::Match(match_node) => {
             let body = select_arch_match_body(match_node, source, arch)?;
@@ -158,11 +160,11 @@ fn expand_template_to_statement_nodes(template: &TemplateNode, source: &str, arc
     }
 }
 
-fn expand_template_to_statements(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<Statement>, ParseError> {
+fn expand_template_to_statements(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<Statement>, HirError> {
     expand_template_to_statement_nodes(template, source, arch)?.into_iter().map(statement_node_to_statement).collect()
 }
 
-fn statement_node_to_statement(item: StatementNode) -> Result<Statement, ParseError> {
+fn statement_node_to_statement(item: StatementNode) -> Result<Statement, HirError> {
     match item {
         StatementNode::Let(binding) => Ok(Statement::Let(*binding)),
 
@@ -170,11 +172,11 @@ fn statement_node_to_statement(item: StatementNode) -> Result<Statement, ParseEr
 
         StatementNode::Template(template) => Ok(Statement::Template(template)),
 
-        other => Err(ParseError::invalid(format!("TGrammar 展开后不能在块内保留顶层项: {other:?}"))),
+        other => Err(HirError::invalid(format!("TGrammar 展开后不能在块内保留顶层项: {other:?}"))),
     }
 }
 
-fn select_if_body(if_node: &TemplateIf, source: &str, arch: &str) -> Result<Vec<StatementNode>, ParseError> {
+fn select_if_body(if_node: &TemplateIf, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     for arm in &if_node.arms {
         if !arm.header.is_empty() && eval_const_condition(source, &arm.header, arch)? {
             return Ok(arm.body.clone());
@@ -190,7 +192,7 @@ fn select_if_body(if_node: &TemplateIf, source: &str, arch: &str) -> Result<Vec<
     Ok(Vec::new())
 }
 
-fn expand_loop_body(loop_node: &TemplateLoop, source: &str, arch: &str) -> Result<Vec<StatementNode>, ParseError> {
+fn expand_loop_body(loop_node: &TemplateLoop, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     let range = parse_const_loop_range(source, &loop_node.header, arch)?;
 
     let mut items = Vec::new();
@@ -206,7 +208,7 @@ fn expand_loop_body(loop_node: &TemplateLoop, source: &str, arch: &str) -> Resul
     Ok(items)
 }
 
-fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, arch: &str) -> Result<Vec<StatementNode>, ParseError> {
+fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     let snippet = const_value_to_source(&eval_const_expr(source, tokens, arch)?);
     if snippet.trim().is_empty() {
         return Ok(Vec::new());
@@ -214,9 +216,9 @@ fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, 
     // 元表达式 splice 发生在语句上下文中，须经块内重解析而非模块根。
     let wrapped = format!("micro __tg_fragment() -> void {{ {snippet}; }}");
     let root = parse_source_with_language(&wrapped, &production_language())?;
-    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| ParseError::invalid("TGrammar 元表达式展开失败"))?
+    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| HirError::invalid("TGrammar 元表达式展开失败"))?
     else {
-        return Err(ParseError::invalid("TGrammar 元表达式展开失败"));
+        return Err(HirError::invalid("TGrammar 元表达式展开失败"));
     };
     Ok(micro.body.statements.iter().cloned().map(statement_to_statement_node).collect())
 }
@@ -229,9 +231,9 @@ fn statement_to_statement_node(statement: Statement) -> StatementNode {
     }
 }
 
-fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str) -> Result<Vec<StatementNode>, ParseError> {
+fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     if !is_arch_scrutinee(source, &match_node.header) {
-        return Err(ParseError::invalid("TGrammar `<% match %>` 当前仅支持按 `arch` 展开"));
+        return Err(HirError::invalid("TGrammar `<% match %>` 当前仅支持按 `arch` 展开"));
     }
 
     for arm in &match_node.arms {
