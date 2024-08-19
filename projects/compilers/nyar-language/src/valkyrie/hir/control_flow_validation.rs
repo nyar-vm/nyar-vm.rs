@@ -10,7 +10,7 @@ use crate::{
     },
     valkyrie::{
         control_flow::{ControlFlowContext, TryScopeData},
-        frontend::ParseError,
+        HirError,
         hir::{is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type},
     },
 };
@@ -59,7 +59,7 @@ fn validation_state(numeric_declarations: &BTreeSet<nyar_types::ItemId>) -> HirV
 }
 
 /// 校验模块内全部函数与控制流的 HIR 合法性。
-pub fn validate_control_flow_module(module: &HirModule) -> Result<(), ParseError> {
+pub fn validate_control_flow_module(module: &HirModule) -> Result<(), HirError> {
     let numeric_declarations = numeric_declarations_in_module(module);
     for function in &module.functions {
         let mut state = validation_state(&numeric_declarations);
@@ -108,7 +108,7 @@ pub fn validate_control_flow_module(module: &HirModule) -> Result<(), ParseError
     Ok(())
 }
 
-fn validate_hir_function(function: &HirFunction, state: &mut HirValidationState) -> Result<(), ParseError> {
+fn validate_hir_function(function: &HirFunction, state: &mut HirValidationState) -> Result<(), HirError> {
     let saved_function = state.current_function.clone();
     state.current_function = Some(function.name.to_string());
     let is_async = function_is_async(&function.body);
@@ -145,7 +145,7 @@ fn validate_hir_function(function: &HirFunction, state: &mut HirValidationState)
     Ok(())
 }
 
-fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidationState) -> Result<(), ParseError> {
+fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidationState) -> Result<(), HirError> {
     match &statement.kind {
         HirStatementKind::Let { pattern, initializer, ty, .. } => {
             if let Some(initializer) = initializer {
@@ -162,7 +162,7 @@ fn validate_hir_statement(statement: &HirStatement, state: &mut HirValidationSta
     Ok(())
 }
 
-fn validate_hir_block(block: &HirBlock, state: &mut HirValidationState, value_context: bool) -> Result<(), ParseError> {
+fn validate_hir_block(block: &HirBlock, state: &mut HirValidationState, value_context: bool) -> Result<(), HirError> {
     push_local_scope(state);
     for statement in &block.statements {
         validate_hir_statement(statement, state)?;
@@ -174,7 +174,7 @@ fn validate_hir_block(block: &HirBlock, state: &mut HirValidationState, value_co
     Ok(())
 }
 
-fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_context: bool) -> Result<(), ParseError> {
+fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_context: bool) -> Result<(), HirError> {
     match &expr.kind {
         HirExprKind::Call { callee, args, .. } => {
             validate_hir_expr(callee, state, true)?;
@@ -193,7 +193,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
             if matches!(expr.kind, HirExprKind::Resume(_))
                 && (state.control_flow.current_catch_depth() == 0 || !state.control_flow.current_catch_arm_body())
             {
-                return Err(ParseError::invalid("控制流调度校验失败：检测到未位于 `catch arm body` 的 `resume`"));
+                return Err(HirError::invalid("控制流调度校验失败：检测到未位于 `catch arm body` 的 `resume`"));
             }
             if state.in_guard {
                 let control_flow_name = match &expr.kind {
@@ -206,7 +206,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                     _ => "",
                 };
                 if !control_flow_name.is_empty() {
-                    return Err(ParseError::invalid(format!("控制流调度校验失败：guard 中不允许出现会打断控制流连续性的 {control_flow_name}")));
+                    return Err(HirError::invalid(format!("控制流调度校验失败：guard 中不允许出现会打断控制流连续性的 {control_flow_name}")));
                 }
             }
             if matches!(expr.kind, HirExprKind::BlockOn(_)) {
@@ -242,9 +242,9 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 return Ok(());
             }
             if in_case_arm && !has_fallthrough_target {
-                return Err(ParseError::invalid("控制流调度校验失败：最后一个 `case` arm 不允许使用 `fallthrough`"));
+                return Err(HirError::invalid("控制流调度校验失败：最后一个 `case` arm 不允许使用 `fallthrough`"));
             }
-            return Err(ParseError::invalid("控制流调度校验失败：`fallthrough` 仅允许出现在 `case` statement 体系中"));
+            return Err(HirError::invalid("控制流调度校验失败：`fallthrough` 仅允许出现在 `case` statement 体系中"));
         }
         HirExprKind::With { base, updates } => {
             validate_hir_expr(base, state, true)?;
@@ -351,7 +351,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
             for (index, arm) in arms.iter().enumerate() {
                 if let Some(leaked_name) = detect_case_fallthrough_binding_leak(arm, &previous_fallthrough_bindings, state) {
                     state.control_flow.pop_case_chain();
-                    return Err(ParseError::invalid(format!(
+                    return Err(HirError::invalid(format!(
                         "控制流调度校验失败：`fallthrough` 不继承上一 `case` arm �?pattern 绑定，当�?arm 非法引用�?`{leaked_name}`"
                     )));
                 }
@@ -400,7 +400,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
         }
         HirExprKind::Return(value) | HirExprKind::Yield(value) => {
             if matches!(expr.kind, HirExprKind::Yield(_)) && state.in_guard {
-                return Err(ParseError::invalid("控制流调度校验失败：guard 中不允许出现会打断控制流连续性的 `yield`"));
+                return Err(HirError::invalid("控制流调度校验失败：guard 中不允许出现会打断控制流连续性的 `yield`"));
             }
             if matches!(expr.kind, HirExprKind::Yield(_)) {
                 validate_yield_context(expr, state)?;
@@ -428,17 +428,17 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 let Some((accepts_break_value, expected_type)) = resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state)
                     .map(|loop_context| (loop_context.accepts_break_value, loop_context.break_value_type.clone()))
                 else {
-                    return Err(ParseError::invalid("控制流调度校验失败：`break expr` 未找到可接受值的目标 loop"));
+                    return Err(HirError::invalid("控制流调度校验失败：`break expr` 未找到可接受值的目标 loop"));
                 };
                 if !accepts_break_value {
-                    return Err(ParseError::invalid("控制流调度校验失败：`break expr` 的目标 loop 当前不接受值"));
+                    return Err(HirError::invalid("控制流调度校验失败：`break expr` 的目标 loop 当前不接受值"));
                 }
                 if let Some(break_type) = break_type {
                     if let Some(expected_type) = &expected_type {
                         if !control_flow_value_type_compatible(expected_type, &break_type)
                             && !integer_literal_binds_to(expected_type, Some(expr), state)
                         {
-                            return Err(ParseError::invalid(format!(
+                            return Err(HirError::invalid(format!(
                                 "控制流调度校验失败：`break expr` 的值类型 `{}` 与目标 loop 已收敛的结果类型 `{}` 不兼容",
                                 display_type(&break_type),
                                 display_type(expected_type)
@@ -451,12 +451,12 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 }
             }
             else if resolve_break_target_mut(label.as_ref().map(|it| it.as_str()), state).is_none() {
-                return Err(ParseError::invalid("控制流调度校验失败：`break` 未找到目标 loop"));
+                return Err(HirError::invalid("控制流调度校验失败：`break` 未找到目标 loop"));
             }
         }
         HirExprKind::Continue { label } => {
             if !resolve_continue_target(label.as_ref(), state) {
-                return Err(ParseError::invalid("控制流调度校验失败：`continue` 未找到目标 loop"));
+                return Err(HirError::invalid("控制流调度校验失败：`continue` 未找到目标 loop"));
             }
         }
         HirExprKind::Catch { expr, arms } => {
@@ -588,7 +588,7 @@ fn infer_try_scope_type(
     Some(body_type)
 }
 
-fn validate_try_propagate_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_try_propagate_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     let HirExprKind::TryPropagate { inner, .. } = &expr.kind
     else {
         return Ok(());
@@ -601,24 +601,24 @@ fn validate_try_propagate_context(expr: &HirExpr, state: &HirValidationState) ->
     let option_operand = is_option_apply_type(&operand_type);
     let result_operand = is_result_apply_type(&operand_type);
     if !nullable_operand && !option_operand && !result_operand {
-        return Err(ParseError::invalid(format!("`?` cannot be applied to `{}`", display_type(&operand_type))));
+        return Err(HirError::invalid(format!("`?` cannot be applied to `{}`", display_type(&operand_type))));
     }
     if !state.control_flow.in_try_scope() {
         let return_type = current_return_type(state).cloned().unwrap_or(ValkyrieType::Unit);
         if nullable_operand && !is_nullable_type(&return_type) {
-            return Err(ParseError::invalid(format!(
+            return Err(HirError::invalid(format!(
                 "`?` requires a nullable enclosing return or `try` scope; got `{}`",
                 display_type(&return_type)
             )));
         }
         if option_operand && !is_option_apply_type(&return_type) {
-            return Err(ParseError::invalid(format!(
+            return Err(HirError::invalid(format!(
                 "`?` on `Option` requires enclosing `Option` return or `try` scope; got `{}`",
                 display_type(&return_type)
             )));
         }
         if result_operand && !is_result_apply_type(&return_type) {
-            return Err(ParseError::invalid(format!(
+            return Err(HirError::invalid(format!(
                 "`?` on `Result` requires enclosing `Result` return or `try` scope; got `{}`",
                 display_type(&return_type)
             )));
@@ -707,7 +707,7 @@ fn infer_literal_type(literal: &HirLiteral) -> Option<ValkyrieType> {
     }
 }
 
-fn validate_future_control_operand(expr: &HirExpr, value: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_future_control_operand(expr: &HirExpr, value: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     let Some(value_type) = infer_static_expr_type(value, state)
     else {
         return Ok(());
@@ -721,13 +721,13 @@ fn validate_future_control_operand(expr: &HirExpr, value: &HirExpr, state: &HirV
         HirExprKind::BlockOn(_) => "`block`",
         _ => return Ok(()),
     };
-    Err(ParseError::invalid(format!(
+    Err(HirError::invalid(format!(
         "控制流调度校验失败：{control_flow_name} 需�?`Future<T>` �?`Promise<T>` 类型的操作数，当前得�?`{}`",
         display_type(&value_type)
     )))
 }
 
-fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirValidationState) -> Result<(), HirError> {
     let Some(expected_raw) = current_return_type(state)
     else {
         return Ok(());
@@ -739,7 +739,7 @@ fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVal
         if return_without_value_compatible(&expected_type) {
             return Ok(());
         }
-        return Err(ParseError::invalid(format!("控制流调度校验失败：函数返回类型 `{}` 不接受无值 `return`", display_type(&expected_type))));
+        return Err(HirError::invalid(format!("控制流调度校验失败：函数返回类型 `{}` 不接受无值 `return`", display_type(&expected_type))));
     };
 
     let Some(actual_raw) = infer_static_expr_type(value, state)
@@ -753,7 +753,7 @@ fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVal
 
     let _ = expr;
     let function_hint = state.current_function.as_ref().map(|name| format!("（函数 `{name}`）")).unwrap_or_default();
-    Err(ParseError::invalid(format!(
+    Err(HirError::invalid(format!(
         "控制流调度校验失败：`return expr` 的值类型 `{}` 与函数返回类型 `{}` 不兼容{function_hint}",
         display_type(&actual_type),
         display_type(&expected_type)
@@ -765,7 +765,7 @@ fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVal
 /// 当函数返回类型为 `Generator<T>` / `Iterator<T>` / `Coroutine<T>` 时，
 /// 函数体内所有 `yield expr` 的 `expr` 类型需与 `T` 兼容。
 /// 若返回类型不是生成器协议，则跳过校验（由 `validate_yield_context` 负责 scope 校验）。
-fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirValidationState) -> Result<(), HirError> {
     let Some(expected_raw) = current_return_type(state)
     else {
         return Ok(());
@@ -780,7 +780,7 @@ fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVali
         if matches!(yield_item_type, ValkyrieType::Unit) {
             return Ok(());
         }
-        return Err(ParseError::invalid(format!(
+        return Err(HirError::invalid(format!(
             "控制流调度校验失败：函数返回类型 `{}` 要求 `yield` 携带值，但遇到无值 `yield`",
             display_type(&expected_return)
         )));
@@ -795,7 +795,7 @@ fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVali
     }
     let _ = expr;
     let function_hint = state.current_function.as_ref().map(|name| format!("（函数 `{name}`）")).unwrap_or_default();
-    Err(ParseError::invalid(format!(
+    Err(HirError::invalid(format!(
         "控制流调度校验失败：`yield expr` 的值类型 `{}` 与函数返回类型 `{}` 的 yield 元素类型 `{}` 不兼容{function_hint}",
         display_type(&actual_type),
         display_type(&expected_return),
@@ -806,7 +806,7 @@ fn validate_yield_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirVali
 /// 校验 `yield from generator_expr` 的元素类型与函数返回类型 `Generator<T>` 的 `T` 一致。
 ///
 /// `yield from` 委托另一个生成器，要求被委托生成器的 yield 元素类型与当前函数返回类型的元素类型兼容。
-fn validate_yield_from_value(expr: &HirExpr, value: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_yield_from_value(expr: &HirExpr, value: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     let Some(expected_raw) = current_return_type(state)
     else {
         return Ok(());
@@ -823,7 +823,7 @@ fn validate_yield_from_value(expr: &HirExpr, value: &HirExpr, state: &HirValidat
     let source_type = resolve_contextual_type(&source_type_raw, state);
     let Some(source_item_type) = generator_yield_type(&source_type)
     else {
-        return Err(ParseError::invalid(format!(
+        return Err(HirError::invalid(format!(
             "控制流调度校验失败：`yield from` 的操作数类型 `{}` 不是生成器协议（`Generator<T>` / `Iterator<T>` / `Coroutine<T>`）",
             display_type(&source_type)
         )));
@@ -832,7 +832,7 @@ fn validate_yield_from_value(expr: &HirExpr, value: &HirExpr, state: &HirValidat
         return Ok(());
     }
     let _ = expr;
-    Err(ParseError::invalid(format!(
+    Err(HirError::invalid(format!(
         "控制流调度校验失败：`yield from` 的元素类型 `{}` 与函数返回类型 `{}` 的 yield 元素类型 `{}` 不兼容",
         display_type(&source_item_type),
         display_type(&expected_return),
@@ -840,7 +840,7 @@ fn validate_yield_from_value(expr: &HirExpr, value: &HirExpr, state: &HirValidat
     )))
 }
 
-fn validate_blocking_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_blocking_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     if !matches!(expr.kind, HirExprKind::BlockOn(_)) {
         return Ok(());
     }
@@ -848,15 +848,15 @@ fn validate_blocking_context(expr: &HirExpr, state: &HirValidationState) -> Resu
         return Ok(());
     }
     if state.control_flow.in_async_scope() {
-        return Err(ParseError::invalid("控制流调度校验失败：`block` 不允许出现在 async 函数上下文"));
+        return Err(HirError::invalid("控制流调度校验失败：`block` 不允许出现在 async 函数上下文"));
     }
     if state.control_flow.current_allow_blocking() {
         return Ok(());
     }
-    Err(ParseError::invalid("控制流调度校验失败：`block` 当前不位于允许阻塞的上下文"))
+    Err(HirError::invalid("控制流调度校验失败：`block` 当前不位于允许阻塞的上下文"))
 }
 
-fn validate_await_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_await_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     if !matches!(expr.kind, HirExprKind::Await(_)) {
         return Ok(());
     }
@@ -866,10 +866,10 @@ fn validate_await_context(expr: &HirExpr, state: &HirValidationState) -> Result<
     if state.control_flow.in_async_scope() {
         return Ok(());
     }
-    Err(ParseError::invalid("控制流调度校验失败：`await` 只允许出现在 async 函数上下文"))
+    Err(HirError::invalid("控制流调度校验失败：`await` 只允许出现在 async 函数上下文"))
 }
 
-fn validate_yield_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), ParseError> {
+fn validate_yield_context(expr: &HirExpr, state: &HirValidationState) -> Result<(), HirError> {
     let control_flow_name = match expr.kind {
         HirExprKind::Yield(_) => "`yield`",
         HirExprKind::YieldFrom(_) => "`yield from`",
@@ -883,7 +883,7 @@ fn validate_yield_context(expr: &HirExpr, state: &HirValidationState) -> Result<
     if state.control_flow.current_allow_yield() {
         return Ok(());
     }
-    Err(ParseError::invalid(format!("控制流调度校验失败：{control_flow_name} 只允许出现在生成器函数或等价 handler 上下文")))
+    Err(HirError::invalid(format!("控制流调度校验失败：{control_flow_name} 只允许出现在生成器函数或等价 handler 上下文")))
 }
 
 /// 检测函数体是否包含 `yield` / `yield from`（不进入 lambda 体）。
@@ -1655,11 +1655,11 @@ fn bind_pattern_type(state: &mut HirValidationState, pattern: &HirPattern, ty: &
     bind_pattern_type_with_hint(state, pattern, Some(ty));
 }
 
-fn validate_pattern_semantics(pattern: &HirPattern) -> Result<(), ParseError> {
+fn validate_pattern_semantics(pattern: &HirPattern) -> Result<(), HirError> {
     match pattern {
         HirPattern::Name(name) => {
             if is_ambiguous_bare_name_pattern(name) {
-                return Err(ParseError::invalid(format!(
+                return Err(HirError::invalid(format!(
                     "控制流调度校验失败：当前禁止会与变量绑定歧义的单段小写裸名字模式 `{}`；`Variant` 或 `foo::bar::value` 这类不歧义的 variant 形式仍然允许",
                     render_pattern_name(name)
                 )));

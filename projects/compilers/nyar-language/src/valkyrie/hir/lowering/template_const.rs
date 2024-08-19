@@ -1,6 +1,6 @@
 //! TGrammar 编译期常量求值（`arch` 谓词、字面量、整数范围）。
 
-use crate::valkyrie::frontend::ParseError;
+use crate::valkyrie::HirError;
 use oak_core::{Token, TokenType};
 use oak_valkyrie::lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType};
 
@@ -12,7 +12,7 @@ pub(super) enum ConstantValue {
 }
 
 #[doc(hidden)]
-pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<bool, ParseError> {
+pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<bool, HirError> {
     if tokens.is_empty() {
         return Ok(true);
     }
@@ -23,15 +23,15 @@ pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], a
     }
 }
 
-pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<ConstantValue, ParseError> {
+pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<ConstantValue, HirError> {
     let meaningful = meaningful_tokens(tokens);
     if meaningful.is_empty() {
-        return Err(ParseError::invalid("TGrammar 元表达式为空"));
+        return Err(HirError::invalid("TGrammar 元表达式为空"));
     }
     let mut parser = ConstExprParser { source, tokens: &meaningful, index: 0, arch };
     let value = parser.parse_or()?;
     if parser.index < parser.tokens.len() {
-        return Err(ParseError::invalid("TGrammar 元表达式含有无法求值的语法"));
+        return Err(HirError::invalid("TGrammar 元表达式含有无法求值的语法"));
     }
     Ok(value)
 }
@@ -53,20 +53,20 @@ pub(super) fn const_value_to_source(value: &ConstantValue) -> String {
 
 /// `loop _ in start..end` 的半开整数区间 `[start, end)`。
 #[doc(hidden)]
-pub fn parse_const_loop_range(source: &str, header: &[Token<ValkyrieTokenType>], arch: &str) -> Result<std::ops::Range<i64>, ParseError> {
+pub fn parse_const_loop_range(source: &str, header: &[Token<ValkyrieTokenType>], arch: &str) -> Result<std::ops::Range<i64>, HirError> {
     let tokens = meaningful_tokens(header);
     if tokens.len() < 3 {
-        return Err(ParseError::invalid("TGrammar `loop` 仅支持 `loop _ in start..end` 常量整数范围"));
+        return Err(HirError::invalid("TGrammar `loop` 仅支持 `loop _ in start..end` 常量整数范围"));
     }
     if !is_discard_binding(source, &tokens[0]) {
-        return Err(ParseError::invalid("TGrammar `loop` 当前仅支持 `_` 绑定名的常量范围展开"));
+        return Err(HirError::invalid("TGrammar `loop` 当前仅支持 `_` 绑定名的常量范围展开"));
     }
     if tokens[1].kind != ValkyrieTokenType::Keyword(ValkyrieKeywords::In) {
-        return Err(ParseError::invalid("TGrammar `loop` 头部必须是 `_ in start..end`"));
+        return Err(HirError::invalid("TGrammar `loop` 头部必须是 `_ in start..end`"));
     }
     let range = parse_const_range_tokens(source, &tokens[2..])?;
     if range.start > range.end {
-        return Err(ParseError::invalid(format!("TGrammar `loop` 范围无效: {}..{}", range.start, range.end)));
+        return Err(HirError::invalid(format!("TGrammar `loop` 范围无效: {}..{}", range.start, range.end)));
     }
     let _ = arch;
     Ok(range)
@@ -98,15 +98,15 @@ fn is_discard_binding(source: &str, token: &Token<ValkyrieTokenType>) -> bool {
     token.kind == ValkyrieTokenType::Underscore || (token.kind == ValkyrieTokenType::Identifier && token_text(source, token) == "_")
 }
 
-fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -> Result<std::ops::Range<i64>, ParseError> {
+fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -> Result<std::ops::Range<i64>, HirError> {
     if tokens.is_empty() {
-        return Err(ParseError::invalid("TGrammar `loop` 缺少范围表达式"));
+        return Err(HirError::invalid("TGrammar `loop` 缺少范围表达式"));
     }
     if tokens.len() >= 3 && tokens[1].kind == ValkyrieTokenType::DotDot {
         let start = parse_const_int_token(source, &tokens[0])?;
         let end = parse_const_int_token(source, &tokens[2])?;
         if tokens.len() > 3 {
-            return Err(ParseError::invalid("TGrammar `loop` 头部含有无法求值的语法"));
+            return Err(HirError::invalid("TGrammar `loop` 头部含有无法求值的语法"));
         }
         return Ok(start..end);
     }
@@ -115,7 +115,7 @@ fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -
             return Ok(range);
         }
     }
-    Err(ParseError::invalid("TGrammar `loop` 范围必须是 `start..end` 常量整数"))
+    Err(HirError::invalid("TGrammar `loop` 范围必须是 `start..end` 常量整数"))
 }
 
 #[doc(hidden)]
@@ -127,19 +127,19 @@ pub fn parse_const_range_text(text: &str) -> Option<std::ops::Range<i64>> {
     Some(start..end)
 }
 
-fn parse_const_int_token(source: &str, token: &Token<ValkyrieTokenType>) -> Result<i64, ParseError> {
+fn parse_const_int_token(source: &str, token: &Token<ValkyrieTokenType>) -> Result<i64, HirError> {
     match token.kind {
         ValkyrieTokenType::IntegerLiteral => {}
         ValkyrieTokenType::FloatLiteral => {
             let text = token_text(source, token);
             if let Some(value) = text.split('.').next() {
-                return value.parse::<i64>().map_err(|_| ParseError::invalid("TGrammar 范围端点必须是整数字面量"));
+                return value.parse::<i64>().map_err(|_| HirError::invalid("TGrammar 范围端点必须是整数字面量"));
             }
-            return Err(ParseError::invalid("TGrammar 范围端点必须是整数字面量"));
+            return Err(HirError::invalid("TGrammar 范围端点必须是整数字面量"));
         }
-        _ => return Err(ParseError::invalid("TGrammar 范围端点必须是整数字面量")),
+        _ => return Err(HirError::invalid("TGrammar 范围端点必须是整数字面量")),
     }
-    token_text(source, token).parse::<i64>().map_err(|_| ParseError::invalid("TGrammar 范围端点必须是整数字面量"))
+    token_text(source, token).parse::<i64>().map_err(|_| HirError::invalid("TGrammar 范围端点必须是整数字面量"))
 }
 
 struct ConstExprParser<'a> {
@@ -150,7 +150,7 @@ struct ConstExprParser<'a> {
 }
 
 impl ConstExprParser<'_> {
-    fn parse_or(&mut self) -> Result<ConstantValue, ParseError> {
+    fn parse_or(&mut self) -> Result<ConstantValue, HirError> {
         let mut value = self.parse_and()?;
         while self.match_kind(ValkyrieTokenType::OrOr) {
             let rhs = self.parse_and()?;
@@ -159,7 +159,7 @@ impl ConstExprParser<'_> {
         Ok(value)
     }
 
-    fn parse_and(&mut self) -> Result<ConstantValue, ParseError> {
+    fn parse_and(&mut self) -> Result<ConstantValue, HirError> {
         let mut value = self.parse_equality()?;
         while self.match_kind(ValkyrieTokenType::AndAnd) {
             let rhs = self.parse_equality()?;
@@ -168,7 +168,7 @@ impl ConstExprParser<'_> {
         Ok(value)
     }
 
-    fn parse_equality(&mut self) -> Result<ConstantValue, ParseError> {
+    fn parse_equality(&mut self) -> Result<ConstantValue, HirError> {
         let left = self.parse_unary()?;
         if self.match_kind(ValkyrieTokenType::EqEq) {
             let right = self.parse_unary()?;
@@ -181,23 +181,23 @@ impl ConstExprParser<'_> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<ConstantValue, ParseError> {
+    fn parse_unary(&mut self) -> Result<ConstantValue, HirError> {
         if self.match_kind(ValkyrieTokenType::Bang) {
             return Ok(ConstantValue::Boolean(!self.parse_unary()?.as_bool()?));
         }
         self.parse_primary()
     }
 
-    fn parse_primary(&mut self) -> Result<ConstantValue, ParseError> {
+    fn parse_primary(&mut self) -> Result<ConstantValue, HirError> {
         if self.match_kind(ValkyrieTokenType::ParenthesisL) {
             let value = self.parse_or()?;
             if !self.match_kind(ValkyrieTokenType::ParenthesisR) {
-                return Err(ParseError::invalid("TGrammar 元表达式括号未闭合"));
+                return Err(HirError::invalid("TGrammar 元表达式括号未闭合"));
             }
             return Ok(value);
         }
 
-        let token = self.current().ok_or_else(|| ParseError::invalid("TGrammar 元表达式不完整"))?;
+        let token = self.current().ok_or_else(|| HirError::invalid("TGrammar 元表达式不完整"))?;
         self.index += 1;
         match token.kind {
             ValkyrieTokenType::BoolLiteral => Ok(ConstantValue::Boolean(token_text(self.source, &token) == "true")),
@@ -205,9 +205,9 @@ impl ConstExprParser<'_> {
             ValkyrieTokenType::IntegerLiteral => token_text(self.source, &token)
                 .parse::<i64>()
                 .map(ConstantValue::Integer64)
-                .map_err(|_| ParseError::invalid("TGrammar 整数字面量无法解析")),
+                .map_err(|_| HirError::invalid("TGrammar 整数字面量无法解析")),
             ValkyrieTokenType::Identifier if token_text(self.source, &token) == "arch" => Ok(ConstantValue::Utf8(self.arch.to_string())),
-            _ => Err(ParseError::invalid("TGrammar 元表达式含有无法求值的 token")),
+            _ => Err(HirError::invalid("TGrammar 元表达式含有无法求值的 token")),
         }
     }
 
@@ -227,7 +227,7 @@ impl ConstExprParser<'_> {
 }
 
 impl ConstantValue {
-    fn as_bool(&self) -> Result<bool, ParseError> {
+    fn as_bool(&self) -> Result<bool, HirError> {
         match self {
             Self::Boolean(value) => Ok(*value),
             Self::Integer64(value) => Ok(*value != 0),
@@ -236,7 +236,7 @@ impl ConstantValue {
     }
 }
 
-fn values_equal(left: &ConstantValue, right: &ConstantValue) -> Result<bool, ParseError> {
+fn values_equal(left: &ConstantValue, right: &ConstantValue) -> Result<bool, HirError> {
     match (left, right) {
         (ConstantValue::Boolean(lhs), ConstantValue::Boolean(rhs)) => Ok(lhs == rhs),
         (ConstantValue::Integer64(lhs), ConstantValue::Integer64(rhs)) => Ok(lhs == rhs),
@@ -247,6 +247,6 @@ fn values_equal(left: &ConstantValue, right: &ConstantValue) -> Result<bool, Par
         (ConstantValue::Boolean(lhs), ConstantValue::Integer64(rhs)) | (ConstantValue::Integer64(rhs), ConstantValue::Boolean(lhs)) => {
             Ok((*lhs && *rhs != 0) || (!*lhs && *rhs == 0))
         }
-        _ => Err(ParseError::invalid("TGrammar 比较两侧类型不兼容")),
+        _ => Err(HirError::invalid("TGrammar 比较两侧类型不兼容")),
     }
 }
