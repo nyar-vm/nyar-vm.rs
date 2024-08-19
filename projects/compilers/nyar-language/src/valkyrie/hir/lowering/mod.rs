@@ -72,7 +72,7 @@ fn validate_hir_contract(hir: &HirModule) -> Result<(), HirError> {
 /// Semantic MIR may only be produced from calls carrying an overload-selected
 /// contract.  In particular, do not let the SSA lowerer recover a symbol or a
 /// result type from source spelling, contextual type, or a backend convention.
-fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), ParseError> {
+fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), HirError> {
     for submodule in &hir.submodules {
         validate_resolved_call_contracts(submodule)?;
     }
@@ -110,11 +110,11 @@ fn validate_resolved_call_contracts(hir: &HirModule) -> Result<(), ParseError> {
     Ok(())
 }
 
-fn validate_function_call_contracts(function: &HirFunction) -> Result<(), ParseError> {
+fn validate_function_call_contracts(function: &HirFunction) -> Result<(), HirError> {
     validate_block_call_contracts(&function.body, &function.name.to_string())
 }
 
-fn validate_block_call_contracts(block: &HirBlock, function: &str) -> Result<(), ParseError> {
+fn validate_block_call_contracts(block: &HirBlock, function: &str) -> Result<(), HirError> {
     for statement in &block.statements {
         match &statement.kind {
             HirStatementKind::Let { initializer, .. } => {
@@ -132,7 +132,7 @@ fn validate_block_call_contracts(block: &HirBlock, function: &str) -> Result<(),
 }
 
 #[doc(hidden)]
-pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), ParseError> {
+pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), HirError> {
     let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
     let unknown_span = DiagnosticSpan { start: 0, end: 0 };
 
@@ -299,13 +299,13 @@ pub struct ValkyrieCompiler {
 pub use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
 
 /// 建立生成源码组；producer 与入口身份都由生成器显式提供，不接受缺省推断。
-pub fn build_generated_group(producer: impl Into<String>, group: CompilerSourceGroup) -> Result<GeneratedSourceGroup, ParseError> {
+pub fn build_generated_group(producer: impl Into<String>, group: CompilerSourceGroup) -> Result<GeneratedSourceGroup, HirError> {
     let producer = producer.into();
     if producer.trim().is_empty() {
-        return Err(ParseError::invalid("生成源码组缺少 producer 身份"));
+        return Err(HirError::invalid("生成源码组缺少 producer 身份"));
     }
     if !group.is_entry {
-        return Err(ParseError::invalid(format!("生成源码组 `{}` 必须显式标记入口", group.dependency_key)));
+        return Err(HirError::invalid(format!("生成源码组 `{}` 必须显式标记入口", group.dependency_key)));
     }
     Ok(GeneratedSourceGroup { producer, group })
 }
@@ -314,7 +314,7 @@ pub fn build_generated_group(producer: impl Into<String>, group: CompilerSourceG
 pub fn build_source_input_with_generated(
     groups: Vec<CompilerSourceGroup>,
     generated: Vec<GeneratedSourceGroup>,
-) -> Result<CompilerSourceInput, ParseError> {
+) -> Result<CompilerSourceInput, HirError> {
     let input = CompilerSourceInput { groups, generated };
     compose_source_input_groups(&input)?;
     Ok(input)
@@ -324,22 +324,22 @@ pub fn build_source_input_with_generated(
 ///
 /// 生成组必须显式入口、身份唯一，且只能依赖此前已提供的组；其余拓扑与
 /// 文件身份校验由 Compiler 的源码快照校验统一承担。
-pub fn compose_source_input_groups(input: &CompilerSourceInput) -> Result<Vec<CompilerSourceGroup>, ParseError> {
+pub fn compose_source_input_groups(input: &CompilerSourceInput) -> Result<Vec<CompilerSourceGroup>, HirError> {
     let mut composed = input.groups.clone();
     let mut provided = input.groups.iter().map(|group| group.dependency_key.clone()).collect::<std::collections::BTreeSet<_>>();
     for generated in &input.generated {
         if generated.producer.trim().is_empty() {
-            return Err(ParseError::invalid("生成源码组缺少 producer 身份"));
+            return Err(HirError::invalid("生成源码组缺少 producer 身份"));
         }
         if !generated.group.is_entry {
-            return Err(ParseError::invalid(format!("生成源码组 `{}` 必须显式标记入口", generated.group.dependency_key)));
+            return Err(HirError::invalid(format!("生成源码组 `{}` 必须显式标记入口", generated.group.dependency_key)));
         }
         if generated.group.dependency_key.is_empty() || !provided.insert(generated.group.dependency_key.clone()) {
-            return Err(ParseError::invalid(format!("生成源码组身份 `{}` 为空或与已提供组冲突", generated.group.dependency_key)));
+            return Err(HirError::invalid(format!("生成源码组身份 `{}` 为空或与已提供组冲突", generated.group.dependency_key)));
         }
         for dependency in &generated.group.direct_dependencies {
             if dependency == &generated.group.dependency_key || !provided.contains(dependency) {
-                return Err(ParseError::invalid(format!(
+                return Err(HirError::invalid(format!(
                     "生成源码组 `{}` 的依赖 `{dependency}` 未在此之前提供",
                     generated.group.dependency_key
                 )));
@@ -404,31 +404,31 @@ fn root_type_alias_declarations(root: &ValkyrieRoot) -> Vec<&TypeAliasDeclaratio
 }
 
 /// 在任何解析/裁剪前验证不可变输入身份，避免 map 覆盖制造第二份事实。
-fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), ParseError> {
+fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), HirError> {
     let mut completed = std::collections::BTreeSet::new();
     if groups.is_empty() {
-        return Err(ParseError::invalid("Compiler 源码快照缺少入口组"));
+        return Err(HirError::invalid("Compiler 源码快照缺少入口组"));
     }
     if !groups.iter().any(|group| group.is_entry) {
-        return Err(ParseError::invalid("Compiler 源码快照缺少显式入口组"));
+        return Err(HirError::invalid("Compiler 源码快照缺少显式入口组"));
     }
     for group in groups {
         if group.dependency_key.is_empty() || completed.contains(&group.dependency_key) {
-            return Err(ParseError::invalid("Compiler 源码组身份为空或重复"));
+            return Err(HirError::invalid("Compiler 源码组身份为空或重复"));
         }
         for dependency in &group.direct_dependencies {
             if !completed.contains(dependency) {
-                return Err(ParseError::invalid(format!("依赖 `{dependency}` 未在 `{}` 之前提供", group.dependency_key)));
+                return Err(HirError::invalid(format!("依赖 `{dependency}` 未在 `{}` 之前提供", group.dependency_key)));
             }
         }
         let mut paths = std::collections::BTreeSet::new();
         for file in &group.sources {
             if file.path.is_empty() || !paths.insert(&file.path) {
-                return Err(ParseError::invalid(format!("源码组 `{}` 的文件身份为空或重复", group.dependency_key)));
+                return Err(HirError::invalid(format!("源码组 `{}` 的文件身份为空或重复", group.dependency_key)));
             }
         }
         if group.is_entry && group.sources.is_empty() {
-            return Err(ParseError::invalid(format!("Compiler 入口组 `{}` 缺少源码文件", group.dependency_key)));
+            return Err(HirError::invalid(format!("Compiler 入口组 `{}` 缺少源码文件", group.dependency_key)));
         }
         completed.insert(group.dependency_key.clone());
     }
@@ -437,10 +437,10 @@ fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), ParseErr
 
 /// 集成测试夹具：从 HIR 构造阶段载荷，不作为生产源码闭包入口。
 #[doc(hidden)]
-pub fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, ParseError> {
+pub fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, HirError> {
     let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
     let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
-        .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
+        .map_err(|error| HirError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
     Ok(compiled_program)
 }
 
@@ -567,10 +567,10 @@ fn integer_literal_u32(expr: &HirExpr) -> Option<u32> {
 
 /// Resolve the next variant tag for `unite` (`[tag(N)]` or declaration order) and
 /// `enums` (`Variant = N` or auto-increment after the last assigned tag).
-fn resolve_sum_variant_tag(owner: &crate::types::Identifier, variant: &HirVariant, next_implicit: &mut u32) -> Result<u32, ParseError> {
+fn resolve_sum_variant_tag(owner: &crate::types::Identifier, variant: &HirVariant, next_implicit: &mut u32) -> Result<u32, HirError> {
     let tag = if let Some(discriminator) = &variant.discriminator {
         integer_literal_u32(discriminator).ok_or_else(|| {
-            ParseError::invalid(format!("`{}` variant `{}` discriminator must be a non-negative integer literal", owner, variant.name))
+            HirError::invalid(format!("`{}` variant `{}` discriminator must be a non-negative integer literal", owner, variant.name))
         })?
     }
     else {
@@ -584,7 +584,7 @@ fn resolve_sum_variant_tag(owner: &crate::types::Identifier, variant: &HirVarian
     Ok(tag)
 }
 
-fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: &[HirVariant]) -> Result<(), ParseError> {
+fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: &[HirVariant]) -> Result<(), HirError> {
     use std::collections::BTreeSet;
 
     let mut next_implicit = 0u32;
@@ -592,13 +592,14 @@ fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: 
     for variant in variants {
         let tag = resolve_sum_variant_tag(owner, variant, &mut next_implicit)?;
         if !seen.insert(tag) {
-            return Err(ParseError::invalid(format!("`{}` has duplicate discriminator {tag}", owner)));
+            return Err(HirError::invalid(format!("`{}` has duplicate discriminator {tag}", owner)));
         }
     }
     Ok(())
 }
 
-#[doc(hidden)]`npub fn validate_enum_discriminators(module: &HirModule) -> Result<(), HirError> {
+#[doc(hidden)]
+pub fn validate_enum_discriminators(module: &HirModule) -> Result<(), HirError> {
     for enum_def in &module.enums {
         validate_sum_type_discriminators(&enum_def.name, &enum_def.variants)?;
     }
@@ -629,13 +630,13 @@ impl ValkyrieCompiler {
     /// Validates an already materialized HIR module before it crosses into
     /// Semantic MIR. Cache consumers must use this instead of trusting the
     /// schema version of serialized HIR as a semantic guarantee.
-    pub fn validate_hir_semantic_contract(&self, hir: &HirModule) -> Result<(), ParseError> {
+    pub fn validate_hir_semantic_contract(&self, hir: &HirModule) -> Result<(), HirError> {
         validate_interop_surface(hir)?;
         validate_hir_contract(hir)
     }
 
     /// Parses source text and lowers it into a minimal HIR module.
-    pub fn compile_source(&self, source: &str) -> Result<HirModule, ParseError> {
+    pub fn compile_source(&self, source: &str) -> Result<HirModule, HirError> {
         self.compile_source_with_semantic_exports(source, &[])
     }
 
@@ -646,7 +647,7 @@ impl ValkyrieCompiler {
         &self,
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         self.compile_source_with_semantic_exports_and_name(source, imported_semantic_exports, None)
     }
 
@@ -656,7 +657,7 @@ impl ValkyrieCompiler {
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, DEFAULT_COMPILE_ARCH)?;
@@ -678,7 +679,7 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
         arch: &str,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, source, arch)?;
@@ -690,25 +691,25 @@ impl ValkyrieCompiler {
     }
 
     /// Parses a source file and lowers it into a minimal HIR module.
-    pub fn compile_path(&self, path: &Path) -> Result<HirModule, ParseError> {
-        let source = std::fs::read_to_string(path)?;
+    pub fn compile_path(&self, path: &Path) -> Result<HirModule, HirError> {
+        let source = std::fs::read_to_string(path).map_err(|e| HirError::invalid(format!("读取源码失败: {e}")))?;
         self.compile_source(&source)
     }
 
     /// Parses `.vx` source (Valkyrie + X-Grammar) and lowers into HIR with `view` → `render` normalization.
-    pub fn compile_vx_source(&self, source: &str) -> Result<HirModule, ParseError> {
-        Err(HirError::VxUnsupported.into())
+    pub fn compile_vx_source(&self, source: &str) -> Result<HirModule, HirError> {
+        Err(HirError::VxUnsupported)
     }
 
     /// Parses a `.vx` file and lowers it into HIR with `view` → `render` normalization.
-    pub fn compile_vx_path(&self, path: &Path) -> Result<HirModule, ParseError> {
-        let source = std::fs::read_to_string(path)?;
+    pub fn compile_vx_path(&self, path: &Path) -> Result<HirModule, HirError> {
+        let source = std::fs::read_to_string(path).map_err(|e| HirError::invalid(format!("读取 .vx 源码失败: {e}")))?;
         self.compile_vx_source(&source)
     }
 
     /// 集成测试夹具：将单一源码降低为成功载荷。
     #[doc(hidden)]
-    pub fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, ParseError> {
+    pub fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, HirError> {
         let hir_module = self.compile_source(source)?;
         compiled_program_from_hir_module(hir_module)
     }
@@ -718,7 +719,7 @@ impl ValkyrieCompiler {
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     #[doc(hidden)]
-    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
+    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, HirError> {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
     }
 
@@ -731,7 +732,7 @@ impl ValkyrieCompiler {
         input: &CompilerSourceInput,
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
         arch: &str,
-    ) -> Result<nyar_types::CompiledProgram, ParseError> {
+    ) -> Result<nyar_types::CompiledProgram, HirError> {
         let groups = compose_source_input_groups(input)?;
         self.compile_source_groups_to_program_with_host_bindings(&groups, host_bindings, arch)
     }
@@ -742,11 +743,11 @@ impl ValkyrieCompiler {
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
         arch: &str,
-    ) -> Result<nyar_types::CompiledProgram, ParseError> {
+    ) -> Result<nyar_types::CompiledProgram, HirError> {
         let entry_indices = groups.iter().enumerate().filter(|(_, group)| group.is_entry).map(|(index, _)| index).collect::<Vec<_>>();
         let mut hir_groups = self.resolve_source_groups_with_host_bindings(groups, host_bindings, arch)?;
-        let final_index = hir_groups.len().checked_sub(1).ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        let final_index = hir_groups.len().checked_sub(1).ok_or_else(|| HirError::invalid("semantic source group plan is empty"))?;
+        let final_hir = hir_groups.pop().ok_or_else(|| HirError::invalid("semantic source group plan is empty"))?;
         let all_hirs = std::iter::once(&final_hir).chain(hir_groups.iter()).collect::<Vec<_>>();
         let host_runtime = crate::valkyrie::mir::ssa::contracts::allocate_program_host_runtime(&all_hirs);
         // monomorph 与 host runtime 均接在整份闭包 HIR 实例池之后，避免跨组撞号。
@@ -790,11 +791,11 @@ impl ValkyrieCompiler {
         let resolved_host_bindings = crate::valkyrie::compile_pipeline::resolve_host_provider_bindings(&all_hirs, host_bindings)?;
         crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, &resolved_host_bindings)?;
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir)
-            .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
+            .map_err(|error| HirError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }
 
     #[doc(hidden)]
-    pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, ParseError> {
+    pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, HirError> {
         self.resolve_source_groups_with_host_bindings(groups, &[], arch)
     }
 
@@ -804,10 +805,10 @@ impl ValkyrieCompiler {
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
         arch: &str,
-    ) -> Result<Vec<HirModule>, ParseError> {
+    ) -> Result<Vec<HirModule>, HirError> {
         validate_source_groups(groups)?;
         let closure =
-            source_group_closure_with_host_bindings(groups, host_bindings, arch).map_err(|error| ParseError::invalid(error.to_string()))?;
+            source_group_closure_with_host_bindings(groups, host_bindings, arch).map_err(|error| HirError::invalid(error.to_string()))?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
@@ -826,7 +827,7 @@ impl ValkyrieCompiler {
                             details: vec![("export".into(), name.clone()), ("group".into(), group.name.clone())],
                             source: DiagnosticSource { id: "unknown".into(), revision: None },
                             span: DiagnosticSpan { start: 0, end: 0 },
-                        }.into())
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut hir_module = self.parse_source_files_without_call_resolution(
@@ -877,7 +878,7 @@ impl ValkyrieCompiler {
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
         arch: &str,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         if selection.body_lowering_source_paths.is_empty() && selection.body_lowering_declarations.is_empty() {
             // 空需求是闭包的正常结果；空模块仍保留依赖导出和模块身份。
             return AstToHir::new(self.source_id).lower_root_without_call_resolution(
@@ -944,12 +945,9 @@ impl ValkyrieCompiler {
         selection: &GroupSemanticClosure,
         file: &CompilerSourceFile,
         arch: &str,
-    ) -> Result<ValkyrieRoot, ParseError> {
-        let mut root = frontend::parse_source(&file.source).map_err(|error| match error {
-            ParseError::Invalid { message, span } => {
-                ParseError::Invalid { message: format!("源码组 `{}` 文件 `{}`: {message}", group.dependency_key, file.path), span }
-            }
-            other => other,
+    ) -> Result<ValkyrieRoot, HirError> {
+        let mut root = frontend::parse_source(&file.source).map_err(|parse_err| {
+            HirError::invalid(format!("源码组 `{}` 文件 `{}`: {}", group.dependency_key, file.path, parse_err))
         })?;
         // 声明级物化边界：进入 HIR 的声明身份必须与闭包规划一致。
         // 非被需求声明不得在此后参与调用解析、合同校验、MIR 与 layout。
@@ -966,16 +964,16 @@ impl ValkyrieCompiler {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         source_context::with_hir_lower_source(&file.source, || {
             AstToHir::new(self.source_id)
                 .lower_prepared_root(root, imported_semantic_exports, module_name)
-                .map_err(|error| ParseError::invalid(format!("source file `{}`: {error}", file.path)))
+                .map_err(|error| HirError::invalid(format!("source file `{}`: {error}", file.path)))
         })
     }
 
     /// Lowers parser output into a HIR module.
-    pub fn lower_root(&self, root: &ValkyrieRoot) -> Result<HirModule, ParseError> {
+    pub fn lower_root(&self, root: &ValkyrieRoot) -> Result<HirModule, HirError> {
         self.lower_root_with_semantic_exports(root, &[])
     }
 
@@ -984,7 +982,7 @@ impl ValkyrieCompiler {
         &self,
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports(root, imported_semantic_exports)
     }
 
@@ -994,7 +992,7 @@ impl ValkyrieCompiler {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, module_name)
     }
 }
@@ -1025,7 +1023,7 @@ impl SelfOwnerPath {
 
 /// 在结构体/枚举已分配 declaration ItemId 之后，把唯一可解析的 `Named`/`Apply(Named, …)`
 /// 绑定为 [`ValkyrieType::Nominal`]。这是 Resolver→HIR 的声明身份冻结，不是短名改写或后置补丁。
-fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError> {
+fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
     fn qualified_struct(item: &HirStruct) -> Identifier {
         if item.namespace.is_empty() {
             return item.name.clone();
@@ -1052,7 +1050,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             collect_enums(submodule, out);
         }
     }
-    fn unique_struct<'a>(name: &Identifier, namespace: &NamePath, structs: &'a [HirStruct]) -> Result<Option<&'a HirStruct>, ParseError> {
+    fn unique_struct<'a>(name: &Identifier, namespace: &NamePath, structs: &'a [HirStruct]) -> Result<Option<&'a HirStruct>, HirError> {
         let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
         let unknown_span = DiagnosticSpan { start: 0, end: 0 };
         let exact: Vec<&HirStruct> = structs
@@ -1081,7 +1079,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         }
         Ok(short.into_iter().next())
     }
-    fn unique_enum<'a>(name: &Identifier, enums: &'a [HirEnum]) -> Result<Option<&'a HirEnum>, ParseError> {
+    fn unique_enum<'a>(name: &Identifier, enums: &'a [HirEnum]) -> Result<Option<&'a HirEnum>, HirError> {
         let unknown_source = DiagnosticSource { id: "unknown".into(), revision: None };
         let unknown_span = DiagnosticSpan { start: 0, end: 0 };
         let matches: Vec<&HirEnum> = enums.iter().filter(|item| &item.name == name).collect();
@@ -1100,15 +1098,15 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         namespace: &NamePath,
         structs: &[HirStruct],
         enums: &[HirEnum],
-    ) -> Result<Option<nyar_types::ItemId>, ParseError> {
+    ) -> Result<Option<nyar_types::ItemId>, HirError> {
         if let Some(item) = unique_struct(name, namespace, structs)? {
             return Ok(Some(item.constructor_declaration.ok_or_else(|| {
-                ParseError::invalid(format!("结构 `{}` 缺少 constructor_declaration，无法绑定名义类型", qualified_struct(item)))
+                HirError::invalid(format!("结构 `{}` 缺少 constructor_declaration，无法绑定名义类型", qualified_struct(item)))
             })?));
         }
         if let Some(item) = unique_enum(name, enums)? {
             return Ok(Some(
-                item.declaration.ok_or_else(|| ParseError::invalid(format!("sum/unite `{}` 缺少 declaration，无法绑定名义类型", item.name)))?,
+                item.declaration.ok_or_else(|| HirError::invalid(format!("sum/unite `{}` 缺少 declaration，无法绑定名义类型", item.name)))?,
             ));
         }
         Ok(None)
@@ -1135,7 +1133,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
     fn is_array_owner(declaration: nyar_types::ItemId, structs: &[HirStruct]) -> bool {
         array_owner_declarations(structs).contains(&declaration)
     }
-    fn bind_type(ty: &mut ValkyrieType, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), ParseError> {
+    fn bind_type(ty: &mut ValkyrieType, namespace: &NamePath, structs: &[HirStruct], enums: &[HirEnum]) -> Result<(), HirError> {
         match ty {
             ValkyrieType::Nominal { arguments, .. } => {
                 for argument in arguments {
@@ -1150,7 +1148,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
             ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
                 let path = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
                 let Some(declaration) = resolve_declaration(name, &path, structs, enums)? else {
-                    return Err(ParseError::invalid(format!(
+                    return Err(HirError::invalid(format!(
                         "限定类型路径 `{}` 未绑定声明身份",
                         ValkyrieType::qualified_path_label(path_namespace, name)
                     )));
@@ -1229,7 +1227,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         structs: &[HirStruct],
         enums: &[HirEnum],
         self_owner: Option<&SelfOwnerPath>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), HirError> {
         match &mut expr.kind {
             HirExprKind::Call { callee, args, resolved, .. } => {
                 bind_expr(callee, namespace, structs, enums, self_owner)?;
@@ -1397,7 +1395,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         structs: &[HirStruct],
         enums: &[HirEnum],
         self_owner: Option<&SelfOwnerPath>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), HirError> {
         for statement in &mut block.statements {
             match &mut statement.kind {
                 HirStatementKind::Let { ty, initializer, .. } => {
@@ -1421,7 +1419,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
         structs: &[HirStruct],
         enums: &[HirEnum],
         self_owner: Option<&SelfOwnerPath>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), HirError> {
         for param in &mut function.params {
             bind_type(&mut param.ty, &function.declaring_namespace, structs, enums)?;
         }
@@ -1707,19 +1705,19 @@ pub(crate) fn max_hir_callable_instance_index(module: &HirModule) -> Option<u32>
     max
 }
 
-fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), ParseError> {
-    fn register(function: &mut HirFunction, next: &mut u32, next_instance: &mut u32, owner_monomorphic: bool) -> Result<(), ParseError> {
+fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), HirError> {
+    fn register(function: &mut HirFunction, next: &mut u32, next_instance: &mut u32, owner_monomorphic: bool) -> Result<(), HirError> {
         if function.declaration.is_some() || function.instance.is_some() {
-            return Err(ParseError::invalid("源码声明不能重复分配 ItemId"));
+            return Err(HirError::invalid("源码声明不能重复分配 ItemId"));
         }
-        let following = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
-        function.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+        let following = next.checked_add(1).ok_or_else(|| HirError::invalid("ItemId 声明空间耗尽"))?;
+        function.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| HirError::invalid("无效 ItemId"))?);
         *next = following;
         // 顶层与单例成员在 MIR 中总会物化；泛型种子（如 `Some<T>` / `option_none<T>`）同样需要 callable instance。
         if owner_monomorphic {
-            let following = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+            let following = next_instance.checked_add(1).ok_or_else(|| HirError::invalid("ItemInstanceId 实例空间耗尽"))?;
             function.instance =
-                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
+                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| HirError::invalid("无效 ItemInstanceId"))?);
             *next_instance = following;
         }
         Ok(())
@@ -1729,14 +1727,14 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
     }
     for structure in &mut module.structs {
         if structure.constructor_declaration.is_some() || structure.constructor_instance.is_some() {
-            return Err(ParseError::invalid("结构构造声明不能重复注册"));
+            return Err(HirError::invalid("结构构造声明不能重复注册"));
         }
-        structure.constructor_declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
-        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        structure.constructor_declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| HirError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| HirError::invalid("ItemId 声明空间耗尽"))?;
         if structure.generics.is_empty() {
             structure.constructor_instance =
-                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
-            *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| HirError::invalid("无效 ItemInstanceId"))?);
+            *next_instance = next_instance.checked_add(1).ok_or_else(|| HirError::invalid("ItemInstanceId 实例空间耗尽"))?;
         }
         for method in &mut structure.methods {
             register(method, next, next_instance, structure.generics.is_empty())?;
@@ -1749,30 +1747,30 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
     }
     for enum_definition in &mut module.enums {
         if enum_definition.declaration.is_some() {
-            return Err(ParseError::invalid("枚举声明不能重复注册"));
+            return Err(HirError::invalid("枚举声明不能重复注册"));
         }
-        enum_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
-        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        enum_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| HirError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| HirError::invalid("ItemId 声明空间耗尽"))?;
         for variant in &mut enum_definition.variants {
             if variant.declaration.is_some() || variant.instance.is_some() {
-                return Err(ParseError::invalid("变体构造声明不能重复注册"));
+                return Err(HirError::invalid("变体构造声明不能重复注册"));
             }
-            variant.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
-            *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+            variant.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| HirError::invalid("无效 ItemId"))?);
+            *next = next.checked_add(1).ok_or_else(|| HirError::invalid("ItemId 声明空间耗尽"))?;
             if enum_definition.generics.is_empty() {
                 variant.instance =
-                    Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
-                *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+                    Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| HirError::invalid("无效 ItemInstanceId"))?);
+                *next_instance = next_instance.checked_add(1).ok_or_else(|| HirError::invalid("ItemInstanceId 实例空间耗尽"))?;
             }
         }
     }
     for singleton in &mut module.singletons {
         if singleton.accessor_instance.is_some() {
-            return Err(ParseError::invalid("单例 accessor 实例不能重复注册"));
+            return Err(HirError::invalid("单例 accessor 实例不能重复注册"));
         }
         singleton.accessor_instance =
-            Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
-        *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+            Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| HirError::invalid("无效 ItemInstanceId"))?);
+        *next_instance = next_instance.checked_add(1).ok_or_else(|| HirError::invalid("ItemInstanceId 实例空间耗尽"))?;
         for method in singleton
             .methods
             .iter_mut()
@@ -1784,10 +1782,10 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
     }
     for trait_definition in &mut module.traits {
         if trait_definition.declaration.is_some() {
-            return Err(ParseError::invalid("trait 声明不能重复注册"));
+            return Err(HirError::invalid("trait 声明不能重复注册"));
         }
-        trait_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
-        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        trait_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| HirError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| HirError::invalid("ItemId 声明空间耗尽"))?;
         for method in trait_definition.methods.iter_mut() {
             register(method, next, next_instance, false)?;
         }
@@ -1819,15 +1817,15 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
 /// 字段身份属于 frontend 事实：MIR 仅消费 `HirField::id`，不得按字段名或布局
 /// 重新编号。源码组闭包共享同一计数器，依赖导出在注册后克隆，因此消费方与
 /// 生产方看到同一字段身份。
-fn register_field_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), ParseError> {
-    fn register_fields(fields: &mut [HirField], next: &mut u32) -> Result<(), ParseError> {
+fn register_field_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), HirError> {
+    fn register_fields(fields: &mut [HirField], next: &mut u32) -> Result<(), HirError> {
         for field in fields {
             if field.id.is_some() {
-                return Err(ParseError::invalid(format!("字段 `{}` 身份不能重复分配", field.name)));
+                return Err(HirError::invalid(format!("字段 `{}` 身份不能重复分配", field.name)));
             }
-            let id = nyar_types::FieldId::from_index(*next).ok_or_else(|| ParseError::invalid("FieldId 字段空间耗尽"))?;
+            let id = nyar_types::FieldId::from_index(*next).ok_or_else(|| HirError::invalid("FieldId 字段空间耗尽"))?;
             field.id = Some(id);
-            *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("FieldId 字段空间耗尽"))?;
+            *next = next.checked_add(1).ok_or_else(|| HirError::invalid("FieldId 字段空间耗尽"))?;
         }
         Ok(())
     }
@@ -2269,7 +2267,7 @@ impl AstToHir {
     }
 
     /// Lowers a parser root into a module-shaped HIR view.
-    pub fn lower_root(&self, root: &ValkyrieRoot) -> Result<HirModule, ParseError> {
+    pub fn lower_root(&self, root: &ValkyrieRoot) -> Result<HirModule, HirError> {
         self.lower_root_with_semantic_exports(root, &[])
     }
 
@@ -2278,7 +2276,7 @@ impl AstToHir {
         &self,
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         self.lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, None)
     }
 
@@ -2288,10 +2286,10 @@ impl AstToHir {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         let mut hir = self.lower_root_without_call_resolution(root, imported_semantic_exports, module_name_override)?;
         if !imported_semantic_exports.is_empty() {
-            return Err(ParseError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
+            return Err(HirError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
         register_field_declarations(&mut hir, &mut 0)?;
@@ -2312,7 +2310,7 @@ impl AstToHir {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(std::slice::from_ref(&root), imported_semantic_exports));
         register_root_type_alias_targets(std::slice::from_ref(&root));
         self.lower_prepared_root(root, imported_semantic_exports, module_name_override)
@@ -2324,7 +2322,7 @@ impl AstToHir {
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name_override: Option<NamePath>,
-    ) -> Result<HirModule, ParseError> {
+    ) -> Result<HirModule, HirError> {
         validate_ast_root(root)?;
         let _warning_scope = CompileWarningScope::enter();
         let module_name = module_name_override.unwrap_or_else(|| {
@@ -2427,7 +2425,7 @@ impl AstToHir {
         let mut injector = crate::valkyrie::derive::DeriveInjector::new();
         let derive_result = injector.inject_derives(&mut hir);
         if derive_result.has_errors() {
-            return Err(ParseError::invalid(derive_result.errors.into_iter().map(|error| error.to_string()).collect::<Vec<_>>().join("; ")));
+            return Err(HirError::invalid(derive_result.errors.into_iter().map(|error| error.to_string()).collect::<Vec<_>>().join("; ")));
         }
         hir.warnings = take_compile_warnings();
         Ok(hir)
@@ -2447,7 +2445,7 @@ impl AstToHir {
         flags: &mut Vec<HirFlags>,
         impls: &mut Vec<HirImpl>,
         type_aliases: &mut Vec<HirTypeAlias>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), HirError> {
         for item in items {
             self.lower_statement_node(
                 item,
@@ -2481,7 +2479,7 @@ impl AstToHir {
         flags: &mut Vec<HirFlags>,
         impls: &mut Vec<HirImpl>,
         type_aliases: &mut Vec<HirTypeAlias>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), HirError> {
         match item {
             StatementNode::Micro(micro) => {
                 functions.push(self.lower_micro(micro, namespace));
