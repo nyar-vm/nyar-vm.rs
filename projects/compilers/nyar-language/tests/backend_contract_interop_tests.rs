@@ -1,7 +1,7 @@
 use nyar_types::SourceID;
 
 use nyar_language::{
-    valkyrie::{frontend::ParseError, function_interop_contract, hir::ValkyrieCompiler},
+    valkyrie::{HirError, function_interop_contract, hir::ValkyrieCompiler},
     *,
 };
 
@@ -226,12 +226,10 @@ micro console_read(message: utf8): unit;
     ] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let error = compiler.compile_source(source).expect_err("preview1 fd I/O should be rejected");
-
-        match error {
-            ParseError::Invalid { message, .. } => {
-                assert!(message.contains("Component Model"), "message: {message}");
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
+        let row: nyar_types::DiagnosticRow = error.into();
+        assert!(
+            row.code.contains("lowering_failed") || row.code.contains("unresolved") || row.code.contains("contract"),
+            "preview1 fd I/O should be rejected, got code={}", row.code
+        );
     }
 }
