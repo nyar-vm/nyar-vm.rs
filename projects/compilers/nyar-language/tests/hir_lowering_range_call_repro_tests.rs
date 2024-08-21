@@ -1,6 +1,6 @@
 use nyar_language::{
     valkyrie::{
-        frontend::ParseError,
+        HirError,
         hir::{lowering::DEFAULT_COMPILE_ARCH, *},
         types::hir::*,
     },
@@ -10,7 +10,7 @@ use nyar_language::{
 // 对齐 `valkyrie.v` core：`Range`/`TextSpan` 字段为 `usize`，跨 namespace 构造须冻结 Nominal。
 // 禁止用 `i32` 规避或只 `eprintln` 打印 HIR 冒充通过。
 
-fn compile(source: &str) -> Result<HirModule, ParseError> {
+fn compile(source: &str) -> Result<HirModule, HirError> {
     ValkyrieCompiler::new(SourceID::default()).compile_source(source)
 }
 
