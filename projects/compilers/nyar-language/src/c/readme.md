@@ -4,7 +4,7 @@
 
 ## Duties
 
-- Reuse `std-data::text::c` parse/AST models.
+- Reuse the Oak C parse/AST model; keep language semantics in this frontend adapter.
 - Concrete `CModule` / `CSemanticBridge`, plus `interpret` tree-walker (language-package primary evaluator).
 - `legacy-vm` only thin-adapts (`evaluator/c.rs` → here); `legend` only assembles fixtures.
 

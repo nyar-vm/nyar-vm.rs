@@ -1,16 +1,15 @@
-# Nyar Universal Runtime (NyarVM)
+# Nyar VM
 
 [![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Status](https://img.shields.io/badge/status-active-success.svg)](#)
 
 ## 💡 NyarVM 是什么？
 
-**NyarVM** 是一款专为现代编程语言设计的高性能、跨平台虚拟机关编译器基础设施。它通过统一的 **Nyar IR**
-层，实现了静态语言与动态语言在同一运行时底座上的无缝协作。
+**Nyar VM** 是 Nyar 项目中的一个编译与执行后端，负责自己的 `nyar-ir`、Nyar 字节码、解释器、GC、JIT 与 AOT 链。Nyar 项目可以拥有多个语言前端和多个并列后端；JVM、CLR、Wasm、Native 与 Nyar VM 是不同的目标后端。本文只描述 Nyar VM 后端，不把 `nyar-ir` 当作跨语言或跨后端的 Universal IR。
 
 ## 🏗️ 核心架构：三位一体的执行语言
 
-NyarVM 的设计核心在于将异构语言前端降解为统一的字节码表示，并根据运行环境灵活选择执行策略。
+Nyar VM 后端接收某个语言前端为该后端准备的输入 contract，并把它降低为 Nyar VM 自己的 `nyar-ir` 和字节码。语言前端仍拥有自己的语义抽象；其他后端有各自的 lowering、IR 和执行合同，不经过 `nyar-ir`。
 
 ```mermaid
 graph TD
@@ -27,11 +26,11 @@ graph TD
         DL["动态语言 (TS, Python, Lua)"]:::frontend
     end
 
-    subgraph IR_Layer ["中间表示 (Nyar IR)"]
-        IR["Nyar Bytecode (Stack-based)"]:::ir
+    subgraph IR_Layer ["Nyar VM 后端内部表示"]
+        IR["Nyar VM nyar-ir"]:::ir
     end
 
-    subgraph Runtime ["统一运行时 (Nyar Runtime)"]
+    subgraph Runtime ["Nyar VM 后端运行时"]
         direction TB
         VM["VM 解释器 (Quick Start)"]:::runtime
         
@@ -46,8 +45,8 @@ graph TD
         end
     end
 
-    SL -->|Static Lowering| IR
-    DL -->|Dynamic Lowering| IR
+    SL -->|VM backend contract| IR
+    DL -->|VM backend contract| IR
     IR --> VM
     VM <--> JIT
     VM <--> AOT
@@ -61,7 +60,7 @@ graph TD
 
 ### 1. 静态语言流 (Static Languages)
 
-静态语言利用 NyarVM 严谨的类型系统，在编译阶段完成单态化与去抽象化。
+静态语言把已闭合的语言语义交给选定的 Nyar 模块；具体 target 可以在编译或运行阶段选择 specialization、去抽象化与内联。不同语言不必经过相同的 IR 或优化闭包。
 
 ```mermaid
 graph LR
@@ -69,17 +68,17 @@ graph LR
     classDef process fill:#fff3e0,stroke:#ff9800;
     classDef target fill:#e8f5e9,stroke:#4caf50,font-weight:bold;
 
-    Src["C/Valkyrie 源代码"]:::source -->|Frontend| IR["Nyar IR"]:::process
+    Src["C/Valkyrie 源代码"]:::source -->|VM backend contract| IR["Nyar VM nyar-ir"]:::process
     IR -->|Static Analysis| Plan{"执行决策"}
     
-    Plan -->|生产环境| AOT["nyar-aot: 原生二进制 (Native)"]:::target
+    Plan -->|生产环境| AOT["nyar-aot: Nyar VM AOT 产物"]:::target
     Plan -->|开发阶段| JIT["nyar-jit: 即时优化机器码"]:::target
     Plan -->|极速预览| Interp["VM: 解释执行"]:::target
 ```
 
 ### 2. 动态语言流 (Dynamic Languages)
 
-动态语言通过 **NaN-Boxing** 技术实现高效的运行时类型分发。
+动态语言可以按自身语义和目标选择 **NaN-Boxing** 等运行时表示；这不是所有 frontend 的共同 IR 或强制执行路径。
 
 ```mermaid
 graph TD
@@ -87,7 +86,7 @@ graph TD
     classDef process fill:#fff3e0,stroke:#ff9800;
     classDef hot fill:#f1f8e9,stroke:#8bc34a;
 
-    TS_Src["TypeScript 源代码"]:::source -->|Frontend| IR["Nyar IR"]:::process
+    TS_Src["TypeScript 源代码"]:::source -->|VM backend contract| IR["Nyar VM nyar-ir"]:::process
     IR -->|VM| Profile["运行时类型采样"]:::process
     Profile -->|收集 Tag| Guard{"类型守卫消除"}
     Guard -->|Hot Path| JIT["JIT 特化机器码"]:::hot
@@ -112,7 +111,7 @@ title NaN-Boxing Value Layout
 
 ### 1. 代数效应 (Algebraic Effects)
 
-Nyar IR 原生支持高阶控制流，通过捕获 **Continuation** 实现极致性能的异步与协程。
+`nyar-ir` 原生支持高阶控制流；Nyar VM 通过捕获 **Continuation** 实现异步与协程。这是 Nyar VM 后端的能力，不是所有后端的共同 IR 要求。
 
 ```mermaid
 sequenceDiagram

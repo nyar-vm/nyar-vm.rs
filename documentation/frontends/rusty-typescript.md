@@ -19,7 +19,7 @@ Rusty TypeScript 的编译侧重于类型检查后的代码简化：
     - **类型擦除**: 移除所有类型注解，仅保留运行时逻辑。
     - **模块转换**: 将 `import`/`export` 转换为 `ImportInfo` 和 `ExportInfo`。
 4. **字节码生成**:
-    - 使用 `NyarTranslator` 将简化后的 UIR 转换为 Nyar 操作码。
+    - 使用 `NyarTranslator` 将简化后的 frontend IR 转换为对应 Nyar bytecode contract。
     - 匿名函数映射为 `Lambda` 指令。
 
 ## 对象模型处理

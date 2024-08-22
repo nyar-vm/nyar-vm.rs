@@ -1,6 +1,6 @@
 # WebAssembly (WASM) 后端
 
-将 UIR 映射到 WASM 指令集。
+将已验证的 Wasm TargetExecutionPlan 映射到 WASM 指令集。前端语义 IR 和中间 lowering 由具体语言 pipeline 选择，不由 Wasm backend 反向推断。
 
 ## 特点
 

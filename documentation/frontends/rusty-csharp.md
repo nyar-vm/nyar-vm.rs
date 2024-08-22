@@ -17,9 +17,9 @@ Rusty C# 的编译路径与 Java 类似，但增加了对 C# 特有语法的处�
 2. **Lowering 逻辑**:
     - 将属性访问转换为隐式的方法调用（`get_Property` / `set_Property`）。
     - 事件绑定映射为对内部委托列表的更新操作。
-3. **UIR 增强**:
-    - 使用 `Extension` 节点描述 C# 特有的元数据，如 `[Attribute]`。
-    - 泛型定义在 UIR 层面保留原始信息，支持运行时实例化。
+3. **Frontend IR 扩展**:
+    - 示例用 `Extension` 节点描述 C# 特有的元数据，如 `[Attribute]`。
+    - 泛型信息由 C# frontend contract 保留；运行时实例化策略由所选 target contract 决定。
 
 ## 对象模型处理
 

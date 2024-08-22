@@ -6,7 +6,7 @@ Rusty Kotlin 展示了 Kotlin 语言的现代特性如何通过 Nyar VM 的异�
 
 - **空安全**: 编译时类型检查与运行时的非空断言生成。
 - **扩展函数**: 静态解析扩展函数，将其 Lowering 为带接收者参数的普通函数。
-- **数据类**: 自动生成 `equals`, `hashCode`, `toString` 以及 `copy` 方法的 UIR 表达。
+- **数据类**: 自动生成 `equals`, `hashCode`, `toString` 以及 `copy` 方法的 frontend-local IR 表达。
 - **异步支持**: 协程原语到 Nyar VM Effect 系统的映射。
 
 ## 编译与 Lowering 流程
@@ -19,7 +19,7 @@ Rusty Kotlin 利用了 Nyar VM 的高级指令集特性：
     - **Lambda 表达式**: 转换为闭包对象，支持变量捕获。
 3. **Effect 系统集成**:
     - 协程的 `suspend` 关键字映射为 Nyar VM 的 `yield` 或 `await` 语义。
-    - 状态机生成逻辑在 UIR 层面通过控制流重写实现。
+    - 状态机生成逻辑在 Kotlin frontend 选择的控制流 IR 中实现。
 
 ## 对象模型处理
 

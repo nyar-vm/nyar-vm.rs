@@ -11,10 +11,10 @@ Rusty Java 专注于展示 Java 虚拟机（JVM）风格的面向对象模型在
 
 ## 编译与 Lowering 流程
 
-Rusty Java 采用结构化的 AST 到 UIR 转换策略：
+Rusty Java 示例采用结构化的 AST 到 frontend-local IR 转换策略：
 
 1. **解析**: 使用 `oak-java` 将 `.java` 源码解析为高阶 AST。
-2. **UIR 转换 (Lowering)**:
+2. **Frontend IR 转换 (Lowering)**:
     - 使用 `NyarTranslator` 将 AST 节点转换为 `IKunTree`。
     - **类结构**: 映射为 `IKunTree::Extension` 节点（如 `"class"`, `"method"`, `"field"`）。
     - **方法体**: 递归降低为基础意图（Intents），如 `Constant`, `Symbol`, `Call`。

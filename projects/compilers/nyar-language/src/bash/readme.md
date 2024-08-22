@@ -4,7 +4,7 @@
 
 ## Duties
 
-- Reuse `std-data::text::bash` parse/AST models.
+- Reuse the Oak Bash parse/AST model; keep script semantics in this frontend adapter.
 - Concrete `BashModule` / `BashSemanticBridge` (no shared `HostScript*` / language-crate trait layer).
 - Provide `interpret` tree-walker as the language-package primary evaluator; `legacy-vm` only thin-adapts.
 

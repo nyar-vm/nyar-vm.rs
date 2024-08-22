@@ -1,6 +1,8 @@
 # nyar
 
-Multi-frontend optimization backend orchestration for the Nyar platform.
+Multi-language analysis, compilation, and execution backend platform for Nyar. Nyar provides the frontend SPI and the
+language-independent stages after a frontend has closed its own semantics; it is not the owner of any language's
+name resolution, type rules, generic substitution, or evidence selection.
 
 ## Overview
 
@@ -29,8 +31,8 @@ and VM alike.
 
 ## Upstream boundary
 
-Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`, `effect`, …) must close **before**
-`nyar`:
+Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`, `effect`, …) must close in the
+corresponding frontend before entering the language-independent Nyar stages:
 
 - Row method requirements become closed member facts in HIR, not downstream row witnesses.
 - Open dispatch stays explicit (`witness`, `effect-handler`); never disguised as static calls.
@@ -49,7 +51,7 @@ Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`,
 ### MIR (SSA)
 
 - Primary analysis IR: CFG, block parameters, explicit terminators and value deps.
-- Monomorphization, escape analysis, effect summaries, closed-world expansion.
+- Escape analysis, effect summaries, closed-world expansion, and target-dependent specialization where the target contract permits it.
 - Witness and effect operands remain explicit for analysis passes.
 
 ### LIR

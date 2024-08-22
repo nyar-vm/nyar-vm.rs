@@ -11,13 +11,12 @@ Rusty C 是一个简化版的 C 语言前端实现，专注于展示过程化编
 
 ## 编译与 Lowering 流程
 
-Rusty C 的编译流程遵循从源码到 UIR 再到原生指令的路径：
+Rusty C 示例展示一种 frontend-local IR 到目标指令的 lowering 路径；它不是所有 Nyar frontend 的共同流水线：
 
 1. **词法/语法分析**: 使用 `oak-c` 解析器将源码转换为 `RedNode` 树（红绿树架构）。
-2. **UIR 生成**:
-    - 遍历 `RedNode` 树，通过 `IntentBuilder` 构建 `IKun` 意图流。
-    - 函数定义被映射为 `builder.function`，变量声明映射为 `builder.state_update`。
-    - 控制流通过 `builder.branch` 和 `builder.jump` 实现。
+2. **Frontend IR 生成**:
+    - 遍历 `RedNode` 树，通过示例 `IntentBuilder` 构建 `IKun` 意图流。
+    - 函数定义、变量声明和控制流按该 frontend 的 IR contract 表达。
 3. **优化 (Chomsky)**:
     - 使用 `EGraph` 进行等价类重写。
     - 应用常量折叠、死代码消除等过程化优化策略。

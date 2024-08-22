@@ -21,9 +21,9 @@
 
 ## 编译与 Lowering 流程
 
-Rusty Lua 采用双层 IR 转换策略以实现深度优化：
+Rusty Lua 示例采用自己的两级 IR 转换；该选择不构成 Nyar 平台对其他 frontend 的统一要求：
 
-1. **解析**: 使用 `oak-lua` 将源码解析为 UIR。
+1. **解析**: 使用 `oak-lua` 将源码解析为 Lua AST。
 2. **Gaia IR 生成 (Lowering)**:
     - 使用 `GaiaTranslator` 将 `IKunTree` 转换为 `Gaia` 指令。
     - 局部变量被映射到 `GaiaFunction` 的寄存器槽位。

@@ -64,9 +64,9 @@ NyarVM 原生支持代数效应（Algebraic Effects），这对 JIT 提出了更
 - **栈图与精确追踪**: 为了支持多跳延续（Multi-shot Continuations），JIT 生成的机器码包含精确的栈图（Stack Maps），确保 GC
   在协程挂起和恢复时能准确识别根集合。
 
-### 5. 类型特化与运行时单态化 (Type Specialization & Late Monomorphization)
+### 5. 类型特化与运行时 specialization (Type Specialization & Late Specialization)
 
-`nyar-jit` 选择了 **运行时单态化 (Late Monomorphization)** 而非字节码级的强行实例化，这是基于以下核心考量：
+`nyar-jit` 可以选择 **运行时 specialization** 而非字节码级的强行实例化；这是 target 优化策略，不改变 frontend 的泛型 witness 语义。
 
 - **抑制字节码体积爆炸**: 强行在 AOT 或字节码生成阶段进行单态化会导致代码体积呈几何倍数增长。通过 JIT
   进行“按需实例化”，可以在保持字节码精简（Poly-morphic Bytecode）的同时，获得原生级别的执行性能。
