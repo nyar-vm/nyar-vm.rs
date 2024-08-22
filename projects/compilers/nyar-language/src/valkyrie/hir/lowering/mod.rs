@@ -1446,39 +1446,73 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
         let namespace = NamePath::new(item.namespace.clone());
         for field in &mut item.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
+            propagate_declared_generic_binders(&mut field.ty, &item.generics);
         }
         let self_owner = SelfOwnerPath::from_struct(item);
         for function in &mut item.methods {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
+            propagate_declared_generic_binders(&mut function.return_type, &item.generics);
+            for param in &mut function.params {
+                propagate_declared_generic_binders(&mut param.ty, &item.generics);
+            }
+            propagate_generic_binders_in_block(&mut function.body, &item.generics);
+            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &item.generics);
         }
     }
     for enum_def in &mut module.enums {
         for variant in &mut enum_def.variants {
             for field in &mut variant.fields {
                 bind_type(&mut field.ty, &NamePath::default(), &structs, &enums)?;
+                propagate_declared_generic_binders(&mut field.ty, &enum_def.generics);
             }
             if let Some(result) = &mut variant.result_type {
                 bind_type(result, &NamePath::default(), &structs, &enums)?;
+                propagate_declared_generic_binders(result, &enum_def.generics);
             }
         }
     }
     for function in &mut module.functions {
         bind_function(function, &structs, &enums, None)?;
+        propagate_declared_generic_binders(&mut function.return_type, &function.generics);
+        for param in &mut function.params {
+            propagate_declared_generic_binders(&mut param.ty, &function.generics);
+        }
+        propagate_generic_binders_in_block(&mut function.body, &function.generics);
+        propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &function.generics);
     }
     for singleton in &mut module.singletons {
         let namespace = NamePath::new(singleton.namespace.clone());
         for field in &mut singleton.fields {
             bind_type(&mut field.ty, &namespace, &structs, &enums)?;
+            propagate_declared_generic_binders(&mut field.ty, &singleton.generics);
         }
         let self_owner = SelfOwnerPath::named(&singleton.namespace, &singleton.name);
         for function in &mut singleton.methods {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
+            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
+            for param in &mut function.params {
+                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
+            }
+            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
+            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
         if let Some(function) = &mut singleton.constructor {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
+            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
+            for param in &mut function.params {
+                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
+            }
+            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
+            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
         if let Some(function) = &mut singleton.finalizer {
             bind_function(function, &structs, &enums, Some(&self_owner))?;
+            propagate_declared_generic_binders(&mut function.return_type, &singleton.generics);
+            for param in &mut function.params {
+                propagate_declared_generic_binders(&mut param.ty, &singleton.generics);
+            }
+            propagate_generic_binders_in_block(&mut function.body, &singleton.generics);
+            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &singleton.generics);
         }
     }
     for impl_block in &mut module.impls {
@@ -1491,6 +1525,12 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
     for trait_def in &mut module.traits {
         for function in trait_def.methods.iter_mut().chain(trait_def.default_methods.iter_mut()) {
             bind_function(function, &structs, &enums, None)?;
+            propagate_declared_generic_binders(&mut function.return_type, &trait_def.generics);
+            for param in &mut function.params {
+                propagate_declared_generic_binders(&mut param.ty, &trait_def.generics);
+            }
+            propagate_generic_binders_in_block(&mut function.body, &trait_def.generics);
+            propagate_generic_binders_in_where_constraints(&mut function.where_constraints, &trait_def.generics);
         }
     }
     for submodule in &mut module.submodules {
@@ -1565,6 +1605,23 @@ fn combined_impl_generic_context(module: &HirModule, implementation: &HirImpl) -
         }
     }
     generics
+}
+
+fn propagate_generic_binders_in_where_constraints(
+    constraints: &mut [crate::valkyrie::types::hir::HirWhereConstraint],
+    generics: &[GenericType],
+) {
+    for constraint in constraints {
+        propagate_declared_generic_binders(&mut constraint.target, generics);
+        for bound in &mut constraint.bounds {
+            for argument in &mut bound.type_arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+            for equation in &mut bound.associated_types {
+                propagate_declared_generic_binders(&mut equation.ty, generics);
+            }
+        }
+    }
 }
 
 fn propagate_impl_owner_type_generics(module: &mut HirModule) {
