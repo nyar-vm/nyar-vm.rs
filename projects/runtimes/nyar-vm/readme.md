@@ -1,6 +1,6 @@
 # nyar-vm
 
-Language-agnostic bytecode virtual machine for `.nyar` / Nyar IR modules.
+Nyar VM bytecode virtual machine for `.nyar` modules produced from the Nyar VM backend's `nyar-ir`. This IR is specific to Nyar VM and is not a universal IR for other backends.
 
 ## Overview
 

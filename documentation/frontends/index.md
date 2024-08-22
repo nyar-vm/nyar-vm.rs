@@ -1,20 +1,18 @@
 # 语言前端示例
 
-Nyar VM 旨在建立一个真正的 **统一编程语言运行时**。虽然不同编程语言在语法、控制流和对象模型上存在巨大差异，但 Nyar
-通过多层抽象将这些差异在运行时进行了语义对齐。
+本目录记录面向 **Nyar VM 后端** 的语言前端示例。Nyar 项目可以有多个前端和多个并列后端；这些示例选择 Nyar VM 时，才需要把语言语义降低到该后端的输入 contract，再进入 `nyar-ir`。语言自己的语法、类型、控制流和对象模型仍由前端拥有；JVM、CLR、Wasm、Native 等后端不因这些示例而共享 `nyar-ir`。
 
-## 统一运行时哲学
+## Nyar VM 后端边界
 
-Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是在一种语言中模拟另一种语言，而是将所有语言的意图降级到同一套高度抽象且灵活的原始操作上：
+Nyar VM 的核心设计目标是“语义降级而非模拟”。各前端先闭合自己的语言语义，再按 Nyar VM 后端 contract 生成 `nyar-ir` 所需事实。这里的 `nyar-ir` 是 VM 的后端 IR，不是 Nyar 项目所有语言或后端的共同语义层：
 
-1. **控制流统一**：通过 SSA 变换和 CFG 规范化，将复杂的控制流（如异常、协程、生成器）降级为统一的跳转和状态机。
-2. **对象模型对齐**：运行时原生支持 **名义对象**（Java/C#）、 **动态对象**（Python/JS）和 **特征对象**
-   （Rust/Go），确保不同范式的语言能以最优性能运行。
-3. **内存管理集成**：所有前端共享同一套高性能的 [Nyar GC](../maintenance/nyar-gc.md)，实现跨语言的对象透明传递。
+1. **按需控制流分析**：需要 CFG、SSA、状态机或 continuation 的 frontend 接入相应模块，不强迫其他语言采用相同表示。
+2. **显式对象模型接入**：运行时可以支持 **名义对象**、**动态对象**和其他对象协议，但每种语言的对象语义由其 frontend contract 定义。
+3. **VM 运行时集成**：进入 Nyar VM 后端的前端按 VM contract 接入 [Nyar GC](../maintenance/nyar-gc.md) 等运行时组件；其他后端使用自己的执行环境。
 
 ## 对象模型处理机制
 
-为了处理 C、Python、Java、Rust 等语言迥异的对象模型，Nyar VM 采用了以下机制：
+为了处理选入 Nyar VM 后端的语言对象模型，Nyar VM 采用了以下机制：
 
 - **静态对象 (ValueTag::Object)**：用于 Java、C# 等静态语言，基于偏移量访问字段。
 - **动态对象 (ValueTag::DynObject)**：用于 Python、Lua 等动态语言，基于哈希表管理属性。
@@ -72,11 +70,11 @@ Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是
 
 ## 职责说明
 
-每个前端项目应当遵循统一的接口规范，主要包含：
+每个前端项目应当遵循 Nyar frontend SPI 及所选择模块的接口规范，主要包含：
 
 1. **Parser**: 将源代码解析为 typed AST。必须使用 `oak-core` 框架。
-2. **Lowering**: 将 AST 转换为通用中间表示 `IKunTree`。
-3. **NyarDriver Integration**: 所有的前端应当接入 `nyar-vm` 提供的 `NyarDriver`，以实现统一的 JIT 运行与 AOT 编译体验。
+2. **Lowering**: 将 AST 转换为该语言自己的语义 IR，或转换为明确声明输入 contract 的 Nyar 模块。
+3. **Nyar module integration**: 按语言和 target 选择需要的分析、优化、表示或执行模块；不要求所有 frontend 共享同一 IR。
 
 ## 接入新语言指南
 

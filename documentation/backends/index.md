@@ -1,6 +1,6 @@
 # 编译后端支持
 
-Nyar VM 通过 `nyar-aot` 和 `ProjectChomsky` 框架支持多种编译目标。
+本目录描述 Nyar 项目的后端，其中 Nyar VM 是一个独立后端；`nyar-ir`、Nyar 字节码和 VM 运行时只属于该后端。JVM、CLR、Wasm、Native 与 Nyar VM 并列，各自维护 lowering、IR 和执行合同。
 
 ## 后端列表
 
@@ -12,4 +12,4 @@ Nyar VM 通过 `nyar-aot` 和 `ProjectChomsky` 框架支持多种编译目标。
 
 ## 统一发射接口
 
-所有后端均实现 `chomsky_extract::Backend` trait，确保优化后的 UIR 能够无缝转换为目标指令集。
+每个 backend 消费自己声明的 lowering 输入 contract，明确能力边界和失败方式，再转换为自己的目标指令集。选择 Nyar VM 的前端才生成 `nyar-ir`/Nyar 字节码；其他 backend 不经过 `nyar-ir`，也不把它当作共同 IR。

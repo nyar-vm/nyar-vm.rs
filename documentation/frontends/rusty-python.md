@@ -14,7 +14,7 @@ Rusty Python 展示了如何将具有复杂动态特性的 Python 映射到 Nyar
 Rusty Python 提供两条独特的编译路径：
 
 1. **Nyar 原生路径**:
-    - **解析**: 使用 `oak-python` 生成 UIR。
+    - **解析**: 使用 `oak-python` 生成 Python AST；后续 IR 由该 frontend 路径定义。
     - **Lowering**: 通过 `GaiaTranslator` 转换为 `Gaia` 指令，利用 Nyar VM 的动态属性优化。
 2. **PYC 兼容路径**:
     - **字节码发射**: 使用 `pyc_codegen.rs` 将 Python AST 直接发射为 Python 3.10 兼容的操作码。

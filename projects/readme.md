@@ -15,12 +15,13 @@ repository**.
 
 ## Dependency boundaries (summary)
 
-- **Text and binary formats** — `std-data` (from [valkyrie.rs](https://github.com/valkyrie-language/valkyrie.rs)
-  `vcc-data`; workspace dependency key remains `std-data`).
-- **Compile main chain** — `nyar-language` → `nyar-emitter` → `std-data`; `nyar-language` must not depend on emitter
-  lowering implementation details.
-- **Host-script frontends** (bash / lua / tcl / powershell / c): parsing in `std-data`, semantics and `interpret` in
-  `nyar-language::src/<lang>/`.
+- **Text and binary formats** — Oak owns text parsing and recovery; Acorn owns external binary format models and codecs.
+- **Frontend host** — `nyar-language` provides language frontend adapters and their frontend contracts; it may use Oak
+  parsers and hand closed semantic facts to the Nyar platform.
+- **Platform lowering** — `nyar` / `nyar-emitter` own language-independent planning, target lowering, and artifact
+  preparation after the frontend contract. Nyar runtime packages consume verified artifacts.
+- **Host-script frontends** (bash / lua / tcl / powershell / c): the corresponding Oak parser owns text syntax; the
+  language adapter owns script semantics. No `std-data` mixed parser/codec package is a required compile stage.
 
 ## Optional integration tests
 
