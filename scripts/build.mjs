@@ -110,6 +110,16 @@ function selectNativeTargets(targets, all) {
     if (all) {
         return targets;
     }
+    // CI job can force a specific target regardless of host architecture,
+    // e.g. arm64 runner cross-compiling x86_64-apple-darwin with Xcode clang.
+    const forced = process.env.NYAR_NATIVE_TARGET;
+    if (forced) {
+        const hit = targets.find((t) => t.short === forced || t.triple === forced);
+        if (hit) {
+            return [hit];
+        }
+        console.warn(`NYAR_NATIVE_TARGET=${forced} did not match any native target; falling back to host selection`);
+    }
     const host = hostTriple();
     const exact = targets.find((target) => target.triple === host);
     if (exact) {
@@ -131,20 +141,18 @@ function selectNativeTargets(targets, all) {
  * @param {string} crate
  */
 function resolveNativeBuild(target) {
+    // macOS: all Apple targets (arm64 native + x86_64 cross) use cargo + Xcode clang.
+    // Rust Tier 2 x86_64-apple-darwin + Xcode toolchain is sufficient — no zigbuild needed.
+    // NYAR_NATIVE_TARGET picks the correct package; this function just picks tool + triple.
+    if (process.platform === "darwin") {
+        return { triple: target.triple, tool: "cargo" };
+    }
     const host = hostTriple();
     if (process.platform === "win32" && target.packageDir === "nyar-win32-x64") {
         return { triple: host, tool: "cargo" };
     }
     if (process.platform === "linux" && target.packageDir === "nyar-linux-x64") {
         return { triple: host, tool: "cargo" };
-    }
-    if (process.platform === "darwin") {
-        if (target.packageDir === "nyar-darwin-arm64" && process.arch === "arm64") {
-            return { triple: host, tool: "cargo" };
-        }
-        if (target.packageDir === "nyar-darwin-x64" && process.arch === "x64") {
-            return { triple: host, tool: "cargo" };
-        }
     }
     return { triple: target.triple, tool: target.tool };
 }

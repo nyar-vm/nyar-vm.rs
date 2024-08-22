@@ -70,7 +70,9 @@ jobs:
             short: linux-x64
           - os: macos-latest
             short: darwin-arm64
-          - os: macos-15-intel
+          # x86_64-apple-darwin is Rust Tier 2 + Clang toolchain; build on
+          # arm64 macos-latest runner via Xcode clang cross compile (no zigbuild).
+          - os: macos-latest
             short: darwin-x64
     steps:
       - name: Checkout tag peel
@@ -93,6 +95,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
 
+      - name: Add x86_64-apple-darwin target (cross on arm64)
+        if: matrix.short == 'darwin-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-apple-darwin
+          echo "CC_x86_64_apple_darwin=$(xcrun --sdk macosx --find clang)" >> "$GITHUB_ENV"
+          echo "AR_x86_64_apple_darwin=$(xcrun --sdk macosx --find ar)" >> "$GITHUB_ENV"
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -100,6 +112,9 @@ jobs:
           cache-on-failure: true
 
       - name: Build native collect (release)
+        shell: bash
+        env:
+          NYAR_NATIVE_TARGET: ${{ matrix.short }}
         run: node scripts/build.mjs napi
 
       - name: Stage native artifact
