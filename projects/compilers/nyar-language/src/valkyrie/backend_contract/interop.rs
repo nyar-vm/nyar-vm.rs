@@ -1,4 +1,4 @@
-use crate::valkyrie::frontend::ParseError;
+use crate::valkyrie::hir::HirError;
 use nyar::{CapabilityTag, ExternalImportLink, Identifier, QualifiedName, RuntimeRequirement};
 
 use crate::valkyrie::types::{
@@ -24,7 +24,7 @@ pub(crate) fn runtime_requirement(_link: &ExternalImportLink) -> RuntimeRequirem
     RuntimeRequirement { key: "host-interop".to_string(), value: "required".to_string() }
 }
 
-pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), ParseError> {
+pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), HirError> {
     for function in &module.functions {
         validate_function_interop_surface(function)?;
     }
@@ -87,14 +87,14 @@ pub(crate) fn function_host_provider_target(function: &HirFunction) -> Option<Qu
     })
 }
 
-fn validate_function_interop_surface(function: &HirFunction) -> Result<(), ParseError> {
+fn validate_function_interop_surface(function: &HirFunction) -> Result<(), HirError> {
     for attribute in &function.annotations {
         validate_interop_attribute(attribute)?;
     }
     Ok(())
 }
 
-fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), ParseError> {
+fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), HirError> {
     let Some(name) = attribute_name(attribute)
     else {
         return Ok(());
@@ -111,9 +111,10 @@ fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), ParseError
         return Ok(());
     }
 
-    Err(ParseError::invalid_at(
+    let span = attribute_argument_span(attribute);
+    Err(HirError::invalid_at(
         "WASI 坪支挝 Component Model；禝止使用 `wasi_snapshot_preview1` / `fd_write` / `fd_read`，请改为 `wasi:...` component import",
-        attribute_argument_span(attribute),
+        nyar_types::DiagnosticSpan { start: span.start, end: span.end },
     ))
 }
 

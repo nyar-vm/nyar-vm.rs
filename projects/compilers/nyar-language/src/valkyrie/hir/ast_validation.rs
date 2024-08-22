@@ -1,13 +1,15 @@
 //! `AST -> HIR` 前的结构与语义预校验。
 
-use crate::valkyrie::frontend::{
-    ParseError, ValkyrieRoot,
-    ast::{EnumsKind, NamePath, StatementNode},
+use crate::valkyrie::{
+    hir::HirError,
+    frontend::{ValkyrieRoot,
+        ast::{EnumsKind, NamePath, StatementNode},
+    },
 };
 use std::collections::BTreeMap;
 
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
-pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), ParseError> {
+pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
     validate_duplicate_type_names(&root.items, &[])
 }
 
@@ -15,7 +17,7 @@ pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), ParseError> {
 ///
 /// `namespace first;` 是空 items 指令，后续顶层声明落在该作用域；
 /// 不得只按短名判重，否则跨 namespace 同名结构会被误杀。
-fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[String]) -> Result<(), ParseError> {
+fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[String]) -> Result<(), HirError> {
     let mut seen: BTreeMap<(Vec<String>, String), &'static str> = BTreeMap::new();
     let mut current_namespace = namespace_prefix.to_vec();
     for item in items {
@@ -33,7 +35,7 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[St
                 if let Some((name, kind)) = type_declaration_identity(other) {
                     let key = (current_namespace.clone(), name);
                     if let Some(prior) = seen.insert(key.clone(), kind) {
-                        return Err(ParseError::invalid(format!(
+                        return Err(HirError::invalid(format!(
                             "duplicate definition of `{}` in namespace `{}`: {prior} and {kind}",
                             key.1,
                             namespace_display(&key.0)
