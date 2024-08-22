@@ -9,11 +9,13 @@ use crate::{
         Identifier,
         hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
     },
-    valkyrie::frontend::{
-        self, ParseError,
-        ast::{
-            NamePath as AstNamePath, TypeExpression,
-            type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
+    valkyrie::{
+        hir::HirError,
+        frontend::{self,
+            ast::{
+                NamePath as AstNamePath, TypeExpression,
+                type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
+            },
         },
     },
 };
@@ -87,13 +89,13 @@ impl Drop for ModuleTypeAliasScope {
 
 /// 校验 Oak `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
 #[doc(hidden)]
-pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseError> {
+pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
     match ty {
         TypeExpression::Namepath(path) => {
             if let Some(part) = path.parts.last() {
                 validate_source_text_type_name(&part.name)?;
                 if let Some(canonical_name) = legacy_builtin_type_alias(&part.name) {
-                    return Err(ParseError::invalid(format!(
+                    return Err(HirError::invalid(format!(
                         "legacy builtin type alias `{name}` has been removed; use `{canonical_name}` explicitly",
                         name = part.name
                     )));
@@ -139,9 +141,9 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseError> {
 }
 
 /// Reject source-level text aliases that do not identify a language encoding.
-pub fn validate_source_text_type_name(name: &str) -> Result<(), ParseError> {
+pub fn validate_source_text_type_name(name: &str) -> Result<(), HirError> {
     if is_legacy_text_type_name(name) {
-        return Err(ParseError::invalid(format!(
+        return Err(HirError::invalid(format!(
             "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`"
         )));
     }

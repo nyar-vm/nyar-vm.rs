@@ -1,10 +1,10 @@
 use crate::{
     types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind},
-    valkyrie::{frontend::ParseError, hir::PatternRefutability},
+    valkyrie::hir::{HirError, PatternRefutability},
 };
 
-/// 校验模块内所有 `let` 绑定的 pattern 均不可是 refutable；命中则返回解析错误。
-pub fn check_pattern_refutability(module: &HirModule) -> Result<(), ParseError> {
+/// 校验模块内所有 `let` 绑定的 pattern 均不可是 refutable；命中则返回 lowering 结构化错误。
+pub fn check_pattern_refutability(module: &HirModule) -> Result<(), HirError> {
     for function in &module.functions {
         let mut checker = PatternRefutabilityChecker::new();
         checker.check_function(function)?;
@@ -45,7 +45,7 @@ pub fn check_pattern_refutability(module: &HirModule) -> Result<(), ParseError> 
 }
 
 struct PatternRefutabilityChecker {
-    errors: Vec<ParseError>,
+    errors: Vec<HirError>,
 }
 
 impl PatternRefutabilityChecker {
@@ -53,12 +53,12 @@ impl PatternRefutabilityChecker {
         Self { errors: Vec::new() }
     }
 
-    fn check_function(&mut self, function: &HirFunction) -> Result<(), ParseError> {
+    fn check_function(&mut self, function: &HirFunction) -> Result<(), HirError> {
         self.check_block(&function.body, true)?;
         Ok(())
     }
 
-    fn check_block(&mut self, block: &crate::types::hir::HirBlock, _is_function_body: bool) -> Result<(), ParseError> {
+    fn check_block(&mut self, block: &crate::types::hir::HirBlock, _is_function_body: bool) -> Result<(), HirError> {
         for statement in &block.statements {
             self.check_statement(statement)?;
         }
@@ -68,7 +68,7 @@ impl PatternRefutabilityChecker {
         Ok(())
     }
 
-    fn check_statement(&mut self, statement: &HirStatement) -> Result<(), ParseError> {
+    fn check_statement(&mut self, statement: &HirStatement) -> Result<(), HirError> {
         match &statement.kind {
             HirStatementKind::Let { pattern, initializer, .. } => {
                 if let Some(init) = initializer {
@@ -83,20 +83,20 @@ impl PatternRefutabilityChecker {
         Ok(())
     }
 
-    fn check_let_pattern(&mut self, pattern: &HirPattern) -> Result<(), ParseError> {
+    fn check_let_pattern(&mut self, pattern: &HirPattern) -> Result<(), HirError> {
         match pattern.refutability() {
             PatternRefutability::Irrefutable => Ok(()),
             PatternRefutability::Refutable | PatternRefutability::Unknown => {
-                self.errors.push(ParseError::invalid(format!(
+                self.errors.push(HirError::invalid(format!(
                     "refutable pattern not allowed in `let` binding; use `if let` or `case` instead (pattern: {})",
                     self.pattern_to_string(pattern)
                 )));
-                Err(ParseError::invalid("refutable pattern in let binding"))
+                Err(HirError::invalid("refutable pattern in let binding"))
             }
         }
     }
 
-    fn check_expr(&mut self, expr: &HirExpr) -> Result<(), ParseError> {
+    fn check_expr(&mut self, expr: &HirExpr) -> Result<(), HirError> {
         match &expr.kind {
             HirExprKind::Block(block) => self.check_block(block, false)?,
             HirExprKind::If { condition, then_branch, else_branch } => {

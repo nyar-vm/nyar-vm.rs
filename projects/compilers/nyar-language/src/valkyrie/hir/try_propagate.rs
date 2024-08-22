@@ -7,7 +7,7 @@ use crate::{
         Identifier, NamePath,
         hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
     },
-    valkyrie::frontend::ParseError,
+    valkyrie::hir::HirError,
 };
 
 /// `?` 操作数形态。
@@ -123,7 +123,7 @@ fn validate_try_propagate_expr(
     module: &HirModule,
     locals: &BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
-) -> Result<(), ParseError> {
+) -> Result<(), HirError> {
     let HirExprKind::TryPropagate { inner, .. } = &expr.kind
     else {
         return Ok(());
@@ -134,12 +134,12 @@ fn validate_try_propagate_expr(
     };
     let Some(kind) = classify_try_operand(&operand_type, module)
     else {
-        return Err(ParseError::invalid(format!("`?` cannot be applied to `{}`", render_type_name(&operand_type))));
+        return Err(HirError::invalid(format!("`?` cannot be applied to `{}`", render_type_name(&operand_type))));
     };
     match kind {
         TryPropagateKind::Nullable(payload) => {
             if try_scope_depth == 0 && !is_nullable_type(enclosing_return) {
-                return Err(ParseError::invalid(format!(
+                return Err(HirError::invalid(format!(
                     "`?` on nullable `{}` requires enclosing return compatible with nullable or a `try` scope; got `{}`",
                     render_type_name(&payload),
                     render_type_name(enclosing_return)
@@ -148,7 +148,7 @@ fn validate_try_propagate_expr(
         }
         TryPropagateKind::Option(payload) => {
             if try_scope_depth == 0 && !is_option_apply_type(enclosing_return) {
-                return Err(ParseError::invalid(format!(
+                return Err(HirError::invalid(format!(
                     "`?` on `Option<{}>` requires enclosing `Option` return or a `try` scope; got `{}`",
                     render_type_name(&payload),
                     render_type_name(enclosing_return)
@@ -157,7 +157,7 @@ fn validate_try_propagate_expr(
         }
         TryPropagateKind::Result { ok, err } => {
             if !is_result_apply_type(enclosing_return) {
-                return Err(ParseError::invalid(format!(
+                return Err(HirError::invalid(format!(
                     "`?` on `Result<{}, {}>` requires enclosing binary unity return; got `{}`",
                     render_type_name(&ok),
                     render_type_name(&err),
@@ -166,7 +166,7 @@ fn validate_try_propagate_expr(
             }
             if let Some(enclosing_err) = result_err_type(enclosing_return) {
                 if enclosing_err != err {
-                    return Err(ParseError::invalid(format!(
+                    return Err(HirError::invalid(format!(
                         "`?` error type `{}` is incompatible with enclosing return error `{}`",
                         render_type_name(&err),
                         render_type_name(&enclosing_err)
@@ -184,7 +184,7 @@ fn validate_expr_try_propagate(
     module: &HirModule,
     locals: &BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
-) -> Result<(), ParseError> {
+) -> Result<(), HirError> {
     match &expr.kind {
         HirExprKind::TryPropagate { .. } => validate_try_propagate_expr(expr, enclosing_return, module, locals, try_scope_depth)?,
         HirExprKind::TryScope { body, .. } => validate_block_try_propagate(body, enclosing_return, module, locals, try_scope_depth + 1)?,
@@ -222,7 +222,7 @@ fn validate_block_try_propagate(
     module: &HirModule,
     locals: &BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
-) -> Result<(), ParseError> {
+) -> Result<(), HirError> {
     let mut locals = locals.clone();
     for statement in &block.statements {
         validate_statement_try_propagate(statement, enclosing_return, module, &mut locals, try_scope_depth)?;
@@ -239,7 +239,7 @@ fn validate_statement_try_propagate(
     module: &HirModule,
     locals: &mut BTreeMap<String, ValkyrieType>,
     try_scope_depth: usize,
-) -> Result<(), ParseError> {
+) -> Result<(), HirError> {
     match &statement.kind {
         HirStatementKind::Let { pattern, ty, initializer, .. } => {
             if let Some(initializer) = initializer {
@@ -273,7 +273,7 @@ fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTree
     }
 }
 
-fn validate_function_try_propagate(function: &HirFunction, module: &HirModule) -> Result<(), ParseError> {
+fn validate_function_try_propagate(function: &HirFunction, module: &HirModule) -> Result<(), HirError> {
     let mut locals = BTreeMap::new();
     for param in &function.params {
         locals.insert(param.name.name.to_string(), param.ty.clone());
@@ -282,7 +282,7 @@ fn validate_function_try_propagate(function: &HirFunction, module: &HirModule) -
 }
 
 /// 校验模块内全部 `?` 表达式。
-pub fn validate_try_propagate_module(module: &HirModule) -> Result<(), ParseError> {
+pub fn validate_try_propagate_module(module: &HirModule) -> Result<(), HirError> {
     for function in &module.functions {
         validate_function_try_propagate(function, module)?;
     }
