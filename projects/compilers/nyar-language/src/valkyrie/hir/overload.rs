@@ -2391,10 +2391,16 @@ fn try_resolve_qualified_free_function(
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
     let canonical_key = crate::valkyrie::symbols::stable_symbol_key(path);
+    let path_last = path.parts().last();
     let filtered = candidates
         .iter()
         .filter(|candidate| {
-            candidate.owner.is_none() && crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol) == canonical_key
+            if candidate.owner.is_some() {
+                return false;
+            }
+            let candidate_key = crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol);
+            candidate_key == canonical_key
+                || path_last.map(|p| candidate.symbol.parts().last() == Some(p)).unwrap_or(false)
         })
         .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
