@@ -873,7 +873,14 @@ fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &Name
     if candidate.owner.is_some() {
         return path.parts().last().is_some_and(|name| candidate_variant_constructor_matches(candidate, name));
     }
-    candidate.symbol.parts() == path.parts() || matches!(candidate.symbol.parts(), [single] if path.parts().last() == Some(single))
+    // path 是 lowering 从源码 Identifier 提取的短名（如 `ArrayList`），
+    // candidate.symbol 是带声明 namespace 的完整路径（如 `std.collection.ArrayList`）。
+    // 精确匹配不成立时，末段对齐允许短名命中带命名空间的候选，但 path 有多段时仍用精确匹配。
+    let symbol_parts = candidate.symbol.parts();
+    let path_parts = path.parts();
+    symbol_parts == path_parts
+        || (path_parts.len() == 1 && symbol_parts.last() == path_parts.last())
+        || matches!(symbol_parts, [single] if path_parts.last() == Some(single))
 }
 
 /// 模式 extractors：`Owner.member` 与候选 `owner` + 单段符号精确对齐。
@@ -3535,8 +3542,7 @@ pub fn try_resolve_constructor(
     let arguments = HirCallArgument::from_exprs(bound_values);
     let filtered = candidates
         .iter()
-        .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-        .filter(|candidate| candidate.symbol == *path)
+        .filter(|candidate| aggregate_constructor_matches_name(candidate, path))
         .filter_map(|candidate| {
             if let Some(context) = contextual_type {
                 if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
