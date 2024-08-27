@@ -1113,6 +1113,11 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
             }
         }
         ast::TermExpression::DotCall { receiver, field, .. } => {
+            // 把完整的 qualified path 放进 paths（与 collect_call_target 同构）；
+            // receiver 本身可能是 NamePath，也可能是另一个 DotCall。
+            if let Some(full_path) = extract_term_path(term) {
+                references.paths.insert(full_path);
+            }
             collect_term(receiver, references);
             references.selectors.insert(field.name.clone());
         }
@@ -1185,10 +1190,33 @@ fn collect_term(term: &ast::TermExpression, references: &mut References) {
     }
 }
 
+/// 从一个 term 节点里提取完整的 qualified path 段。
+///
+/// `a.b.c()` 这种全限定调用的 callee 是 `DotCall(DotCall(NamePath("a"), "b"), "c")`；
+/// 把它拉平成 `["a", "b", "c"]` 放进 references.paths，demand 图才能沿完整路径
+/// 命中目标函数声明。没有这条路径，只有 `["a","b"]`（NamePath receiver）进 paths、
+/// `"c"` 进 selectors，resolve 永远命不中被限定的自由函数。
+fn extract_term_path(term: &ast::TermExpression) -> Option<Vec<String>> {
+    match term {
+        ast::TermExpression::NamePath(path) => Some(name_path_segments(path)),
+        ast::TermExpression::DotCall { receiver, field, .. } => {
+            let mut prefix = extract_term_path(receiver)?;
+            prefix.push(field.name.clone());
+            Some(prefix)
+        }
+        _ => None,
+    }
+}
+
 fn collect_call_target(callee: &ast::TermExpression, references: &mut References) {
     match callee {
         ast::TermExpression::NamePath(path) => collect_name_path(path, references),
         ast::TermExpression::DotCall { receiver, field, .. } => {
+            // 先把完整的 qualified path 放进 paths（demand 图沿它解析），
+            // 再保留 receiver 的收集（类型引用、副作用等）和 field 的 selector。
+            if let Some(full_path) = extract_term_path(callee) {
+                references.paths.insert(full_path);
+            }
             collect_term(receiver, references);
             references.selectors.insert(field.name.clone());
         }
