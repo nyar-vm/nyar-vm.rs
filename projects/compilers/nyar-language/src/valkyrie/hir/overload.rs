@@ -1230,12 +1230,28 @@ fn try_resolve_value_member_access(
     if receiver_type.as_ref().is_some_and(|ty| lookup_struct_field_type(ty, &member, struct_fields).is_some()) {
         return false;
     }
-    let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member])), span };
-    let args = vec![HirCallArgument::positional(receiver)];
-    let Some(resolved) = try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+    // 优先按成员方法解析（实例方法），再 fallback 到普通 call 解析（处理 singleton method 等）。
+    let resolved = try_resolve_instance_method(
+        &receiver,
+        &member,
+        &[],
+        candidates,
+        type_relations,
+        locals,
+        struct_fields,
+        singleton_names,
+    )
+    .or_else(|| {
+        let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
+        let args = vec![HirCallArgument::positional(receiver.clone())];
+        try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+    });
+    let Some(resolved) = resolved
     else {
         return false;
     };
+    let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member])), span };
+    let args = vec![HirCallArgument::positional(receiver)];
     expr.kind = HirExprKind::Call { callee: Box::new(callee), args, resolved: Some(resolved) };
     true
 }
