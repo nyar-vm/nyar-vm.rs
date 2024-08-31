@@ -1951,6 +1951,9 @@ fn specialize_literal_expr_type(
         // numeric type (`usize`, `i32`, …), same as constructor literals.
         // `Nominal{ItemId}` 的 primitive 也必须认，不能只认 `Named("usize")`。
         HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if type_relations.is_numeric_type(expected) => expected.clone(),
+        // Float literals also follow the formal numeric type — f32 and f64 both
+        // accept Float64 literals in source (e.g. `1000000.0`).
+        HirExprKind::Literal(crate::types::hir::HirLiteral::Float64(_)) if type_relations.is_numeric_type(expected) => expected.clone(),
         // String literals infer as `Utf8` but core APIs take `text`.
         HirExprKind::Literal(crate::types::hir::HirLiteral::String(_)) if is_text_type(expected) => expected.clone(),
         // 空数组字面量没有自足类型，只能由形式参数类型提供上下文；保留 `None`
