@@ -7,6 +7,9 @@ use nyar_emitter::{
 };
 use nyar_language::{assemble_fragment_submission, plan_artifacts_from_build_output};
 
+#[path = "../../nyar-language/tests/support/valkyrie_v.rs"]
+mod valkyrie_v;
+
 #[test]
 fn rejects_local_operation_when_fragment_has_no_mir_provider() {
     let operation = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("main")]);
@@ -79,13 +82,11 @@ micro enums_flags_parse() -> unit {}
 
 #[test]
 fn feature_matrix_test_bundle_clr_types_have_unique_names() {
-    use std::path::PathBuf;
-
     use nyar::backends::{clr::ClrImageKind, projection_policy_for_target_profile};
     use nyar_emitter::nyar_backend_clr::{PeWriter, PeWriterOptions};
     use nyar_language::{CanonicalTarget, ValkyrieCompiler, nyar::ClrSuspendStrategy, types::SourceID};
 
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../valkyrie.v/examples/feature-matrix/test");
+    let Some(base) = valkyrie_v::feature_matrix_test() else { return };
     let source_dir = base.parent().unwrap().join("source");
     let mut combined = String::new();
     if source_dir.join("main.v").is_file() {

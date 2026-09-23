@@ -1,5 +1,5 @@
 use nyar_language::{MirLowerer, SourceID, ValkyrieCompiler};
-use std::{fs, io::Write};
+use std::io::Write;
 
 #[test]
 fn inspect_catch_function_raise_mir() {
@@ -42,8 +42,6 @@ micro main() -> ExitCode {
             out.push_str(&format!("    {:?}: {:?}\n", k, v));
         }
     }
-    let _ = fs::write("e:\\Goddess of Victory\\valkyrie.rs\\mir_dump.txt", &out);
-    // also print
     print!("{}", out);
     let _ = std::io::stdout().flush();
 }

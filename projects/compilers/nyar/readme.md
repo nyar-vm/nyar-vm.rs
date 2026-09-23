@@ -67,11 +67,6 @@ ProgramFacts
 - 若源自 `row`，只保留已选定成员与已验证签名，不保留 row witness。
 - `MIR` 是语言语义与目标约束之间的主要分界线，也是“哪些调用必须在某目标前静态化”的裁决层。
 
-### MIR 在自举阶段的现实策略
-- `CLR` 自举优先时，`MIR` 必须负责把能静态化的 witness / effect 调用提前静态化。
-- 若某个 `CLR` 调用仍然需要开放 witness/effect，而当前 `CLR` lane 还不会忠实 lowering，就必须在 `MIR -> Optimize -> ArtifactPartitionPlan` 之间硬失败。
-- 不允许把开放 witness 伪装成 `call_static` 混过后端。
-
 ### LIR 做什么
 - `LIR` 不是单一共享类型，而是目标分区后的低层表示族。
 - `ArtifactPartitionPlan` 之后，每个分区进入自己的 target lane，再形成对应路线的 `LIR / Backend Input`。
@@ -106,8 +101,6 @@ ProgramFacts
 - `CPU/VM` 线可以继续使用更语义化的 `NyarIR` 或后续等价低层输入。
 - `CLR / JVM / WASM` 线必须允许各自拥有更贴近目标约束的 backend input，不要求共用 `NyarIR`。
 - `GPU / Shader` 线必须直接进入目标专用模型，例如 `DXIL / SPIR-V / MSL`，不能再借道 CPU 导向兼容壳。
-- `CLR` 自举是当前最高优先级，因此 `CLR` lane 必须优先保证“拒绝未闭合 witness 伪装成静态调用”。
-
 ## GPU Shader 编译链（开发者指引）
 
 ### 目标

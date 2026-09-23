@@ -4,7 +4,6 @@
 //!
 //! Concrete language/framework frontends (guests) may live here; shared
 //! `host_script` / `HostScript*` trait layers do **not** belong in this crate.
-//! Runtime PE substrate lives in `legacy-vm` — see `../host-script-languages.md`.
 
 use std::{
     fs,

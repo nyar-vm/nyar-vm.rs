@@ -5,33 +5,27 @@
 //! - 与 `core::types` 真实定义合并后，未限定名（`option_none`、`Some` 等）
 //!   仍能通过编译单元全局后缀匹配解析到 `core::types` 的定义。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use nyar_language::{MirFunction, MirModule, MirOperand, MirOperation, ValkyrieCompiler, types::hir::HirModule};
 
-/// 返回 `valkyrie.v/projects/` 目录的绝对路径。
-fn projects_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../valkyrie.v/projects")
+#[path = "../../support/valkyrie_v.rs"]
+mod valkyrie_v;
+
+fn prelude_option_path(projects: &Path) -> PathBuf {
+    projects.join("std/source/_prelude/Option.v")
 }
 
-/// 返回 `_prelude/Option.v` 的绝对路径。
-fn prelude_option_path() -> PathBuf {
-    projects_dir().join("std/source/_prelude/Option.v")
+fn prelude_result_path(projects: &Path) -> PathBuf {
+    projects.join("std/source/_prelude/Result.v")
 }
 
-/// 返回 `_prelude/Result.v` 的绝对路径。
-fn prelude_result_path() -> PathBuf {
-    projects_dir().join("std/source/_prelude/Result.v")
+fn core_option_path(projects: &Path) -> PathBuf {
+    projects.join("core/source/types/Option.v")
 }
 
-/// 返回 `core/source/types/Option.v` 的绝对路径。
-fn core_option_path() -> PathBuf {
-    projects_dir().join("core/source/types/Option.v")
-}
-
-/// 返回 `core/source/types/Result.v` 的绝对路径。
-fn core_result_path() -> PathBuf {
-    projects_dir().join("core/source/types/Result.v")
+fn core_result_path(projects: &Path) -> PathBuf {
+    projects.join("core/source/types/Result.v")
 }
 
 /// 读取文件内容，缺失时 panic。
@@ -51,7 +45,8 @@ fn compile_path(path: &PathBuf) -> HirModule {
 
 #[test]
 fn prelude_option_file_compiles_as_pure_forwarding() {
-    let module = compile_path(&prelude_option_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let module = compile_path(&prelude_option_path(&projects));
 
     assert!(module.enums.is_empty(), "prelude Option.v must not define any unite/enum — it should be pure forwarding");
     assert!(module.functions.is_empty(), "prelude Option.v must not define any top-level function — it should be pure forwarding");
@@ -61,7 +56,8 @@ fn prelude_option_file_compiles_as_pure_forwarding() {
 
 #[test]
 fn prelude_result_file_compiles_as_pure_forwarding() {
-    let module = compile_path(&prelude_result_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let module = compile_path(&prelude_result_path(&projects));
 
     assert!(module.enums.is_empty(), "prelude Result.v must not define any unite/enum — it should be pure forwarding");
     assert!(module.functions.is_empty(), "prelude Result.v must not define any top-level function — it should be pure forwarding");
@@ -93,8 +89,9 @@ fn call_callee_symbols(function: &MirFunction) -> Vec<String> {
 
 #[test]
 fn combined_option_source_resolves_unqualified_option_none() {
-    let core_option = read_file(&core_option_path());
-    let prelude_option = read_file(&prelude_option_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let core_option = read_file(&core_option_path(&projects));
+    let prelude_option = read_file(&prelude_option_path(&projects));
     let caller = r#"
 namespace test.caller;
 
@@ -115,8 +112,9 @@ micro caller() -> Option<i32> {
 
 #[test]
 fn combined_result_source_resolves_unqualified_fine() {
-    let core_result = read_file(&core_result_path());
-    let prelude_result = read_file(&prelude_result_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let core_result = read_file(&core_result_path(&projects));
+    let prelude_result = read_file(&prelude_result_path(&projects));
     let caller = r#"
 namespace test.caller;
 
@@ -137,7 +135,8 @@ micro caller() -> Result<i32, i32> {
 
 #[test]
 fn prelude_option_imports_reference_core_types() {
-    let module = compile_path(&prelude_option_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let module = compile_path(&prelude_option_path(&projects));
 
     let has_core_types_import =
         module.imports.iter().any(|import| import.path.to_string().contains("core") && import.path.to_string().contains("types"));
@@ -150,7 +149,8 @@ fn prelude_option_imports_reference_core_types() {
 
 #[test]
 fn prelude_result_imports_reference_core_types() {
-    let module = compile_path(&prelude_result_path());
+    let Some(projects) = valkyrie_v::projects() else { return };
+    let module = compile_path(&prelude_result_path(&projects));
 
     let has_core_types_import =
         module.imports.iter().any(|import| import.path.to_string().contains("core") && import.path.to_string().contains("types"));

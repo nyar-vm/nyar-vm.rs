@@ -8,7 +8,7 @@
 //!   language ASTs or compilers.
 //! - Concrete languages live in `nyar-language` (guests / frontends) and lower through
 //!   the `emitter` crate into `.nyar` bytes before this VM sees them.
-//! - Tree-walk / PE host-script substrate is **`legacy-vm`** (separate); other
+//! - Tree-walk host-script guests live in **`nyar-language`**; other
 //!   `nyar-*` crates are not “part of” this VM.
 //!
 //! # Naming
