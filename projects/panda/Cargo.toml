@@ -1,0 +1,25 @@
+[package]
+name = "panda"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Panda — Python unified toolchain (clap + nyar-language python + nyar-package-manager)"
+
+[[bin]]
+name = "panda"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+serde = { workspace = true }
+toml_edit = { workspace = true }
+thiserror = { workspace = true }
+nyar-language = { workspace = true, features = ["serde"] }
+nyar-package-manager = { workspace = true }
+nyar-package-registry = { workspace = true }
+nyar-analyzer = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

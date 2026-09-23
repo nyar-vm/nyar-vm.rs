@@ -1,0 +1,22 @@
+[package]
+name = "rusty-fortran"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-fortran = { workspace = true }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+
+[dev-dependencies]
+oak-vfs = { workspace = true }

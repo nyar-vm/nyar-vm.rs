@@ -1,0 +1,11 @@
+[package]
+name = "nyar-runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Valkyrie runtime facade and host adapters"
+license.workspace = true
+repository = "https://github.com/valkyrie-language/valkyrie.rs"
+
+[dependencies]
+miette = { workspace = true }

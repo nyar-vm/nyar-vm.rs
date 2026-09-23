@@ -1,0 +1,19 @@
+[package]
+name = "rusty-kotlin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-kotlin = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+serde = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

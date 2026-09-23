@@ -1,0 +1,25 @@
+[package]
+name = "noodle"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Noodle — Node.js unified toolchain (clap + nyar-language javascript + nyar-package-manager)"
+
+[[bin]]
+name = "noodle"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+nyar-language = { workspace = true, features = ["serde"] }
+nyar-package-manager = { workspace = true }
+nyar-package-registry = { workspace = true }
+nyar-analyzer = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

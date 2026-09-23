@@ -1,0 +1,10 @@
+{
+  "fragment": "neural",
+  "rules": [
+    { "name": "transpose-elimination", "left": "neural.transpose", "right": "neural.identity", "phase": "algebraic", "capabilities": ["gpu-compute"] },
+    { "name": "attention-fusion", "left": "neural.attention", "right": "neural.fused_attention", "phase": "fusion", "capabilities": ["gpu-compute"] },
+    { "name": "conv-bn-fusion", "left": "neural.conv2d", "right": "neural.fused_conv_bn", "phase": "fusion", "capabilities": ["gpu-compute"] },
+    { "name": "lora-fusion", "left": "neural.dense", "right": "neural.lora_dense", "phase": "fusion", "capabilities": ["gpu-compute"] },
+    { "name": "matmul-transpose-fusion", "left": "neural.mat_mul", "right": "neural.fused_mat_mul", "phase": "fusion", "capabilities": ["gpu-compute"] }
+  ]
+}

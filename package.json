@@ -1,17 +1,22 @@
 {
-    "name": "native-nyar",
+    "name": "@nyar/project-nyar",
+    "version": "1.0.0",
     "private": true,
+    "description": "Nyar Virtual Machine and Tooling",
     "scripts": {
-        "build:pre": "cargo run --release --color=always --package nyar-prebuild --bin nyar-prebuild && cargo fmt --all",
-        "build": "cargo build --release",
-        "test": "cargo build",
-        "fmt": "cargo fmt --all",
-        "push": "yarn test && git push",
-        "reset": "git reset Head~ --soft",
+        "test": "pnpm -r test",
+        "build": "pnpm -r build",
+        "build:native": "npx tsx scripts/build.ts",
+        "format": "biome format --write .",
+        "lint": "biome check --apply .",
+        "check": "cargo cry",
+        "check:doc": "cargo-cry doc",
+        "p": "cargo workspaces publish --no-git-commit --allow-dirty --yes",
         "u": "cargo upgrade --incompatible"
     },
-    "dependencies": {
-        "@bytecodealliance/jco": "^1.0.2",
-        "@bytecodealliance/preview2-shim": "^0.15.1"
-    }
+    "devDependencies": {
+        "@biomejs/biome": "^1.0.0",
+        "typescript": "^5.0.0"
+    },
+    "packageManager": "pnpm@9.15.4"
 }

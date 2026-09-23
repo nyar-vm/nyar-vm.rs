@@ -1,0 +1,11 @@
+[package]
+name = "text-vm-compiler"
+version.workspace = true
+edition.workspace = true
+
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+text-vm = { workspace = true }
+std-data = { workspace = true }

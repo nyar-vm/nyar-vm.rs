@@ -1,0 +1,13 @@
+mod control_flow;
+mod derive;
+mod frontend_contract;
+mod highlight;
+mod mir;
+mod module;
+mod oop;
+mod optimizer;
+mod pipeline;
+mod smoke;
+mod spec;
+mod type_checker;
+mod typing;

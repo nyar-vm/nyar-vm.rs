@@ -1,0 +1,5 @@
+package nyar:mini-typescript;
+
+world compiler {
+    export compile: func(source: string) -> result<list<u8>, string>;
+}

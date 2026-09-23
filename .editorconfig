@@ -9,6 +9,6 @@ indent_size = 4
 indent_style = space
 indent_size = 4
 
-[*.toml]
+[*.{json,json5}]
 indent_style = space
 indent_size = 4

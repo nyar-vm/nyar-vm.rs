@@ -1,0 +1,10 @@
+[package]
+name = "text-vm"
+version.workspace = true
+edition.workspace = true
+
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+std-data = { workspace = true }

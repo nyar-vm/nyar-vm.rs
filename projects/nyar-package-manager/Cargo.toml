@@ -1,0 +1,24 @@
+[package]
+name = "nyar-package-manager"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Nyar package manager core (install / resolve / publish)"
+
+[dependencies]
+base64 = { workspace = true }
+flate2 = { workspace = true }
+miette = { workspace = true }
+nyar-language = { workspace = true, features = ["serde"] }
+nyar-package-registry = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+std-data = { workspace = true }
+tar = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

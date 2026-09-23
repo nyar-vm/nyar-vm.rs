@@ -1,0 +1,18 @@
+[package]
+name = "rusty-lua"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-lua = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+nyar-vm = { workspace = true }

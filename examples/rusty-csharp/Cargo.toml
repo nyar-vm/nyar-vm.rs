@@ -1,0 +1,27 @@
+[package]
+name = "rusty-csharp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "rusty_csharp"
+path = "src/lib.rs"
+
+[dependencies]
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-emit = { workspace = true }
+chomsky-types = { workspace = true }
+oak-core = { workspace = true }
+oak-java = { workspace = true }
+oak-csharp = { workspace = true }
+oak-vfs = { workspace = true }
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+nyar-vm = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
