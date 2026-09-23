@@ -1,0 +1,21 @@
+[package]
+name = "nvm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "nvm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nyar-vm"
+path = "src/main.rs"
+
+[dependencies]
+# Language-agnostic bytecode substrate: consumes `std_data::binary::nyar_ir` only.
+# Must not depend on language frontends.
+std-data = { workspace = true }
+miette = { workspace = true }
+clap = { workspace = true, features = ["derive"] }

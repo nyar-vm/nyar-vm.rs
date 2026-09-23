@@ -1,0 +1,33 @@
+{
+    "name": "@nyar-vm/nyar",
+    "version": "0.0.0",
+    "description": "Nyar VM — cross-platform CLI (assembled from platform collects).",
+    "type": "module",
+    "license": "MIT",
+    "main": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "bin": {
+        "nyar": "bin/nyar.js"
+    },
+    "files": [
+      "bin", "src", "README.md"],
+    "dependencies": {
+        "@nyar-vm/nyar-wasm32-wasi": "workspace:*"
+    },
+    "optionalDependencies": {
+        "@nyar-vm/nyar-win32-x64": "workspace:*",
+        "@nyar-vm/nyar-linux-x64": "workspace:*",
+        "@nyar-vm/nyar-darwin-x64": "workspace:*",
+        "@nyar-vm/nyar-darwin-arm64": "workspace:*"
+    },
+    "engines": { "node": ">=20" },
+    "keywords": ["nyar", "nyar-vm", "virtual-machine", "runtime"],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "packages/nyar"
+    },
+    "publishConfig": { "access": "public" }
+}

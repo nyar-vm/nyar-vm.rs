@@ -1,0 +1,295 @@
+use nyar_language::typing::escape_analysis::*;
+use nyar_language::types::{
+    hir::{CaptureStorage, HirDocumentation, HirModule},
+    Identifier, NamePath, SourceID, SourceSpan,
+};
+
+fn create_test_span() -> SourceSpan {
+    SourceSpan::new(SourceID::default(), 0, 10)
+}
+
+fn create_identifier(name: &str) -> Identifier {
+    Identifier::new(name)
+}
+
+#[test]
+fn test_escape_kind_default() {
+    let kind: EscapeKind = EscapeKind::default();
+    assert_eq!(kind, EscapeKind::None);
+    assert!(!kind.escapes());
+}
+
+#[test]
+fn test_escape_kind_escapes() {
+    assert!(!EscapeKind::None.escapes());
+    assert!(EscapeKind::Return.escapes());
+    assert!(EscapeKind::Assign.escapes());
+    assert!(EscapeKind::Call.escapes());
+    assert!(EscapeKind::Heap.escapes());
+    assert!(EscapeKind::Closure.escapes());
+}
+
+#[test]
+fn test_escape_kind_description() {
+    assert_eq!(EscapeKind::None.description(), "does not escape");
+    assert_eq!(EscapeKind::Return.description(), "escapes via return");
+    assert_eq!(EscapeKind::Assign.description(), "escapes via assignment");
+    assert_eq!(EscapeKind::Call.description(), "escapes via function call");
+    assert_eq!(EscapeKind::Heap.description(), "escapes to heap");
+    assert_eq!(EscapeKind::Closure.description(), "escapes via closure capture");
+}
+
+#[test]
+fn test_escape_info_non_escaping() {
+    let name = create_identifier("TestAnonymous");
+    let span = create_test_span();
+    let info = EscapeInfo::non_escaping(name.clone(), span.clone(), false);
+
+    assert_eq!(info.name, name);
+    assert_eq!(info.span, span);
+    assert_eq!(info.escape_kind, EscapeKind::None);
+    assert!(info.escape_reasons.is_empty());
+    assert!(!info.escapes());
+    assert!(!info.is_closure);
+    assert_eq!(info.recommended_storage(), CaptureStorage::Stack);
+}
+
+#[test]
+fn test_escape_info_escaping() {
+    let name = create_identifier("TestAnonymous");
+    let span = create_test_span();
+    let reasons = vec![EscapeReason::ReturnedFromFunction { function_name: create_identifier("test_func") }];
+    let info = EscapeInfo::escaping(name.clone(), span.clone(), EscapeKind::Return, reasons, false);
+
+    assert_eq!(info.name, name);
+    assert_eq!(info.span, span);
+    assert_eq!(info.escape_kind, EscapeKind::Return);
+    assert!(info.escapes());
+    assert_eq!(info.recommended_storage(), CaptureStorage::Heap);
+}
+
+#[test]
+fn test_escape_info_closure() {
+    let name = create_identifier("lambda_0");
+    let span = create_test_span();
+    let info = EscapeInfo::non_escaping(name.clone(), span.clone(), true);
+
+    assert!(info.is_closure);
+}
+
+#[test]
+fn test_capture_storage_info() {
+    let capture = CaptureStorageInfo::new(create_identifier("x"), "i32".to_string(), false);
+
+    assert_eq!(capture.variable_name.as_str(), "x");
+    assert_eq!(capture.type_name, "i32");
+    assert!(!capture.is_mutable);
+    assert_eq!(capture.storage_hint, CaptureStorage::Stack);
+    assert!(!capture.needs_heap());
+}
+
+#[test]
+fn test_capture_storage_info_heap() {
+    let capture =
+        CaptureStorageInfo::new(create_identifier("x"), "String".to_string(), true).with_storage(CaptureStorage::Heap);
+
+    assert!(capture.is_mutable);
+    assert!(capture.needs_heap());
+}
+
+#[test]
+fn test_escape_analyzer_new() {
+    let analyzer = EscapeAnalyzer::new();
+    assert_eq!(analyzer.scope_depth, 0);
+    assert!(analyzer.escape_info.is_empty());
+    assert!(analyzer.escaping_closures.is_empty());
+}
+
+#[test]
+fn test_escape_analyzer_default() {
+    let analyzer = EscapeAnalyzer::default();
+    assert_eq!(analyzer.scope_depth, 0);
+}
+
+#[test]
+fn test_scope_management() {
+    let mut analyzer = EscapeAnalyzer::new();
+    assert_eq!(analyzer.scope_depth, 0);
+
+    analyzer.push_scope();
+    assert_eq!(analyzer.scope_depth, 1);
+
+    analyzer.push_scope();
+    assert_eq!(analyzer.scope_depth, 2);
+
+    analyzer.pop_scope();
+    assert_eq!(analyzer.scope_depth, 1);
+
+    analyzer.pop_scope();
+    assert_eq!(analyzer.scope_depth, 0);
+}
+
+#[test]
+fn test_add_var_to_scope() {
+    let mut analyzer = EscapeAnalyzer::new();
+    let var_name = create_identifier("test_var");
+
+    analyzer.add_var(var_name.clone());
+    assert!(analyzer.scope_vars[0].contains(&var_name));
+}
+
+#[test]
+fn test_add_closure_to_scope() {
+    let mut analyzer = EscapeAnalyzer::new();
+    let closure_name = create_identifier("Anonymous_1");
+
+    analyzer.add_closure(closure_name.clone());
+    assert!(analyzer.scope_closures[0].contains(&closure_name));
+}
+
+#[test]
+fn test_is_outer_var() {
+    let mut analyzer = EscapeAnalyzer::new();
+    let outer_var = create_identifier("outer_var");
+    let inner_var = create_identifier("inner_var");
+
+    analyzer.add_var(outer_var.clone());
+    analyzer.push_scope();
+    analyzer.add_var(inner_var.clone());
+
+    assert!(analyzer.is_outer_var(&outer_var));
+    assert!(!analyzer.is_outer_var(&inner_var));
+}
+
+#[test]
+fn test_escape_reason_equality() {
+    let reason1 = EscapeReason::ReturnedFromFunction { function_name: create_identifier("func1") };
+    let reason2 = EscapeReason::ReturnedFromFunction { function_name: create_identifier("func1") };
+    let reason3 = EscapeReason::ReturnedFromFunction { function_name: create_identifier("func2") };
+
+    assert_eq!(reason1, reason2);
+    assert_ne!(reason1, reason3);
+}
+
+#[test]
+fn test_analyze_empty_module() {
+    let mut analyzer = EscapeAnalyzer::new();
+    let module = HirModule {
+        name: nyar_language::types::NamePath::default(),
+        doc: HirDocumentation::default(),
+        imports: Vec::new(),
+        warnings: Vec::new(),
+        submodules: Vec::new(),
+        functions: Vec::new(),
+        structs: Vec::new(),
+        enums: Vec::new(),
+        flags: Vec::new(),
+        traits: Vec::new(),
+        impls: Vec::new(),
+        type_functions: Vec::new(),
+        type_families: Vec::new(),
+        widgets: Vec::new(),
+        singletons: Vec::new(),
+        statements: Vec::new(),
+        type_aliases: Vec::new(),
+    };
+
+    let result = analyzer.analyze_module(&module);
+    assert!(result.is_empty());
+}
+
+#[test]
+fn test_get_escape_info_not_found() {
+    let analyzer = EscapeAnalyzer::new();
+    let name = create_identifier("NonExistent");
+
+    assert!(analyzer.get_escape_info(&name).is_none());
+}
+
+#[test]
+fn test_get_escaping_closures_empty() {
+    let analyzer = EscapeAnalyzer::new();
+    assert!(analyzer.get_escaping_closures().is_empty());
+}
+
+#[test]
+fn test_escapes_method() {
+    let analyzer = EscapeAnalyzer::new();
+    let name = create_identifier("NonExistent");
+
+    assert!(!analyzer.escapes(&name));
+}
+
+#[test]
+fn test_capture_optimization_stack() {
+    let name = create_identifier("test");
+    let span = create_test_span();
+    let info = EscapeInfo::non_escaping(name, span, false);
+
+    assert_eq!(CaptureOptimization::from_escape_info(&info), CaptureOptimization::StackAllocation);
+}
+
+#[test]
+fn test_capture_optimization_heap() {
+    let name = create_identifier("test");
+    let span = create_test_span();
+    let mut info = EscapeInfo::non_escaping(name, span, false);
+    info.escape_kind = EscapeKind::Return;
+    info.add_capture(
+        CaptureStorageInfo::new(create_identifier("x"), "i32".to_string(), false).with_storage(CaptureStorage::Heap),
+    );
+
+    assert_eq!(CaptureOptimization::from_escape_info(&info), CaptureOptimization::HeapAllocation);
+}
+
+#[test]
+fn test_escape_info_add_capture() {
+    let name = create_identifier("test");
+    let span = create_test_span();
+    let mut info = EscapeInfo::non_escaping(name, span, false);
+
+    info.add_capture(CaptureStorageInfo::new(create_identifier("x"), "i32".to_string(), false));
+    info.add_capture(CaptureStorageInfo::new(create_identifier("y"), "String".to_string(), true));
+
+    assert_eq!(info.captures.len(), 2);
+}
+
+#[test]
+fn test_escape_info_update_capture_storage() {
+    let name = create_identifier("test");
+    let span = create_test_span();
+    let mut info = EscapeInfo::non_escaping(name, span, false);
+
+    info.add_capture(CaptureStorageInfo::new(create_identifier("x"), "i32".to_string(), false));
+
+    assert_eq!(info.captures[0].storage_hint, CaptureStorage::Stack);
+
+    info.escape_kind = EscapeKind::Return;
+    info.update_capture_storage();
+
+    assert_eq!(info.captures[0].storage_hint, CaptureStorage::Heap);
+}
+
+#[test]
+fn test_escape_reason_debug() {
+    let reason = EscapeReason::ReturnedFromFunction { function_name: create_identifier("test_func") };
+    let debug_str = format!("{:?}", reason);
+    assert!(debug_str.contains("ReturnedFromFunction"));
+}
+
+#[test]
+fn test_escape_info_debug() {
+    let name = create_identifier("TestAnonymous");
+    let span = create_test_span();
+    let info = EscapeInfo::non_escaping(name, span, false);
+
+    let debug_str = format!("{:?}", info);
+    assert!(debug_str.contains("EscapeInfo"));
+}
+
+#[test]
+fn test_escape_kind_debug() {
+    let kind = EscapeKind::Return;
+    let debug_str = format!("{:?}", kind);
+    assert!(debug_str.contains("Return"));
+}

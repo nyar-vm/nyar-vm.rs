@@ -1,0 +1,22 @@
+{
+    "name": "@nyar-vm/nyar-wasm32-wasi",
+    "version": "0.0.0",
+    "description": "Nyar Wasm collect — wasm32-wasip1 host artifacts",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        "./nyar.wasm": "./nyar_wasm.wasm",
+        "./package.json": "./package.json"
+    },
+    "files": ["nyar_wasm.wasm",
+      "README.md"
+    ],
+    "engines": { "node": ">=20" },
+    "keywords": ["nyar", "nyar-vm", "wasm", "wasi"],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "packages/nyar-wasm32-wasi"
+    },
+    "publishConfig": { "access": "public" }
+}

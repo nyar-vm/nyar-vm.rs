@@ -1,0 +1,19 @@
+{
+    "name": "@nyar-vm/nyar-darwin-arm64",
+    "version": "0.0.0",
+    "description": "Nyar native collect — macOS arm64 (Node-API host)",
+    "license": "MIT",
+    "os": ["darwin"],
+    "cpu": ["arm64"],
+    "files": ["libnyar_napi.dylib",
+      "README.md"
+    ],
+    "engines": { "node": ">=20" },
+    "keywords": ["nyar", "nyar-vm", "native", "node-api", "darwin", "arm64"],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "packages/nyar-darwin-arm64"
+    },
+    "publishConfig": { "access": "public" }
+}

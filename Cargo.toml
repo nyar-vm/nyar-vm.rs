@@ -1,78 +1,157 @@
 [workspace]
+
 resolver = "2"
+
 members = [
+
     "projects/nvm",
+
     "projects/hosts/nyar-napi",
+
     "projects/hosts/nyar-wasm",
-    "projects/nyar",
-    "projects/nyar-analyzer",
-    "projects/nyar-emitter",
-    "projects/nyar-language",
-    "projects/nyar-optimizer",
-    "projects/nyar-package-manager",
-    "projects/nyar-package-registry",
-    "projects/nyar-runner",
-    "projects/nyar-types",
-    "projects/nyar-workspace",
+
+    "projects/compilers/nyar",
+
+    "projects/compilers/nyar-analyzer",
+
+    "projects/compilers/nyar-emitter",
+
+    "projects/compilers/nyar-language",
+
+    "projects/compilers/nyar-optimizer",
+
+    "projects/compilers/nyar-package-manager",
+
+    "projects/compilers/nyar-package-registry",
+
+    "projects/compilers/nyar-runner",
+
+    "projects/compilers/nyar-types",
+
+    "projects/compilers/nyar-workspace",
+
 ]
+
 default-members = [
+
     "projects/nvm",
-    "projects/nyar-language",
+
+    "projects/compilers/nyar-language",
+
 ]
+
+
 
 [workspace.package]
+
 version = "0.1.0"
+
 edition = "2024"
+
 authors = ["Nyar Team"]
+
 license = "MIT"
+
 repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
+
+
 [workspace.dependencies]
+
 # Shared binary formats stay in valkyrie.rs. CI resolves from git `dev`.
+
 # Local sibling checkout: copy `cargo/config.example.toml` to `.cargo/config.toml`.
+
 std-data = { git = "https://github.com/valkyrie-language/valkyrie.rs", branch = "dev" }
 
-nyar = { path = "projects/nyar" }
-nyar-analyzer = { path = "projects/nyar-analyzer" }
-nyar-optimizer = { path = "projects/nyar-optimizer" }
-nyar-types = { path = "projects/nyar-types" }
-nyar-language = { path = "projects/nyar-language" }
-nyar-runner = { path = "projects/nyar-runner" }
-nyar-package-manager = { path = "projects/nyar-package-manager" }
-nyar-package-registry = { path = "projects/nyar-package-registry" }
-nyar-workspace = { path = "projects/nyar-workspace" }
+
+
+nyar = { path = "projects/compilers/nyar" }
+
+nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
+
+nyar-optimizer = { path = "projects/compilers/nyar-optimizer" }
+
+nyar-types = { path = "projects/compilers/nyar-types" }
+
+nyar-language = { path = "projects/compilers/nyar-language" }
+
+nyar-runner = { path = "projects/compilers/nyar-runner" }
+
+nyar-package-manager = { path = "projects/compilers/nyar-package-manager" }
+
+nyar-package-registry = { path = "projects/compilers/nyar-package-registry" }
+
+nyar-workspace = { path = "projects/compilers/nyar-workspace" }
+
 nyar-napi = { path = "projects/hosts/nyar-napi" }
+
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
-emitter = { path = "projects/nyar-emitter", package = "nyar-emitter" }
+
+emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
+
+
 
 miette = "7.6.0"
+
 ordered-float = "5.3.0"
+
 clap = { version = "4.6.1", features = ["derive"] }
+
 serde = { version = "1.0.228", features = ["derive", "rc"] }
+
 serde_json = "1.0.150"
+
 toml_edit = "0.22.27"
+
 serde_yaml = "0.9.34"
+
 sha1 = "0.10.6"
+
 sha2 = "0.10.9"
+
 url = "2.5.8"
+
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
 tempfile = "3.27.0"
+
 pulldown-cmark = "0.13.0"
+
 syntect = "5.2.0"
+
 katex-rs = "0.2.4"
+
 reqwest = { version = "0.12.28", default-features = false, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
+
 flate2 = "1.1.2"
+
 tar = "0.4.44"
+
 base64 = "0.22.1"
+
 ed25519-dalek = "2.1.1"
+
 thiserror = "2.0.17"
 
+
+
 [profile.release]
+
 lto = false
+
 opt-level = "s"
 
+
+
 [profile.dev]
+
 incremental = false
 
+
+
 [profile.test]
+
 incremental = false
+
+
