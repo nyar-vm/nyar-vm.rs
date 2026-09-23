@@ -1,0 +1,17 @@
+{
+    "name": "@nyar-vm/nyar-win32-x64",
+    "version": "0.0.0",
+    "description": "Nyar native collect — Windows x64 (Node-API host)",
+    "license": "MIT",
+    "os": ["win32"],
+    "cpu": ["x64"],
+    "files": ["nyar_napi.dll", "README.md"],
+    "engines": { "node": ">=20" },
+    "keywords": ["nyar", "nyar-vm", "native", "node-api", "win32", "x64"],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "packages/nyar-win32-x64"
+    },
+    "publishConfig": { "access": "public" }
+}
