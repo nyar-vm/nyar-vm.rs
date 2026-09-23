@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "projects/nvm",
+    "projects/hosts/nyar-napi",
+    "projects/hosts/nyar-wasm",
     "projects/nyar",
     "projects/nyar-analyzer",
     "projects/nyar-emitter",
@@ -39,6 +41,8 @@ nyar-runner = { path = "projects/nyar-runner" }
 nyar-package-manager = { path = "projects/nyar-package-manager" }
 nyar-package-registry = { path = "projects/nyar-package-registry" }
 nyar-workspace = { path = "projects/nyar-workspace" }
+nyar-napi = { path = "projects/hosts/nyar-napi" }
+nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/nyar-emitter", package = "nyar-emitter" }
 
 miette = "7.6.0"

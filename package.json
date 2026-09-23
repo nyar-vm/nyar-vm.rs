@@ -6,6 +6,8 @@
     "scripts": {
         "test": "pnpm -r test",
         "build": "pnpm -r build",
+        "build:napi": "node scripts/build.mjs napi",
+        "build:wasm": "node scripts/build.mjs wasm",
         "build:native": "npx tsx scripts/build.ts",
         "format": "biome format --write .",
         "lint": "biome check --apply .",
