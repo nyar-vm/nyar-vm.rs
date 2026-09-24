@@ -546,13 +546,19 @@ pub(crate) fn lower_fragment_mir_to_wasm_module(
     submission: &FragmentSubmission,
     export_name: &str,
 ) -> (WasmBinaryModule, Vec<(String, String)>) {
-    lower_fragment_mir_to_wasm_module_for(submission, export_name, crate::nyar_backend_wasi::WasiPreview::Preview2)
+    lower_fragment_mir_to_wasm_module_for(
+        submission,
+        export_name,
+        crate::nyar_backend_wasi::WasiPreview::Preview2,
+        crate::nyar_backend_wasi::WasmPackageKind::Binary,
+    )
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     submission: &FragmentSubmission,
     export_name: &str,
     wasi_preview: crate::nyar_backend_wasi::WasiPreview,
+    wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> (WasmBinaryModule, Vec<(String, String)>) {
     let wasi_mode = export_name == "_start";
     let operations: Vec<QualifiedName> = submission.executable.as_ref().map(|exec| exec.operations()).unwrap_or_default();
@@ -752,6 +758,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
 
     if exports.is_empty() && submission.wasm_export_names.is_empty() {
+        assert!(
+            wasm_package_kind != crate::nyar_backend_wasi::WasmPackageKind::Library,
+            "library wasm package must not synthesize stub main"
+        );
         function_indices.insert(0, 0);
         let entry = submission
             .entry_operation

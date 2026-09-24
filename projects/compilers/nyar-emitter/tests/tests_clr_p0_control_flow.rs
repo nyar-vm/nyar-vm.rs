@@ -50,7 +50,8 @@ fn clr_lane_accept(submission: FragmentSubmission) {
         TargetLane::Clr,
         ClrSuspendStrategy::StateMachine,
         VmSuspendStrategy::default(),
-        "win32",
+        "win32",,
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     )
     .expect("CLR state-machine lane should accept submission");
 }

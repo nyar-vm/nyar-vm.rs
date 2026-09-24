@@ -231,6 +231,7 @@ pub(crate) fn lower_fragment_to_driver_input(
     host_boundary: HostProjectionBoundary,
     output_dir: PathBuf,
     host_flavor: &str,
+    wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> Result<DriverBackendInput> {
     features::semantic_mir_contract::validate_submission(submission)
         .map_err(|error| miette!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
@@ -258,7 +259,7 @@ pub(crate) fn lower_fragment_to_driver_input(
         }
         TargetBackendFamily::Wasm => {
             let wasi_preview = crate::nyar_backend_wasi::WasiPreview::from_host_flavor(host_flavor);
-            let (module, imports) = wasm::lower_fragment_to_wasm_module_for(submission, host_boundary, wasi_preview)?;
+            let (module, imports) = wasm::lower_fragment_to_wasm_module_for(submission, host_boundary, wasi_preview, wasm_package_kind)?;
             // WASI component model: `_start` is always nullary (argv is read via
             // `wasi:cli/environment.get-arguments`), so any WASI partition with an
             // executable entry should be packaged as a command component.
@@ -273,6 +274,7 @@ pub(crate) fn lower_fragment_to_driver_input(
                 package_as_wasi_command,
                 wasi_preview,
                 library_wasm_exports: submission.wasm_export_names.values().cloned().collect(),
+                wasm_package_kind,
             }))
         }
         #[cfg(feature = "legacy-lanes")]

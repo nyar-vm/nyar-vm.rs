@@ -14,6 +14,7 @@ use nyar::{
 use std_data::binary::wasm::{parse_export_section, WasmBinaryModule, WasmExternalKind};
 
 use crate::backend::binding_builders::{BindingGenerationContext, HostBindingBuilder};
+use crate::nyar_backend_wasi::WasmPackageKind;
 
 /// `WASM + JS glue` 宿主绑定生成器。
 pub(crate) struct JsGlueBindingBuilder;
@@ -24,7 +25,10 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         let launcher_path = context.output_dir.join(format!("{launcher_stem}.mjs"));
         let wasm_path = context.output_dir.join(format!("{launcher_stem}.wasm"));
         let utf8_literals = read_wasm_utf8_literals(&wasm_path).unwrap_or_default();
-        let library_mode = is_library_wasm_module(&wasm_path);
+        let library_mode = match context.wasm_package_kind {
+            WasmPackageKind::Library => true,
+            WasmPackageKind::Binary => false,
+        };
         let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode);
         fs::write(&launcher_path, launcher).into_diagnostic().wrap_err_with(|| format!("写入 Node 启动壳失败：{}", launcher_path.display()))?;
 
@@ -596,6 +600,13 @@ mod tests {
         assert!(launcher.contains("exports.help"));
         assert!(launcher.contains("command === \"\" && typeof exports.help === \"function\""), "空 argv 仅在存在 help 时走帮助");
         assert!(!launcher.contains(BANNED_HOST_COMPILE_FROM_PLAN_JS));
+    }
+
+    #[test]
+    fn build_node_launcher_library_mode_exposes_call_export_without_main_dispatch() {
+        let launcher = build_node_launcher("demo", &[], &[], true);
+        assert!(launcher.contains("export async function callExport"), "library glue must expose callExport");
+        assert!(!launcher.contains("exports.main ?? exports._start"), "library glue must not auto-run main");
     }
 
     #[test]
