@@ -28,6 +28,42 @@ micro run_host(): i64 {
 }
 
 #[test]
+fn export_case_renames_to_camel_case() {
+    let module = compile_module(
+        r#"
+namespace demo.export;
+
+[export(case: "camelCase")]
+micro two_sum(): i64 {
+    return 0
+}
+"#,
+    );
+
+    let facts = hir_module_to_program_facts(&module);
+    assert_eq!(facts.exports.len(), 1);
+    assert_eq!(facts.exports[0].exported_name.as_str(), "twoSum");
+}
+
+#[test]
+fn export_name_override_wins_over_case() {
+    let module = compile_module(
+        r#"
+namespace demo.export;
+
+[export(case: "camelCase", name: "invokeTwoSum")]
+micro two_sum(): i64 {
+    return 0
+}
+"#,
+    );
+
+    let facts = hir_module_to_program_facts(&module);
+    assert_eq!(facts.exports.len(), 1);
+    assert_eq!(facts.exports[0].exported_name.as_str(), "invokeTwoSum");
+}
+
+#[test]
 fn bare_export_uses_default_partition() {
     let module = compile_module(
         r#"
