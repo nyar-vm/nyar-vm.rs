@@ -120,6 +120,23 @@ impl MirBuilder {
         Some(MirOperand::Value(value))
     }
 
+    pub(super) fn struct_construct_result_type(
+        &self,
+        name: &crate::types::Identifier,
+        resolved: Option<&crate::types::hir::HirResolvedCall>,
+    ) -> crate::types::hir::ValkyrieType {
+        use crate::types::hir::ValkyrieType;
+        if let Some(owner) = self.impl_owner_type.as_ref() {
+            if super::nominal_type_name(owner).is_some_and(|owner_name| owner_name == name.as_str()) {
+                return owner.clone();
+            }
+        }
+        let raw = resolved
+            .map(|call| call.return_type.clone())
+            .unwrap_or_else(|| ValkyrieType::Named(name.clone()));
+        super::resolve_self_type_with_owner(&raw, self.impl_owner_type.as_ref())
+    }
+
     pub(super) fn try_lower_singleton_receiver_call(
         &mut self,
         callee: &HirExpr,

@@ -120,7 +120,9 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                             |field| matches!(value, ExecutableOperand::Value(value) if function.value_types.get(value) == Some(&field.ty)),
                         )
                     });
-                if output_type != Some(&NyarType::Named(nyar::Identifier::new(type_name))) || !fields_match {
+                let output_owner_matches =
+                    output_type.is_some_and(|ty| aggregate_owner_name(ty) == Some(type_name.as_str()));
+                if !output_owner_matches || !fields_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),

@@ -708,7 +708,8 @@ impl MirBuilder {
                         // infer a sum from the variant name.
                         let field_ty = self
                             .lookup_struct_field_type(name.as_str(), field_name.as_str())
-                            .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()));
+                            .or_else(|| resolved.as_ref().and_then(|call| call.parameter_types.get(arg_index).cloned()))
+                            .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()));
                         let value_operand = self.lower_expr_to_operand_with_hint(value, field_ty.as_ref());
                         field_values.push(value_operand.clone());
                         fields.push((field_name.to_string(), value_operand));
@@ -811,8 +812,7 @@ impl MirBuilder {
                     });
                 let value = self.next_value(MirValueOrigin::Temporary);
                 self.instructions.push(MirInstruction::from_operation(MirOperation::StructNew { type_name: name.to_string(), fields }));
-                self.value_types
-                    .insert(value, resolved.as_ref().map(|call| call.return_type.clone()).unwrap_or_else(|| ValkyrieType::Named(name.clone())));
+                self.value_types.insert(value, self.struct_construct_result_type(name, resolved.as_ref()));
                 MirOperand::Value(value)
             }
             HirExprKind::FieldAccess { object, field } => {
