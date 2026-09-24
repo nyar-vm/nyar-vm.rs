@@ -267,6 +267,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("nyar::nyar_emitter::wasi::wasi_encode_command_adapt_module_with_mir");
         let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
@@ -326,6 +327,7 @@ mod tests {
             external_calls: Vec::new(),
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
+            diagnostics: Vec::new(),
         };
         let seed = qualified_name_from_mir_symbol("leetcode.two_sum");
         let reachable = build_reachable_mir_functions(&[seed], &mir, &[]);
