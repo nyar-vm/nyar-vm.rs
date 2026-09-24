@@ -740,14 +740,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         )));
         eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={operation}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, operation.to_string()));
-        if submission.entry_operation.as_ref() == Some(operation) {
+        if let Some(public_name) = submission.wasm_export_names.get(operation) {
+            let export_index = function_index_by_name.get(&operation.to_string()).copied().unwrap_or(wasm_index);
+            exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), export_index));
+        }
+        else if submission.entry_operation.as_ref() == Some(operation) {
             // 导出下标与名称表一致（entry_matches ?== 物理下标）?
             let export_index = function_index_by_name.get(&operation.to_string()).copied().unwrap_or(wasm_index);
             exports.push((export_name, WasmExternalKind::Func.as_u8(), export_index));
         }
     }
 
-    if exports.is_empty() {
+    if exports.is_empty() && submission.wasm_export_names.is_empty() {
         function_indices.insert(0, 0);
         let entry = submission
             .entry_operation
