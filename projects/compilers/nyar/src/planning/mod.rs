@@ -100,6 +100,8 @@ pub struct SemanticFragment {
     pub witness_calls: Vec<WitnessCallEdge>,
     /// 仅属于该片段的等式理论。
     pub rewrite_theory: RewriteTheory,
+    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名（如 `two_sum` → `twoSum`）。
+    pub wasm_export_names: std::collections::BTreeMap<QualifiedName, String>,
 }
 
 /// 单个分区计划。

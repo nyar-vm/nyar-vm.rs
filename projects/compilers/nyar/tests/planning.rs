@@ -326,6 +326,7 @@ fn planning_can_build_program_from_semantic_fragments() {
                 witness_tables: Vec::new(),
                 witness_calls: Vec::new(),
                 rewrite_theory: RewriteTheory::default(),
+                wasm_export_names: Default::default(),
             },
             SemanticFragment {
                 id: Identifier::new("suspend"),
@@ -341,6 +342,7 @@ fn planning_can_build_program_from_semantic_fragments() {
                 witness_tables: Vec::new(),
                 witness_calls: Vec::new(),
                 rewrite_theory: suspend_theory,
+                wasm_export_names: Default::default(),
             },
         ],
         object_algebraic_program: ObjectAlgebraicProgram::default(),
