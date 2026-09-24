@@ -1404,6 +1404,11 @@ impl MirBuilder {
     }
 
     fn lower_static_call(&mut self, name: &str, arguments: Vec<MirOperand>, origin: MirValueOrigin) -> MirValueRef {
+        if name == "__ref_deref" {
+            if let Some(MirOperand::Value(value)) = arguments.first() {
+                return *value;
+            }
+        }
         let value = self.next_value(origin);
         let parameter_types =
             arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();

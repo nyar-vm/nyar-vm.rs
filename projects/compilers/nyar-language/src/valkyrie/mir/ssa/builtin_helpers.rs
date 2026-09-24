@@ -47,3 +47,23 @@ pub(super) fn array_index_call_output_type(
 ) -> Option<ValkyrieType> {
     None
 }
+
+/// `std.collection.Array.length` lowers to a call of private `[intrinsic("array.len")]` `__array_len`.
+/// That symbol is not linked into the executable registry — emit `ArrayLength` instead of `Call`.
+pub(super) fn is_array_len_intrinsic_symbol(symbol: &NamePath) -> bool {
+    symbol.parts().last().is_some_and(|part| part.as_str() == "__array_len")
+}
+
+/// `marker.__ref_deref` is `[intrinsic("ref.deref")]` identity on class handles — not a linked function.
+pub(super) fn is_ref_deref_intrinsic_symbol(symbol: &NamePath) -> bool {
+    symbol.parts().last().is_some_and(|part| part.as_str() == "__ref_deref")
+}
+
+/// Overload registry routes `[intrinsic("array.push")]` to `builtin.array.push` (not a linked function).
+pub(super) fn is_language_builtin_array_push_symbol(symbol: &NamePath) -> bool {
+    let parts = symbol.parts();
+    parts.len() == 3
+        && parts[0].as_str() == "builtin"
+        && parts[1].as_str() == "array"
+        && parts[2].as_str() == "push"
+}
