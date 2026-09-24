@@ -270,10 +270,22 @@ pub fn hir_module_to_object_algebraic_program(module: &HirModule) -> ObjectAlgeb
         // 入口执行闭包在语义层闭合，不把跨片段重新拼接 callable closure 的工作
         // 推给后端。若闭包内含 suspend 语义，则该 execution dimension 带上
         // `suspend` capability，并在后续提交阶段派生对应的 suspend 载荷。
+        let entry_function = entry_functions[0];
+        let entry_symbol = function_symbol(&module_name, entry_function);
+        let program_facts = hir_module_to_program_facts(module);
+        let internal_edges = internal_call_edges(module, &program_facts.functions);
+        let all_function_symbols =
+            module.functions.iter().map(|function| function_symbol(&module_name, function)).collect::<BTreeSet<_>>();
+        let reachable = reachable_internal_callee_closure(&entry_symbol, &internal_edges, &all_function_symbols);
+        let mut exported_operations = exports.clone();
+        if !exported_operations.iter().any(|operation| operation == &entry_symbol) {
+            exported_operations.insert(0, entry_symbol.clone());
+        }
+        exported_operations.extend(reachable.into_iter().filter(|symbol| !exported_operations.contains(symbol)));
         let has_suspend = !suspend_operations.is_empty();
         vec![ObjectAlgebraicDimension {
             name: if has_suspend { Identifier::new("suspend") } else { Identifier::new("functions") },
-            exported_operations: exports.clone(),
+            exported_operations,
             required_capabilities: if has_suspend { vec![CapabilityTag::new("suspend")] } else { Vec::new() },
             reference_management_hint: None,
         }]
