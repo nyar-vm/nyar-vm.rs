@@ -1472,3 +1472,67 @@ fn default_module_name() -> NamePath {
 fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
     SourceSpan::new(source_id, span.start as u32, span.end as u32)
 }
+
+#[cfg(test)]
+mod sum_discriminator_tests {
+    use super::*;
+    use crate::{SourceID, ValkyrieCompiler};
+
+    #[test]
+    fn unite_rejects_duplicate_explicit_tags() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+unite Choice {
+    [tag(0)]
+    A { x: i64 }
+    [tag(0)]
+    B { y: i64 }
+}
+"#,
+            )
+            .expect_err("duplicate unite tag");
+        assert!(error.to_string().contains("duplicate discriminator"), "{error}");
+    }
+
+    #[test]
+    fn unite_rejects_implicit_tag_collision_with_explicit_tag() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+unite Choice {
+    A { x: i64 }
+    [tag(0)]
+    B { y: i64 }
+}
+"#,
+            )
+            .expect_err("implicit tag collision");
+        assert!(error.to_string().contains("duplicate discriminator"), "{error}");
+    }
+
+    #[test]
+    fn rejects_duplicate_unite_and_union_names() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+unite Limb {
+    Small { value: i64 }
+    Large { value: i64 }
+}
+
+union Limb {
+    small: i64
+    words: i64
+}
+"#,
+            )
+            .expect_err("duplicate sum type name");
+        let message = error.to_string();
+        assert!(message.contains("duplicate definition"), "{error}");
+        assert!(message.contains("unite") && message.contains("union"), "{error}");
+    }
+}
