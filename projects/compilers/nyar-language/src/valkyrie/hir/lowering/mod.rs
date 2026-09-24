@@ -352,7 +352,8 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
                 .map(|(index, variant)| {
                     // `unite`: `[tag(N)]` or declaration-order fallback.
                     // `enums`: `= N` or auto-increment after the last explicit / implicit tag.
-                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit).unwrap_or(index as u32);
+                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit)
+                        .expect("enum discriminators must be validated before sum layout collection");
                     SumVariantLayout {
                         name: variant.name.to_string(),
                         tag,
@@ -377,7 +378,8 @@ fn collect_sum_type_layouts(module: &HirModule) -> Vec<SumTypeLayout> {
                 .iter()
                 .enumerate()
                 .map(|(index, variant)| {
-                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit).unwrap_or(index as u32);
+                    let tag = resolve_enum_variant_tag(variant, &mut next_implicit)
+                        .expect("enum discriminators must be validated before sum layout collection");
                     SumVariantLayout {
                         name: variant.name.to_string(),
                         tag,
@@ -1511,6 +1513,31 @@ unite Choice {
             )
             .expect_err("implicit tag collision");
         assert!(error.to_string().contains("duplicate discriminator"), "{error}");
+    }
+
+    #[test]
+    fn named_union_does_not_lower_as_numeric_enums() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source("union Limb { Small { value: i64 }, Words { value: i64 } }")
+            .expect_err("named union must be rejected");
+        assert!(error.to_string().contains("cannot be lowered as numeric enums"), "{error}");
+    }
+
+    #[test]
+    fn unite_rejects_non_integer_tag_literal() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+unite Choice {
+    [tag(foo)]
+    A { x: i64 }
+}
+"#,
+            )
+            .expect_err("invalid unite tag literal");
+        assert!(error.to_string().contains("non-negative integer literal"), "{error}");
     }
 
     #[test]
