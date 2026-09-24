@@ -141,7 +141,7 @@ fn resolve_from_pool<'a>(
             return pool.get(exact).map(|(dep_index, function)| (*dep_index, function));
         }
     }
-    pool.iter().find(|(symbol, _)| mir_symbol_ends_with_simple(symbol, simple)).map(|(_, (dep_index, function))| (*dep_index, function))
+    None
 }
 
 fn collect_static_call_symbols(mir_fn: &MirFunction) -> Vec<String> {
