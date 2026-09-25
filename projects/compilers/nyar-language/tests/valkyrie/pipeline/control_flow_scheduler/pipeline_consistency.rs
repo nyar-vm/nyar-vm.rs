@@ -481,7 +481,7 @@ fn rejects_pipeline_when_jump_argument_type_drifts() {
 #[test]
 fn rejects_mir_continuation_when_resume_parameter_leaves_target_block() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 217 });
-    let mut mir = semantic_mir(
+    let mut lir = semantic_lir(
         &compiler,
         r#"micro main() {
     catch raise true {
@@ -493,9 +493,9 @@ fn rejects_mir_continuation_when_resume_parameter_leaves_target_block() {
 "#,
     )
     .unwrap();
-    mir.functions[0].continuations[0].resume_parameter = MirValueRef(999);
+    lir.functions[0].continuations[0].resume_parameter = MirValueRef(999);
 
-    let error = ControlFlowScheduler::validate_mir_module(&mir).unwrap_err();
+    let error = validate_legacy_lir(&lir).unwrap_err();
     assert!(error.to_string().contains("continuation"));
     assert!(error.to_string().contains("block"));
 }
@@ -526,7 +526,7 @@ fn rejects_pipeline_when_continuation_resume_type_drifts() {
 #[test]
 fn rejects_mir_suspend_point_when_resume_parameter_count_drifts() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 219 });
-    let mut mir = semantic_mir(
+    let mut lir = semantic_lir(
         &compiler,
         r#"micro main() {
     let future: Future<bool> = ()
@@ -536,9 +536,9 @@ fn rejects_mir_suspend_point_when_resume_parameter_count_drifts() {
 "#,
     )
     .unwrap();
-    mir.functions[0].suspend_points[0].resume_parameter_count = 0;
+    lir.functions[0].suspend_points[0].resume_parameter_count = 0;
 
-    let error = ControlFlowScheduler::validate_mir_module(&mir).unwrap_err();
+    let error = validate_legacy_lir(&lir).unwrap_err();
     assert!(error.to_string().contains("suspend"));
     assert!(error.to_string().contains("0"));
 }
@@ -670,27 +670,15 @@ fn preserves_case_chain_metadata_across_pipeline() {
 }
 "#;
 
-    let mir = semantic_mir(&compiler, source).unwrap();
     let lir = semantic_lir(&compiler, source).unwrap();
 
-    let mir_chain = &mir.functions[0].case_chains[0];
-    assert!(!mir_chain.produce_value);
-    assert_eq!(mir_chain.arms.len(), 3);
-    assert_eq!(mir_chain.first_arm, mir_chain.arms[0].entry_block);
-    assert_eq!(mir_chain.arms[0].fallthrough_target, Some(mir_chain.arms[1].entry_block));
-    assert!(mir_chain.arms[1].guard_block.is_some());
-    assert_eq!(mir_chain.arms[2].fallthrough_target, None);
-
     let lir_chain = &lir.functions[0].case_chains[0];
-    assert_eq!(lir_chain.dispatch_block, mir_chain.dispatch_block);
-    assert_eq!(lir_chain.first_arm, mir_chain.first_arm);
-    assert_eq!(lir_chain.no_match_block, mir_chain.no_match_block);
-    assert_eq!(lir_chain.exit_block, mir_chain.exit_block);
-    assert_eq!(lir_chain.produce_value, mir_chain.produce_value);
-    assert_eq!(lir_chain.arms.len(), mir_chain.arms.len());
-    assert_eq!(lir_chain.arms[0].fallthrough_target, mir_chain.arms[0].fallthrough_target);
-    assert_eq!(lir_chain.arms[1].guard_block, mir_chain.arms[1].guard_block);
-    assert_eq!(lir_chain.arms[2].fallthrough_target, mir_chain.arms[2].fallthrough_target);
+    assert!(!lir_chain.produce_value);
+    assert_eq!(lir_chain.arms.len(), 3);
+    assert_eq!(lir_chain.first_arm, lir_chain.arms[0].entry_block);
+    assert_eq!(lir_chain.arms[0].fallthrough_target, Some(lir_chain.arms[1].entry_block));
+    assert!(lir_chain.arms[1].guard_block.is_some());
+    assert_eq!(lir_chain.arms[2].fallthrough_target, None);
 }
 
 #[test]

@@ -114,11 +114,6 @@ pub fn assert_nullable_try_mir_shape(hir: &nyar_language::types::hir::HirModule)
 
 /// Assert `yield 1` lowers to a single `Yield` suspend state and the backend payload mirrors it.
 pub fn assert_yield_state_machine_shape(hir: &nyar_language::types::hir::HirModule) {
-    let mir = MirLowerer::lower_module(hir);
-    let function = mir.functions.iter().find(|f| f.symbol.contains("gen")).expect("gen");
-    let plan = function.suspend_plan.as_ref().expect("suspend plan");
-    assert_eq!(plan.states.len(), 1);
-
     let symbol = qualified_symbol_from_mir(hir, "gen");
     let payload = build_state_machine_suspend_payload(hir, &[symbol]);
     let artifact = payload.functions.first().expect("state machine artifact");
@@ -175,12 +170,6 @@ pub fn assert_fallthrough_mir_shape(hir: &nyar_language::types::hir::HirModule) 
 pub fn assert_yield_from_state_machine_shape(hir: &nyar_language::types::hir::HirModule) {
     use nyar_language::valkyrie::mir::MirEffectKind;
 
-    let mir = MirLowerer::lower_module(hir);
-    let function = mir.functions.iter().find(|f| f.symbol.contains("gen")).expect("gen function");
-    let descriptor = function.suspend_plan.as_ref().expect("suspend plan");
-    assert_eq!(descriptor.states.len(), 1);
-    assert_eq!(descriptor.states[0].effect, MirEffectKind::DelegateYield);
-
     let symbol = qualified_symbol_from_mir(hir, "gen");
     let payload = build_state_machine_suspend_payload(hir, &[symbol]);
     let artifact = payload.functions.first().expect("state machine artifact");
@@ -195,13 +184,6 @@ pub fn assert_yield_from_state_machine_shape(hir: &nyar_language::types::hir::Hi
 /// Assert `future.await` lowers to an Await state with Future.poll witness binding and Integer32 resume type.
 pub fn assert_await_state_machine_shape(hir: &nyar_language::types::hir::HirModule) {
     use nyar_language::{types::hir::ValkyrieType, valkyrie::mir::MirEffectKind};
-
-    let mir = MirLowerer::lower_module(hir);
-    let function = mir.functions.iter().find(|f| f.symbol.contains("async_fn")).expect("async_fn function");
-    let descriptor = function.suspend_plan.as_ref().expect("suspend plan");
-    assert_eq!(descriptor.states.len(), 1);
-    assert_eq!(descriptor.states[0].effect, MirEffectKind::Await);
-    assert_eq!(descriptor.states[0].resume_parameter_type, Some(ValkyrieType::Integer32 { signed: true }));
 
     let symbol = qualified_symbol_from_mir(hir, "async_fn");
     let payload = build_state_machine_suspend_payload(hir, &[symbol]);
