@@ -6,10 +6,10 @@
 
 use crate::{
     FragmentSubmission,
-    executable_provider::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand},
+    executable_provider::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider},
 };
 use nyar::QualifiedName;
-use nyar_types::{Constant, NamePath, NyarType};
+use nyar_types::{Constant, NamePath, NyarType, ValueOrigin};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SemanticMirContractError {
@@ -237,7 +237,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 ExecutableOperand::Value(v) => function.value_types.get(v),
                 _ => None,
             };
-            let Some(name) = object_ty.and_then(aggregate_owner_name)
+            let Some(name) = aggregate_field_layout_name(object, object_ty, &function)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
@@ -246,7 +246,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     detail: "aggregate field access requires a nominal object type".to_string(),
                 });
             };
-            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == name)
+            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == name.as_str())
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
@@ -318,6 +318,39 @@ fn struct_new_output_owner_compatible(output_type: &NyarType, type_name: &str, l
 
 fn function_owner_from_symbol(symbol: &str) -> Option<&str> {
     symbol.rsplit_once('.').map(|(owner, _)| owner.rsplit([':', '.']).next().unwrap_or(owner))
+}
+
+fn is_self_parameter_operand(operand: &ExecutableOperand, function: &ExecutableFunction) -> bool {
+    let ExecutableOperand::Value(value_ref) = operand
+    else {
+        return false;
+    };
+    function
+        .values
+        .iter()
+        .find(|value| value.id == *value_ref)
+        .is_some_and(|value| matches!(value.origin, ValueOrigin::Parameter { index: 0, .. }))
+}
+
+fn aggregate_field_layout_name(
+    object: &ExecutableOperand,
+    object_ty: Option<&NyarType>,
+    function: &ExecutableFunction,
+) -> Option<String> {
+    if let Some(ty) = object_ty {
+        if let Some(owner) = aggregate_owner_name(ty) {
+            if owner == "Self" {
+                return function_owner_from_symbol(&function.symbol).map(str::to_string);
+            }
+            if !matches!(ty, NyarType::TraitObject(_)) {
+                return Some(owner.to_string());
+            }
+        }
+    }
+    if is_self_parameter_operand(object, function) {
+        return function_owner_from_symbol(&function.symbol).map(str::to_string);
+    }
+    None
 }
 
 /// Align emitter StructNew / FieldGet / FieldSet checks with language MIR validation:
@@ -468,6 +501,34 @@ fn is_language_builtin_symbol(path: &NamePath) -> bool {
         && parts[2].as_str() == "push"
 }
 
+fn callee_symbol_ends_with_simple(registry_symbol: &str, simple: &str) -> bool {
+    registry_symbol == simple || registry_symbol.ends_with(&format!(".{simple}")) || registry_symbol.ends_with(&format!("::{simple}"))
+}
+
+fn static_callee_is_registered(executable: &dyn ExecutableProvider, path: &NamePath) -> bool {
+    let dotted = path.to_string();
+    if executable.find_by_symbol(&dotted).is_some() {
+        return true;
+    }
+    if path.parts().len() > 1 {
+        let via_colon = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
+        if executable.find_by_symbol(&via_colon).is_some() {
+            return true;
+        }
+    }
+    if path.parts().len() == 1 {
+        let simple = path.parts()[0].as_str();
+        let matches: Vec<_> = executable
+            .operations()
+            .iter()
+            .filter_map(|operation| executable.get_function(operation))
+            .filter(|view| callee_symbol_ends_with_simple(&view.function.symbol, simple))
+            .collect();
+        return matches.len() == 1;
+    }
+    false
+}
+
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
@@ -489,7 +550,10 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
             if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
                 continue;
             }
-            let local = submission.executable.as_ref().is_some_and(|executable| executable.find_by_symbol(&symbol).is_some());
+            let local = submission
+                .executable
+                .as_ref()
+                .is_some_and(|executable| static_callee_is_registered(executable.as_ref(), path));
             let external = submission.external_import_links.contains_key(&QualifiedName::new(path.parts().to_vec()));
             if !local && !external {
                 return Err(SemanticMirContractError {
