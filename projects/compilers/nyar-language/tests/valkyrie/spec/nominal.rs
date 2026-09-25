@@ -4,7 +4,10 @@ use nyar_language::{
     SumTypeLayout, ValkyrieCompiler, compute_nominal_layouts,
     types::{
         Identifier, NamePath, SourceID,
-        hir::{GenericType, HirDocumentation, HirEnum, HirField, HirKind, HirModule, HirStruct, HirVariant, HirVisibility, ValkyrieType},
+        hir::{
+            GenericType, HirDependencySemanticExport, HirDocumentation, HirEnum, HirField, HirKind, HirModule, HirStruct, HirVariant, HirVisibility,
+            ValkyrieType,
+        },
     },
     valkyrie::nominal::{
         NominalModuleError, NominalModuleView, UniteCoverageError, UniteDefinitionError, UniteLayout, lower_unite, matches_nominal_parameter,
@@ -681,4 +684,122 @@ fn core_result_nominal_view_resolves_variants() {
 
     assert!(view.matches_nominal_parameter(&Identifier::new("Fine"), &Identifier::new("Result")).unwrap());
     assert!(view.matches_nominal_parameter(&Identifier::new("Fail"), &Identifier::new("Result")).unwrap());
+}
+
+#[test]
+fn imported_semantic_export_enums_contribute_sum_layout_tags() {
+    let compiler = ValkyrieCompiler::new(SourceID::default());
+    let dependency = compiler
+        .compile_source(
+            r#"
+enums Status {
+    Active = 2
+    Inactive
+}
+"#,
+        )
+        .expect("dependency enums");
+    let consumer = compiler
+        .compile_source_with_semantic_exports(
+            "micro main() { return }",
+            &[HirDependencySemanticExport {
+                module: NamePath::new(vec![Identifier::new("dep")]),
+                functions: Vec::new(),
+                structs: Vec::new(),
+                enums: dependency.enums,
+                traits: Vec::new(),
+                type_aliases: Vec::new(),
+                impls: Vec::new(),
+            }],
+        )
+        .expect("consumer with imported enums");
+    let (sum_types, _) = compute_nominal_layouts(&consumer);
+    let status = find_sum_layout(&sum_types, "Status");
+    assert_eq!(status.variants[0].tag, 2);
+    assert_eq!(status.variants[1].tag, 3);
+}
+
+#[test]
+fn imported_semantic_export_unite_contributes_sum_layout_tags() {
+    let compiler = ValkyrieCompiler::new(SourceID::default());
+    let dependency = compiler
+        .compile_source(
+            r#"
+unite Choice {
+    [tag(2)]
+    A { x: i64 }
+    B { y: i64 }
+}
+"#,
+        )
+        .expect("dependency unite");
+    let consumer = compiler
+        .compile_source_with_semantic_exports(
+            "micro main() { return }",
+            &[HirDependencySemanticExport {
+                module: NamePath::new(vec![Identifier::new("dep")]),
+                functions: Vec::new(),
+                structs: Vec::new(),
+                enums: dependency.enums,
+                traits: Vec::new(),
+                type_aliases: Vec::new(),
+                impls: Vec::new(),
+            }],
+        )
+        .expect("consumer with imported unite");
+    let (sum_types, _) = compute_nominal_layouts(&consumer);
+    let choice = find_sum_layout(&sum_types, "Choice");
+    assert!(choice.is_unite);
+    assert_eq!(choice.variants[0].tag, 2);
+    assert_eq!(choice.variants[1].tag, 3);
+}
+
+#[test]
+fn rejects_duplicate_discriminators_in_imported_semantic_export_enums() {
+    let compiler = ValkyrieCompiler::new(SourceID::default());
+    let error = compiler
+        .compile_source_with_semantic_exports(
+            "micro main() { return }",
+            &[HirDependencySemanticExport {
+                module: NamePath::new(vec![Identifier::new("dep")]),
+                functions: Vec::new(),
+                structs: Vec::new(),
+                enums: vec![HirEnum {
+                    name: Identifier::new("Status"),
+                    doc: HirDocumentation::default(),
+                    generics: Vec::new(),
+                    variants: vec![
+                        HirVariant {
+                            name: Identifier::new("Active"),
+                            doc: HirDocumentation::default(),
+                            fields: Vec::new(),
+                            result_type: None,
+                            discriminator: Some(int_discriminator(0)),
+                        },
+                        HirVariant {
+                            name: Identifier::new("Paused"),
+                            doc: HirDocumentation::default(),
+                            fields: Vec::new(),
+                            result_type: None,
+                            discriminator: Some(int_discriminator(0)),
+                        },
+                    ],
+                    visibility: HirVisibility::default(),
+                    is_unity: false,
+                }],
+                traits: Vec::new(),
+                type_aliases: Vec::new(),
+                impls: Vec::new(),
+            }],
+        )
+        .expect_err("imported duplicate discriminator");
+    assert!(error.to_string().contains("duplicate discriminator"), "{error}");
+}
+
+fn int_discriminator(value: i64) -> nyar_language::types::hir::HirExpr {
+    use nyar_language::types::{SourceSpan, hir::HirExprKind, hir::HirLiteral};
+    nyar_language::types::hir::HirExpr {
+        kind: HirExprKind::Literal(HirLiteral::Integer64(value)),
+        span: SourceSpan::new(SourceID::default(), 0, 0),
+    }
 }
