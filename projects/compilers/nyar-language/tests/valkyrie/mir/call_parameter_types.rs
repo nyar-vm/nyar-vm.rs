@@ -1,7 +1,7 @@
-use nyar_language::{MirLowerer, MirOperand, MirOperation, ValkyrieCompiler, types::SourceID};
+use nyar_language::{MirLowerer, MirOperand, MirOperation, MirValueRef, ValkyrieCompiler, types::{SourceID, hir::ValkyrieType}};
 
 #[test]
-fn cross_namespace_call_attaches_parameter_types() {
+fn cross_namespace_call_resolves_callee_without_call_side_channel_fields() {
     let source = r#"
 namespace std.data.binary.wasm;
 
@@ -34,8 +34,7 @@ micro wasi_core_sig_to_functype(sig: WitWasiCoreImportSig) -> [WasmValueType] {
     let mut found = false;
     for block in &caller.blocks {
         for instruction in &block.instructions {
-            let MirOperation::Call { callee: MirOperand::Symbol(path), .. } = &instruction.kind
-            else {
+            let MirOperation::Call { callee: MirOperand::Symbol(path), arguments } = &instruction.kind else {
                 continue;
             };
             let is_target = path.parts().last().is_some_and(|part| part.as_str() == "wasm_i32_types");
@@ -43,10 +42,14 @@ micro wasi_core_sig_to_functype(sig: WitWasiCoreImportSig) -> [WasmValueType] {
                 continue;
             }
             found = true;
-            assert!(
-                parameter_types.as_ref().is_some_and(|params| !params.is_empty()),
-                "expected attached parameter_types on wasm_i32_types call; got parameter_types={parameter_types:?} output_ty={output_ty:?} path={path}"
-            );
+            assert_eq!(arguments.len(), 1, "wasm_i32_types expects one argument");
+            if let MirOperand::Value(arg_ref) = &arguments[0] {
+                assert_eq!(
+                    caller.value_types.get(arg_ref),
+                    Some(&ValkyrieType::Integer32 { signed: false }),
+                    "cross-namespace call should preserve u32 argument type in value_types"
+                );
+            }
         }
     }
     assert!(found, "wasm_i32_types call not found; functions={:?}", mir.functions.iter().map(|f| &f.symbol).collect::<Vec<_>>());

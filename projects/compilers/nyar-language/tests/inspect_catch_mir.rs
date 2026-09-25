@@ -29,15 +29,7 @@ micro main() -> ExitCode {
             out.push_str(&format!("    Terminator: {:?}\n", block.terminator));
             out.push_str(&format!("    Parameters: {:?}\n", block.parameters));
         }
-        out.push_str(&format!("  Suspend points: {}\n", function.suspend_points.len()));
-        for sp in &function.suspend_points {
-            out.push_str(&format!("    state_id={}, effect={:?}, resume_target={:?}\n", sp.state_id, sp.effect, sp.resume_target));
-        }
-        out.push_str(&format!("  Continuations: {}\n", function.continuations.len()));
-        for cont in &function.continuations {
-            out.push_str(&format!("    dispatch={:?}, resume={:?}, exit={:?}\n", cont.dispatch_block, cont.resume_target, cont.handler_exit));
-        }
-        out.push_str(&format!("  Value types:\n"));
+        out.push_str("  Value types:\n");
         for (k, v) in &function.value_types {
             out.push_str(&format!("    {:?}: {:?}\n", k, v));
         }

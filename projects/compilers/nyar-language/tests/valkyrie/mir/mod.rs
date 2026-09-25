@@ -6,7 +6,7 @@ mod early_return;
 mod value_semantics;
 
 use nyar_language::{
-    // DELETED-GOD:     MirConstant, MirDispatchKind, MirEffectKind, MirInstructionKind, MirOperand, MirTerminator, MirValueOrigin, ValkyrieCompiler,
+    MirConstant, MirEffectKind, MirLowerer, MirOperand, MirOperation, MirTerminator, MirValueOrigin, ValkyrieCompiler,
     mir::ssa::test_support::{TestMirBuilder, block, expr, lower_test_function, lower_test_literal, lower_test_module, span},
     types::{
         Identifier, NamePath,
@@ -137,7 +137,7 @@ fn lowers_literal_catch_pattern_into_builtin_compare() {
 
     let guard_block = mir.blocks.iter().find(|block| block.label == "catch_arm_0").expect("expected first catch arm block");
 
-    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. })));
+    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
     // Bool `true` pattern is the scrutinee itself; arm still selects via Branch, not Compare.
     assert!(
         matches!(guard_block.terminator, MirTerminator::Branch { .. })
@@ -226,7 +226,7 @@ fn returns_constant_false_for_anonymous_object_pattern_on_known_scalar_without_f
     let mir = lower_test_module(vec![function], Vec::new());
     let guard_block = mir.functions[0].blocks.iter().find(|block| block.label == "match_arm_0").expect("expected first match arm block");
 
-    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. })));
+    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
     assert!(matches!(&guard_block.terminator, MirTerminator::Branch { condition: MirOperand::Constant(MirConstant::Bool(false)), .. }));
 }
 
@@ -290,7 +290,7 @@ fn lowers_qualified_name_pattern_into_static_bool_when_operand_type_is_known() {
     let mir = lower_test_module(vec![function], Vec::new());
     let guard_block = mir.functions[0].blocks.iter().find(|block| block.label == "match_arm_0").expect("expected first match arm block");
 
-    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. })));
+    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
     assert!(matches!(&guard_block.terminator, MirTerminator::Branch { condition: MirOperand::Constant(MirConstant::Bool(true)), .. }));
 }
 
@@ -354,14 +354,14 @@ fn lowers_object_pattern_into_field_get_and_compare_for_single_field() {
 
     assert!(
         mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| { matches!(instruction.kind, MirInstructionKind::FieldGet { ref field, .. } if field == "x") })
+            .any(|instruction| { matches!(instruction.kind, MirOperation::FieldGet { ref field, .. } if field == "x") })
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
-        matches!(instruction.kind, MirInstructionKind::FieldGet { .. }) || matches!(&instruction.kind, MirInstructionKind::Call { .. })
+        matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -430,14 +430,14 @@ fn lowers_named_object_pattern_for_subtype_into_field_get_and_compare() {
 
     assert!(
         mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| { matches!(instruction.kind, MirInstructionKind::FieldGet { ref field, .. } if field == "flag") })
+            .any(|instruction| { matches!(instruction.kind, MirOperation::FieldGet { ref field, .. } if field == "flag") })
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
-        matches!(instruction.kind, MirInstructionKind::FieldGet { .. }) || matches!(&instruction.kind, MirInstructionKind::Call { .. })
+        matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -506,14 +506,14 @@ fn lowers_anonymous_object_pattern_for_inherited_field_into_field_get_and_compar
 
     assert!(
         mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| { matches!(instruction.kind, MirInstructionKind::FieldGet { ref field, .. } if field == "flag") })
+            .any(|instruction| { matches!(instruction.kind, MirOperation::FieldGet { ref field, .. } if field == "flag") })
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
-        matches!(instruction.kind, MirInstructionKind::FieldGet { .. }) || matches!(&instruction.kind, MirInstructionKind::Call { .. })
+        matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -579,31 +579,31 @@ fn lowers_constructor_pattern_into_extractor_call_and_payload_compare() {
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("demo"), Identifier::new("point_extract")])
         )
     }));
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("is_null")])
         )
     }));
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("tuple_get_0")])
         )
     }));
     // Bool `true` payload pattern is the payload value itself ? no Compare / `.eq` intrinsic.
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
     assert!(
-        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { .. }))
+        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. }))
     );
 }
 
@@ -672,7 +672,7 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
     assert!(body_block.instructions.iter().any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("tuple_get_0")])
         )
     }));
@@ -680,9 +680,9 @@ fn binds_constructor_pattern_field_from_extractor_payload_before_resume() {
         body_block
             .instructions
             .iter()
-            .any(|instruction| { matches!(&instruction.kind, MirInstructionKind::StoreVar { name, .. } if name == "x") })
+            .any(|instruction| { matches!(&instruction.kind, MirOperation::StoreVar { name, .. } if name == "x") })
     );
-    assert!(!body_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { .. })));
+    assert!(!body_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. })));
 }
 
 #[test]
@@ -744,7 +744,7 @@ fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("demo"), Identifier::new("point_extract")])
         )
     }));
@@ -752,11 +752,11 @@ fn does_not_bind_unknown_layout_constructor_field_as_whole_payload() {
         body_block
             .instructions
             .iter()
-            .any(|instruction| { matches!(instruction.kind, MirInstructionKind::StoreVar { ref name, .. } if name == "x") })
+            .any(|instruction| { matches!(instruction.kind, MirOperation::StoreVar { ref name, .. } if name == "x") })
     );
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -818,8 +818,8 @@ fn does_not_bind_unknown_layout_object_field_as_generic_field_get() {
         .find(|block| block.label == "catch_arm_0_match")
         .expect("expected object body block after fallback match");
 
-    assert!(!match_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. })));
-    assert!(!body_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { .. })));
+    assert!(!match_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
+    assert!(!body_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. })));
     assert!(matches!(
         &body_block.terminator,
         MirTerminator::Jump { arguments, .. }
@@ -871,11 +871,10 @@ fn records_catch_resume_continuation_metadata() {
         }],
     }));
 
-    let continuation = mir.continuations.first().expect("expected continuation metadata");
-    let resume_block = mir.blocks.iter().find(|block| block.id == continuation.resume_target).expect("expected catch resume block");
-    assert_eq!(resume_block.label, "catch_resume");
-    assert!(resume_block.parameters.contains(&continuation.resume_parameter));
-    assert_eq!(continuation.resume_parameter_type, Some(ValkyrieType::Boolean));
+    let resume_block = mir.blocks.iter().find(|block| block.label == "catch_resume").expect("expected catch resume block");
+    assert!(!resume_block.parameters.is_empty());
+    let resume_parameter = resume_block.parameters[0];
+    assert_eq!(mir.value_types.get(&resume_parameter), Some(&ValkyrieType::Boolean));
 }
 
 #[test]
@@ -908,10 +907,10 @@ fn records_await_suspend_point_metadata() {
 
 #[test]
 fn keeps_only_live_values_in_await_spill_candidates() {
+    use nyar_language::lir::LirLowerer;
+
     let compiler = ValkyrieCompiler::default();
-    let mir = compiler
-        .compile_source_to_mir(
-            r#"micro main() {
+    let source = r#"micro main() {
     let future: Future<bool> = ()
     let kept: bool = true
     let dropped: bool = false
@@ -919,11 +918,12 @@ fn keeps_only_live_values_in_await_spill_candidates() {
     let sink: bool = kept
     return
 }
-"#,
-        )
-        .expect("mir ok");
+"#;
+    let hir = compiler.compile_source(source).expect("hir ok");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let lir = LirLowerer::lower_mir_module(&hir, &mir);
 
-    let suspend_point = mir.functions[0].suspend_points.first().expect("expected suspend point");
+    let suspend_point = lir.functions[0].suspend_points.first().expect("expected suspend point");
     let spilled_names = suspend_point
         .spill_candidates
         .iter()
@@ -939,22 +939,23 @@ fn keeps_only_live_values_in_await_spill_candidates() {
 
 #[test]
 fn builds_frame_layout_from_suspend_spill_candidates() {
+    use nyar_language::lir::LirLowerer;
+
     let compiler = ValkyrieCompiler::default();
-    let mir = compiler
-        .compile_source_to_mir(
-            r#"micro main() {
+    let source = r#"micro main() {
     let future: Future<bool> = ()
     let kept: bool = true
     future.await
     let sink: bool = kept
     return
 }
-"#,
-        )
-        .expect("mir ok");
+"#;
+    let hir = compiler.compile_source(source).expect("hir ok");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let lir = LirLowerer::lower_mir_module(&hir, &mir);
 
-    let suspend_point = mir.functions[0].suspend_points.first().expect("expected suspend point");
-    let frame_layout = mir.functions[0].frame_layouts.first().expect("expected frame layout");
+    let suspend_point = lir.functions[0].suspend_points.first().expect("expected suspend point");
+    let frame_layout = lir.functions[0].frame_layouts.first().expect("expected frame layout");
     let spilled_names = frame_layout
         .slots
         .iter()
@@ -1024,23 +1025,34 @@ fn infers_block_resume_parameter_type_from_future_payload() {
 
 #[test]
 fn lowers_awake_into_async_spawn_with_empty_resume_parameters() {
+    use nyar_language::lir::{LirEffectKind, LirLowerer};
+
     let compiler = ValkyrieCompiler::default();
-    let mir = compiler
-        .compile_source_to_mir(
-            r#"micro main() {
+    let hir = compiler.compile_source(
+        r#"micro main() {
     future.awake
     return
 }
 "#,
-        )
-        .expect("mir ok");
-
-    // DELETED-GOD:     let plan = mir.functions[0].suspend_plan.as_ref().expect("suspend plan");
-    let awake_state = plan.states.iter().find(|state| state.effect == MirEffectKind::AsyncSpawn).expect("expected awake async-spawn state");
+    ).expect("hir ok");
+    let semantic_mir = MirLowerer::lower_module_semantic(&hir);
+    let lir = LirLowerer::lower_mir_module(&hir, &semantic_mir);
+    let awake_state = lir
+        .functions[0]
+        .state_machine
+        .as_ref()
+        .expect("state machine")
+        .states
+        .iter()
+        .find(|state| state.effect == LirEffectKind::AsyncSpawn)
+        .expect("expected awake async-spawn state");
     assert_eq!(awake_state.resume_parameter_count, 0);
 
-    let resume_block = mir.functions[0].blocks.iter().find(|block| block.id == awake_state.resume_target).expect("expected awake resume block");
-
+    let resume_block = semantic_mir.functions[0]
+        .blocks
+        .iter()
+        .find(|block| block.id == awake_state.resume_target)
+        .expect("expected awake resume block");
     assert!(resume_block.parameters.is_empty());
 }
 
@@ -1149,14 +1161,14 @@ fn lowers_multi_field_object_pattern_into_logical_and() {
 
     assert!(
         mir_instructions(pattern_blocks.iter().copied())
-            .filter(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { .. }))
+            .filter(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. }))
             .count()
             >= 2
     );
-    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirInstructionKind::Call { .. })));
+    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -1237,7 +1249,7 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("demo"), Identifier::new("pair_extract")])
         )
     }));
@@ -1246,7 +1258,7 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
             .filter(|instruction| {
                 matches!(
                     &instruction.kind,
-                    MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+                    MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                         if *path == NamePath::new(vec![Identifier::new("tuple_get_0")])
                             || *path == NamePath::new(vec![Identifier::new("tuple_get_1")])
                 )
@@ -1254,13 +1266,13 @@ fn lowers_multi_field_constructor_pattern_into_extractor_call_and_payload_compar
             .count()
             >= 2
     );
-    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirInstructionKind::Call { .. })));
+    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
     assert!(
-        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { .. }))
+        !mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { .. }))
     );
 }
 
@@ -1315,7 +1327,7 @@ fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
             .filter(|instruction| {
                 matches!(
                     &instruction.kind,
-                    MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+                    MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                         if *path == NamePath::new(vec![Identifier::new("tuple_get_0")])
                             || *path == NamePath::new(vec![Identifier::new("tuple_get_1")])
                 )
@@ -1324,12 +1336,12 @@ fn lowers_tuple_pattern_into_tuple_get_and_compare_without_fallback() {
             >= 2
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
-        matches!(instruction.kind, MirInstructionKind::FieldGet { .. }) || matches!(&instruction.kind, MirInstructionKind::Call { .. })
+        matches!(instruction.kind, MirOperation::FieldGet { .. }) || matches!(&instruction.kind, MirOperation::Call { .. })
     }));
-    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirInstructionKind::Call { .. })));
+    assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
     assert!(
         !mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -1384,7 +1396,7 @@ fn lowers_or_pattern_into_logical_or_without_fallback() {
             .blocks
             .iter()
             .flat_map(|b| &b.instructions)
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. }))
+            .any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. }))
     );
 }
 
@@ -1442,17 +1454,16 @@ fn lowers_range_pattern_into_compare_chain_without_fallback() {
             .flat_map(|b| &b.instructions)
             .filter(|instruction| {
                 matches!(
-                                    &instruction.kind,
-                                    MirInstructionKind::Call {                        callee: MirOperand::Symbol(path),
-                                        ..,
-                } if path.parts().last().is_some_and(|name| name.as_str().starts_with("__") && name.as_str().ends_with("_lt"))
-                                )
+                    &instruction.kind,
+                    MirOperation::Call { callee: MirOperand::Symbol(path), .. }
+                        if path.parts().last().is_some_and(|name| name.as_str().starts_with("__") && name.as_str().ends_with("_lt"))
+                )
             })
             .count()
             >= 2
     );
     assert!(mir.functions[0].blocks.iter().any(|b| b.label.contains("and_") || b.label.contains("not_")));
-    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirInstructionKind::PatternMatch { .. })));
+    assert!(!guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, MirOperation::PatternMatch { .. })));
 }
 
 #[test]
@@ -1520,7 +1531,7 @@ fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("demo"), Identifier::new("array_extract_bool")])
         )
     }));
@@ -1529,7 +1540,7 @@ fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
             .filter(|instruction| {
                 matches!(
                     &instruction.kind,
-                    MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+                    MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                         if *path == NamePath::new(vec![Identifier::new("tuple_get_0")])
                             || *path == NamePath::new(vec![Identifier::new("tuple_get_1")])
                             || *path == NamePath::new(vec![Identifier::new("tuple_get_2")])
@@ -1542,7 +1553,7 @@ fn lowers_array_rest_pattern_into_extractor_call_and_payload_bindings() {
         body_block
             .instructions
             .iter()
-            .any(|instruction| { matches!(&instruction.kind, MirInstructionKind::StoreVar { name, .. } if name == "head" || name == "tail") })
+            .any(|instruction| { matches!(&instruction.kind, MirOperation::StoreVar { name, .. } if name == "head" || name == "tail") })
     );
 }
 
@@ -1629,12 +1640,12 @@ fn lowers_nested_object_pattern_with_array_extractor_call() {
 
     assert!(
         mir_instructions(pattern_blocks.iter().copied())
-            .any(|instruction| matches!(instruction.kind, MirInstructionKind::FieldGet { ref field, .. } if field == "items"))
+            .any(|instruction| matches!(instruction.kind, MirOperation::FieldGet { ref field, .. } if field == "items"))
     );
     assert!(mir_instructions(pattern_blocks.iter().copied()).any(|instruction| {
         matches!(
             &instruction.kind,
-            MirInstructionKind::Call { callee: MirOperand::Symbol(path), .. }
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
                 if *path == NamePath::new(vec![Identifier::new("demo"), Identifier::new("array_extract_i32")])
         )
     }));
@@ -1642,7 +1653,7 @@ fn lowers_nested_object_pattern_with_array_extractor_call() {
         body_block
             .instructions
             .iter()
-            .any(|instruction| { matches!(&instruction.kind, MirInstructionKind::StoreVar { name, .. } if name == "tail") })
+            .any(|instruction| { matches!(&instruction.kind, MirOperation::StoreVar { name, .. } if name == "tail") })
     );
 }
 
@@ -1669,7 +1680,7 @@ micro package_count(plan: CompilePlan) -> i64 {
 
     let function = mir.functions.iter().find(|f| f.symbol.ends_with("package_count")).expect("package_count");
     let length_call = function.blocks.iter().flat_map(|block| block.instructions.iter()).find_map(|instruction| match &instruction.kind {
-        MirInstructionKind::Call { callee: MirOperand::Symbol(path), arguments, .. }
+        MirOperation::Call { callee: MirOperand::Symbol(path), arguments, .. }
             if path.parts().last().is_some_and(|part| part.as_str() == "length") =>
         {
             Some((path.clone(), arguments.len()))

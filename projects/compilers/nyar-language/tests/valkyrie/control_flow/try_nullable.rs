@@ -84,7 +84,7 @@ micro main() -> i64? {
     let labels: Vec<_> = function.blocks.iter().map(|b| b.label.clone()).collect();
     assert!(
         function.blocks.iter().any(|block| {
-            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::Call { .. })) && block.label.contains("try_propagate_ok"),
+            block.instructions.iter().any(|ins| matches!(ins.kind, MirOperation::Call { .. })) && block.label.contains("try_propagate_ok")
         }),
         "expected try_propagate_ok call block, got {labels:?}"
     );
