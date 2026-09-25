@@ -452,17 +452,27 @@ fn resolve_sum_variant_tag(
     Ok(tag)
 }
 
-fn validate_enum_discriminators(module: &HirModule) -> Result<(), ParseError> {
+fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: &[HirVariant]) -> Result<(), ParseError> {
     use std::collections::BTreeSet;
 
+    let mut next_implicit = 0u32;
+    let mut seen = BTreeSet::new();
+    for variant in variants {
+        let tag = resolve_sum_variant_tag(owner, variant, &mut next_implicit)?;
+        if !seen.insert(tag) {
+            return Err(ParseError::invalid(format!("`{}` has duplicate discriminator {tag}", owner)));
+        }
+    }
+    Ok(())
+}
+
+fn validate_enum_discriminators(module: &HirModule) -> Result<(), ParseError> {
     for enum_def in &module.enums {
-        let mut next_implicit = 0u32;
-        let mut seen = BTreeSet::new();
-        for variant in &enum_def.variants {
-            let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)?;
-            if !seen.insert(tag) {
-                return Err(ParseError::invalid(format!("`{}` has duplicate discriminator {tag}", enum_def.name)));
-            }
+        validate_sum_type_discriminators(&enum_def.name, &enum_def.variants)?;
+    }
+    for export in &module.imported_semantic_exports {
+        for enum_def in &export.enums {
+            validate_sum_type_discriminators(&enum_def.name, &enum_def.variants)?;
         }
     }
     Ok(())
@@ -1475,8 +1485,16 @@ fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
 
 #[cfg(test)]
 mod sum_discriminator_tests {
-    use super::*;
-    use crate::{SourceID, ValkyrieCompiler};
+    use super::{compute_nominal_layouts, validate_enum_discriminators, *};
+    use crate::{
+        SourceID, ValkyrieCompiler,
+        types::{Identifier, NamePath, SourceSpan},
+        valkyrie::types::hir::{HirDependencySemanticExport, HirEnum, HirExpr, HirExprKind, HirLiteral, HirVariant},
+    };
+
+    fn test_span() -> SourceSpan {
+        SourceSpan::new(SourceID::default(), 0, 0)
+    }
 
     #[test]
     fn unite_rejects_duplicate_explicit_tags() {
@@ -1605,6 +1623,85 @@ enums Status {
             )
             .expect_err("negative enums discriminator");
         assert!(error.to_string().contains("non-negative integer literal"), "{error}");
+    }
+
+    #[test]
+    fn imported_semantic_export_enums_contribute_sum_layout_tags() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let dependency = compiler
+            .compile_source(
+                r#"
+enums Status {
+    Active = 2
+    Inactive
+}
+"#,
+            )
+            .expect("dependency enums");
+        let consumer = compiler
+            .compile_source_with_semantic_exports(
+                "micro main() { return }",
+                &[HirDependencySemanticExport {
+                    module: NamePath::new(vec![Identifier::new("dep")]),
+                    functions: Vec::new(),
+                    structs: Vec::new(),
+                    enums: dependency.enums,
+                    traits: Vec::new(),
+                    type_aliases: Vec::new(),
+                    impls: Vec::new(),
+                }],
+            )
+            .expect("consumer with imported enums");
+        let (sum_types, _) = compute_nominal_layouts(&consumer);
+        let status = sum_types.iter().find(|layout| layout.name == "Status").expect("Status layout");
+        assert_eq!(status.variants[0].tag, 2);
+        assert_eq!(status.variants[1].tag, 3);
+    }
+
+    #[test]
+    fn rejects_duplicate_discriminators_in_imported_semantic_export_enums() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let duplicate_tag = |value: i64| {
+            HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(value)), span: test_span() }
+        };
+        let bad_enum = HirEnum {
+            name: Identifier::new("Status"),
+            doc: Default::default(),
+            generics: Vec::new(),
+            variants: vec![
+                HirVariant {
+                    name: Identifier::new("Active"),
+                    doc: Default::default(),
+                    fields: Vec::new(),
+                    result_type: None,
+                    discriminator: Some(duplicate_tag(0)),
+                },
+                HirVariant {
+                    name: Identifier::new("Paused"),
+                    doc: Default::default(),
+                    fields: Vec::new(),
+                    result_type: None,
+                    discriminator: Some(duplicate_tag(0)),
+                },
+            ],
+            visibility: Default::default(),
+            is_unity: false,
+        };
+        let error = compiler
+            .compile_source_with_semantic_exports(
+                "micro main() { return }",
+                &[HirDependencySemanticExport {
+                    module: NamePath::new(vec![Identifier::new("dep")]),
+                    functions: Vec::new(),
+                    structs: Vec::new(),
+                    enums: vec![bad_enum],
+                    traits: Vec::new(),
+                    type_aliases: Vec::new(),
+                    impls: Vec::new(),
+                }],
+            )
+            .expect_err("imported duplicate discriminator");
+        assert!(error.to_string().contains("duplicate discriminator"), "{error}");
     }
 
     #[test]
