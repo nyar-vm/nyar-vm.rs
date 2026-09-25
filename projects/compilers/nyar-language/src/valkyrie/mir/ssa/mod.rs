@@ -589,6 +589,16 @@ pub(super) fn nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),
         ValkyrieType::Apply(base, _) => nominal_type_name(base),
+        ValkyrieType::Integer8 { signed: true } => Some("i8"),
+        ValkyrieType::Integer8 { signed: false } => Some("u8"),
+        ValkyrieType::Integer16 { signed: true } => Some("i16"),
+        ValkyrieType::Integer16 { signed: false } => Some("u16"),
+        ValkyrieType::Integer32 { signed: true } => Some("i32"),
+        ValkyrieType::Integer32 { signed: false } => Some("u32"),
+        ValkyrieType::Integer64 { signed: true } => Some("i64"),
+        ValkyrieType::Integer64 { signed: false } => Some("u64"),
+        ValkyrieType::Integer128 { signed: true } => Some("i128"),
+        ValkyrieType::Integer128 { signed: false } => Some("u128"),
         _ => None,
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::{
     hir::is_nullable_type,
     types::{
@@ -8,13 +10,16 @@ use crate::{
 use nyar_types::NyarType;
 
 use super::{
-    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
+    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
     builtin_helpers::{
         array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, is_array_len_intrinsic_symbol,
         is_ref_deref_intrinsic_symbol,
     },
     callee_name_matches,
-    expr_helpers::{peel_generic_apply, reject_text_operator_for_numeric_args, named_type_name},
+    expr_helpers::{
+        is_array_shaped_valkyrie_type, peel_generic_apply, qualify_instance_method_symbol, reject_text_operator_for_numeric_args,
+        named_type_name,
+    },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
         ensure_layout_for_type, ensure_named_aggregate_layout, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
@@ -37,18 +42,26 @@ impl MirBuilder {
         arguments.first().cloned()
     }
 
-    fn try_lower_option_is_some(&mut self, receiver: MirOperand) -> Option<MirOperand> {
-        let actual_type = infer_builder_operand_type(&receiver, &self.value_types)?;
-        let sum_name = match &actual_type {
-            ValkyrieType::Nullable(_) => self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone()),
-            ValkyrieType::Named(name) if name.as_str() == "Option" => {
-                self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone())
-            }
-            ValkyrieType::Apply(base, _) if named_type_name(base.as_ref()) == Some("Option") => {
-                self.sum_types.iter().find(|sum| sum.name == "Option").map(|sum| sum.name.clone())
-            }
+    fn option_sum_name(actual_type: &ValkyrieType) -> Option<&'static str> {
+        match actual_type {
+            ValkyrieType::Nullable(_) => Some("Option"),
+            ValkyrieType::Named(name) if name.as_str() == "Option" => Some("Option"),
+            ValkyrieType::Apply(base, _) if named_type_name(base.as_ref()) == Some("Option") => Some("Option"),
             _ => None,
-        }?;
+        }
+    }
+
+    fn option_payload_type(actual_type: &ValkyrieType) -> Option<ValkyrieType> {
+        match actual_type {
+            ValkyrieType::Nullable(inner) => Some(*inner.clone()),
+            ValkyrieType::Apply(_, args) => args.first().cloned(),
+            _ => None,
+        }
+    }
+
+    fn try_lower_option_is_some(&mut self, receiver: MirOperand) -> Option<MirOperand> {
+        let actual_type = infer_builder_operand_type(&receiver, &self.value_types).filter(|ty| Self::option_sum_name(ty).is_some())?;
+        let sum_name = Self::option_sum_name(&actual_type)?.to_string();
         let value = self.next_value(MirValueOrigin::CallResult);
         self.instructions.push(MirInstruction::from_operation(MirOperation::SumVariantIs {
             sum_type: sum_name,
@@ -58,6 +71,98 @@ impl MirBuilder {
         }));
         self.value_types.insert(value, ValkyrieType::Boolean);
         Some(MirOperand::Value(value))
+    }
+
+    fn option_shaped_type(
+        receiver: &MirOperand,
+        value_types: &BTreeMap<MirValueRef, ValkyrieType>,
+        hint: Option<&ValkyrieType>,
+        payload_hint: Option<&ValkyrieType>,
+    ) -> Option<ValkyrieType> {
+        infer_builder_operand_type(receiver, value_types)
+            .filter(|ty| Self::option_sum_name(ty).is_some())
+            .or_else(|| hint.cloned().filter(|ty| Self::option_sum_name(ty).is_some()))
+            .or_else(|| {
+                payload_hint.map(|payload| {
+                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
+                })
+            })
+    }
+
+    fn try_lower_option_unwrap(
+        &mut self,
+        receiver: MirOperand,
+        hint: Option<&ValkyrieType>,
+        payload_hint: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        let actual_type = Self::option_shaped_type(&receiver, &self.value_types, hint, payload_hint)?;
+        let sum_name = Self::option_sum_name(&actual_type)?.to_string();
+        let payload_type = Self::option_payload_type(&actual_type).or_else(|| payload_hint.cloned())?;
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.instructions.push(MirInstruction::from_operation(MirOperation::SumPayloadGet {
+            sum_type: sum_name,
+            type_args: type_args_from_sum_shaped(&actual_type),
+            variant: "Some".to_string(),
+            payload_type: payload_type.clone(),
+            object: receiver,
+        }));
+        self.value_types.insert(value, payload_type);
+        Some(MirOperand::Value(value))
+    }
+
+    fn try_lower_option_some_constructor(
+        &mut self,
+        payload_expr: &HirExpr,
+        resolved: Option<&HirResolvedCall>,
+        expected_type: Option<&ValkyrieType>,
+    ) -> Option<MirOperand> {
+        let payload_operand = self.lower_expr_to_operand(payload_expr);
+        let payload_type = infer_builder_operand_type(&payload_operand, &self.value_types)
+            .or_else(|| resolved.and_then(|call| call.parameter_types.first().cloned()));
+        let return_type = resolved
+            .map(|call| call.return_type.clone())
+            .or_else(|| expected_type.cloned())
+            .or_else(|| {
+                payload_type.clone().map(|payload| {
+                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload])
+                })
+            })?;
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
+            sum_type: "Option".to_string(),
+            type_args: type_args_from_sum_shaped(&return_type),
+            variant: "Some".to_string(),
+            payload_type: payload_type.clone(),
+            payload: Some(payload_operand),
+        }));
+        self.value_types.insert(value, return_type);
+        Some(MirOperand::Value(value))
+    }
+
+    fn emit_array_length_operand(&mut self, array: MirOperand) -> MirOperand {
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.instructions.push(MirInstruction::from_operation(MirOperation::ArrayLength { array }));
+        self.value_types.insert(value, ValkyrieType::Named(Identifier::new("usize")));
+        MirOperand::Value(value)
+    }
+
+    /// `receiver._items.length` and similar: SSA types may be erased on the `_items`
+    /// temp while HIR still knows the field is array-shaped (`ArrayList.length` body).
+    fn try_emit_array_length_field_access(&mut self, object: &HirExpr, object_operand: &MirOperand) -> Option<MirOperand> {
+        if let Some(ty) = infer_builder_operand_type(object_operand, &self.value_types) {
+            if is_array_shaped_valkyrie_type(&ty) {
+                return Some(self.emit_array_length_operand(object_operand.clone()));
+            }
+        }
+        if let HirExprKind::FieldAccess { object: receiver, field } = &object.kind {
+            let receiver_operand = self.lower_expr_to_operand(receiver);
+            if let Some(items_ty) = self.field_type_for_object_operand(&receiver_operand, field) {
+                if is_array_shaped_valkyrie_type(&items_ty) {
+                    return Some(self.emit_array_length_operand(object_operand.clone()));
+                }
+            }
+        }
+        None
     }
 
     fn try_lower_array_len_intrinsic(
@@ -408,6 +513,29 @@ impl MirBuilder {
                 if let Some(result) = self.try_lower_singleton_static_call(callee, args) {
                     return result;
                 }
+                // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
+                if callee_name_matches(&callee.kind, "unwrap") && args.len() == 1 {
+                    let receiver_operand = self.lower_expr_to_operand(&args[0].value);
+                    let payload_hint = resolved
+                        .as_ref()
+                        .map(|call| call.return_type.clone())
+                        .or_else(|| expected_type.cloned());
+                    let hint = infer_builder_operand_type(&receiver_operand, &self.value_types).or_else(|| {
+                        payload_hint.as_ref().map(|payload| {
+                            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
+                        })
+                    });
+                    if let Some(operand) =
+                        self.try_lower_option_unwrap(receiver_operand, hint.as_ref(), payload_hint.as_ref())
+                    {
+                        return operand;
+                    }
+                }
+                if callee_name_matches(&callee.kind, "Some") && args.len() == 1 {
+                    if let Some(operand) = self.try_lower_option_some_constructor(&args[0].value, resolved.as_ref(), expected_type) {
+                        return operand;
+                    }
+                }
                 if callee_name_matches(&callee.kind, "tuple") {
                     let fields = args.iter().map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
                     let element_types = resolved
@@ -448,17 +576,30 @@ impl MirBuilder {
                             return operand;
                         }
                     }
-                    // ADR 0010: no dispatch/witness/evidence/intrinsic/parameter_types on Call.
-                    let (callee_symbol, return_type) = match resolved.as_ref() {
-                        Some(call) => (call.symbol.clone(), Some(call.return_type.clone())),
-                        None => {
-                            eprintln!(
-                                "[mir] unresolved receiver call; lowering `{}` as diagnostic static symbol (ADR 0008)",
-                                method_name.as_str()
-                            );
-                            (NamePath::new(vec![method_name.clone()]), None)
+                    if method_name.as_str() == "unwrap" && args.is_empty() {
+                        let payload_hint = resolved
+                            .as_ref()
+                            .map(|call| call.return_type.clone())
+                            .or_else(|| expected_type.cloned());
+                        let hint = infer_builder_operand_type(&receiver_operand, &self.value_types).or_else(|| {
+                            payload_hint.as_ref().map(|payload| {
+                                ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
+                            })
+                        });
+                        if let Some(operand) =
+                            self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
+                        {
+                            return operand;
                         }
-                    };
+                    }
+                    // ADR 0010: no dispatch/witness/evidence/intrinsic/parameter_types on Call.
+                    let (callee_symbol, return_type) = qualify_instance_method_symbol(
+                        &receiver_operand,
+                        &method_name,
+                        resolved.as_ref(),
+                        &self.value_types,
+                        &self.return_types,
+                    );
                     let callee = MirOperand::Symbol(callee_symbol);
                     if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
                         return operand;
@@ -835,11 +976,19 @@ impl MirBuilder {
             }
             HirExprKind::FieldAccess { object, field } => {
                 let object_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
+                if field.as_str() == "length" {
+                    if let Some(operand) = self.try_emit_array_length_field_access(object, &object_operand) {
+                        return operand;
+                    }
+                }
                 // `.length` as ArrayLen must arrive as a resolved HIR CallContract with
                 // IntrinsicOpcode::ArrayLen. Do not recover intrinsics from FieldAccess
                 // (ADR 0008: no upward inference from short names).
                 if let Some(struct_name) = self.struct_name_for_operand(&object_operand) {
-                    return self.lower_object_field_operand(object_operand, &struct_name, field);
+                    let has_field = self.lookup_struct_field_type(&struct_name, field.as_str()).is_some();
+                    if field.as_str() != "length" || has_field {
+                        return self.lower_object_field_operand(object_operand, &struct_name, field);
+                    }
                 }
                 let layout_id = self.layout_id_for_object_operand(&object_operand);
                 let storage = self.storage_for_layout_id(layout_id, self.storage_for_object_operand(&object_operand));
