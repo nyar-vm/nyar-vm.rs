@@ -1608,6 +1608,28 @@ enums Status {
     }
 
     #[test]
+    fn rejects_duplicate_unite_and_enums_names() {
+        let compiler = ValkyrieCompiler::new(SourceID::default());
+        let error = compiler
+            .compile_source(
+                r#"
+unite Kind {
+    A { x: i64 }
+}
+
+enums Kind {
+    A
+    B
+}
+"#,
+            )
+            .expect_err("duplicate unite and enums name");
+        let message = error.to_string();
+        assert!(message.contains("duplicate definition"), "{error}");
+        assert!(message.contains("unite") && message.contains("enums"), "{error}");
+    }
+
+    #[test]
     fn rejects_duplicate_unite_and_union_names() {
         let compiler = ValkyrieCompiler::new(SourceID::default());
         let error = compiler
