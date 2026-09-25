@@ -333,6 +333,7 @@ fn module_with_unite(enum_def: HirEnum) -> HirModule {
         structs: vec![],
         enums: vec![enum_def],
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: vec![],
         traits: vec![],
         impls: vec![],

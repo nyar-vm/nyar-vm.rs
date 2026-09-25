@@ -221,6 +221,7 @@ fn create_module(structs: Vec<HirStruct>) -> HirModule {
         structs,
         enums: vec![],
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: vec![],
         traits: vec![],
         impls: vec![],

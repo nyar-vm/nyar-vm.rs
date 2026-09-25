@@ -488,6 +488,7 @@ fn module_with_traits(traits: Vec<HirTrait>, structs: Vec<HirStruct>, impls: Vec
         structs,
         enums: vec![],
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: vec![],
         traits,
         impls,

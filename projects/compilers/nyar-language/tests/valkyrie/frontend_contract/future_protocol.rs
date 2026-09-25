@@ -28,6 +28,7 @@ fn empty_module() -> HirModule {
         structs: Vec::new(),
         enums: Vec::new(),
         imported_enums: Vec::new(),
+        imported_semantic_exports: Vec::new(),
         flags: Vec::new(),
         traits: Vec::new(),
         impls: Vec::new(),
