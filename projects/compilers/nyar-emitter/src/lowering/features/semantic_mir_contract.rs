@@ -169,13 +169,14 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     Some(_) => None,
                     None => None,
                 };
-                if crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output))
-                    != Some(&NyarType::Named(nyar::Identifier::new(sum_type)))
-                    || payload_type.as_ref() != declared.payload_type.as_ref()
+                let output_type =
+                    crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output));
+                if output_type.is_none_or(|output_ty| !type_matches_sum_owner_nyar(output_ty, sum_type))
+                    || !payload_type_compatible_nyar(payload_type.as_ref(), declared.payload_type.as_ref())
                     || match (&declared.payload_type, payload, payload_value_type) {
                         (None, None, _) => false,
                         (Some(expected), Some(ExecutableOperand::Value(_)), Some(actual)) => {
-                            !aggregate_field_types_compatible(actual, expected)
+                            !aggregate_field_types_compatible(actual, expected) && !is_type_parameter(expected)
                         }
                         _ => true,
                     }
@@ -397,6 +398,27 @@ fn is_erased_generic_placeholder(ty: &NyarType) -> bool {
     match ty {
         NyarType::TraitObject(object) if object.trait_path.as_str() == "__generic" && object.type_arguments.is_empty() => true,
         NyarType::Named(_) if is_type_parameter(ty) => true,
+        _ => false,
+    }
+}
+
+fn type_matches_sum_owner_nyar(ty: &NyarType, sum_type: &str) -> bool {
+    match ty {
+        NyarType::Named(name) => {
+            name.as_str() == sum_type
+                || (sum_type == "Result" && name.as_str().ends_with("Result"))
+                || (sum_type == "Option" && matches!(name.as_str(), "Option" | "Nullable"))
+        }
+        NyarType::Apply(base, _) => type_matches_sum_owner_nyar(base, sum_type),
+        NyarType::Nullable(_) => sum_type == "Option",
+        _ => false,
+    }
+}
+
+fn payload_type_compatible_nyar(actual: Option<&NyarType>, declared: Option<&NyarType>) -> bool {
+    match (actual, declared) {
+        (None, None) => true,
+        (Some(actual), Some(declared)) => aggregate_field_types_compatible(actual, declared) || is_type_parameter(declared),
         _ => false,
     }
 }
@@ -702,13 +724,22 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
     }
 }
 
+fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOperand) -> Option<NyarType> {
+    match operand {
+        ExecutableOperand::Value(value) => function.value_types.get(value).cloned(),
+        ExecutableOperand::Constant(Constant::Bool(_)) => Some(NyarType::Boolean),
+        ExecutableOperand::Constant(Constant::Int(_)) => Some(NyarType::Integer64 { signed: true }),
+        ExecutableOperand::Constant(Constant::Float64(_)) => Some(NyarType::Float64),
+        ExecutableOperand::Constant(Constant::Utf8(_)) => Some(NyarType::Utf8),
+        ExecutableOperand::Constant(Constant::Utf16(_)) => Some(NyarType::Utf16),
+        ExecutableOperand::Constant(Constant::Unit) => Some(NyarType::Unit),
+        ExecutableOperand::Symbol(_) => None,
+    }
+}
+
 fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::Block) -> Result<(), SemanticMirContractError> {
     let location = format!("block {} terminator", block.id.0);
-    let value_type = |operand: &ExecutableOperand| match operand {
-        ExecutableOperand::Value(value) => function.value_types.get(value),
-        ExecutableOperand::Constant(Constant::Bool(_)) => Some(&NyarType::Boolean),
-        _ => None,
-    };
+    let value_type = |operand: &ExecutableOperand| terminator_operand_type(function, operand);
     let operands: Vec<&ExecutableOperand> = match &block.terminator {
         crate::contracts::Terminator::Return { value: Some(value) } => vec![value],
         crate::contracts::Terminator::Jump { arguments, .. } => arguments.iter().collect(),
@@ -750,7 +781,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                     detail: "return operand has no SSA type".to_string(),
                 });
             };
-            if !mir_return_types_compatible(actual, &function.return_type) {
+            if !mir_return_types_compatible(&actual, &function.return_type) {
                 return Err(SemanticMirContractError {
                     code: "SMIR007",
                     function: function.symbol.clone(),
@@ -781,17 +812,35 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                 });
             }
             for (argument, parameter) in arguments.iter().zip(&destination.parameters) {
-                if value_type(argument) != function.value_types.get(parameter) {
+                let Some(actual) = value_type(argument) else {
+                    return Err(SemanticMirContractError {
+                        code: "SMIR001",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: "jump argument has no SSA type".to_string(),
+                    });
+                };
+                let Some(expected) = function.value_types.get(parameter) else {
+                    return Err(SemanticMirContractError {
+                        code: "SMIR001",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: "jump target block parameter has no SSA type".to_string(),
+                    });
+                };
+                if !mir_return_types_compatible(&actual, expected) {
                     return Err(SemanticMirContractError {
                         code: "SMIR007",
                         function: function.symbol.clone(),
                         location,
-                        detail: "jump argument type differs from target block parameter".to_string(),
+                        detail: format!(
+                            "jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"
+                        ),
                     });
                 }
             }
         }
-        crate::contracts::Terminator::Branch { condition, .. } if value_type(condition) != Some(&NyarType::Boolean) => {
+        crate::contracts::Terminator::Branch { condition, .. } if value_type(condition).as_ref() != Some(&NyarType::Boolean) => {
             return Err(SemanticMirContractError {
                 code: "SMIR007",
                 function: function.symbol.clone(),
