@@ -6,7 +6,9 @@
 
 use crate::{
     FragmentSubmission,
-    executable_provider::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider},
+    executable_provider::{
+        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider, resolve_static_callee_operation,
+    },
 };
 use nyar::QualifiedName;
 use nyar_types::{Constant, NamePath, NyarType, ValueOrigin};
@@ -501,32 +503,8 @@ fn is_language_builtin_symbol(path: &NamePath) -> bool {
         && parts[2].as_str() == "push"
 }
 
-fn callee_symbol_ends_with_simple(registry_symbol: &str, simple: &str) -> bool {
-    registry_symbol == simple || registry_symbol.ends_with(&format!(".{simple}")) || registry_symbol.ends_with(&format!("::{simple}"))
-}
-
 fn static_callee_is_registered(executable: &dyn ExecutableProvider, path: &NamePath) -> bool {
-    let dotted = path.to_string();
-    if executable.find_by_symbol(&dotted).is_some() {
-        return true;
-    }
-    if path.parts().len() > 1 {
-        let via_colon = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-        if executable.find_by_symbol(&via_colon).is_some() {
-            return true;
-        }
-    }
-    if path.parts().len() == 1 {
-        let simple = path.parts()[0].as_str();
-        let matches: Vec<_> = executable
-            .operations()
-            .iter()
-            .filter_map(|operation| executable.get_function(operation))
-            .filter(|view| callee_symbol_ends_with_simple(&view.function.symbol, simple))
-            .collect();
-        return matches.len() == 1;
-    }
-    false
+    resolve_static_callee_operation(executable, path).is_some()
 }
 
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
