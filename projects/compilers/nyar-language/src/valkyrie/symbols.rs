@@ -9,12 +9,17 @@ pub(crate) fn stable_function_symbol(module_name: &NamePath, function_name: &Ide
 
 /// 生成 `HIR` 顶层函数的稳定限定名。
 pub(crate) fn stable_hir_function_symbol(module_name: &NamePath, function: &HirFunction) -> String {
-    if !function.declaring_namespace.parts().is_empty() {
-        let mut parts = function.declaring_namespace.parts().to_vec();
-        parts.push(function.name.clone());
-        return QualifiedName::new(parts).to_string();
-    }
-    stable_function_symbol(module_name, &function.name)
+    stable_hir_function_name_path(module_name, function).to_string()
+}
+
+/// Stable overload / MIR symbol path for a top-level `HIR` function.
+///
+/// Free-function MIR symbols use `::` (`main::answer`). [`NamePath`] display
+/// joins with `.`, so module-level functions are stored as a single segment
+/// carrying the full stable symbol string.
+pub(crate) fn stable_hir_function_name_path(module_name: &NamePath, function: &HirFunction) -> NamePath {
+    let symbol = stable_hir_function_symbol(module_name, function);
+    NamePath::new(vec![Identifier::new(&symbol)])
 }
 
 /// 将稳定符号名转换为后端可发射的扁平名字。

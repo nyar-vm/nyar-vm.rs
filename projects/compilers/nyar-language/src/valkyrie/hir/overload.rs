@@ -208,7 +208,7 @@ pub fn resolve_hir_calls(module: &mut HirModule) {
 fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     let mut candidates = Vec::new();
     candidates.extend(language_builtin_candidates());
-    candidates.extend(module.functions.iter().map(|function| build_function_candidate(function)));
+    candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function)));
     for item in &module.structs {
         candidates.push(build_struct_constructor_candidate(item));
     }
@@ -230,7 +230,7 @@ fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     // bodies remain owned by the exporting module and are never reparsed or
     // emitted as part of this consumer.
     for export in &module.imported_semantic_exports {
-        candidates.extend(export.functions.iter().map(build_function_candidate));
+        candidates.extend(export.functions.iter().map(|function| build_function_candidate(&export.module, function)));
         for item in &export.structs {
             candidates.push(build_struct_constructor_candidate(item));
             candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, Some(item.name.clone()))));
@@ -337,9 +337,10 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
     .with_param_specs(vec![self_param])
 }
 
-fn build_function_candidate(function: &HirFunction) -> OverloadCandidate {
+fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> OverloadCandidate {
+    let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(module_name, function);
     let mut candidate = OverloadCandidate::new(
-        NamePath::new(vec![function.name.clone()]),
+        symbol,
         classify_callable_domain(&function.name),
         function.params.iter().map(|param| param.ty.clone()).collect(),
         function.return_type.clone(),
@@ -350,6 +351,19 @@ fn build_function_candidate(function: &HirFunction) -> OverloadCandidate {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
     candidate
+}
+
+/// Simple name used when matching an unqualified call site to overload candidates.
+///
+/// Module-level MIR symbols are stored as a single `NamePath` segment (`main::answer`);
+/// instance methods keep dotted paths (`Counter.increment`).
+fn overload_symbol_simple_name(symbol: &NamePath) -> &str {
+    let part = symbol.parts().last().map(|identifier| identifier.as_str()).unwrap_or("");
+    part.rsplit_once("::").map(|(_, simple)| simple).unwrap_or(part)
+}
+
+fn symbol_matches_callee_name(symbol: &NamePath, callee_name: &Identifier) -> bool {
+    overload_symbol_simple_name(symbol) == callee_name.as_str()
 }
 
 fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
@@ -951,7 +965,9 @@ fn try_resolve_call(
         // Param typed as `micro(...) -> T` must still form a call contract even if the
         // stored local type was left as AutoType / Named during early HIR construction.
         if locals.contains_key(local_name)
-            && !candidates.iter().any(|candidate| candidate.symbol.parts().last().is_some_and(|name| name.as_str() == local_name))
+            && !candidates
+                .iter()
+                .any(|candidate| symbol_matches_callee_name(&candidate.symbol, &Identifier::new(local_name)))
         {
             return Some(HirResolvedCall {
                 symbol: NamePath::new(vec![Identifier::new(local_name)]),
@@ -1135,7 +1151,7 @@ fn try_resolve_call(
     let mut filtered = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Operator | OverloadDomain::Constructor))
-        .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == &callee_name))
+        .filter(|candidate| symbol_matches_callee_name(&candidate.symbol, &callee_name))
         .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
     // An unqualified constructor expression denotes the nominal constructor
@@ -1158,7 +1174,7 @@ fn try_resolve_call(
                 .iter()
                 .filter(|candidate| {
                     matches!(candidate.domain, OverloadDomain::Constructor | OverloadDomain::Function)
-                        && candidate.symbol.parts().last().is_some_and(|name| name == &callee_name)
+                        && symbol_matches_callee_name(&candidate.symbol, &callee_name)
                         && candidate.signature.params.len() == args.len()
                 })
                 .max_by_key(|candidate| {
@@ -2881,8 +2897,39 @@ singleton Counter {
         assert_eq!(args.len(), 1);
         assert!(matches!(args[0].value.kind, HirExprKind::FieldAccess { ref field, .. } if field.as_str() == "total"));
         assert_eq!(resolved.domain, HirCallableDomain::Function);
-        assert_eq!(resolved.symbol.to_string(), "choose");
+        assert_eq!(resolved.symbol.to_string(), "main::choose");
         assert_eq!(resolved.return_type, ValkyrieType::Integer64 { signed: true });
+    }
+
+    #[test]
+    fn resolves_same_module_helper_with_stable_qualified_symbol() {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4207 });
+        let hir = compiler
+            .compile_source(
+                r#"
+micro main(): i64 {
+    let value: i64 = answer()
+    return value
+}
+
+micro answer(): i64 {
+    return 42
+}
+"#,
+            )
+            .unwrap();
+
+        let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
+        let HirStatementKind::Let { initializer: Some(initializer), .. } = &main.body.statements[0].kind
+        else {
+            panic!("expected let initializer");
+        };
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &initializer.kind
+        else {
+            panic!("expected resolved helper call");
+        };
+        assert_eq!(resolved.domain, HirCallableDomain::Function);
+        assert_eq!(resolved.symbol.to_string(), "main::answer");
     }
 
     #[test]
