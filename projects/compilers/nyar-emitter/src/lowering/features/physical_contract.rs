@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar::QualifiedName;
-use nyar_types::NyarType;
+use nyar_types::{NamePath, NyarType};
 
 use crate::{
     FragmentSubmission,
@@ -202,6 +202,9 @@ fn build_function_plan(
                 // Indirect / value callees are planned later via BackendPrivatePlan.
                 continue;
             };
+            if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
+                continue;
+            }
             let callee = resolve_static_callee_operation(executable, path).ok_or_else(|| {
                 PhysicalPlanError::new(
                     "BPHYS004",
@@ -227,6 +230,27 @@ fn build_function_plan(
         }
     }
     Ok(PhysicalFunctionPlan { symbol: function.symbol.clone(), parameters, result, values, calls, text_projections })
+}
+
+/// Keep aligned with `semantic_mir_contract::is_language_operator_symbol`.
+fn is_language_operator_symbol(path: &NamePath) -> bool {
+    matches!(
+        path.parts().last().map(|part| part.as_str()).unwrap_or(""),
+        "infix ==" | "infix !="
+            | "infix <" | "infix <=" | "infix >" | "infix >="
+            | "infix +" | "infix -" | "infix *" | "infix /" | "infix %"
+            | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
+            | "prefix !" | "prefix -" | "prefix +"
+    )
+}
+
+/// Keep aligned with `semantic_mir_contract::is_language_builtin_symbol`.
+fn is_language_builtin_symbol(path: &NamePath) -> bool {
+    let parts = path.parts();
+    parts.len() == 3
+        && parts[0].as_str() == "builtin"
+        && parts[1].as_str() == "array"
+        && parts[2].as_str() == "push"
 }
 
 fn collect_text_projections(
@@ -355,6 +379,49 @@ mod tests {
             let plans = build_physical_plan(&submission, backend).expect("typed scalar calls must plan for every managed backend");
             assert_eq!(plans.iter().find(|plan| plan.symbol == "neutral.caller").expect("caller plan").calls.len(), 1);
         }
+    }
+
+    #[test]
+    fn language_operator_calls_skip_physical_call_registry() {
+        let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
+        let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
+        let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
+        let value = ValueRef(0);
+        caller.value_types.insert(value, NyarType::Integer64 { signed: true });
+        caller.blocks[0].instructions.push(Instruction {
+            output: Some(value),
+            kind: InstructionKind::Call {
+                dispatch: DispatchKind::Static,
+                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
+                arguments: vec![],
+                witness: None,
+                effect: None,
+                receiver_kind: None,
+                parameter_types: Some(vec![]),
+                intrinsic_opcode: None,
+            },
+        });
+        caller.blocks[0].instructions.push(Instruction {
+            output: Some(ValueRef(1)),
+            kind: InstructionKind::Call {
+                dispatch: DispatchKind::Static,
+                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("infix !=")])),
+                arguments: vec![Operand::Value(value), Operand::Value(ValueRef(2))],
+                witness: None,
+                effect: None,
+                receiver_kind: None,
+                parameter_types: Some(vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }]),
+                intrinsic_opcode: None,
+            },
+        });
+        caller.value_types.insert(ValueRef(2), NyarType::Integer64 { signed: true });
+        let submission = submission(vec![
+            (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
+            (main_op, caller),
+        ]);
+        let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("operators must not require registry entries");
+        let caller_plan = plans.iter().find(|plan| plan.symbol == "main::main").expect("caller plan");
+        assert_eq!(caller_plan.calls.len(), 1);
     }
 
     #[test]
