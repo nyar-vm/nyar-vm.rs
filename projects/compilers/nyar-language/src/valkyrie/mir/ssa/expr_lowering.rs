@@ -128,13 +128,16 @@ impl MirBuilder {
                 })
             })?;
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
-            sum_type: "Option".to_string(),
-            type_args: type_args_from_sum_shaped(&return_type),
-            variant: "Some".to_string(),
-            payload_type: payload_type.clone(),
-            payload: Some(payload_operand),
-        }));
+        self.push_instruction(
+            MirOperation::SumNew {
+                sum_type: "Option".to_string(),
+                type_args: type_args_from_sum_shaped(&return_type),
+                variant: "Some".to_string(),
+                payload_type: payload_type.clone(),
+                payload: Some(payload_operand),
+            },
+            vec![value],
+        );
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
@@ -750,13 +753,10 @@ impl MirBuilder {
                                 &arguments,
                                 &self.value_types,
                             );
-                            self.instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
-                                sum_type,
-                                type_args,
-                                variant,
-                                payload_type,
-                                payload,
-                            }));
+                            self.push_instruction(
+                                MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload },
+                                vec![value],
+                            );
                             self.value_types.insert(value, return_type);
                             return MirOperand::Value(value);
                         }
@@ -928,13 +928,10 @@ impl MirBuilder {
                         &field_values,
                         &self.value_types,
                     );
-                    self.instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
-                        sum_type,
-                        type_args,
-                        variant,
-                        payload_type,
-                        payload,
-                    }));
+                    self.push_instruction(
+                        MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload },
+                        vec![value],
+                    );
                     self.value_types.insert(value, return_type);
                     return MirOperand::Value(value);
                 }
@@ -1153,13 +1150,16 @@ impl MirBuilder {
         let (return_type, payload_type) =
             concretize_variant_constructor_types(&contextual, None, variant_name, Some(&contextual), &[], &self.value_types);
         let type_args = type_args_from_sum_shaped(&contextual);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumNew {
-            sum_type,
-            type_args,
-            variant: variant_name.to_string(),
-            payload_type,
-            payload: None,
-        }));
+        self.push_instruction(
+            MirOperation::SumNew {
+                sum_type,
+                type_args,
+                variant: variant_name.to_string(),
+                payload_type,
+                payload: None,
+            },
+            vec![value],
+        );
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
