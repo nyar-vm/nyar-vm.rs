@@ -217,9 +217,9 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     ExecutableOperand::Value(value) => function.value_types.get(value),
                     _ => None,
                 };
-                if declared != payload_type
+                if (!aggregate_field_types_compatible(payload_type, declared) && !is_type_parameter(declared))
                     || output_type != Some(payload_type)
-                    || receiver_type != Some(&NyarType::Named(nyar::Identifier::new(sum_type)))
+                    || receiver_type.is_none_or(|ty| !type_matches_sum_owner_nyar(ty, sum_type))
                 {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",

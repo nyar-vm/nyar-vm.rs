@@ -9,7 +9,7 @@ use crate::types::{
     hir::{HirAttribute, HirFunction, HirModule, ValkyrieType},
 };
 
-use super::{MirOperand, MirValueRef};
+use super::{MirOperand, MirValueRef, infer_builder_operand_type};
 
 /// Fail-closed stub: IntrinsicOpcode / plain-type pattern tables deleted (ADR 0010).
 pub(super) fn plain_type_pattern_matches(_ty: &ValkyrieType, _name: &NamePath) -> bool {
@@ -46,6 +46,22 @@ pub(super) fn array_index_call_output_type(
     _value_types: &BTreeMap<MirValueRef, ValkyrieType>,
 ) -> Option<ValkyrieType> {
     None
+}
+
+/// Language operators lower as `Call` to `infix +` / `prefix !` — not registry-linked.
+/// When HIR omits `resolved.return_type`, infer from the operator name and operand SSA types.
+pub(super) fn language_operator_call_return_type(
+    symbol: &NamePath,
+    arguments: &[MirOperand],
+    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
+) -> Option<ValkyrieType> {
+    let name = symbol.parts().last().map(|part| part.as_str()).unwrap_or("");
+    match name {
+        "infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" | "prefix !" => Some(ValkyrieType::Boolean),
+        "infix +" | "infix -" | "infix *" | "infix /" | "infix %" | "infix &" | "infix |" | "infix ^" | "infix <<" | "infix >>"
+        | "prefix -" | "prefix +" => arguments.first().and_then(|arg| infer_builder_operand_type(arg, value_types)),
+        _ => None,
+    }
 }
 
 /// `std.collection.Array.length` lowers to a call of private `[intrinsic("array.len")]` `__array_len`.

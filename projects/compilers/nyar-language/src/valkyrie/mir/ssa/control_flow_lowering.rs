@@ -87,7 +87,8 @@ impl MirBuilder {
             self.current_label = "for_in_filter".to_string();
             self.instructions.clear();
             self.bindings = pre_loop_bindings.clone();
-            let extra_val = self.lower_expr_to_operand(condition.as_ref().unwrap());
+            let extra_val =
+                self.lower_expr_to_operand_with_hint(condition.as_ref().unwrap(), Some(&ValkyrieType::Boolean));
             self.terminate(MirTerminator::Branch { condition: extra_val, then_target: loop_body_id, else_target: loop_exit_id });
             self.flush_block("for_in_filter");
             self.terminator = None;
@@ -495,7 +496,7 @@ impl MirBuilder {
                 .collect();
 
             let cond_val = if let Some(condition) = condition {
-                self.lower_expr_to_operand(condition)
+                self.lower_expr_to_operand_with_hint(condition, Some(&ValkyrieType::Boolean))
             }
             else {
                 MirOperand::Constant(MirConstant::Bool(true))
@@ -505,10 +506,13 @@ impl MirBuilder {
             self.terminator = None;
         }
         else {
-            let cond_val = self.lower_expr_to_operand(condition.as_ref().unwrap_or(&Box::new(HirExpr {
-                kind: HirExprKind::Literal(HirLiteral::Bool(true)),
-                span: SourceSpan::new(SourceID::default(), 0, 0),
-            })));
+            let cond_val = self.lower_expr_to_operand_with_hint(
+                condition.as_ref().unwrap_or(&Box::new(HirExpr {
+                    kind: HirExprKind::Literal(HirLiteral::Bool(true)),
+                    span: SourceSpan::new(SourceID::default(), 0, 0),
+                })),
+                Some(&ValkyrieType::Boolean),
+            );
             self.terminate(MirTerminator::Branch { condition: cond_val, then_target: loop_body_id, else_target: loop_exit_id });
             self.flush_block("loop_header");
             self.terminator = None;

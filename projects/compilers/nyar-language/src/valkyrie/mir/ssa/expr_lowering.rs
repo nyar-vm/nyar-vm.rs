@@ -13,12 +13,12 @@ use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
     builtin_helpers::{
         array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, is_array_len_intrinsic_symbol,
-        is_ref_deref_intrinsic_symbol,
+        is_ref_deref_intrinsic_symbol, language_operator_call_return_type,
     },
     callee_name_matches,
     expr_helpers::{
-        is_array_shaped_valkyrie_type, peel_generic_apply, qualify_instance_method_symbol, reject_text_operator_for_numeric_args,
-        named_type_name,
+        is_array_shaped_valkyrie_type, known_instance_method_return_type, peel_generic_apply, qualify_instance_method_symbol,
+        reject_text_operator_for_numeric_args, named_type_name,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -63,12 +63,15 @@ impl MirBuilder {
         let actual_type = infer_builder_operand_type(&receiver, &self.value_types).filter(|ty| Self::option_sum_name(ty).is_some())?;
         let sum_name = Self::option_sum_name(&actual_type)?.to_string();
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumVariantIs {
-            sum_type: sum_name,
-            type_args: type_args_from_sum_shaped(&actual_type),
-            variant: "Some".to_string(),
-            object: receiver,
-        }));
+        self.push_instruction(
+            MirOperation::SumVariantIs {
+                sum_type: sum_name,
+                type_args: type_args_from_sum_shaped(&actual_type),
+                variant: "Some".to_string(),
+                object: receiver,
+            },
+            vec![value],
+        );
         self.value_types.insert(value, ValkyrieType::Boolean);
         Some(MirOperand::Value(value))
     }
@@ -98,15 +101,61 @@ impl MirBuilder {
         let actual_type = Self::option_shaped_type(&receiver, &self.value_types, hint, payload_hint)?;
         let sum_name = Self::option_sum_name(&actual_type)?.to_string();
         let payload_type = Self::option_payload_type(&actual_type).or_else(|| payload_hint.cloned())?;
+        if let MirOperand::Value(receiver_ref) = &receiver {
+            if self.value_types.get(receiver_ref).is_none_or(|ty| Self::option_sum_name(ty).is_none()) {
+                self.value_types.insert(
+                    *receiver_ref,
+                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload_type.clone()]),
+                );
+            }
+        }
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.instructions.push(MirInstruction::from_operation(MirOperation::SumPayloadGet {
-            sum_type: sum_name,
-            type_args: type_args_from_sum_shaped(&actual_type),
-            variant: "Some".to_string(),
-            payload_type: payload_type.clone(),
-            object: receiver,
-        }));
+        self.push_instruction(
+            MirOperation::SumPayloadGet {
+                sum_type: sum_name,
+                type_args: type_args_from_sum_shaped(&actual_type),
+                variant: "Some".to_string(),
+                payload_type: payload_type.clone(),
+                object: receiver,
+            },
+            vec![value],
+        );
         self.value_types.insert(value, payload_type);
+        Some(MirOperand::Value(value))
+    }
+
+    fn try_lower_option_none_constructor(
+        &mut self,
+        resolved: Option<&HirResolvedCall>,
+        expected_type: Option<&ValkyrieType>,
+        explicit_generic_arguments: &[ValkyrieType],
+    ) -> Option<MirOperand> {
+        let return_type = resolved
+            .map(|call| call.return_type.clone())
+            .or_else(|| expected_type.cloned())
+            .or_else(|| {
+                (!explicit_generic_arguments.is_empty()).then(|| {
+                    ValkyrieType::Apply(
+                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
+                        explicit_generic_arguments.to_vec(),
+                    )
+                })
+            })?;
+        if Self::option_sum_name(&return_type).is_none() {
+            return None;
+        }
+        let value = self.next_value(MirValueOrigin::CallResult);
+        self.push_instruction(
+            MirOperation::SumNew {
+                sum_type: "Option".to_string(),
+                type_args: type_args_from_sum_shaped(&return_type),
+                variant: "None".to_string(),
+                payload_type: None,
+                payload: None,
+            },
+            vec![value],
+        );
+        self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }
 
@@ -539,6 +588,13 @@ impl MirBuilder {
                         return operand;
                     }
                 }
+                if callee_name_matches(&callee.kind, "option_none") && args.is_empty() {
+                    if let Some(operand) =
+                        self.try_lower_option_none_constructor(resolved.as_ref(), expected_type, &explicit_generic_arguments)
+                    {
+                        return operand;
+                    }
+                }
                 if callee_name_matches(&callee.kind, "tuple") {
                     let fields = args.iter().map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
                     let element_types = resolved
@@ -603,6 +659,11 @@ impl MirBuilder {
                         &self.value_types,
                         &self.return_types,
                     );
+                    let known_return_type = if callee_symbol.parts().len() == 2 {
+                        known_instance_method_return_type(callee_symbol.parts()[0].as_str(), callee_symbol.parts()[1].as_str())
+                    } else {
+                        None
+                    };
                     let callee = MirOperand::Symbol(callee_symbol);
                     if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
                         return operand;
@@ -612,6 +673,10 @@ impl MirBuilder {
                     }
                     let value = self.next_value(MirValueOrigin::CallResult);
                     self.instructions.push(MirInstruction::from_operation(MirOperation::Call { callee, arguments }));
+                    let return_type = return_type
+                        .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
+                        .or_else(|| expected_type.cloned())
+                        .or(known_return_type);
                     if let Some(return_type) = return_type {
                         self.value_types.insert(value, return_type);
                     }
@@ -786,11 +851,13 @@ impl MirBuilder {
                     .or_else(|| function_ty.map(|func| func.return_type))
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                     .or_else(|| match &callee {
-                        MirOperand::Symbol(path) => self
-                            .return_types
-                            .get(&path.to_string())
-                            .cloned()
-                            .or_else(|| path.parts().last().and_then(|name| self.return_types.get(name.as_str()).cloned())),
+                        MirOperand::Symbol(path) => language_operator_call_return_type(path, &arguments, &self.value_types)
+                            .or_else(|| {
+                                self.return_types
+                                    .get(&path.to_string())
+                                    .cloned()
+                                    .or_else(|| path.parts().last().and_then(|name| self.return_types.get(name.as_str()).cloned()))
+                            }),
                         _ => None,
                     })
                     .or_else(|| expected_type.cloned())
