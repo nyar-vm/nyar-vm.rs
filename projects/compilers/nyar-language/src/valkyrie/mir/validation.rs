@@ -427,8 +427,20 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     return Err(error("SMIR007", location, "jump arity differs from target block parameters".to_string()));
                 }
                 for (argument, parameter) in arguments.iter().zip(&destination.parameters) {
-                    if value_type(argument).as_ref() != function.value_types.get(parameter) {
-                        return Err(error("SMIR007", location, "jump argument type differs from target block parameter".to_string()));
+                    let Some(actual) = value_type(argument) else {
+                        return Err(error("SMIR001", location.clone(), "jump argument has no SSA type".to_string()));
+                    };
+                    let Some(expected) = function.value_types.get(parameter) else {
+                        return Err(error("SMIR001", location.clone(), "jump target block parameter has no SSA type".to_string()));
+                    };
+                    if !mir_return_types_compatible(&actual, expected) {
+                        return Err(error(
+                            "SMIR007",
+                            location,
+                            format!(
+                                "jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"
+                            ),
+                        ));
                     }
                 }
             }
