@@ -8,6 +8,7 @@ use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
     CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value, ValueOrigin,
 };
+use nyar_types::layout_choice::{InvokeLowering, ValueRepresentation};
 
 use crate::{
     contracts::{Block, BlockRef, ValueRef},
@@ -84,16 +85,25 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     let canonical = program.canonical();
     for value in function.value_types.keys() {
         let identity = nyar_types::ValueIdentity::new(function.instance, *value);
-        if !program.representation().value_reps.contains_key(&identity) {
-            return Err(miette!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同"));
+        match program.representation().value_reps.get(&identity) {
+            Some(ValueRepresentation::Specialized) => {}
+            Some(representation) => return Err(miette!(
+                "值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"
+            )),
+            None => return Err(miette!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同")),
         }
     }
     for block in function.blocks.values() {
         for instruction in &block.instructions {
-            if matches!(instruction.operation, CanonicalOperation::Invoke { .. })
-                && !program.representation().invoke_lowerings.contains_key(&instruction.id)
-            {
-                return Err(miette!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
+            if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
+                match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
+                    (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
+                    (_, None) => return Err(miette!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index())),
+                    (_, Some(lowering)) => return Err(miette!(
+                        "调用指令 `{}` 的表示 `{lowering:?}` 与 callee `{callee:?}` 尚无目标私有调用合同，拒绝改用普通调用",
+                        instruction.id.index()
+                    )),
+                }
             }
         }
     }
@@ -192,4 +202,71 @@ fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
         CanonicalTerminator::Unreachable => Terminator::Unreachable,
         unsupported => return Err(miette!("canonical effect terminator 尚无目标合同: {unsupported:?}")),
     })
+}
+
+#[cfg(test)]
+mod representation_contract_tests {
+    use super::*;
+
+    fn source_program() -> CompiledProgram {
+        nyar_language::ValkyrieCompiler::default()
+            .compile_source_to_build_output(
+                "micro identity(value: i32) -> i32 { return value } \
+                 micro entry(value: i32) -> i32 { return identity(value) }",
+            )
+            .expect("当前源码必须产生已验证的编译合同")
+            .compiled_program()
+            .clone()
+    }
+
+    fn prepare(program: &CompiledProgram) -> Result<BackendPrivatePlan> {
+        let roots = program.canonical().linked.callable_names.values().cloned().collect::<Vec<_>>();
+        BackendPrivatePlan::from_compiled_program(program, &roots)
+    }
+
+    #[test]
+    fn source_specialized_values_and_direct_calls_prepare() {
+        let program = source_program();
+        let plan = prepare(&program).expect("已有完整标量与直接调用合同必须可表达");
+        assert_eq!(plan.functions.len(), program.canonical().mir.functions.len());
+    }
+
+    #[test]
+    fn unsupported_value_choices_do_not_reuse_specialized_encoding() {
+        let source = source_program();
+        let identity = *source.representation().value_reps.keys().next().expect("源码应有 SSA 值");
+        for representation in [
+            ValueRepresentation::CompileTimeIdentity,
+            ValueRepresentation::Reified,
+            ValueRepresentation::ErasedBoxed,
+        ] {
+            let mut plan = source.representation().clone();
+            plan.value_reps.insert(identity, representation.clone());
+            let program = CompiledProgram::new(source.canonical().clone(), plan)
+                .expect("表示选择的可表达性属于目标准备边界");
+            let error = prepare(&program).expect_err("不得忽略表示选择而重用标量编码");
+            assert!(error.to_string().contains("目标私有载体合同"), "{error}");
+            assert!(error.to_string().contains(&format!("{representation:?}")), "{error}");
+        }
+    }
+
+    #[test]
+    fn unsupported_call_choices_do_not_reuse_direct_encoding() {
+        let source = source_program();
+        let instruction = *source.representation().invoke_lowerings.keys().next().expect("源码应有普通调用");
+        for lowering in [
+            InvokeLowering::TypedWitness,
+            InvokeLowering::SharedOperationTable,
+            InvokeLowering::Specialized,
+            InvokeLowering::TypedReference,
+        ] {
+            let mut plan = source.representation().clone();
+            plan.invoke_lowerings.insert(instruction, lowering.clone());
+            let program = CompiledProgram::new(source.canonical().clone(), plan)
+                .expect("调用表示的可表达性属于目标准备边界");
+            let error = prepare(&program).expect_err("不得忽略调用表示而重用直接调用编码");
+            assert!(error.to_string().contains("目标私有调用合同"), "{error}");
+            assert!(error.to_string().contains(&format!("{lowering:?}")), "{error}");
+        }
+    }
 }
