@@ -136,12 +136,9 @@ fn resolve_jvm_mir_callee_operation(
 
 /// Fail-closed for linkage: every self `InvokeStatic` must resolve to a method body.
 ///
-/// Prefer real MIR bodies from [`collect_jvm_local_operations`]. Remaining call-site
-/// invents (`Fine` / unite ctors / missing `graph_theory` when not in this fragment's
-/// executable) are materialized as typed default stubs — same shape as
-/// [`ensure_jvm_runtime_stubs`] — so the class file stays loadable. Leaving dangling
-/// Methodrefs made `--version` die at verification/linkage; inventing zero/null stubs
-/// is the honest floor until those callees are lowered or linked into the fragment.
+/// Every self call must point to a method body produced by the current backend plan.
+/// Missing bodies are a semantic contract failure; this function must not invent a
+/// zero/null implementation to keep an incomplete class loadable.
 fn ensure_jvm_self_invokes_resolved(class_file: &mut JvmClassFile) -> Result<()> {
     let defined: std::collections::BTreeSet<(String, JvmMethodDescriptor)> =
         class_file.methods.iter().map(|method| (method.name.clone(), method.descriptor.clone())).collect();
@@ -170,13 +167,10 @@ fn ensure_jvm_self_invokes_resolved(class_file: &mut JvmClassFile) -> Result<()>
             missing.insert(key);
         }
     }
-    for (name, descriptor) in missing {
-        if name == "print" {
-            class_file.methods.push(print_jvm_runtime_stub(descriptor));
-        }
-        else {
-            class_file.methods.push(default_jvm_runtime_stub(&name, descriptor));
-        }
+    if let Some((name, descriptor)) = missing.into_iter().next() {
+        return Err(miette::miette!(
+            "JVM backend plan 缺少 self 调用的方法体 `{name}`，descriptor `{descriptor:?}`"
+        ));
     }
     Ok(())
 }
@@ -371,8 +365,8 @@ fn convert_main_body_to_void(mut instructions: Vec<JvmInstruction>) -> Vec<JvmIn
 /// Unlike inventing a stub for every missing self `InvokeStatic`, this only
 /// materializes names in [`super::witness_abi::INJECTED_RUNTIME_STUBS`]
 /// (`panic` / `is_null` / `unwrap_null` / `print`), matching CLR
-/// `ensure_runtime_stubs`. `print` forwards to `System.out.println`; others
-/// use [`default_jvm_runtime_stub`].
+/// `ensure_runtime_stubs`. These are explicit runtime intrinsics, not missing
+/// user or library method bodies.
 fn ensure_jvm_runtime_stubs(class_file: &mut JvmClassFile) {
     use super::witness_abi::INJECTED_RUNTIME_STUBS;
 
@@ -411,21 +405,7 @@ fn ensure_jvm_runtime_stubs(class_file: &mut JvmClassFile) {
     }
 }
 
-/// 生成默认返回值的运行时桩方法。
-///
-/// 根据 [`JvmTypeDescriptor`] 返回类型选择对应的返回指令：
-/// - `Int` / `Boolean` / `Byte` / `Short` / `Char`：`iconst_0; ireturn`
-/// - `Long`：`lconst_0; lreturn`
-/// - `Float`：`fconst_0; freturn`
-/// - `Double`：`dconst_0; dreturn`
-/// - `Object` / `Array`：`aconst_null; areturn`
-/// - `Void`：`return`
-///
 /// Count JVM local slots occupied by method parameters (`long`/`double` = 2).
-///
-/// Class loading rejects `Code.max_locals` below this (`Arguments can't fit into
-/// locals`). Counting `parameter_types.len()` alone under-sizes `(JJ)I` / `(IJJ)I`
-/// stubs invented by [`ensure_jvm_self_invokes_resolved`].
 fn jvm_method_parameter_slots(descriptor: &JvmMethodDescriptor) -> u16 {
     descriptor.parameter_types.iter().fold(0u16, |slots, ty| {
         slots.saturating_add(match ty {
@@ -435,8 +415,10 @@ fn jvm_method_parameter_slots(descriptor: &JvmMethodDescriptor) -> u16 {
     })
 }
 
-/// 参数列表由 `descriptor.parameter_types` 决定；`max_locals` 按 JVM 槽位宽度
-/// （`J`/`D` = 2）计算，不能只用 `parameter_types.len()`。
+/// 为已登记的 JVM runtime intrinsic 生成物理实现。
+///
+/// 该函数只由 `ensure_jvm_runtime_stubs` 调用；普通用户函数、库函数和
+/// 未解析的 self call 不得进入这里。
 fn default_jvm_runtime_stub(name: &str, descriptor: JvmMethodDescriptor) -> JvmMethodSignature {
     let (max_stack, instructions) = match &descriptor.return_type {
         JvmTypeDescriptor::Void => (0, vec![JvmInstruction::Return]),
