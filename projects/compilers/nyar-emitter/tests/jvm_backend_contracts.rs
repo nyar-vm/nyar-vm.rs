@@ -34,7 +34,6 @@ fn lowers_external_println_call_into_jvm_bytecode() {
             vec![ExternalCallArgument::StringLiteral("hello from jvm".to_string())],
         )],
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: None,
         suspend_runtime: None,
         witness_tables: Vec::new(),
@@ -77,7 +76,6 @@ fn emits_state_count_methods_for_control_flow_payload() {
         external_import_links: BTreeMap::new(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: Some(ControlFlowPayload {
             functions: vec![SuspendFunctionArtifact {
                 symbol: symbol.clone(),

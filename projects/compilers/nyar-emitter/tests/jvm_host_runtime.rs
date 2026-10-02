@@ -91,7 +91,6 @@ fn lowers_external_println_fragment_to_host_runnable_jar() {
             vec![ExternalCallArgument::StringLiteral("hello from jvm host".to_string())],
         )],
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: None,
         suspend_runtime: None,
         witness_tables: Vec::new(),

@@ -18,7 +18,6 @@ fn emits_witness_main_and_impl_stub() {
         external_import_links: Default::default(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: None,
         suspend_runtime: None,
         witness_tables: vec![WitnessSubmission {
@@ -67,7 +66,6 @@ fn future_poll_impl_branches_on_receiver_tick() {
         external_import_links: Default::default(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: None,
         suspend_runtime: None,
         witness_tables: vec![WitnessSubmission {

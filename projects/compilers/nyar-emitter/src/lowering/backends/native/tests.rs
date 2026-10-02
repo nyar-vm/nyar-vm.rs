@@ -27,7 +27,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_void_returns: Default::default(),
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             control_flow: None,

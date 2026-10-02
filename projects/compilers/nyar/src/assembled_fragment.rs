@@ -34,8 +34,6 @@ pub struct AssembledFragment {
     pub external_call_edges: Vec<ExternalCallEdge>,
     /// Resolved internal call edges.
     pub internal_call_edges: Vec<InternalCallEdge>,
-    /// Operations that return `unit`.
-    pub operation_void_returns: BTreeSet<QualifiedName>,
     /// Named trait witness table payloads.
     pub witness_tables: Vec<WitnessSubmission>,
     /// Entry witness dynamic call edges.

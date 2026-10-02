@@ -28,7 +28,6 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
         external_import_links: payload.external_import_links,
         external_call_edges: payload.external_call_edges,
         internal_call_edges: payload.internal_call_edges,
-        operation_void_returns: payload.operation_void_returns,
         witness_tables: payload.witness_tables,
         witness_calls: payload.witness_calls,
         control_flow: payload.control_flow,

@@ -20,7 +20,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_void_returns: Default::default(),
             witness_tables: vec![WitnessSubmission {
                 type_name: "CounterIterator".to_string(),
                 trait_name: "Iterator".to_string(),
@@ -183,7 +182,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_void_returns: Default::default(),
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             control_flow: Some(ControlFlowPayload {
@@ -287,7 +285,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_void_returns: Default::default(),
             witness_tables: vec![WitnessSubmission {
                 type_name: "ReadyFuture".to_string(),
                 trait_name: "Future".to_string(),

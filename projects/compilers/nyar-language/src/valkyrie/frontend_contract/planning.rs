@@ -360,7 +360,6 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
     let object_algebraic_program = hir_module_to_object_algebraic_program(module);
     let external_call_edges = external_call_edges(module, &program_facts.functions);
     let internal_call_edges = internal_call_edges(module, &program_facts.functions);
-    let operation_void_returns = operation_void_returns(module);
     let witness_tables = Vec::new();
     let witness_calls = Vec::new();
     let witness_capability = false;
@@ -402,7 +401,6 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
                 ),
                 external_call_edges: fragment_external_call_edges,
                 internal_call_edges: fragment_internal_call_edges,
-                operation_void_returns: operation_void_returns.clone(),
                 witness_tables: fragment_witness_tables,
                 witness_calls: fragment_witness_calls,
                 rewrite_theory: rewrite_theory_for_fragment(dimension.name.as_str()),
@@ -551,16 +549,6 @@ fn internal_call_edges(module: &HirModule, functions: &[FunctionAnalysis]) -> Ve
 
 fn internal_call_edges_for_operations(edges: &[InternalCallEdge], operations: &[QualifiedName]) -> Vec<InternalCallEdge> {
     edges.iter().filter(|edge| operations.iter().any(|operation| *operation == edge.caller)).cloned().collect()
-}
-
-fn operation_void_returns(module: &HirModule) -> BTreeSet<QualifiedName> {
-    let module_name = qualified_name(&module.name);
-    module
-        .functions
-        .iter()
-        .filter(|function| matches!(function.return_type, ValkyrieType::Unit))
-        .map(|function| function_symbol(&module_name, function))
-        .collect()
 }
 
 fn collect_internal_call_edges_from_block(

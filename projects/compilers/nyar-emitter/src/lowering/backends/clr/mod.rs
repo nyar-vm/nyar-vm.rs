@@ -128,24 +128,21 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
             .map(|entry| format!("entry_{}", sanitize_operation_symbol(entry)))
             .unwrap_or_else(|| "Main".to_string())
     };
+    let entry_signature = submission.entry_operation.as_ref().map(|entry| method_signature_for(submission, entry)).transpose()?;
     let entry_return_type = if legion_cli {
         MsilType::Int32 { signed: true }
     }
     else {
-        submission
-            .entry_operation
-            .as_ref()
-            .and_then(|entry| if submission.operation_void_returns.contains(entry) { Some(MsilType::Void) } else { None })
-            .unwrap_or(MsilType::Int32 { signed: true })
+        entry_signature.as_ref().map(|signature| signature.return_type.clone()).unwrap_or(MsilType::Int32 { signed: true })
     };
     let entry_params = if legion_cli { vec![MsilType::sz_array(MsilType::String)] } else { Vec::new() };
     let entry_instructions = if legion_cli {
         let entry_operation = submission.entry_operation.as_ref().expect("legion cli requires entry operation");
-        let signature = method_signature_for(submission, entry_operation);
+        let signature = method_signature_for(submission, entry_operation)?;
         lower_entry_with_cli_args(entry_operation, signature)
     }
     else {
-        lower_entry_instructions(submission, submission.entry_operation.as_ref())
+        lower_entry_instructions(submission, submission.entry_operation.as_ref())?
     };
     let entry_method = MsilMethodBody {
         method: MsilMethodRef { owner: None, name: entry_name, signature: MsilMethodSignature::new(entry_return_type, entry_params) },
@@ -170,32 +167,21 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
     })
 }
 
-fn operation_returns_void(submission: &FragmentSubmission, operation: &QualifiedName) -> bool {
-    submission.operation_void_returns.contains(operation)
+fn msil_return_type(submission: &FragmentSubmission, operation: &QualifiedName) -> Result<MsilType> {
+    let view = submission
+        .backend_plan
+        .get_function(operation)
+        .ok_or_else(|| miette!("CLR 缺少操作 `{operation}` 的 BackendPrivatePlan 函数签名"))?;
+    Ok(nyar_type_to_msil(&view.function.return_type, &submission.aggregate_layouts))
 }
 
-fn msil_return_type(submission: &FragmentSubmission, operation: &QualifiedName) -> MsilType {
-    if operation_returns_void(submission, operation) {
-        MsilType::Void
-    }
-    else {
-        submission
-            .executable
-            .as_ref()
-            .and_then(|exec| exec.get_function(operation))
-            .map(|view| nyar_type_to_msil(&view.function.return_type, &submission.aggregate_layouts))
-            .unwrap_or(MsilType::Int32 { signed: true })
-    }
-}
-
-fn method_signature_for(submission: &FragmentSubmission, operation: &QualifiedName) -> MsilMethodSignature {
-    let param_types = submission
-        .executable
-        .as_ref()
-        .and_then(|exec| exec.get_function(operation))
-        .map(|view| view.function.param_types.iter().map(|ty| nyar_type_to_msil(ty, &submission.aggregate_layouts)).collect::<Vec<_>>())
-        .unwrap_or_default();
-    MsilMethodSignature::new(msil_return_type(submission, operation), param_types)
+fn method_signature_for(submission: &FragmentSubmission, operation: &QualifiedName) -> Result<MsilMethodSignature> {
+    let view = submission
+        .backend_plan
+        .get_function(operation)
+        .ok_or_else(|| miette!("CLR 缺少操作 `{operation}` 的 BackendPrivatePlan 函数签名"))?;
+    let param_types = view.function.param_types.iter().map(|ty| nyar_type_to_msil(ty, &submission.aggregate_layouts)).collect::<Vec<_>>();
+    Ok(MsilMethodSignature::new(msil_return_type(submission, operation)?, param_types))
 }
 
 /// The CLR representation is `System.String` (UTF-16), while language `utf8`
@@ -959,26 +945,26 @@ fn lower_operation_method(submission: &FragmentSubmission, operation: &Qualified
     lower_mir_function_to_msil(submission, operation, &view.function)
 }
 
-fn lower_entry_instructions(submission: &FragmentSubmission, entry_operation: Option<&QualifiedName>) -> Vec<MsilInstruction> {
+fn lower_entry_instructions(submission: &FragmentSubmission, entry_operation: Option<&QualifiedName>) -> Result<Vec<MsilInstruction>> {
     if let Some(entry_operation) = entry_operation {
-        return vec![
+        return Ok(vec![
             MsilInstruction {
                 label: None,
                 opcode: MsilOpcode::Call,
                 operand: Some(MsilInstructionOperand::Method(MsilMethodRef {
                     owner: None,
                     name: sanitize_operation_symbol(entry_operation),
-                    signature: method_signature_for(submission, entry_operation),
+                    signature: method_signature_for(submission, entry_operation)?,
                 })),
             },
             MsilInstruction { label: None, opcode: MsilOpcode::Ret, operand: None },
-        ];
+        ]);
     }
 
-    vec![
+    Ok(vec![
         MsilInstruction { label: None, opcode: MsilOpcode::LdcI4_0, operand: None },
         MsilInstruction { label: None, opcode: MsilOpcode::Ret, operand: None },
-    ]
+    ])
 }
 
 fn collect_clr_externs(submission: &FragmentSubmission) -> Vec<String> {

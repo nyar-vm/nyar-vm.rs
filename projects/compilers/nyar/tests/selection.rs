@@ -81,7 +81,6 @@ fn builds_backend_requirement_from_partition_plan() {
             external_import_links: Default::default(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_void_returns: Default::default(),
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             rewrite_theory: RewriteTheory::default(),

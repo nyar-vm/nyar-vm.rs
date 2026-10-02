@@ -39,7 +39,6 @@ fn emits_witness_entry_call_and_console_write() {
         external_import_links: Default::default(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
-        operation_void_returns: Default::default(),
         control_flow: None,
         suspend_runtime: None,
         witness_tables: vec![WitnessSubmission {
