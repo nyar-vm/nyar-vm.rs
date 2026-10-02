@@ -36,8 +36,8 @@ pub use nyar::{
 };
 pub use valkyrie::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
-    assemble_fragment, build_first_class_suspend_payload,
-    build_output_surface_counts, build_state_machine_suspend_payload, derive,
+    assemble_fragment,
+    build_output_surface_counts, derive,
     frontend_contract::{
         ConcretizeError, FrontendNeutralPlan, NyarPlanningContract, concretize_mir_function_types, concretize_mir_function_types_lossy,
         concretize_type, concretize_type_lossy, hir_module_to_analysis_artifact, hir_module_to_frontend_neutral_plan,

@@ -4,15 +4,13 @@
 //! Shared ABI (`AssembledFragment`) lives in `nyar`; the driver only wraps it.
 
 mod nullable;
-mod suspend_payload;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use miette::{Result as MietteResult, miette};
 use nyar::{
     ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
-    QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, projection_policy_for_target_profile,
-    suspend_consumption_model_for_lane,
+    QualifiedName, TheoryBundle, projection_policy_for_target_profile,
 };
 use nyar_types::ItemInstanceId;
 use crate::{
@@ -21,7 +19,6 @@ use crate::{
 
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
-pub use suspend_payload::{build_first_class_suspend_payload, build_state_machine_suspend_payload};
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
 pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize, usize) {
@@ -65,19 +62,13 @@ pub fn assemble_fragment(
         .find(|fragment| fragment.id == partition.fragment)
         .ok_or_else(|| miette!("分区 `{}` 对应的语义片段不存在", partition.name))?;
 
-    let hir_module = build_output.hir_module();
     let fragment_requires_suspend = fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend");
-    let (control_flow, suspend_runtime) = if fragment_requires_suspend {
-        match suspend_consumption_model_for_lane(partition.lane, partition.clr_suspend_strategy, VmSuspendStrategy::default()) {
-            SuspendConsumptionModel::FirstClass => (None, Some(build_first_class_suspend_payload(hir_module, &fragment.exported_operations))),
-            SuspendConsumptionModel::StateMachine => {
-                (Some(build_state_machine_suspend_payload(hir_module, &fragment.exported_operations)), None)
-            }
-        }
+    if fragment_requires_suspend {
+        return Err(miette!(
+            "分区 `{}` 要求 suspend，但 Compiler 尚未提供已验证的 Canonical suspend 合同",
+            partition.name
+        ));
     }
-    else {
-        (None, None)
-    };
 
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
@@ -96,13 +87,13 @@ pub fn assemble_fragment(
         internal_call_edges: fragment.internal_call_edges.clone(),
         witness_tables: fragment.witness_tables.clone(),
         witness_calls: fragment.witness_calls.clone(),
-        control_flow,
-        suspend_runtime,
+        control_flow: None,
+        suspend_runtime: None,
         aggregate_layouts: build_output.compiled_program().canonical().linked.aggregate_layouts.clone(),
         sum_types: build_output.compiled_program().canonical().linked.sum_types.clone(),
         flags_types: build_output.compiled_program().canonical().linked.flags_types.clone(),
         compiled_program: build_output.compiled_program().clone(),
-        singleton_instances: collect_singleton_instance_plans(hir_module),
+        singleton_instances: collect_singleton_instance_plans(build_output.hir_module()),
         wasm_export_names: fragment.wasm_export_names.clone(),
     })
 }

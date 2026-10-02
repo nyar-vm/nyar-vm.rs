@@ -691,25 +691,3 @@ fn rejects_break_expr_in_statement_loop() {
     assert!(err.to_string().contains("break expr"));
     assert!(err.to_string().contains("loop"));
 }
-
-#[test]
-fn suspend_runtime_payload_includes_continuation_artifacts() {
-    let compiler = ValkyrieCompiler::new(SourceID { version_id: 200 });
-    let hir = compiler
-        .compile_source(
-            r#"micro main() {
-    catch raise true {
-        else:
-            resume true
-    }
-}"#,
-        )
-        .expect("hir");
-    use nyar_language::build_first_class_suspend_payload;
-    use nyar_language::valkyrie::frontend_contract::NyarPlanningContract;
-    let symbol = hir.program_facts().functions[0].symbol.clone();
-    let payload = build_first_class_suspend_payload(&hir, &[symbol]);
-    let artifact = &payload.functions[0];
-    assert_eq!(artifact.continuations.len(), 1);
-    assert_eq!(artifact.continuations[0].resume_block_label, "catch_resume");
-}
