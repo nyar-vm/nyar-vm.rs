@@ -12,8 +12,8 @@ importers:
         specifier: ^1.0.0
         version: 1.9.4
       '@doki-land/nifty':
-        specifier: ^0.0.3
-        version: 0.0.3
+        specifier: ^0.0.8
+        version: 0.0.8
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
@@ -29,35 +29,6 @@ importers:
       vitepress-plugin-mermaid:
         specifier: ^2.0.17
         version: 2.0.17(mermaid@11.12.2)(vitepress@1.6.4(@algolia/client-search@5.48.0)(postcss@8.5.6)(search-insights@2.17.3)(typescript@5.9.3))
-
-  packages/nyar:
-    dependencies:
-      '@nyar-vm/nyar-wasm32-wasi':
-        specifier: workspace:*
-        version: link:../nyar-wasm32-wasi
-    optionalDependencies:
-      '@nyar-vm/nyar-darwin-arm64':
-        specifier: workspace:*
-        version: link:../nyar-darwin-arm64
-      '@nyar-vm/nyar-darwin-x64':
-        specifier: workspace:*
-        version: link:../nyar-darwin-x64
-      '@nyar-vm/nyar-linux-x64':
-        specifier: workspace:*
-        version: link:../nyar-linux-x64
-      '@nyar-vm/nyar-win32-x64':
-        specifier: workspace:*
-        version: link:../nyar-win32-x64
-
-  packages/nyar-darwin-arm64: {}
-
-  packages/nyar-darwin-x64: {}
-
-  packages/nyar-linux-x64: {}
-
-  packages/nyar-wasm32-wasi: {}
-
-  packages/nyar-win32-x64: {}
 
 packages:
 
@@ -254,23 +225,23 @@ packages:
       search-insights:
         optional: true
 
-  '@doki-land/nifty-darwin-arm64@0.0.3':
-    resolution: {integrity: sha512-d18SH6nXO4fEaFTFCcNwp3WqCs0F7qQyP3Ma9orAJxo8Pma/TdqI21E5V+x+WminkQh65LEmcF28AgnVQKxHSg==}
+  '@doki-land/nifty-darwin-arm64@0.0.8':
+    resolution: {integrity: sha512-XlxhqpAptXnwEfXW2sDVyULNUx7mIoYSYseYvfUojsbrIL/1Xt8EJQmjoeG1r7c59NSVUrwvkHl/cijUZHadwQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@doki-land/nifty-linux-x64@0.0.3':
-    resolution: {integrity: sha512-ltMTgBQyW049ba+/4zyz+OwbTQyZWYJypwgo2zly4CEz22rLvO5UwF4wOjiraAXapjpKrROs8rHICJAgxrrFFQ==}
+  '@doki-land/nifty-linux-x64@0.0.8':
+    resolution: {integrity: sha512-DHD3vVnEaIUHgay7uDIavjfbUkS/YjSyM9jBcDYVGzSfFqNiuGqrg2Hrf+lN0vwkbZzKyvdxmvZePPyM133ixQ==}
     cpu: [x64]
     os: [linux]
 
-  '@doki-land/nifty-win32-x64@0.0.3':
-    resolution: {integrity: sha512-g04eIcfCPF/2nuKoF0LSPmJCZLUCUoeROnUxyZHTNax2ViOPP1j584g53/M6CIBWD82NREYkHgDIh5LIj0o8Sg==}
+  '@doki-land/nifty-win32-x64@0.0.8':
+    resolution: {integrity: sha512-POlfJ1xHIwe/GjYrwVTUT7QTLZHleWxh0IwZaj3YnBjxiNkq7Do9J2HPi3x120sJD7VZtN+xXloQ8G51uBMNkg==}
     cpu: [x64]
     os: [win32]
 
-  '@doki-land/nifty@0.0.3':
-    resolution: {integrity: sha512-2CLWD75JEPZIhvZqIeYnuPAisL7Tcxt0r8OmxO5xrlurK2d6Vv67tfydBmyTxHLiEnrglD59zRshy76NJ4L4xQ==}
+  '@doki-land/nifty@0.0.8':
+    resolution: {integrity: sha512-KB/8FZMQ7XKdpx6DTETHEMPX9ria+Fx6gI0MKEDOueqm/gthZx6m4WQMOpS6IeXQsuSTMRiyFgFmteu5Z69X2Q==}
     hasBin: true
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -712,8 +683,8 @@ packages:
       vite: ^5.0.0 || ^6.0.0
       vue: ^3.2.25
 
-  '@vmz/commander@0.2.0':
-    resolution: {integrity: sha512-LHe3WtgYFQbrgBQVJ9f9JDcnCrw2T6JwO8llIqywzvIS+MOeYOLcTEm/3wVuDLvGbB0FaB2ya1wTkLLAOL9Wiw==}
+  '@vmz/commander@0.2.8':
+    resolution: {integrity: sha512-hDTOJGKHam1+GYnOJY8M0yqctrBt8RfdkvUVmkeu1LQVRyfWRZ8kqWnTdYcW8PoCWKP4DdDpcWJrbmI7rn68Bg==}
     engines: {node: '>=20'}
 
   '@vue/compiler-core@3.5.27':
@@ -1594,23 +1565,23 @@ snapshots:
     transitivePeerDependencies:
       - '@algolia/client-search'
 
-  '@doki-land/nifty-darwin-arm64@0.0.3':
+  '@doki-land/nifty-darwin-arm64@0.0.8':
     optional: true
 
-  '@doki-land/nifty-linux-x64@0.0.3':
+  '@doki-land/nifty-linux-x64@0.0.8':
     optional: true
 
-  '@doki-land/nifty-win32-x64@0.0.3':
+  '@doki-land/nifty-win32-x64@0.0.8':
     optional: true
 
-  '@doki-land/nifty@0.0.3':
+  '@doki-land/nifty@0.0.8':
     dependencies:
-      '@vmz/commander': 0.2.0
+      '@vmz/commander': 0.2.8
       jiti: 2.7.0
     optionalDependencies:
-      '@doki-land/nifty-darwin-arm64': 0.0.3
-      '@doki-land/nifty-linux-x64': 0.0.3
-      '@doki-land/nifty-win32-x64': 0.0.3
+      '@doki-land/nifty-darwin-arm64': 0.0.8
+      '@doki-land/nifty-linux-x64': 0.0.8
+      '@doki-land/nifty-win32-x64': 0.0.8
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
@@ -1977,7 +1948,7 @@ snapshots:
       vite: 5.4.21
       vue: 3.5.27(typescript@5.9.3)
 
-  '@vmz/commander@0.2.0': {}
+  '@vmz/commander@0.2.8': {}
 
   '@vue/compiler-core@3.5.27':
     dependencies:
