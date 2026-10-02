@@ -43,7 +43,7 @@ use crate::{
 };
 
 pub use assembly::fragment_submission_from_assembled;
-pub use executable_provider::{ExecutableProvider, FunctionView, SuspendMetadataView};
+pub(crate) use executable_provider::{FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 pub use nullable_profiles::{
     FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,

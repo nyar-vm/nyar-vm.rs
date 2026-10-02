@@ -3,10 +3,6 @@
 //! `emitter` should treat language executable structure as private and only
 //! consume it through this query surface and the helper types defined here.
 
-use std::collections::BTreeMap;
-
-use nyar::QualifiedName;
-use nyar_types::NamePath;
 pub type NyarType = nyar::NyarType;
 pub type ExecutableValueRef = crate::contracts::ValueRef;
 pub type ExecutableBlockRef = crate::contracts::BlockRef;
@@ -77,98 +73,3 @@ impl SuspendMetadataView {
     }
 }
 
-/// Provider of executable views for exported operations.
-pub trait ExecutableProvider: Send + Sync {
-    /// Returns all operations known to the provider (including non-exported helper functions).
-    fn operations(&self) -> Vec<QualifiedName>;
-
-    /// Returns the function view for the given exported operation.
-    fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView>;
-
-    /// Returns suspend metadata if the function has suspend semantics.
-    fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView>;
-}
-
-/// Transitional provider backed by the current `mir_functions` map.
-#[derive(Debug, Clone)]
-pub struct MirFunctionMapProvider {
-    functions: BTreeMap<QualifiedName, ExecutableFunction>,
-}
-
-impl MirFunctionMapProvider {
-    pub fn new(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
-        Self { functions }
-    }
-}
-
-/// 将静态调用的已解析身份映射到精确的本地操作。
-///
-/// Semantic MIR 与表示规划共同拒绝通过唯一短名猜测调用目标。
-pub(crate) fn resolve_static_callee_operation(
-    executable: &dyn ExecutableProvider,
-    path: &NamePath,
-) -> Option<QualifiedName> {
-    let operation = QualifiedName::new(path.parts().to_vec());
-    executable.get_function(&operation).map(|_| operation)
-}
-
-impl ExecutableProvider for MirFunctionMapProvider {
-    fn operations(&self) -> Vec<QualifiedName> {
-        self.functions.keys().cloned().collect()
-    }
-
-    fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
-        self.functions.get(operation).cloned().map(|function| FunctionView { function })
-    }
-
-    fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
-        self.functions.get(operation).and_then(SuspendMetadataView::from_function)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn function(symbol: &str) -> ExecutableFunction {
-        ExecutableFunction {
-            symbol: symbol.to_string(),
-            return_type: NyarType::Unit,
-            param_types: Vec::new(),
-            value_types: BTreeMap::new(),
-            entry: crate::contracts::BlockRef(0),
-            values: Vec::new(),
-            suspend_points: Vec::new(),
-            frame_layouts: Vec::new(),
-            continuations: Vec::new(),
-            case_chains: Vec::new(),
-            #[allow(deprecated)]
-            state_machine: None,
-            suspend_plan: None,
-            blocks: Vec::new(),
-            diagnostics: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn function_registry_requires_exact_qualified_name() {
-        let operation = QualifiedName::new(vec![nyar::Identifier::new("module"), nyar::Identifier::new("entry")]);
-        let provider = MirFunctionMapProvider::new(BTreeMap::from([(operation.clone(), function("module.entry"))]));
-
-        assert!(provider.get_function(&operation).is_some());
-        assert!(provider.get_function(&QualifiedName::new(vec![nyar::Identifier::new("entry")])).is_none());
-        assert!(provider.get_function(&QualifiedName::new(vec![nyar::Identifier::new("other"), nyar::Identifier::new("module"), nyar::Identifier::new("entry")])).is_none());
-    }
-
-    #[test]
-    fn bare_callee_does_not_resolve_by_unique_module_helper() {
-        let main_op = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("main")]);
-        let answer_op = QualifiedName::new(vec![nyar::Identifier::new("main"), nyar::Identifier::new("answer")]);
-        let provider = MirFunctionMapProvider::new(BTreeMap::from([
-            (main_op, function("main::main")),
-            (answer_op, function("main::answer")),
-        ]));
-        let path = NamePath::new(vec![nyar::Identifier::new("answer")]);
-        assert_eq!(resolve_static_callee_operation(&provider, &path), None);
-    }
-}
