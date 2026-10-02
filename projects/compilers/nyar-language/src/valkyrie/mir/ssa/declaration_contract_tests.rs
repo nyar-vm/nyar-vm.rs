@@ -6,7 +6,7 @@ fn source_import_declaration_has_signature_but_no_fabricated_body() {
         "[host_contract] micro foreign(value: i32) -> i32; \
          micro caller(value: i32) -> i32 { return foreign(value) }",
     ).expect("显式 import 与普通调用沿真实构建入口闭合");
-    let mir = output.semantic_mir();
+    let mir = MirLowerer::lower_module_semantic(output.hir_module());
     assert_eq!(mir.functions.len(), 1);
     assert_eq!(mir.external_calls.len(), 1);
     assert!(mir.functions.iter().all(|function| function.symbol != mir.external_calls[0].symbol.to_string()));

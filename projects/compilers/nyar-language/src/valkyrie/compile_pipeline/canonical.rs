@@ -405,7 +405,8 @@ mod tests {
                 "[export(name: \"public_main\")] [main] micro main() -> unit { return }",
             )
             .expect("源码必须完成前端分析");
-        let program = canonical_program_from_semantic_mir(output.semantic_mir()).expect("公开合同必须进入 canonical");
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let program = canonical_program_from_semantic_mir(&semantic_mir).expect("公开合同必须进入 canonical");
         assert_eq!(program.linked.exports.len(), 1);
         assert_eq!(program.linked.entries.len(), 1);
         let (instance, export) = program.linked.exports.iter().next().unwrap();
@@ -418,8 +419,8 @@ mod tests {
         let output = crate::ValkyrieCompiler::default()
             .compile_source_to_build_output("micro select(value: bool, other: i32) -> bool { return value }")
             .expect("源码必须完成前端分析");
-        let module = output.semantic_mir();
-        canonical_program_from_semantic_mir(module).expect("合法入口必须产生 CanonicalProgram");
+        let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        canonical_program_from_semantic_mir(&module).expect("合法入口必须产生 CanonicalProgram");
 
         let mut missing = module.clone();
         missing.functions[0].blocks[0].parameters.pop();

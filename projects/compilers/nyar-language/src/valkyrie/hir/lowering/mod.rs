@@ -66,7 +66,8 @@ mod source_group_tests {
         ];
         let output = ValkyrieCompiler::default().compile_source_groups(&groups).expect("compiler closes source groups");
         assert_eq!(output.hir_module().name.to_string(), "app");
-        assert!(output.semantic_mir().functions.iter().any(|function| function.symbol == "core::answer"));
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        assert!(semantic_mir.functions.iter().any(|function| function.symbol == "core::answer"));
     }
 
     #[test]
@@ -334,7 +335,6 @@ pub struct CompilerSourceGroup {
 pub struct FrontendBuildOutput {
     hir_module: HirModule,
     neutral_plan: FrontendNeutralPlan,
-    semantic_mir: crate::valkyrie::mir::MirModule,
     compiled_program: nyar_types::CompiledProgram,
 }
 
@@ -353,7 +353,7 @@ impl FrontendBuildOutput {
     ) -> Result<Self, ParseError> {
         let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
-        Ok(Self { hir_module, neutral_plan, semantic_mir, compiled_program })
+        Ok(Self { hir_module, neutral_plan, compiled_program })
     }
 
     /// 返回 lowering 后的 HIR 模块。
@@ -364,11 +364,6 @@ impl FrontendBuildOutput {
     /// 返回中性的前端计划。
     pub fn neutral_plan(&self) -> &FrontendNeutralPlan {
         &self.neutral_plan
-    }
-
-    /// Return the semantic MIR lowered once during frontend compilation.
-    pub fn semantic_mir(&self) -> &crate::valkyrie::mir::MirModule {
-        &self.semantic_mir
     }
 
     /// 返回 Compiler 已验证的 CanonicalProgram；消费者不得重新生产。
@@ -1691,7 +1686,8 @@ mod sum_discriminator_tests {
         let output = ValkyrieCompiler::default()
             .compile_source_to_build_output("[main] micro entry() -> i32 { return 23 }")
             .expect("普通源码必须完成正式 Compiler 成功边界");
-        assert!(output.semantic_mir().sum_types.is_empty());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        assert!(semantic_mir.sum_types.is_empty());
         assert!(output.compiled_program().canonical().linked.variants.is_empty());
     }
 

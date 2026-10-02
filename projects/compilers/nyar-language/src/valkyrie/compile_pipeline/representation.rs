@@ -103,9 +103,10 @@ mod tests {
         let plan = output.compiled_program().representation();
         assert_eq!(program.linked.nominal_instances.len(), 2);
         assert_eq!(plan.adt_reps.len(), 2);
-        for aggregate in &output.semantic_mir().structs {
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        for aggregate in &semantic_mir.structs {
             let ty = crate::valkyrie::types::hir::ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&aggregate.name));
-            let declaration = output.semantic_mir().type_identities[&ty];
+            let declaration = semantic_mir.type_identities[&ty];
             let record = program.linked.nominal_instances.values().find(|record| record.declaration == declaration).unwrap();
             let expected = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
             assert_eq!(record.semantics, expected);
