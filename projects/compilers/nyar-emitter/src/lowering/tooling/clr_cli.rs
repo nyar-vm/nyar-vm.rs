@@ -22,10 +22,7 @@ pub(crate) fn is_cli_entry_main(submission: &FragmentSubmission, operation: &Qua
     if !is_entry {
         return false;
     }
-    let Some(exec) = submission.backend_plan.as_ref()
-    else {
-        return false;
-    };
+    let exec = &submission.backend_plan;
     let Some(view) = exec.get_function(operation)
     else {
         return false;

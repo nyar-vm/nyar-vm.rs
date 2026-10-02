@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Build a [`FragmentSubmission`] from a frontend [`AssembledFragment`].
-pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
+pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
     let mut roots = payload.exported_operations.clone();
     if let Some(entry) = &payload.entry_operation {
         if !roots.iter().any(|root| root == entry) { roots.push(entry.clone()); }

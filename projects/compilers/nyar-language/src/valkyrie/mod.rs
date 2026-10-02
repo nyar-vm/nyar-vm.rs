@@ -27,7 +27,7 @@ pub mod validation;
 pub use assembly::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
     build_output_surface_counts,
-    assemble_fragment, assemble_fragment_submission, build_first_class_suspend_payload, build_state_machine_suspend_payload,
+    assemble_fragment, build_first_class_suspend_payload, build_state_machine_suspend_payload,
     plan_artifacts_from_build_output,
 };
 pub use frontend_contract::{

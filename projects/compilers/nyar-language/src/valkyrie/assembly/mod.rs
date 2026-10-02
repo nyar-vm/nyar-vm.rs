@@ -108,19 +108,6 @@ pub fn assemble_fragment(
     })
 }
 
-/// Assemble a driver [`emitter::FragmentSubmission`] for the given partition.
-///
-/// Language is the upper layer and may depend on `emitter`; the driver must not
-/// depend back on this crate.
-pub fn assemble_fragment_submission(
-    build_output: &FrontendBuildOutput,
-    plan: &ArtifactPartitionPlan,
-    partition_index: usize,
-) -> MietteResult<emitter::FragmentSubmission> {
-    let payload = assemble_fragment(build_output, plan, partition_index)?;
-    emitter::fragment_submission_from_assembled(payload).map_err(|error| miette!("后端私有计划生产失败: {error}"))
-}
-
 fn merge_program_external_import_links(
     fragment_links: &BTreeMap<QualifiedName, ExternalImportLink>,
     functions: &[nyar::FunctionAnalysis],

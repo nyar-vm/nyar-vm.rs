@@ -42,7 +42,6 @@ use crate::{
     lowering::{lower_fragment_to_driver_input, write_clr_msil_sidecar, write_wasm_wat_sidecar},
 };
 
-pub use assembly::fragment_submission_from_assembled;
 pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 pub use nullable_profiles::{
@@ -891,6 +890,33 @@ impl LoweredBackendInput {
             )?,
             entry_artifact_name: submission.entry_operation.as_ref().and_then(entry_artifact_name),
         })
+    }
+
+    /// 从 Compiler 生成的完整目标片段直接生成后端输入。
+    pub fn from_assembled_fragment(
+        payload: nyar::AssembledFragment,
+        backend_family: TargetBackendFamily,
+        host_boundary: HostProjectionBoundary,
+        output_dir: &Path,
+        lane: TargetLane,
+        clr_suspend_strategy: ClrSuspendStrategy,
+        vm_suspend_strategy: VmSuspendStrategy,
+        host_flavor: &str,
+        wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
+    ) -> Result<Self> {
+        let submission = crate::assembly::fragment_submission_from_assembled(payload)
+            .map_err(|error| miette!("后端私有计划生产失败: {error}"))?;
+        Self::from_fragment_submission(
+            &submission,
+            backend_family,
+            host_boundary,
+            output_dir,
+            lane,
+            clr_suspend_strategy,
+            vm_suspend_strategy,
+            host_flavor,
+            wasm_package_kind,
+        )
     }
 
     pub(crate) fn into_driver_backend_input(self) -> DriverBackendInput {
