@@ -25,3 +25,25 @@
 - `driver/families/mod.rs`：按后端需求注册与查找 family compiler。
 - `driver/partitioning.rs`：分区到后端 family 的映射与报告合并。
 - `artifacts/suspend_sidecar.rs`：suspend sidecar 序列化与落盘辅助。
+
+## 唯一编译流整改状态
+
+当前生产路线尚未满足唯一事实所有者合同。`BackendPrivatePlan` 由
+`CompiledProgram` 生成，但外层仍携带 `AssembledFragment` 与
+`FragmentSubmission` 的调用、布局、导入和 suspend 摘要。后端仍消费这些
+摘要，不能把私有计划类型已经接入等同于整改完成。
+
+- `ArtifactPartitionPlan` 的产物分区与调度职责不是 `RepresentationPlan`
+  的值载体职责；禁止仅按两个名称都有 plan 判定其必须合并。需要清除的是
+  调度载荷中与 canonical 事实重复、并且被 lowering 当作语义权威的字段。
+- `backend_private_plan.rs` 当前检查表示行是否存在，但尚未把全部表示选择
+  编入目标私有计划；同时把 callable 实例重新投影为符号操作数。后续改造
+  必须让调用身份和表示选择贯穿准备与编码，不能新增按名字查询的兼容入口。
+- Wasm 活跃实现由 `lowering/backends/wasm/mir/mod.rs` 及其显式声明的子模块
+  构成。未接入模块树的 `module_build.rs`、`module_imports.rs`、
+  `operand_emit.rs`、`emit_instr.rs` 与 `plan.rs` 旧副本已删除；这只是清除
+  不可达实现，既不证明活跃 lowering 无旁路，也不证明 compiler capability
+  或自举通过。
+- 验证生产路线必须从当前源码驱动 Compiler；手工填充旧片段或目标输入的
+  测试不能作为语义事实贯通的证据。编码器与执行协议测试可以验证自己的
+  低层合同，但不得用来替代全编译流验收。
