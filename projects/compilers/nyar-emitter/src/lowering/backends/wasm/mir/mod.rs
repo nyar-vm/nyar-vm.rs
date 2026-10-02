@@ -2863,7 +2863,6 @@ mod cfg_dispatch_tests {
     use crate::{
         FragmentSubmission,
         contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
-        backend_plan_views::MirFunctionMapProvider,
     };
     use nyar::{NyarType, QualifiedName};
     use std::{process::Command, sync::Arc};

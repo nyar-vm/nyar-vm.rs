@@ -197,7 +197,6 @@ mod text_encoding_tests {
     use crate::{
         FragmentSubmission,
         contracts::{Block, BlockRef, ExecutableFunction, Terminator},
-        backend_plan_views::MirFunctionMapProvider,
     };
     use nyar::{Identifier, NyarType, QualifiedName};
 

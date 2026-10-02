@@ -6,7 +6,7 @@ use miette::{Result, miette};
 use nyar::QualifiedName;
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, NyarType, Operand, Terminator, Value, ValueOrigin,
+    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value, ValueOrigin,
 };
 
 use crate::{
@@ -15,50 +15,72 @@ use crate::{
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Default))]
 pub struct BackendPrivatePlan {
-    functions: BTreeMap<QualifiedName, ExecutableFunction>,
+    functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
+    abi_names: BTreeMap<QualifiedName, ItemInstanceId>,
 }
 
 impl BackendPrivatePlan {
-    pub fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
-        Self { functions }
+    #[cfg(test)]
+    pub(crate) fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
+        let mut plan = Self::default();
+        for (index, (name, function)) in functions.into_iter().enumerate() {
+            let instance = ItemInstanceId::from_index(u32::try_from(index).expect("测试函数身份溢出")).expect("测试函数身份溢出");
+            plan.abi_names.insert(name, instance);
+            plan.functions.insert(instance, function);
+        }
+        plan
     }
 
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
     pub fn from_compiled_program(program: &CompiledProgram, roots: &[QualifiedName]) -> Result<Self> {
         let canonical = program.canonical();
-        let mut pending = roots.to_vec();
+        let mut pending = roots.iter().map(|name| {
+            let mut candidates = canonical.linked.callable_names.iter().filter(|(_, candidate)| *candidate == name);
+            let instance = candidates.next().map(|(instance, _)| *instance)
+                .ok_or_else(|| miette!("callable `{name}` 缺少 Compiler identity"))?;
+            if candidates.next().is_some() {
+                return Err(miette!("callable ABI 名称 `{name}` 对应多个实例，拒绝选择第一个实例"));
+            }
+            Ok(instance)
+        }).collect::<Result<Vec<_>>>()?;
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
-        while let Some(name) = pending.pop() {
-            if !seen.insert(name.clone()) { continue; }
-            let instance = canonical.linked.callable_names.iter()
-                .find_map(|(instance, candidate)| (candidate == &name).then_some(*instance))
-                .ok_or_else(|| miette!("callable `{name}` 缺少 Compiler identity"))?;
+        let mut abi_names = BTreeMap::new();
+        while let Some(instance) = pending.pop() {
+            if !seen.insert(instance) { continue; }
+            let name = canonical.linked.callable_names.get(&instance)
+                .ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
+            if let Some(previous) = abi_names.insert(name.clone(), instance) {
+                return Err(miette!("callable 实例 `{previous:?}` 与 `{instance:?}` 共享 ABI 名称 `{name}`，拒绝覆盖函数体"));
+            }
             let function = canonical.mir.functions.get(&instance)
                 .ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
             let (lowered, callees) = lower_function(program, function)?;
             pending.extend(callees);
-            functions.insert(name, lowered);
+            functions.insert(instance, lowered);
         }
-        Ok(Self { functions })
+        Ok(Self { functions, abi_names })
     }
 
     pub fn operations(&self) -> Vec<QualifiedName> {
-        self.functions.keys().cloned().collect()
+        self.abi_names.keys().cloned().collect()
     }
 
     pub fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
-        self.functions.get(operation).cloned().map(|function| FunctionView { function })
+        let instance = self.abi_names.get(operation)?;
+        self.functions.get(instance).cloned().map(|function| FunctionView { function })
     }
 
     pub fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
-        self.functions.get(operation).and_then(SuspendMetadataView::from_function)
+        let instance = self.abi_names.get(operation)?;
+        self.functions.get(instance).and_then(SuspendMetadataView::from_function)
     }
 }
 
-fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFunction) -> Result<(ExecutableFunction, Vec<QualifiedName>)> {
+fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFunction) -> Result<(ExecutableFunction, Vec<ItemInstanceId>)> {
     let canonical = program.canonical();
     for value in function.value_types.keys() {
         let identity = nyar_types::ValueIdentity::new(function.instance, *value);
@@ -109,12 +131,12 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     }, callees))
 }
 
-fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::CanonicalInstruction, callees: &mut Vec<QualifiedName>) -> Result<InstructionKind> {
+fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::CanonicalInstruction, callees: &mut Vec<ItemInstanceId>) -> Result<InstructionKind> {
     let value = |id: nyar_types::MirValueId| Operand::Value(ValueRef(id.index()));
     Ok(match &instruction.operation {
         CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), arguments } => {
             let name = program.linked.callable_names.get(instance).ok_or_else(|| miette!("调用 identity 未解析"))?.clone();
-            callees.push(name.clone());
+            callees.push(*instance);
             InstructionKind::Call { callee: Operand::Symbol(nyar_types::NamePath::new(name.parts().to_vec())), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() },

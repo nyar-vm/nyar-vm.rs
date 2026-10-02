@@ -326,7 +326,6 @@ mod tests {
     use nyar::{Identifier, QualifiedName};
     use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef};
 
-    use crate::backend_plan_views::MirFunctionMapProvider;
 
     use super::{PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission};
 

@@ -743,7 +743,7 @@ pub struct FragmentSubmission {
     /// Flags bitmask layouts。
     pub flags_types: Vec<FlagsLayout>,
     /// 已完成语义闭包与表示合同的目标私有计划。
-    pub backend_plan: Arc<BackendPrivatePlan>,
+    pub(crate) backend_plan: Arc<BackendPrivatePlan>,
     /// Singleton 全局实例初始化计划。
     ///
     /// 这里只回答唯一实例的固定符号名、访问器名与 eager/lazy 初始化模式；
@@ -763,6 +763,7 @@ impl std::fmt::Debug for FragmentSubmission {
     }
 }
 
+#[cfg(test)]
 impl Default for FragmentSubmission {
     fn default() -> Self {
         Self {
