@@ -262,7 +262,7 @@ pub(crate) fn classify_aggregate_for_abi(layout: &AggregateLayout) -> NativeValu
 /// ??????????????????????????????
 pub(crate) fn native_value_area_size(submission: &FragmentSubmission) -> u32 {
     let mut total: u32 = 0;
-    if let Some(exec) = &submission.executable {
+    if let Some(exec) = &submission.backend_plan {
         for operation in exec.operations() {
             let Some(view) = exec.get_function(&operation)
             else {
@@ -290,7 +290,7 @@ pub(crate) fn native_value_area_size(submission: &FragmentSubmission) -> u32 {
 /// `classify_aggregate_for_abi` ?? ABI ????? layout ?????
 /// aarch64 ??? codegen ????????
 pub(crate) fn consume_mir_value_layouts(submission: &FragmentSubmission) {
-    if let Some(exec) = &submission.executable {
+    if let Some(exec) = &submission.backend_plan {
         for operation in exec.operations() {
             let Some(view) = exec.get_function(&operation)
             else {
@@ -559,7 +559,7 @@ pub(crate) fn lower_mir_functions_to_native_sysv(submission: &FragmentSubmission
 /// ??????callee ?? block ???????????????? entry block
 /// ?????? `emit_call` ???????? callee ??????
 fn lower_mir_functions_to_native<E: X64Emitter>(submission: &FragmentSubmission, emitter: &mut E) {
-    let Some(exec) = &submission.executable
+    let Some(exec) = &submission.backend_plan
     else {
         return;
     };
@@ -1202,7 +1202,7 @@ fn find_callee_entry_label(ctx: &ExecutableLoweringContext<'_>, callee: &MirOper
     };
     let target = path.parts().last()?;
     let target_str = target.as_str();
-    let exec = ctx.submission.executable.as_ref()?;
+    let exec = ctx.submission.backend_plan.as_ref()?;
     for operation in exec.operations() {
         let Some(view) = exec.get_function(&operation)
         else {
@@ -1353,7 +1353,7 @@ fn native_block_label(mir_fn: &MirFunction, block_id: MirBlockRef) -> String {
 /// ???????? prologue/print ????????? MIR ????????
 /// ????????? fallthrough ??? `call` ??????? `ret` ???????
 fn entry_function_first_block_label(submission: &FragmentSubmission) -> Option<String> {
-    let exec = submission.executable.as_ref()?;
+    let exec = submission.backend_plan.as_ref()?;
     let entry_op = submission.entry_operation.as_ref()?;
     let entry_name = entry_op.parts().last()?;
     for operation in exec.operations() {

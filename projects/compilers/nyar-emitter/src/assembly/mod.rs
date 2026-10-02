@@ -3,13 +3,11 @@
 //! Layering: `nyar-language` → `emitter` → `std-data`.
 //! The driver must not depend on language crates; frontends hand over [`AssembledFragment`].
 
-use std::sync::Arc;
-
 use nyar::AssembledFragment;
 
 use crate::{
+    BackendPrivatePlan,
     FragmentSubmission,
-    executable_provider::ExecutableProvider,
 };
 
 /// Build a [`FragmentSubmission`] from a frontend [`AssembledFragment`].
@@ -18,9 +16,7 @@ pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette:
     if let Some(entry) = &payload.entry_operation {
         if !roots.iter().any(|root| root == entry) { roots.push(entry.clone()); }
     }
-    let executable = Some(Arc::new(crate::backend_private_plan::BackendPrivatePlan::from_compiled_program(
-        &payload.compiled_program, &roots,
-    )?) as Arc<dyn ExecutableProvider>);
+    let backend_plan = BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &roots)?;
     Ok(FragmentSubmission {
         module_name: payload.module_name,
         fragment_id: payload.fragment_id,
@@ -41,7 +37,7 @@ pub fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette:
         aggregate_layouts: payload.aggregate_layouts,
         sum_types: payload.sum_types,
         flags_types: payload.flags_types,
-        executable,
+        backend_plan: std::sync::Arc::new(backend_plan),
         singleton_instances: payload.singleton_instances,
     })
 }

@@ -7,9 +7,10 @@
 use std::collections::BTreeMap;
 
 use crate::{
+    BackendPrivatePlan,
     FragmentSubmission,
     executable_provider::{
-        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider, resolve_static_callee_operation,
+        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand,
     },
 };
 use nyar::QualifiedName;
@@ -54,10 +55,7 @@ pub(crate) fn validate_submission(submission: &FragmentSubmission) -> Result<(),
     validate_nominal_sums(submission)?;
     validate_aggregate_layouts(submission)?;
 
-    let Some(executable) = &submission.executable
-    else {
-        return Ok(());
-    };
+    let executable = &submission.backend_plan;
 
     for operation in executable.operations() {
         let Some(view) = executable.get_function(&operation)
@@ -595,8 +593,8 @@ fn is_language_builtin_symbol(path: &NamePath) -> bool {
     nyar_types::IntrinsicId::resolve_from_segments(&parts).is_some()
 }
 
-fn static_callee_is_registered(executable: &dyn ExecutableProvider, path: &NamePath) -> bool {
-    resolve_static_callee_operation(executable, path).is_some()
+fn static_callee_is_registered(executable: &BackendPrivatePlan, path: &NamePath) -> bool {
+    executable.get_function(&QualifiedName::new(path.parts().to_vec())).is_some()
 }
 
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
@@ -620,10 +618,7 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
             if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
                 continue;
             }
-            let local = submission
-                .executable
-                .as_ref()
-                .is_some_and(|executable| static_callee_is_registered(executable.as_ref(), path));
+            let local = static_callee_is_registered(&submission.backend_plan, path);
             let external = submission.external_import_links.contains_key(&QualifiedName::new(path.parts().to_vec()));
             if !local && !external {
                 return Err(SemanticMirContractError {

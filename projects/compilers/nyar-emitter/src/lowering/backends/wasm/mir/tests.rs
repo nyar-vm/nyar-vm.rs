@@ -82,7 +82,7 @@
                 diagnostics: Vec::new(),
             },
         );
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
         let module = lower_fragment_mir_to_wasm_module(&submission, "main");
         assert!(module.sections.iter().any(|section| section.id == 5), "memory section");
         let code = module.sections.iter().find(|section| section.id == 10).expect("code");
@@ -135,7 +135,7 @@
         functions: impl IntoIterator<Item = (QualifiedName, ExecutableFunction)>,
     ) {
         let mir_map = functions.into_iter().collect();
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
     }
 
     fn register_intrinsic(submission: &mut FragmentSubmission, symbol: &str, opcode: nyar_types::IntrinsicOpcode) {
@@ -190,7 +190,7 @@
                 diagnostics: Vec::new(),
             },
         );
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
         let module = lower_fragment_mir_to_wasm_module(&submission, "main");
         let code = module.sections.iter().find(|section| section.id == 10).expect("code section");
         // WASM `call` opcode is 0x10; helper is first local function, wasm_index = import_count + 0.
@@ -307,7 +307,7 @@
                 diagnostics: Vec::new(),
             },
         );
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
         let module = lower_fragment_mir_to_wasm_module(&submission, "main");
         let code = module.sections.iter().find(|section| section.id == 10).expect("code section");
         // WASM `call` is 0x10 + uleb index. Do not take the first 0x10 in the section ??
@@ -384,7 +384,7 @@
                 diagnostics: Vec::new(),
             },
         );
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
         let module = lower_fragment_mir_to_wasm_module(&submission, "main");
         let code = module.sections.iter().find(|section| section.id == 10).expect("code section");
         let call_position = code.bytes.iter().position(|byte| *byte == WasmOpcode::CallIndirect.as_u8()).expect("expected call_indirect (WasmOpcode::CallIndirect.as_u8()) opcode");

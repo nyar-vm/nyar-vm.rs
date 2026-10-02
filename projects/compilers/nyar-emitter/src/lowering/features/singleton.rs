@@ -644,7 +644,7 @@ fn jvm_unload(internal_name: &str, instance_field: &JvmFieldRef, plan: &Singleto
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
 fn emit_jvm_singleton_instance_methods(submission: &FragmentSubmission, plan: &SingletonInstancePlan, class_file: &mut JvmClassFile) {
     let accessor = plan.accessor_method();
-    let Some(exec) = &submission.executable
+    let Some(exec) = &submission.backend_plan
     else {
         return;
     };
@@ -715,7 +715,7 @@ fn emit_singleton_instance_methods(
     type_def: &mut MsilTypeDef,
 ) -> miette::Result<()> {
     let accessor = plan.accessor_method();
-    let Some(exec) = &submission.executable
+    let Some(exec) = &submission.backend_plan
     else {
         return Ok(());
     };

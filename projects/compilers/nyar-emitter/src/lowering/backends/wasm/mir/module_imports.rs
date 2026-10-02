@@ -128,7 +128,7 @@ pub(super) fn expand_wasi_cli_stream_intrinsics(imports: &mut Vec<(String, Strin
 pub(super) fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[QualifiedName]) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut literals = Vec::new();
-    let Some(exec) = submission.executable.as_ref()
+    let Some(exec) = submission.backend_plan.as_ref()
     else {
         return literals;
     };
@@ -400,7 +400,7 @@ pub(super) fn build_param_types_by_name(
 ) -> BTreeMap<String, Vec<u8>> {
     let mut map = BTreeMap::new();
     for operation in operations {
-        let Some(mir_fn) = submission.executable.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| view.function)
+        let Some(mir_fn) = submission.backend_plan.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| view.function)
         else {
             continue;
         };
@@ -420,7 +420,7 @@ pub(super) fn build_return_types_by_name(
 ) -> BTreeMap<String, Option<u8>> {
     let mut map = BTreeMap::new();
     for operation in operations {
-        let Some(mir_fn) = submission.executable.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| view.function)
+        let Some(mir_fn) = submission.backend_plan.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| view.function)
         else {
             continue;
         };

@@ -24,6 +24,7 @@ pub use backend::{
     clr as nyar_backend_clr, jvm as nyar_backend_jvm, native as nyar_backend_native, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
+pub(crate) use backend_private_plan::BackendPrivatePlan;
 use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
@@ -741,10 +742,8 @@ pub struct FragmentSubmission {
     pub sum_types: Vec<SumTypeLayout>,
     /// Flags bitmask layouts。
     pub flags_types: Vec<FlagsLayout>,
-    /// Executable query provider for backends.
-    ///
-    /// Transitional: currently backed by `mir_functions` until full query payload cutover.
-    pub executable: Option<Arc<dyn ExecutableProvider>>,
+    /// 已完成语义闭包与表示合同的目标私有计划。
+    pub backend_plan: Arc<BackendPrivatePlan>,
     /// Singleton 全局实例初始化计划。
     ///
     /// 这里只回答唯一实例的固定符号名、访问器名与 eager/lazy 初始化模式；
@@ -786,7 +785,7 @@ impl Default for FragmentSubmission {
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
             flags_types: Vec::new(),
-            executable: None,
+            backend_plan: Arc::new(BackendPrivatePlan::default()),
             singleton_instances: Vec::new(),
         }
     }

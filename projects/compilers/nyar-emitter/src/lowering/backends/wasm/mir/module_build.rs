@@ -25,7 +25,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     wasi_preview: crate::nyar_backend_wasi::WasiPreview,
 ) -> (WasmBinaryModule, Vec<(String, String)>) {
     let wasi_mode = export_name == "_start";
-    let operations: Vec<QualifiedName> = submission.executable.as_ref().map(|exec| exec.operations()).unwrap_or_default();
+    let operations: Vec<QualifiedName> = submission.backend_plan.as_ref().map(|exec| exec.operations()).unwrap_or_default();
     let string_literals = if export_name == "main" || wasi_mode { collect_mir_string_literals(submission, &operations) } else { Vec::new() };
     let host_imports = if wasi_mode {
         collect_wasi_host_imports(submission, wasi_preview)
@@ -95,13 +95,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let string_literal_offset = if wasi_mode { build_wasi_string_literal_offsets(&string_literals) } else { BTreeMap::new() };
     let const_utf8_import = const_utf8_import_index(&host_imports);
     let entry_matches =
-        submission.entry_operation.as_ref().is_some_and(|op| submission.executable.as_ref().and_then(|exec| exec.get_function(op)).is_some());
+        submission.entry_operation.as_ref().is_some_and(|op| submission.backend_plan.as_ref().and_then(|exec| exec.get_function(op)).is_some());
     // 仅对确有 MIR 体的 operation 分配稠密函数下标，避免「operations 枚举下标」与
     // `code_bodies.len()` 错位：错位时 call 会打到别人的 (param i64) 却按本函?anyref 签名?ref.null?
     let mir_operations: Vec<(QualifiedName, _)> = operations
         .iter()
         .filter_map(|operation| {
-            submission.executable.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| (operation.clone(), view.function))
+            submission.backend_plan.as_ref().and_then(|exec| exec.get_function(operation)).map(|view| (operation.clone(), view.function))
         })
         .collect();
     eprintln!("[wasm::module-stage] mir_operations={} types={}", mir_operations.len(), type_indices.len());
@@ -203,7 +203,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         let entry = submission
             .entry_operation
             .as_ref()
-            .and_then(|op| submission.executable.as_ref().and_then(|exec| exec.get_function(op)))
+            .and_then(|op| submission.backend_plan.as_ref().and_then(|exec| exec.get_function(op)))
             .map(|view| view.function);
         let body = if let Some(mir_fn) = entry {
             lower_mir_function_to_wasm_bytes(
@@ -235,7 +235,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             .executable
             .as_ref()
             .and_then(|exec| exec.operations().into_iter().next())
-            .and_then(|op| submission.executable.as_ref().and_then(|exec| exec.get_function(&op)))
+            .and_then(|op| submission.backend_plan.as_ref().and_then(|exec| exec.get_function(&op)))
             .map(|view| view.function)
         {
             lower_mir_function_to_wasm_bytes(
@@ -298,7 +298,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             let entry_mir_params: Vec<NyarType> = submission
                 .entry_operation
                 .as_ref()
-                .and_then(|op| submission.executable.as_ref().and_then(|exec| exec.get_function(op)))
+                .and_then(|op| submission.backend_plan.as_ref().and_then(|exec| exec.get_function(op)))
                 .map(|view| view.function.param_types.clone())
                 .unwrap_or_default();
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().unwrap_or_else(|| {
@@ -699,7 +699,7 @@ pub(super) fn append_wasm_spy_metadata_sections(
     for (key, type_index) in gc_array_type_indices {
         gc_payload.push_str(&format!("array\t{key}\t{type_index}\tregistered\n"));
     }
-    if let Some(exec) = &submission.executable {
+    if let Some(exec) = &submission.backend_plan {
         for operation in exec.operations() {
             let Some(view) = exec.get_function(&operation)
             else {
@@ -745,7 +745,7 @@ pub(super) fn append_wasm_spy_metadata_sections(
 }
 
 pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    let mir_functions_len = submission.executable.as_ref().map(|exec| exec.operations().len()).unwrap_or(0);
+    let mir_functions_len = submission.backend_plan.as_ref().map(|exec| exec.operations().len()).unwrap_or(0);
     if mir_functions_len == 0 {
         return;
     }

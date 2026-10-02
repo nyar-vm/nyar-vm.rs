@@ -139,7 +139,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
 
     let mut function_index_by_name = BTreeMap::<String, i32>::new();
-    if let Some(exec) = &submission.executable {
+    if let Some(exec) = &submission.backend_plan {
         let operations: Vec<QualifiedName> = exec
             .operations()
             .into_iter()
@@ -1008,7 +1008,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn resolve_function_index(&self, path: &nyar::NamePath, _arguments: &[MirOperand]) -> Option<i32> {
-        if let Some(exec) = &self.submission.executable {
+        if let Some(exec) = &self.submission.backend_plan {
             if let Some(operation) = resolve_static_callee_operation(exec.as_ref(), path) {
                 return self.function_index_for_operation(&operation);
             }
@@ -1060,7 +1060,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         if let Some(index) = self.function_index_by_name.get(&operation.to_string()) {
             return Some(*index);
         }
-        if let Some(exec) = &self.submission.executable {
+        if let Some(exec) = &self.submission.backend_plan {
             if let Some(view) = exec.get_function(operation) {
                 if let Some(index) = self.function_index_by_name.get(&view.function.symbol) {
                     return Some(*index);

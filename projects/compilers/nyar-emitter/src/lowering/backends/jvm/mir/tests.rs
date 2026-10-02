@@ -173,7 +173,7 @@ fn jvm_call_lowering_handles_non_builtin_call() {
     let mut submission = FragmentSubmission::default();
     submission.module_name = "demo".to_string();
     submission.fragment_id = Identifier::new("main");
-    submission.executable =
+    submission.backend_plan =
         Some(Arc::new(MirFunctionMapProvider::new([(operation.clone(), main_fn.clone()), (add_op, add_fn)].into_iter().collect())));
     let method = lower_mir_function_to_jvm(&submission, &operation, &main_fn);
     let code = method.code.expect("code");
@@ -402,7 +402,7 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         diagnostics: Vec::new(),
     };
     mir_map.insert(operation.clone(), mir_fn.clone());
-    submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+    submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
     let method = lower_mir_function_to_jvm(&submission, &operation, &mir_fn);
     let code = method.code.expect("code");
     let has_accessor = code
@@ -925,7 +925,7 @@ fn boxed_value_type_call_arg_expands_fields_not_areference() {
         diagnostics: Vec::new(),
     };
 
-    submission.executable =
+    submission.backend_plan =
         Some(Arc::new(MirFunctionMapProvider::new([(empty_op, empty_fn), (operation.clone(), mir_fn.clone())].into_iter().collect())));
 
     let method = lower_mir_function_to_jvm(&submission, &operation, &mir_fn);
@@ -1609,7 +1609,7 @@ fn erased_unite_call_result_payload_uses_tuple_get_not_getfield() {
         blocks: Vec::new(),
         diagnostics: Vec::new(),
     };
-    submission.executable =
+    submission.backend_plan =
         Some(Arc::new(MirFunctionMapProvider::new([(caller.clone(), caller_fn.clone()), (callee, callee_fn)].into_iter().collect())));
 
     let method = lower_mir_function_to_jvm(&submission, &caller, &caller_fn);

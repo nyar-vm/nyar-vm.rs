@@ -49,7 +49,7 @@ fn collect_jvm_local_operations(submission: &FragmentSubmission) -> Vec<Qualifie
             local_operations.push(entry_operation.clone());
         }
     }
-    if let Some(executable) = submission.executable.as_ref() {
+    if let Some(executable) = submission.backend_plan.as_ref() {
         for operation in executable.operations() {
             if !local_operations.iter().any(|existing| existing == &operation) {
                 local_operations.push(operation);
@@ -74,7 +74,7 @@ fn collect_jvm_local_operations(submission: &FragmentSubmission) -> Vec<Qualifie
 fn expand_jvm_operations_with_mir_callees(submission: &FragmentSubmission, operations: &mut Vec<QualifiedName>) {
     use crate::executable_provider::{ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand};
 
-    let Some(exec) = submission.executable.as_ref()
+    let Some(exec) = submission.backend_plan.as_ref()
     else {
         return;
     };
@@ -218,7 +218,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         {
             continue;
         }
-        if let Some(exec) = &submission.executable {
+        if let Some(exec) = &submission.backend_plan {
             if let Some(view) = exec.get_function(operation) {
                 class_file.methods.push(lower_mir_function_to_jvm(submission, operation, &view.function));
                 continue;
@@ -306,7 +306,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
 /// source of language semantics and must not be reconstructed from a short
 /// callee name, actual operands, or an output slot.
 fn validate_jvm_call_contracts(submission: &FragmentSubmission) -> Result<()> {
-    let Some(executable) = &submission.executable
+    let Some(executable) = &submission.backend_plan
     else {
         return Ok(());
     };
@@ -503,7 +503,7 @@ fn print_jvm_runtime_stub(descriptor: JvmMethodDescriptor) -> JvmMethodSignature
 /// `ALoad(0)` 传入入口方法。
 fn lower_sync_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstruction>> {
     let entry = submission.entry_operation.as_ref()?;
-    let entry_view = submission.executable.as_ref().and_then(|exec| exec.get_function(entry))?;
+    let entry_view = submission.backend_plan.as_ref().and_then(|exec| exec.get_function(entry))?;
     let mir_fn = &entry_view.function;
     let entry_has_state_machine = mir_has_state_machine(mir_fn);
     if entry_has_state_machine
@@ -544,7 +544,7 @@ fn lower_sync_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstr
 /// 但 [`lower_sync_entry_call`] 依赖 MIR，此时需把 `main` 接到 `entry_*`，否则 JAR 启动空跑。
 fn lower_fallback_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstruction>> {
     let entry = submission.entry_operation.as_ref()?;
-    if submission.executable.as_ref().and_then(|exec| exec.get_function(entry)).is_some() {
+    if submission.backend_plan.as_ref().and_then(|exec| exec.get_function(entry)).is_some() {
         return None;
     }
     if submission.control_flow.as_ref().is_some_and(|payload| payload.functions.iter().any(|function| &function.symbol == entry)) {

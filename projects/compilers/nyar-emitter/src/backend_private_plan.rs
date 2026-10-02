@@ -11,16 +11,20 @@ use nyar_types::{
 
 use crate::{
     contracts::{Block, BlockRef, ValueRef},
-    executable_provider::{ExecutableFunction, ExecutableProvider, FunctionView, SuspendMetadataView},
+    executable_provider::{ExecutableFunction, FunctionView, SuspendMetadataView},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BackendPrivatePlan {
     functions: BTreeMap<QualifiedName, ExecutableFunction>,
 }
 
 impl BackendPrivatePlan {
+    pub fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
+        Self { functions }
+    }
+
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
     pub fn from_compiled_program(program: &CompiledProgram, roots: &[QualifiedName]) -> Result<Self> {
         let canonical = program.canonical();
@@ -40,14 +44,16 @@ impl BackendPrivatePlan {
         }
         Ok(Self { functions })
     }
-}
 
-impl ExecutableProvider for BackendPrivatePlan {
-    fn operations(&self) -> Vec<QualifiedName> { self.functions.keys().cloned().collect() }
-    fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
+    pub fn operations(&self) -> Vec<QualifiedName> {
+        self.functions.keys().cloned().collect()
+    }
+
+    pub fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
         self.functions.get(operation).cloned().map(|function| FunctionView { function })
     }
-    fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
+
+    pub fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
         self.functions.get(operation).and_then(SuspendMetadataView::from_function)
     }
 }

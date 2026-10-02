@@ -45,7 +45,7 @@
             };
             functions.insert(operation.clone(), function);
         }
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(functions)));
+        submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(functions)));
     }
 
     fn delegate_submission() -> FragmentSubmission {

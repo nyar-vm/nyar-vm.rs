@@ -67,14 +67,14 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
         miette::miette!("physical contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
     })?;
     validate_text_encoding_projection(submission, host_boundary)?;
-    let has_executable = submission.executable.as_ref().is_some_and(|exec| !exec.operations().is_empty());
+    let has_executable = !submission.backend_plan.operations().is_empty();
     if !has_executable {
         return Err(miette!("WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"));
     }
     if !submission.witness_calls.is_empty() {
         return Err(miette!("WASM witness calls require Compiler-resolved executable dispatch; witness summaries cannot supply method bodies"));
     }
-    let executable = submission.executable.as_ref().expect("已验证 executable 存在");
+    let executable = &submission.backend_plan;
     for operation in submission.wasm_export_names.keys().chain(submission.entry_operation.iter()) {
         if executable.get_function(operation).is_none() {
             return Err(miette!("WASM callable `{operation}` has no Compiler-owned executable body"));
@@ -108,10 +108,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
 /// projection; an i32 handle, JS string, or canonical ABI string is not proof
 /// of the language encoding it represents.
 fn validate_text_encoding_projection(submission: &FragmentSubmission, host_boundary: HostProjectionBoundary) -> Result<()> {
-    let Some(executable) = &submission.executable
-    else {
-        return Ok(());
-    };
+    let executable = &submission.backend_plan;
     for operation in executable.operations() {
         let Some(view) = executable.get_function(&operation)
         else {
@@ -232,7 +229,7 @@ mod text_encoding_tests {
             diagnostics: Vec::new(),
         };
         let mut submission = FragmentSubmission::default();
-        submission.executable = Some(Arc::new(MirFunctionMapProvider::new(BTreeMap::from([(operation, function)]))));
+        submission.backend_plan = Arc::new(crate::BackendPrivatePlan::from_functions(BTreeMap::from([(operation, function)])));
         submission
     }
 

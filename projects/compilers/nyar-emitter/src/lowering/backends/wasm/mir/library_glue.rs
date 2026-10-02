@@ -147,10 +147,10 @@ pub(super) fn append_library_mode_glue(
     }
 
     let mut invoke_exports = serde_json::Map::new();
-    let executable = submission.executable.as_ref();
+    let executable = &submission.backend_plan;
 
     for (operation, public_name) in &submission.wasm_export_names {
-        let Some(mir_fn) = executable.and_then(|exec| exec.get_function(operation)).map(|view| view.function.clone())
+        let Some(mir_fn) = executable.get_function(operation).map(|view| view.function.clone())
         else {
             continue;
         };

@@ -24,7 +24,7 @@ use crate::FragmentSubmission;
 /// 作为未解析本地调用报编译错误，绝不在 Rust 端写一份返回默认值的 mock。
 fn real_witness_call_target(submission: &FragmentSubmission, slot: &WitnessSlot) -> String {
     let real_operation = QualifiedName::new(vec![Identifier::new(&slot.type_name), Identifier::new(&slot.method_name)]);
-    if let Some(exec) = &submission.executable {
+    if let Some(exec) = &submission.backend_plan {
         if exec.get_function(&real_operation).is_some() {
             return sanitize_operation_symbol(&real_operation);
         }

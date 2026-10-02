@@ -4462,7 +4462,7 @@ impl<'a> JvmMirLowerer<'a> {
     /// Resolve a static call target using its complete semantic symbol only.
     fn resolve_static_call_symbol(&self, path: &nyar::NamePath) -> String {
         let qualified = QualifiedName::new(path.parts().to_vec());
-        if let Some(exec) = &self.ctx.submission.executable {
+        if let Some(exec) = &self.ctx.submission.backend_plan {
             if let Some(operation) = exec.operations().into_iter().find(|operation| operation == &qualified) {
                 return sanitize_jvm_method_symbol(&operation);
             }
@@ -4476,7 +4476,7 @@ impl<'a> JvmMirLowerer<'a> {
     /// Build `(params)return` from the callee MIR body so InvokeStatic matches the emitted method.
     fn resolve_callee_jvm_descriptor(&self, path: &nyar::NamePath) -> Option<JvmMethodDescriptor> {
         let qualified = QualifiedName::new(path.parts().to_vec());
-        let exec = self.ctx.submission.executable.as_ref()?;
+        let exec = self.ctx.submission.backend_plan.as_ref()?;
         let view = exec.get_function(&qualified)?;
         let params =
             effective_param_descriptors(self.ctx.submission, &view.function, enclosing_type_name_from_operation(&qualified).as_deref());
@@ -4503,7 +4503,7 @@ impl<'a> JvmMirLowerer<'a> {
             return Some((JvmMethodRef { owner, name: method_name.to_string(), descriptor }, true, false));
         }
         let operation = nyar::QualifiedName::new(path.parts().to_vec());
-        let mir_fn = self.ctx.submission.executable.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
+        let mir_fn = self.ctx.submission.backend_plan.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
         let return_ty = concretize_self_type(&mir_fn.return_type, Some(type_name));
         let effective_return = effective_jvm_type(&self.ctx, &return_ty);
         let return_type = jvm_type_descriptor(&effective_return);

@@ -269,7 +269,7 @@ pub(crate) fn lower_fragment_to_driver_input(
             // WASI component model: `_start` is always nullary (argv is read via
             // `wasi:cli/environment.get-arguments`), so any WASI partition with an
             // executable entry should be packaged as a command component.
-            let has_executable_entry = submission.executable.as_ref().is_some_and(|exec| !exec.operations().is_empty());
+            let has_executable_entry = !submission.backend_plan.operations().is_empty();
             let package_as_wasi_command = host_boundary == HostProjectionBoundary::WasiComponent && has_executable_entry;
             Ok(DriverBackendInput::Wasm(WasmBinaryBackendInput {
                 module,

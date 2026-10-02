@@ -37,7 +37,7 @@ fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
     submission.entry_operation = Some(QualifiedName::new(vec![nyar::Identifier::new("main")]));
     let mut mir_map = std::collections::BTreeMap::new();
     mir_map.insert(QualifiedName::new(vec![nyar::Identifier::new("main")]), leaf_i32_fn("main", blocks));
-    submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
+    submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
     lower_fragment_mir_to_wasm_module(&submission, "main").0
 }
 

@@ -11,10 +11,10 @@ use nyar::QualifiedName;
 use nyar_types::{NamePath, NyarType};
 
 use crate::{
+    BackendPrivatePlan,
     FragmentSubmission,
     executable_provider::{
-        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableProvider, ExecutableValueRef,
-        resolve_static_callee_operation,
+        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef,
     },
 };
 
@@ -111,10 +111,7 @@ pub(crate) fn build_physical_plan(
     submission: &FragmentSubmission,
     _backend: PhysicalBackend,
 ) -> Result<Vec<PhysicalFunctionPlan>, PhysicalPlanError> {
-    let Some(executable) = &submission.executable
-    else {
-        return Ok(Vec::new());
-    };
+    let executable = &submission.backend_plan;
     executable
         .operations()
         .into_iter()
@@ -138,15 +135,7 @@ pub(crate) fn build_physical_plan(
 pub(crate) fn validate_physical_submission(submission: &FragmentSubmission, backend: PhysicalBackend) -> Result<(), PhysicalPlanError> {
     let plans = build_physical_plan(submission, backend)?;
     if let Some(entry) = &submission.entry_operation {
-        let Some(executable) = &submission.executable
-        else {
-            return Err(PhysicalPlanError {
-                code: "BPHYS008",
-                function: entry.to_string(),
-                location: "entry".to_string(),
-                detail: "entry projection requires Canonical Semantic MIR".to_string(),
-            });
-        };
+        let executable = &submission.backend_plan;
         if executable.get_function(entry).is_none() {
             return Err(PhysicalPlanError {
                 code: "BPHYS008",
@@ -161,7 +150,7 @@ pub(crate) fn validate_physical_submission(submission: &FragmentSubmission, back
 }
 
 fn build_function_plan(
-    executable: &dyn crate::executable_provider::ExecutableProvider,
+    executable: &BackendPrivatePlan,
     function: &ExecutableFunction,
     backend: PhysicalBackend,
 ) -> Result<PhysicalFunctionPlan, PhysicalPlanError> {
@@ -205,14 +194,15 @@ fn build_function_plan(
             if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
                 continue;
             }
-            let callee = resolve_static_callee_operation(executable, path).ok_or_else(|| {
-                PhysicalPlanError::new(
+            let callee = QualifiedName::new(path.parts().to_vec());
+            if executable.get_function(&callee).is_none() {
+                return Err(PhysicalPlanError::new(
                     "BPHYS004",
                     function,
                     location.clone(),
                     "static call target is not an exact local semantic function",
-                )
-            })?;
+                ));
+            }
             let callee_param_types = executable.get_function(&callee).ok_or_else(|| {
                 PhysicalPlanError::new(
                     "BPHYS004",
@@ -375,7 +365,7 @@ mod tests {
 
     fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> crate::FragmentSubmission {
         crate::FragmentSubmission {
-            executable: Some(Arc::new(MirFunctionMapProvider::new(functions.into_iter().collect()))),
+            backend_plan: Arc::new(crate::BackendPrivatePlan::from_functions(functions.into_iter().collect())),
             ..Default::default()
         }
     }

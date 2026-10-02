@@ -349,7 +349,7 @@ fn jvm_descriptor(category: &PhysicalValueCategory) -> Result<JvmTypeDescriptor>
 }
 
 pub(crate) fn require_exact_function(submission: &FragmentSubmission, operation: &nyar::QualifiedName) -> Result<()> {
-    let Some(executable) = &submission.executable
+    let Some(executable) = &submission.backend_plan
     else {
         return Err(miette!("physical contract failed [BPHYS008] {} at entry: JVM entry requires Semantic MIR", operation));
     };

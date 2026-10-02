@@ -90,7 +90,7 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
             local_operations.push(entry_operation.clone());
         }
     }
-    if let Some(executable) = submission.executable.as_ref() {
+    if let Some(executable) = submission.backend_plan.as_ref() {
         for operation in executable.operations() {
             if !local_operations.iter().any(|existing| existing == &operation) {
                 local_operations.push(operation);
@@ -930,7 +930,7 @@ fn collect_unresolved_calls(
 
 fn lower_operation_method(submission: &FragmentSubmission, operation: &QualifiedName) -> Result<MsilMethodBody> {
     if let Some(kind) = is_array_ordinal_host_operation(operation) {
-        if let Some(executable) = submission.executable.as_ref() {
+        if let Some(executable) = submission.backend_plan.as_ref() {
             if let Some(view) = executable.get_function(operation) {
                 return lower_mir_function_to_msil(submission, operation, &view.function);
             }
@@ -938,7 +938,7 @@ fn lower_operation_method(submission: &FragmentSubmission, operation: &Qualified
         // Externalized host_contract (link only): still emit ordinal wrapper MethodDef.
         return Ok(synthesize_array_ordinal_host_standalone(operation, kind));
     }
-    let executable = submission.executable.as_ref().ok_or_else(|| {
+    let executable = submission.backend_plan.as_ref().ok_or_else(|| {
         miette!(
             code = "nyar::clr::missing_mir",
             help = "CLR 本地函数必须由 Rust seed 前端提交可执行 MIR；外部能力只能声明为基础 `[clr(...)]` FFI",
@@ -1004,7 +1004,7 @@ fn collect_clr_externs(submission: &FragmentSubmission) -> Vec<String> {
 }
 
 fn expand_operations_with_mir_callees(submission: &FragmentSubmission, operations: &mut Vec<QualifiedName>) {
-    let Some(exec) = submission.executable.as_ref()
+    let Some(exec) = submission.backend_plan.as_ref()
     else {
         return;
     };

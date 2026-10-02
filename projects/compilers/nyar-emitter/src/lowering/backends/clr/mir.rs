@@ -1040,7 +1040,7 @@ impl<'a> ClrMirLowerer<'a> {
             return Some((owner, method_name.to_string(), true, MsilType::Named(plan.name.clone()), Vec::new()));
         }
         let operation = nyar::QualifiedName::new(path.parts().to_vec());
-        let mir_fn = self.submission.executable.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
+        let mir_fn = self.submission.backend_plan.as_ref().and_then(|exec| exec.get_function(&operation)).map(|view| view.function)?;
         let return_type = nyar_type_to_msil(&mir_fn.return_type, &self.submission.aggregate_layouts);
         let param_types = mir_fn.param_types.iter().skip(1).map(|ty| nyar_type_to_msil(ty, &self.submission.aggregate_layouts)).collect();
         Some((owner, method_name.to_string(), false, return_type, param_types))
@@ -1063,7 +1063,7 @@ impl<'a> ClrMirLowerer<'a> {
         // HttpClient.GetStringAsync / Utf8Text_length.
         let receiver_is_array = self.operand_is_std_array(receiver) || nyar_type_is_std_array(&receiver_ty);
         let receiver_is_clr_array = matches!(self.msil_type_of_operand(receiver), MsilType::SzArray(_));
-        let exec = self.submission.executable.as_ref()?;
+        let exec = self.submission.backend_plan.as_ref()?;
         let mut exact: Option<(String, MsilType, Vec<MsilType>)> = None;
         for operation in exec.operations() {
             if operation.parts().len() < 2 {
@@ -2067,7 +2067,7 @@ impl<'a> ClrMirLowerer<'a> {
         else {
             return Vec::new();
         };
-        let Some(exec) = self.submission.executable.as_ref()
+        let Some(exec) = self.submission.backend_plan.as_ref()
         else {
             return Vec::new();
         };
@@ -3630,7 +3630,7 @@ impl<'a> ClrMirLowerer<'a> {
     fn resolve_operation_for_static_path(&self, path: &nyar::NamePath) -> Option<QualifiedName> {
         if path.parts().len() > 1 {
             let qualified = QualifiedName::new(path.parts().to_vec());
-            if self.submission.executable.as_ref().and_then(|exec| exec.get_function(&qualified)).is_some() {
+            if self.submission.backend_plan.as_ref().and_then(|exec| exec.get_function(&qualified)).is_some() {
                 return Some(qualified);
             }
         }
@@ -3641,7 +3641,7 @@ impl<'a> ClrMirLowerer<'a> {
                 candidates.push(operation.clone());
             }
         }
-        if let Some(exec) = &self.submission.executable {
+        if let Some(exec) = &self.submission.backend_plan {
             for operation in exec.operations() {
                 if operation.parts().last().map(|part| part.as_str()) == Some(simple) {
                     if !candidates.iter().any(|candidate| candidate == &operation) {
@@ -3686,7 +3686,7 @@ impl<'a> ClrMirLowerer<'a> {
     /// Semantic MIR callee symbol.  A backend must not choose a declaration
     /// from a short method name or namespace suffix.
     fn resolve_call_signature(&self, path: &nyar::NamePath) -> Option<(MsilType, Vec<MsilType>)> {
-        let exec = self.submission.executable.as_ref()?;
+        let exec = self.submission.backend_plan.as_ref()?;
         let operation = nyar::QualifiedName::new(path.parts().to_vec());
         let view = exec.get_function(&operation)?;
         let mir_fn = &view.function;

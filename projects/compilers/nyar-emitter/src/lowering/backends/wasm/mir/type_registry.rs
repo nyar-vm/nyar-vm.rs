@@ -26,10 +26,7 @@ use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 ///   或 `layout.storage == Reference` 时深拷贝，否则 `memory.copy`
 pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) -> BTreeSet<LayoutId> {
     let mut ids = BTreeSet::new();
-    let Some(exec) = &ctx.submission.executable
-    else {
-        return ids;
-    };
+    let exec = &ctx.submission.backend_plan;
     for operation in exec.operations() {
         let Some(view) = exec.get_function(&operation)
         else {
@@ -156,7 +153,8 @@ pub(super) fn register_gc_array_types(
         eprintln!("[wasm::arraytype-register] key={key} element={element_type:?} field={field_type_byte} index={type_index}");
         map.insert(key, type_index);
     };
-    if let Some(exec) = &ctx.submission.executable {
+    {
+        let exec = &ctx.submission.backend_plan;
         for operation in exec.operations() {
             let Some(view) = exec.get_function(&operation)
             else {
