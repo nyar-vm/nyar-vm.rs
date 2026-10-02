@@ -79,8 +79,6 @@ pub fn assemble_fragment(
         (None, None)
     };
 
-    let mir = build_output.semantic_mir();
-
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
     let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
@@ -100,9 +98,9 @@ pub fn assemble_fragment(
         witness_calls: fragment.witness_calls.clone(),
         control_flow,
         suspend_runtime,
-        aggregate_layouts: mir.aggregate_layouts.clone(),
-        sum_types: mir.sum_types.iter().map(crate::mir::MirSumDeclaration::physical_layout).collect(),
-        flags_types: mir.flags_types.clone(),
+        aggregate_layouts: build_output.compiled_program().canonical().linked.aggregate_layouts.clone(),
+        sum_types: build_output.compiled_program().canonical().linked.sum_types.clone(),
+        flags_types: build_output.compiled_program().canonical().linked.flags_types.clone(),
         compiled_program: build_output.compiled_program().clone(),
         singleton_instances: collect_singleton_instance_plans(hir_module),
         wasm_export_names: fragment.wasm_export_names.clone(),

@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::{QualifiedName, semantic_ids::{
+use crate::{AggregateLayoutPlan, FlagsLayout, QualifiedName, SumTypeLayout, semantic_ids::{
     layout_choice::RepresentationPlan,
     EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
     SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
@@ -95,6 +95,12 @@ pub struct LinkedSemanticProgram {
     pub entries: BTreeMap<ItemInstanceId, EntryRecord>,
     /// Semantic type table.
     pub types: BTreeMap<TypeId, TypeRecord>,
+    /// Compiler 解析出的聚合布局；装配与 backend 不得从旧 MIR 重建。
+    pub aggregate_layouts: AggregateLayoutPlan,
+    /// Compiler 解析出的 sum 布局；装配与 backend 不得从名称猜测。
+    pub sum_types: Vec<SumTypeLayout>,
+    /// Compiler 解析出的 flags 布局。
+    pub flags_types: Vec<FlagsLayout>,
 }
 
 /// 一个已链接 callable 的公开导出合同。

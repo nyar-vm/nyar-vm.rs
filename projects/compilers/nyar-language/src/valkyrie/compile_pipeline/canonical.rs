@@ -27,6 +27,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let symbols = collect_symbols(module)?;
     let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
+    linked.aggregate_layouts = module.aggregate_layouts.clone();
+    linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
+    linked.flags_types = module.flags_types.clone();
     for (symbol, instance) in &symbols {
         let parts = symbol
             .split("::")
