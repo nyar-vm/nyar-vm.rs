@@ -101,6 +101,8 @@ pub struct LinkedSemanticProgram {
     pub sum_types: Vec<SumTypeLayout>,
     /// Compiler 解析出的 flags 布局。
     pub flags_types: Vec<FlagsLayout>,
+    /// Compiler 解析出的 singleton 生命周期合同。
+    pub singleton_instances: Vec<crate::SingletonInstancePlan>,
 }
 
 /// 一个已链接 callable 的公开导出合同。

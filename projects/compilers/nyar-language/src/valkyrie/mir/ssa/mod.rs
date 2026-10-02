@@ -121,6 +121,8 @@ pub struct MirModule {
     pub sum_types: Vec<MirSumDeclaration>,
     /// `MIR` 阶段确定的 flags 名义布局；装配和后端不得从 HIR 重新收集。
     pub flags_types: Vec<FlagsLayout>,
+    /// Compiler 在 Semantic MIR 边界确定的 singleton 生命周期合同。
+    pub singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     /// `MIR` lowering 过程中收集的编译期诊断，由校验层转化为编译错误。
     pub diagnostics: Vec<MirDiagnostic>,
 }
@@ -751,6 +753,7 @@ impl MirLowerer {
             aggregate_layouts,
             sum_types,
             flags_types,
+            singleton_instances: crate::valkyrie::mir::collect_singleton_instance_plans(module),
             diagnostics,
         };
         result

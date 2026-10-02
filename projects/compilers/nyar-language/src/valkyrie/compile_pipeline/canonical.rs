@@ -30,6 +30,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
     linked.flags_types = module.flags_types.clone();
+    linked.singleton_instances = module.singleton_instances.clone();
     for (symbol, instance) in &symbols {
         let parts = symbol
             .split("::")
@@ -381,7 +382,8 @@ mod tests {
                 }],
             }],
             structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), exports: Vec::new(), entries: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
-            sum_types: Vec::new(), flags_types: Vec::new(), diagnostics: Vec::new(),
+            sum_types: Vec::new(), flags_types: Vec::new(),
+            singleton_instances: Vec::new(), diagnostics: Vec::new(),
         };
         crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
         module
@@ -490,6 +492,22 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn producer_carries_singleton_lifecycle_contract() {
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_build_output(
+                r#"lazy singleton Counter {
+    total: i64 = 0
+}"#,
+            )
+            .expect("singleton 源码必须产生完整 Canonical 合同");
+        let plans = &output.compiled_program().canonical().linked.singleton_instances;
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].qualified_name(), "Counter");
+        assert!(plans[0].is_lazy);
+        assert_eq!(plans[0].instance_field, "INSTANCE");
+    }
+
     fn producer_binds_external_callable_to_import_index_and_signature() {
         let mut module = module_with(
             MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },

@@ -108,6 +108,23 @@ fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModul
                             consumer.flags_types.push(flags.clone());
                         }
                     }
+                    for singleton in &dep.singleton_instances {
+                        if let Some(existing) = consumer
+                            .singleton_instances
+                            .iter()
+                            .find(|existing| existing.qualified_name() == singleton.qualified_name())
+                        {
+                            if existing != singleton {
+                                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                                    "依赖 singleton 合同冲突：{}",
+                                    singleton.qualified_name()
+                                )));
+                            }
+                        }
+                        else {
+                            consumer.singleton_instances.push(singleton.clone());
+                        }
+                    }
                     for function in &mut consumer.functions {
                         if symbols.contains(&function.symbol) {
                             relocate_variant_ids(function, &dep.sum_types, &consumer.sum_types)?;
@@ -253,6 +270,7 @@ mod tests {
             aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(),
             flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
             diagnostics: Vec::new(),
         };
         crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
@@ -382,6 +400,7 @@ mod tests {
             aggregate_layouts: consumer_plan,
             sum_types: Vec::new(),
             flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
             diagnostics: Vec::new(),
         };
         let dependency = MirModule {
@@ -397,6 +416,7 @@ mod tests {
             aggregate_layouts: dep_plan,
             sum_types: Vec::new(),
             flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
@@ -551,6 +571,7 @@ mod tests {
                 variants: vec![MirSumVariant { name: "Stloc0".into(), tag: 0, fields: Vec::new(), result_type: None }],
             }],
             flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");

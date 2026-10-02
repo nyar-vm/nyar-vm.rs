@@ -14,7 +14,7 @@ use nyar::{
 };
 use nyar_types::ItemInstanceId;
 use crate::{
-    FrontendBuildOutput, collect_singleton_instance_plans,
+    FrontendBuildOutput,
 };
 
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
@@ -93,7 +93,7 @@ pub fn assemble_fragment(
         sum_types: build_output.compiled_program().canonical().linked.sum_types.clone(),
         flags_types: build_output.compiled_program().canonical().linked.flags_types.clone(),
         compiled_program: build_output.compiled_program().clone(),
-        singleton_instances: collect_singleton_instance_plans(build_output.hir_module()),
+        singleton_instances: build_output.compiled_program().canonical().linked.singleton_instances.clone(),
         wasm_export_names: fragment.wasm_export_names.clone(),
     })
 }
