@@ -36,14 +36,11 @@ impl BackendPrivatePlan {
     }
 
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
-    pub fn from_compiled_program(program: &CompiledProgram, roots: &[QualifiedName]) -> Result<Self> {
+    pub fn from_compiled_program(program: &CompiledProgram, roots: &[ItemInstanceId]) -> Result<Self> {
         let canonical = program.canonical();
-        let mut pending = roots.iter().map(|name| {
-            let mut candidates = canonical.linked.callable_names.iter().filter(|(_, candidate)| *candidate == name);
-            let instance = candidates.next().map(|(instance, _)| *instance)
-                .ok_or_else(|| miette!("callable `{name}` 缺少 Compiler identity"))?;
-            if candidates.next().is_some() {
-                return Err(miette!("callable ABI 名称 `{name}` 对应多个实例，拒绝选择第一个实例"));
+        let mut pending = roots.iter().copied().map(|instance| {
+            if !canonical.mir.functions.contains_key(&instance) {
+                return Err(miette!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
             }
             Ok(instance)
         }).collect::<Result<Vec<_>>>()?;
@@ -220,7 +217,7 @@ mod representation_contract_tests {
     }
 
     fn prepare(program: &CompiledProgram) -> Result<BackendPrivatePlan> {
-        let roots = program.canonical().linked.callable_names.values().cloned().collect::<Vec<_>>();
+        let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
         BackendPrivatePlan::from_compiled_program(program, &roots)
     }
 
@@ -229,6 +226,30 @@ mod representation_contract_tests {
         let program = source_program();
         let plan = prepare(&program).expect("已有完整标量与直接调用合同必须可表达");
         assert_eq!(plan.functions.len(), program.canonical().mir.functions.len());
+    }
+
+    #[test]
+    fn unknown_root_identity_fails_before_function_projection() {
+        let program = source_program();
+        let unknown = ItemInstanceId::from_index(1000).expect("构造闭包外身份");
+        assert!(!program.canonical().mir.functions.contains_key(&unknown));
+        let error = BackendPrivatePlan::from_compiled_program(&program, &[unknown])
+            .expect_err("闭包外根身份必须失败，不能改按名称寻找其他函数");
+        assert!(error.to_string().contains("缺少 canonical 函数体"), "{error}");
+    }
+
+    #[test]
+    fn root_identity_is_not_resolved_again_from_abi_spelling() {
+        let source = source_program();
+        let root = *source.canonical().mir.functions.keys().next().expect("源码有函数");
+        let mut canonical = source.canonical().clone();
+        canonical.linked.callable_names.insert(root, QualifiedName::new(vec![nyar::Identifier::new("renamed_boundary")]));
+        let program = CompiledProgram::new(canonical, source.representation().clone())
+            .expect("ABI 名不改变已经验证的调用与表示身份");
+        let plan = BackendPrivatePlan::from_compiled_program(&program, &[root])
+            .expect("目标准备必须消费同一根身份");
+        assert!(plan.functions.contains_key(&root));
+        assert_eq!(plan.functions[&root].symbol, "renamed_boundary");
     }
 
     #[test]

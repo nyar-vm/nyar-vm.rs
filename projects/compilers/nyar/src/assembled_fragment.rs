@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use nyar_optimizer::TheoryBundle;
 use nyar_types::{
     AggregateLayoutPlan, CapabilityTag, CompiledProgram, ExternalCallEdge, ExternalImportLink, FlagsLayout, Identifier, InternalCallEdge,
-    QualifiedName, SingletonInstancePlan, SumTypeLayout, WitnessCallEdge, WitnessSubmission,
+    ItemInstanceId, QualifiedName, SingletonInstancePlan, SumTypeLayout, WitnessCallEdge, WitnessSubmission,
 };
 
 use crate::planning::{ControlFlowPayload, SuspendRuntimePayload};
@@ -28,6 +28,8 @@ pub struct AssembledFragment {
     pub theory_bundle: TheoryBundle,
     /// Interpretive entry operation, if any.
     pub entry_operation: Option<QualifiedName>,
+    /// Compiler 已解析的导出/入口 callable 根；后端不得从 ABI 名称反查。
+    pub callable_roots: Vec<ItemInstanceId>,
     /// Stable operation → external import link map.
     pub external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
     /// Resolved external call edges.

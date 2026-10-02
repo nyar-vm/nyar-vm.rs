@@ -12,11 +12,7 @@ use crate::{
 
 /// Build a [`FragmentSubmission`] from a frontend [`AssembledFragment`].
 pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
-    let mut roots = payload.exported_operations.clone();
-    if let Some(entry) = &payload.entry_operation {
-        if !roots.iter().any(|root| root == entry) { roots.push(entry.clone()); }
-    }
-    let backend_plan = BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &roots)?;
+    let backend_plan = BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &payload.callable_roots)?;
     Ok(FragmentSubmission {
         module_name: payload.module_name,
         fragment_id: payload.fragment_id,

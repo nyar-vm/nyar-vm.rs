@@ -14,6 +14,7 @@ use nyar::{
     QualifiedName, SuspendConsumptionModel, TheoryBundle, VmSuspendStrategy, projection_policy_for_target_profile,
     suspend_consumption_model_for_lane,
 };
+use nyar_types::ItemInstanceId;
 use crate::{
     FrontendBuildOutput, collect_singleton_instance_plans,
 };
@@ -82,6 +83,7 @@ pub fn assemble_fragment(
 
     let external_import_links =
         merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
+    let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
         module_name: build_output.neutral_plan().module_name.to_string(),
@@ -90,6 +92,7 @@ pub fn assemble_fragment(
         required_capabilities: fragment.required_capabilities.clone(),
         theory_bundle: TheoryBundle { shared: build_output.neutral_plan().rewrite_theory.clone(), fragment: fragment.rewrite_theory.clone() },
         entry_operation: fragment.entry_operation.clone(),
+        callable_roots,
         external_import_links,
         external_call_edges: fragment.external_call_edges.clone(),
         internal_call_edges: fragment.internal_call_edges.clone(),
@@ -104,6 +107,28 @@ pub fn assemble_fragment(
         singleton_instances: collect_singleton_instance_plans(hir_module),
         wasm_export_names: fragment.wasm_export_names.clone(),
     })
+}
+
+fn resolve_callable_roots(
+    program: &nyar_types::CompiledProgram,
+    exported_operations: &[QualifiedName],
+    entry_operation: Option<&QualifiedName>,
+) -> MietteResult<Vec<ItemInstanceId>> {
+    let mut names = exported_operations.to_vec();
+    if let Some(entry) = entry_operation {
+        if !names.iter().any(|name| name == entry) {
+            names.push(entry.clone());
+        }
+    }
+    names.into_iter().map(|name| {
+        let mut candidates = program.canonical().linked.callable_names.iter().filter(|(_, candidate)| *candidate == &name);
+        let instance = candidates.next().map(|(instance, _)| *instance)
+            .ok_or_else(|| miette!("Compiler callable `{name}` 缺少稳定实例身份"))?;
+        if candidates.next().is_some() {
+            return Err(miette!("Compiler callable ABI 名称 `{name}` 对应多个实例，拒绝选择第一个实例"));
+        }
+        Ok(instance)
+    }).collect()
 }
 
 fn merge_program_external_import_links(
@@ -135,6 +160,33 @@ fn merge_program_external_import_links(
 #[cfg(test)]
 mod import_contract_tests {
     use super::*;
+
+    #[test]
+    fn source_callable_roots_bind_to_compiler_instances() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "[export(name: \"first\")] [main] micro first() -> unit { return } \
+             [export(name: \"second\")] micro second() -> unit { return }",
+        ).expect("当前源码必须形成完整成功载荷");
+        let program = output.compiled_program();
+        let operations = program.canonical().linked.callable_names.values().cloned().collect::<Vec<_>>();
+        let entry = program.canonical().linked.entries.keys().next().expect("源码有显式入口");
+        let entry_name = &program.canonical().linked.callable_names[entry];
+        let roots = resolve_callable_roots(program, &operations, Some(entry_name))
+            .expect("Compiler 组装边界必须绑定精确实例根");
+        assert_eq!(roots.iter().copied().collect::<BTreeSet<_>>(), program.canonical().mir.functions.keys().copied().collect());
+        assert_eq!(roots.len(), operations.len(), "入口已在根集合中时不得重复追加");
+    }
+
+    #[test]
+    fn unresolved_partition_root_fails_at_compiler_assembly() {
+        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+            "micro answer() -> i32 { return 23 }",
+        ).expect("当前源码必须编译");
+        let missing = QualifiedName::new(vec![Identifier::new("missing")]);
+        let error = resolve_callable_roots(output.compiled_program(), &[missing], None)
+            .expect_err("分区根缺失必须在 Compiler 边界失败，不得推迟到 emitter 猜测");
+        assert!(error.to_string().contains("缺少稳定实例身份"), "{error}");
+    }
 
     #[test]
     fn compiler_surface_counts_consume_verified_canonical_exports() {
