@@ -1,7 +1,7 @@
 use crate::{
     executable_provider::{
         ExecutableFunction as MirFunction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
-        ExecutableProvider, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableValueRef as MirValueRef, NyarType,
     },
     nyar_backend_clr::{
         MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode,
@@ -1024,7 +1024,7 @@ fn expand_operations_with_mir_callees(submission: &FragmentSubmission, operation
     }
 }
 
-fn collect_mir_callee_operations(exec: &dyn ExecutableProvider, mir_fn: &MirFunction) -> Vec<QualifiedName> {
+fn collect_mir_callee_operations(exec: &crate::BackendPrivatePlan, mir_fn: &MirFunction) -> Vec<QualifiedName> {
     let mut callees = Vec::new();
     for block in &mir_fn.blocks {
         for instruction in &block.instructions {
@@ -1058,7 +1058,7 @@ fn collect_mir_callee_operations(exec: &dyn ExecutableProvider, mir_fn: &MirFunc
 }
 
 fn resolve_mir_callee_operation(
-    exec: &dyn ExecutableProvider,
+    exec: &crate::BackendPrivatePlan,
     mir_fn: &MirFunction,
     path: &NamePath,
     arguments: &[MirOperand],

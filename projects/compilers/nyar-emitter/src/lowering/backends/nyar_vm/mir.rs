@@ -22,10 +22,7 @@ use super::{
     nyar_vm::nyar_public_export_name,
     singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
-use crate::{
-    FragmentSubmission,
-    executable_provider::resolve_static_callee_operation,
-};
+use crate::{BackendPrivatePlan, FragmentSubmission};
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -200,7 +197,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
 fn build_nyar_function_entry_arities(
-    exec: &dyn crate::executable_provider::ExecutableProvider,
+    exec: &BackendPrivatePlan,
     operations: &[QualifiedName],
 ) -> BTreeMap<i32, usize> {
     let mut map = BTreeMap::new();
@@ -221,7 +218,7 @@ fn build_nyar_function_entry_arities(
 
 fn build_nyar_function_index_map(
     _submission: &FragmentSubmission,
-    exec: &dyn crate::executable_provider::ExecutableProvider,
+    exec: &BackendPrivatePlan,
     operations: &[QualifiedName],
 ) -> BTreeMap<String, i32> {
     let mut map = BTreeMap::new();
@@ -1008,8 +1005,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn resolve_function_index(&self, path: &nyar::NamePath, _arguments: &[MirOperand]) -> Option<i32> {
-        if let Some(exec) = &self.submission.backend_plan {
-            if let Some(operation) = resolve_static_callee_operation(exec.as_ref(), path) {
+        {
+            let operation = nyar::QualifiedName::new(path.parts().to_vec());
+            if self.submission.backend_plan.get_function(&operation).is_some() {
                 return self.function_index_for_operation(&operation);
             }
         }

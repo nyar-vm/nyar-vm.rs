@@ -120,7 +120,7 @@ fn expand_jvm_operations_with_mir_callees(submission: &FragmentSubmission, opera
 }
 
 fn resolve_jvm_mir_callee_operation(
-    exec: &dyn crate::executable_provider::ExecutableProvider,
+    exec: &crate::BackendPrivatePlan,
     path: &nyar::NamePath,
     _arguments: &[crate::executable_provider::ExecutableOperand],
 ) -> Option<QualifiedName> {
