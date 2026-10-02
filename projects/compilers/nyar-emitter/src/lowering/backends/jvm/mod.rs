@@ -72,7 +72,7 @@ fn collect_jvm_local_operations(submission: &FragmentSubmission) -> Vec<Qualifie
 /// callees (`has_cycle`, `Utf8Text.infix ==`, …) receive method bodies even when call
 /// edges were not recorded on the fragment.
 fn expand_jvm_operations_with_mir_callees(submission: &FragmentSubmission, operations: &mut Vec<QualifiedName>) {
-    use crate::executable_provider::{ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand};
+    use crate::backend_plan_views::{ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand};
 
     let Some(exec) = submission.backend_plan.as_ref()
     else {
@@ -122,7 +122,7 @@ fn expand_jvm_operations_with_mir_callees(submission: &FragmentSubmission, opera
 fn resolve_jvm_mir_callee_operation(
     exec: &crate::BackendPrivatePlan,
     path: &nyar::NamePath,
-    _arguments: &[crate::executable_provider::ExecutableOperand],
+    _arguments: &[crate::backend_plan_views::ExecutableOperand],
 ) -> Option<QualifiedName> {
     let method_name = path.parts().last()?.as_str();
     if path.parts().len() > 1 {

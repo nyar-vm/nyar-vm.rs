@@ -7,7 +7,7 @@ mod backend;
 pub mod contracts;
 mod driver;
 mod backend_private_plan;
-pub mod executable_provider;
+pub mod backend_plan_views;
 mod lowering;
 mod nullable_profiles;
 
@@ -38,12 +38,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name},
-    executable_provider::ExecutableFunction,
+    backend_plan_views::ExecutableFunction,
     lowering::{lower_fragment_to_driver_input, write_clr_msil_sidecar, write_wasm_wat_sidecar},
 };
 
 pub use assembly::fragment_submission_from_assembled;
-pub(crate) use executable_provider::{FunctionView, SuspendMetadataView};
+pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 pub use nullable_profiles::{
     FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
@@ -54,7 +54,7 @@ pub use nyar::ArtifactPartition;
 #[doc(hidden)]
 pub mod testing {
     #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use crate::executable_provider::ExecutableFunction;
+    use crate::backend_plan_views::ExecutableFunction;
     use miette::Result;
     #[cfg(feature = "legacy-lanes-clr-jvm-native")]
     use nyar::QualifiedName;

@@ -4,7 +4,7 @@ use crate::{
         Block, BlockRef, Constant, DispatchKind, ExecutableFunction, Instruction, InstructionKind, IntrinsicCompareOp, IntrinsicOpcode,
         Operand, ReceiverPassingKind, StorageKind, Terminator, Value, ValueOrigin, ValueRef,
     },
-    executable_provider::MirFunctionMapProvider,
+    backend_plan_views::MirFunctionMapProvider,
     testing::field_slot_index,
 };
 use nyar::{Identifier, NamePath, NyarType, QualifiedName};
@@ -345,7 +345,7 @@ fn jvm_singleton_instance_method_call_emits_invokevirtual() {
         blocks: Vec::new(),
         diagnostics: Vec::new(),
     };
-    let mut mir_map: std::collections::BTreeMap<QualifiedName, crate::executable_provider::ExecutableFunction> = Default::default();
+    let mut mir_map: std::collections::BTreeMap<QualifiedName, crate::backend_plan_views::ExecutableFunction> = Default::default();
     mir_map.insert(increment_key, increment_fn);
 
     let operation = QualifiedName::new(vec![Identifier::new("main")]);

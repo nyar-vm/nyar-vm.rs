@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use crate::{
     BackendPrivatePlan,
     FragmentSubmission,
-    executable_provider::{
+    backend_plan_views::{
         ExecutableFunction, ExecutableInstructionKind, ExecutableOperand,
     },
 };

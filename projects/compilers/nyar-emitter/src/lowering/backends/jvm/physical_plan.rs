@@ -362,7 +362,7 @@ pub(crate) fn require_exact_function(submission: &FragmentSubmission, operation:
 #[cfg(test)]
 mod tests {
     use super::{prepare, require_exact_function, verify_emitted_method};
-    use crate::executable_provider::MirFunctionMapProvider;
+    use crate::backend_plan_views::MirFunctionMapProvider;
     use nyar::{Identifier, QualifiedName};
     use nyar_types::{Block, BlockRef, ExecutableFunction, NyarType, Operand, Terminator, ValueRef};
     use std::{collections::BTreeMap, sync::Arc};

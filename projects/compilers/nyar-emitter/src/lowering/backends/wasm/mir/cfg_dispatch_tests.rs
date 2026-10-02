@@ -5,7 +5,7 @@ use super::lower_fragment_mir_to_wasm_module;
 use crate::{
     FragmentSubmission,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
-    executable_provider::MirFunctionMapProvider,
+    backend_plan_views::MirFunctionMapProvider,
 };
 use nyar::{NyarType, QualifiedName};
 use std::{process::Command, sync::Arc};

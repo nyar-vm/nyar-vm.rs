@@ -13,7 +13,7 @@ use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId};
 
 use crate::{
     FragmentSubmission,
-    executable_provider::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
+    backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
 };
 
 /// Cross-backend lowering context attached to a fragment submission.
@@ -280,7 +280,7 @@ impl<'a> ExecutableLoweringContext<'a> {
     ///
     /// IntrinsicOpcode 注册表已从 Semantic MIR 移除。
     /// 恒返回 `None`；后端必须降低 ArrayGet/Set/Length 与 Invoke。
-    pub fn resolve_intrinsic_opcode(&self, _callee: &crate::executable_provider::ExecutableOperand) -> Option<()> {
+    pub fn resolve_intrinsic_opcode(&self, _callee: &crate::backend_plan_views::ExecutableOperand) -> Option<()> {
         None
     }
 }

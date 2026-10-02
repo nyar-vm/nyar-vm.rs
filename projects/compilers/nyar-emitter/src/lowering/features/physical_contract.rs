@@ -13,7 +13,7 @@ use nyar_types::{NamePath, NyarType};
 use crate::{
     BackendPrivatePlan,
     FragmentSubmission,
-    executable_provider::{
+    backend_plan_views::{
         ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef,
     },
 };
@@ -326,7 +326,7 @@ mod tests {
     use nyar::{Identifier, QualifiedName};
     use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef};
 
-    use crate::executable_provider::MirFunctionMapProvider;
+    use crate::backend_plan_views::MirFunctionMapProvider;
 
     use super::{PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission};
 

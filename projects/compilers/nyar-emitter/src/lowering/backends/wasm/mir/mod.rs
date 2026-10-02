@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    executable_provider::{
+    backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant,
         ExecutableDispatchKind as MirDispatchKind, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
         ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand, ExecutableReceiverPassingKind as ReceiverPassingKind,
@@ -2863,7 +2863,7 @@ mod cfg_dispatch_tests {
     use crate::{
         FragmentSubmission,
         contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
-        executable_provider::MirFunctionMapProvider,
+        backend_plan_views::MirFunctionMapProvider,
     };
     use nyar::{NyarType, QualifiedName};
     use std::{process::Command, sync::Arc};

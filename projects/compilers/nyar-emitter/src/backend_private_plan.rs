@@ -11,7 +11,7 @@ use nyar_types::{
 
 use crate::{
     contracts::{Block, BlockRef, ValueRef},
-    executable_provider::{ExecutableFunction, FunctionView, SuspendMetadataView},
+    backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。

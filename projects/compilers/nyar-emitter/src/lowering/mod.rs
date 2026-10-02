@@ -22,7 +22,7 @@ use crate::{DriverBackendInput, FragmentSubmission};
 #[cfg(feature = "nyar-vm-lane")]
 use crate::NyarVmBackendInput;
 #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-use crate::executable_provider::ExecutableFunction;
+use crate::backend_plan_views::ExecutableFunction;
 
 pub(crate) mod backends;
 pub(crate) mod features;

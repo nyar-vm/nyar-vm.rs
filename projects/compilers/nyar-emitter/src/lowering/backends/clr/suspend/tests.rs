@@ -7,7 +7,7 @@
     };
     use crate::nyar_backend_clr::{ClrBinaryBackendInput, MsilInstructionOperand, MsilOpcode, PeWriter, PeWriterOptions};
     use crate::contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator};
-    use crate::executable_provider::MirFunctionMapProvider;
+    use crate::backend_plan_views::MirFunctionMapProvider;
     use nyar::NyarType;
     use std::sync::Arc;
     use tempfile::tempdir;

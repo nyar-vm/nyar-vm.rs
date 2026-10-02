@@ -397,7 +397,7 @@
         };
         let mut submission = empty_submission();
         submission.aggregate_layouts = plan;
-        submission.backend_plan = Some(std::sync::Arc::new(crate::executable_provider::MirFunctionMapProvider::new(
+        submission.backend_plan = Some(std::sync::Arc::new(crate::backend_plan_views::MirFunctionMapProvider::new(
             [(QualifiedName::new(vec![Identifier::new("app"), Identifier::new("main")]), mir_fn)]
                 .into_iter()
                 .collect(),
@@ -491,7 +491,7 @@
         };
         let mut submission = empty_submission();
         submission.aggregate_layouts = plan;
-        submission.backend_plan = Some(std::sync::Arc::new(crate::executable_provider::MirFunctionMapProvider::new(
+        submission.backend_plan = Some(std::sync::Arc::new(crate::backend_plan_views::MirFunctionMapProvider::new(
             [(QualifiedName::new(vec![Identifier::new("app"), Identifier::new("main")]), mir_fn)]
                 .into_iter()
                 .collect(),

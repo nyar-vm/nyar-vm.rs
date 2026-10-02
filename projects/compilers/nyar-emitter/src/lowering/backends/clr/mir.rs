@@ -1,6 +1,6 @@
 use crate::{
     contracts::ValueOrigin,
-    executable_provider::{
+    backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableReceiverPassingKind as ReceiverPassingKind, ExecutableStorageKind as StorageKind, ExecutableTerminator as MirTerminator,

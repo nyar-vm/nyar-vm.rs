@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     contracts::{EffectKind, ValueOrigin, instruction_primary_result},
-    executable_provider::{
+    backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,

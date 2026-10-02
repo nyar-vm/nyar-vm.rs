@@ -5,7 +5,7 @@ use crate::contracts::{
     Block, BlockRef, Constant, DispatchKind, ExecutableFunction, Instruction, InstructionKind, Operand, ReceiverPassingKind,
     StorageKind, StorageKind as MirStorageKind, Terminator, ValueRef,
 };
-use crate::executable_provider::MirFunctionMapProvider;
+use crate::backend_plan_views::MirFunctionMapProvider;
 use nyar::{Identifier, NamePath, NyarType, QualifiedName};
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, SumTypeLayout, SumVariantLayout};
 use std::collections::BTreeMap;

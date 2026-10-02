@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use nyar::NyarType;
 
 use crate::{
-    executable_provider::ExecutableFunction as MirFunction,
+    backend_plan_views::ExecutableFunction as MirFunction,
     nyar_backend_wasi::{WasmPackageKind, WasmBinaryModule, WasmSection},
 };
 use std_data::binary::wasm::{

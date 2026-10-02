@@ -1,4 +1,4 @@
-use crate::executable_provider::{
+use crate::backend_plan_views::{
     ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableDispatchKind as MirDispatchKind,
     ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind,
     ExecutableOperand as MirOperand, ExecutableReceiverPassingKind as ReceiverPassingKind, ExecutableStorageKind as MirStorageKind,

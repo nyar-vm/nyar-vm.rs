@@ -8,7 +8,7 @@
 
 use crate::{
     contracts::{CaseArm as MirCaseArm, CaseChain as MirCaseChain},
-    executable_provider::{
+    backend_plan_views::{
         ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction, ExecutableInstructionKind as MirInstructionKind,
     },
 };

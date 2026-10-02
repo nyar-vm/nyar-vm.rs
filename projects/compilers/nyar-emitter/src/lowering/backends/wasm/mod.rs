@@ -27,7 +27,7 @@ pub(crate) use suspend::suspend_run_loop_with_witness_wasm_bytes;
 use crate::{
     FragmentSubmission,
     artifacts::suspend_sidecar::serialize_control_flow_payload,
-    executable_provider::ExecutableConstant,
+    backend_plan_views::ExecutableConstant,
     nyar_backend_wasi::{WasmPackageKind, WasiPreview, WasmBinaryModule, WasmSection},
 };
 use miette::{Result, miette};
@@ -197,7 +197,7 @@ mod text_encoding_tests {
     use crate::{
         FragmentSubmission,
         contracts::{Block, BlockRef, ExecutableFunction, Terminator},
-        executable_provider::MirFunctionMapProvider,
+        backend_plan_views::MirFunctionMapProvider,
     };
     use nyar::{Identifier, NyarType, QualifiedName};
 

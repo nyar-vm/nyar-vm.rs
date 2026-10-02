@@ -1,5 +1,5 @@
 use crate::{
-    executable_provider::{
+    backend_plan_views::{
         ExecutableFunction as MirFunction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableValueRef as MirValueRef, NyarType,
     },

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     contracts::ValueOrigin,
-    executable_provider::{
+    backend_plan_views::{
         ExecutableBlockRef, ExecutableFunction, ExecutableInstruction, ExecutableInstructionKind, ExecutableOperand, ExecutableStorageKind,
         ExecutableValueRef,
     },
