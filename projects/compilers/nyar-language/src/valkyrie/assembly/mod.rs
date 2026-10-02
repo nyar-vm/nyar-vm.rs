@@ -93,7 +93,6 @@ pub fn assemble_fragment(
         external_import_links,
         external_call_edges: fragment.external_call_edges.clone(),
         internal_call_edges: fragment.internal_call_edges.clone(),
-        operation_literal_returns: fragment.operation_literal_returns.clone(),
         operation_void_returns: fragment.operation_void_returns.clone(),
         witness_tables: fragment.witness_tables.clone(),
         witness_calls: fragment.witness_calls.clone(),

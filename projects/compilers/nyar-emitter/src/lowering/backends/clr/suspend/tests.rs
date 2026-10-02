@@ -59,7 +59,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_literal_returns: Default::default(),
             operation_void_returns: Default::default(),
             witness_tables: vec![WitnessSubmission {
                 type_name: "CounterIterator".to_string(),
@@ -122,7 +121,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_literal_returns: Default::default(),
             operation_void_returns: Default::default(),
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
@@ -336,7 +334,6 @@
             external_import_links: BTreeMap::new(),
             external_call_edges: Vec::new(),
             internal_call_edges: Vec::new(),
-            operation_literal_returns: Default::default(),
             operation_void_returns: Default::default(),
             witness_tables: vec![WitnessSubmission {
                 type_name: "ReadyFuture".to_string(),

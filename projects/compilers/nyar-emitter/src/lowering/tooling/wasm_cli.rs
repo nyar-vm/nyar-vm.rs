@@ -15,11 +15,6 @@ pub(crate) fn node_cli_export_seed_aliases() -> &'static [(&'static str, &'stati
     &[("version_text", "version"), ("print_root_help", "help"), ("build_from_cli_state", "build")]
 }
 
-/// 操作叶名是否为 `version_text`（合成 `version` 导出回退路径）。
-pub(crate) fn is_version_text_operation(operation: &QualifiedName) -> bool {
-    operation_leaf_matches(operation, "version_text")
-}
-
 /// 操作叶名是否为 `build_from_cli_state`（仅经播种表判定）。
 pub(crate) fn is_build_from_cli_operation(operation: &QualifiedName) -> bool {
     operation_leaf_matches(operation, "build_from_cli_state")

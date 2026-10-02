@@ -80,11 +80,6 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
             local_operations.push(edge.callee_symbol.clone());
         }
     }
-    for operation in submission.operation_literal_returns.keys() {
-        if !local_operations.iter().any(|existing| existing == operation) {
-            local_operations.push(operation.clone());
-        }
-    }
     if let Some(entry_operation) = submission.entry_operation.as_ref() {
         if !local_operations.iter().any(|operation| operation == entry_operation) {
             local_operations.push(entry_operation.clone());

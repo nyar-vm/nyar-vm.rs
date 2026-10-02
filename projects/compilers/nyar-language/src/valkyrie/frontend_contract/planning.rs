@@ -360,7 +360,6 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
     let object_algebraic_program = hir_module_to_object_algebraic_program(module);
     let external_call_edges = external_call_edges(module, &program_facts.functions);
     let internal_call_edges = internal_call_edges(module, &program_facts.functions);
-    let operation_literal_returns = operation_literal_returns(module);
     let operation_void_returns = operation_void_returns(module);
     let witness_tables = Vec::new();
     let witness_calls = Vec::new();
@@ -371,7 +370,6 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
         .map(|dimension| {
             let fragment_external_call_edges = external_call_edges_for_operations(&external_call_edges, &dimension.exported_operations);
             let fragment_internal_call_edges = internal_call_edges_for_operations(&internal_call_edges, &dimension.exported_operations);
-            let fragment_literal_returns = literal_returns_for_operations(&operation_literal_returns, &dimension.exported_operations);
             let mut required_capabilities = dimension.required_capabilities.clone();
             if witness_capability {
                 let tag = CapabilityTag::new("trait-witness");
@@ -404,7 +402,6 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
                 ),
                 external_call_edges: fragment_external_call_edges,
                 internal_call_edges: fragment_internal_call_edges,
-                operation_literal_returns: fragment_literal_returns,
                 operation_void_returns: operation_void_returns.clone(),
                 witness_tables: fragment_witness_tables,
                 witness_calls: fragment_witness_calls,
@@ -556,18 +553,6 @@ fn internal_call_edges_for_operations(edges: &[InternalCallEdge], operations: &[
     edges.iter().filter(|edge| operations.iter().any(|operation| *operation == edge.caller)).cloned().collect()
 }
 
-fn operation_literal_returns(module: &HirModule) -> BTreeMap<QualifiedName, String> {
-    let module_name = qualified_name(&module.name);
-    module
-        .functions
-        .iter()
-        .filter_map(|function| {
-            let symbol = function_symbol(&module_name, function);
-            string_literal_from_function_body(&function.body).map(|literal| (symbol, literal))
-        })
-        .collect()
-}
-
 fn operation_void_returns(module: &HirModule) -> BTreeSet<QualifiedName> {
     let module_name = qualified_name(&module.name);
     module
@@ -576,13 +561,6 @@ fn operation_void_returns(module: &HirModule) -> BTreeSet<QualifiedName> {
         .filter(|function| matches!(function.return_type, ValkyrieType::Unit))
         .map(|function| function_symbol(&module_name, function))
         .collect()
-}
-
-fn literal_returns_for_operations(
-    literal_returns: &BTreeMap<QualifiedName, String>,
-    operations: &[QualifiedName],
-) -> BTreeMap<QualifiedName, String> {
-    operations.iter().filter_map(|operation| literal_returns.get(operation).map(|literal| (operation.clone(), literal.clone()))).collect()
 }
 
 fn collect_internal_call_edges_from_block(

@@ -628,7 +628,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut function_indices = Vec::new();
     let mut code_bodies = Vec::new();
     let mut exports = Vec::new();
-    let mut synthetic_version_body = None;
 
     let ctx = ExecutableLoweringContext::new(submission);
     eprintln!("[wasm::module-lower-start] export={export_name} operations={} host_imports={}", operations.len(), host_imports.len());
@@ -1001,34 +1000,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             };
             exports.push((export, WasmExternalKind::Func.as_u8(), function_index));
         }
-        if !exports.iter().any(|(name, _, _)| *name == "version") {
-            if let Some((_, text)) = submission
-                .operation_literal_returns
-                .iter()
-                .find(|(operation, _)| wasm_cli::is_version_text_operation(operation))
-            {
-                if let Some(&literal_index) = string_literal_index.get(text) {
-                    let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-                    type_indices.push(wasm_function_type(&[], &[VALTYPE_I32]));
-                    function_indices.push(type_index);
-                    let function_index = import_count + u32::try_from(code_bodies.len()).expect("function index overflow");
-                    let mut body = vec![0];
-                    WasmOpcode::I32Const.encode(&mut body);
-                    encode_sleb128_i32(literal_index as i32, &mut body);
-                    if let Some(import_index) = const_utf8_import {
-                        WasmOpcode::Call.encode(&mut body);
-                        encode_uleb128(import_index, &mut body);
-                    }
-                    WasmOpcode::End.encode(&mut body);
-                    synthetic_version_body = Some((function_index, body));
-                }
-            }
-        }
-    }
-
-    if let Some((function_index, body)) = synthetic_version_body {
-        code_bodies.push(body);
-        exports.push(("version", WasmExternalKind::Func.as_u8(), function_index));
     }
 
     library_glue::append_library_mode_glue(

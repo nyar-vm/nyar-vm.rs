@@ -16,7 +16,6 @@ fn empty_submission() -> FragmentSubmission {
         external_import_links: Default::default(),
         external_call_edges: Vec::new(),
         internal_call_edges: Vec::new(),
-        operation_literal_returns: Default::default(),
         operation_void_returns: Default::default(),
         witness_tables: Vec::new(),
         witness_calls: Vec::new(),
