@@ -325,9 +325,9 @@ micro main() -> i64 {
 "#,
             )
             .unwrap();
-        let plan = build_output.neutral_plan();
-        assert_eq!(plan.semantic_fragments[0].external_import_links.len(), 1, "links={:?}", plan.semantic_fragments[0].external_import_links);
-        assert_eq!(plan.semantic_fragments[0].external_call_edges.len(), 1, "edges={:?}", plan.semantic_fragments[0].external_call_edges);
+        let fragment = build_output.compiled_program().canonical().linked.fragments.values().next().expect("Canonical 片段");
+        assert_eq!(fragment.external_imports.len(), 1, "links={:?}", fragment.external_imports);
+        assert_eq!(fragment.external_call_edges.len(), 1, "edges={:?}", fragment.external_call_edges);
     }
 
     #[test]

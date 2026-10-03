@@ -34,12 +34,15 @@ pub fn plan_artifacts_from_build_output(
 ) -> Result<ArtifactPartitionPlan, PlanningError> {
     let target_profile = target.to_profile(None);
     let projection_policy = projection_policy_for_target_profile(&target_profile).map_err(|error| PlanningError::SemanticContract {
-        module: build_output.neutral_plan().module_name.to_string(),
+        module: build_output.compiled_program().canonical().linked.module_name.clone(),
         stage: nyar_types::CompileStage::RepresentationPlan,
         detail: format!("目标 projection 合同失败: {error:?}"),
     })?;
-    let backend_registry = emitter::bundled_backend_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
-    build_output.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
+    let linked = &build_output.compiled_program().canonical().linked;
+    let backend_registry = emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
+    ArtifactPartitionPlan::from_canonical_program(
+        build_output.compiled_program().canonical(), target, nyar::RewriteTheory::default(), projection_policy, backend_registry, clr_suspend_strategy,
+    )
 }
 
 /// Assemble a platform [`AssembledFragment`] for the given partition.
@@ -48,7 +51,7 @@ pub fn assemble_fragment(
     plan: &ArtifactPartitionPlan,
     partition_index: usize,
 ) -> MietteResult<AssembledFragment> {
-    if plan.module_name != build_output.neutral_plan().module_name {
+    if plan.module_name.to_string() != build_output.compiled_program().canonical().linked.module_name {
         return Err(miette!("前端计划与分区计划不匹配"));
     }
     if partition_index >= plan.partitions.len() {
@@ -78,7 +81,7 @@ pub fn assemble_fragment(
     let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
-        module_name: build_output.neutral_plan().module_name.to_string(),
+        module_name: build_output.compiled_program().canonical().linked.module_name.clone(),
         fragment_id: fragment.id.clone(),
         exported_operations,
         required_capabilities: fragment.required_capabilities.clone(),

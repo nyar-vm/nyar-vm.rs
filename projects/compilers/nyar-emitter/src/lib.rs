@@ -522,6 +522,41 @@ pub fn bundled_backend_registry(
     registry
 }
 
+/// 基于 Canonical fragment 生成 bundled backend registry。
+pub fn bundled_backend_registry_from_canonical(
+    fragments: &std::collections::BTreeMap<nyar_types::Identifier, nyar_types::CanonicalFragment>,
+    target_profile: &TargetProfile,
+    projection_policy: &ProjectionPolicy,
+) -> BackendRegistry {
+    let mut registry = BackendRegistry::default();
+    let binary_target: BinaryTarget = target_profile.canonical_target.into();
+    if target_profile.backend_family == TargetBackendFamily::Gpu {
+        for fragment in fragments.values() {
+            nyar::backends::gpu::register_gpu_backends(
+                &mut registry,
+                fragment.id.clone(),
+                vec![projection_policy.family],
+                vec![binary_target.clone()],
+                fragment.required_capabilities.clone(),
+            );
+        }
+        return registry;
+    }
+    let Some(descriptor) = bundled_backend_capability_descriptor(target_profile.backend_family)
+    else {
+        return registry;
+    };
+    for fragment in fragments.values() {
+        registry.register(descriptor.interpreter_registration(
+            fragment.id.clone(),
+            vec![projection_policy.family],
+            vec![binary_target.clone()],
+            fragment.required_capabilities.clone(),
+        ));
+    }
+    registry
+}
+
 /// 后端路由可接受的动态分发能力。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendRoute {
