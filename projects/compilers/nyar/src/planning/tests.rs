@@ -1,9 +1,11 @@
-use nyar::{
-    ArtifactPartitionPlan, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, CanonicalTarget,
-    ClrSuspendStrategy, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ObjectAlgebraicDimension, ObjectAlgebraicProgram,
-    PlanningInput, ProgramFacts, ProjectionPolicy, QualifiedName, ReferenceManagement, RewriteEquation, RewritePhase, RewriteRule,
-    RewriteTheory, RuntimeRequirement, SemanticFragment, TargetLane,
+use super::PlanningInput;
+use crate::{
+    ArtifactPartitionPlan, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget,
+    CanonicalTarget, ClrSuspendStrategy, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ObjectAlgebraicDimension,
+    ObjectAlgebraicProgram, ProgramFacts, ProjectionPolicy, QualifiedName, ReferenceManagement, RewriteEquation,
+    RewritePhase, RewriteRule, RewriteTheory, RuntimeRequirement, SemanticFragment, TargetLane,
 };
+use nyar_analyzer::FunctionAnalysis;
 use nyar_types::{CapabilityTag, ExternalImportLink};
 
 fn qualified_name(parts: &[&str]) -> QualifiedName {
@@ -29,7 +31,7 @@ fn semantic_fragment_from_dimension(dimension: &ObjectAlgebraicDimension) -> Sem
 
 fn backend_registry_for(target: CanonicalTarget, projection_family: FutamuraProjectionFamily, fragment_names: &[&str]) -> BackendRegistry {
     let mut registry = BackendRegistry::default();
-    let binary_target: nyar::BinaryTarget = target.into();
+    let binary_target: BinaryTarget = target.into();
     let (backend_name, interpreter, lane, input_kind) = match projection_family {
         FutamuraProjectionFamily::Clr => ("clr-binary", "clr.msil", TargetLane::Clr, Some(BackendInputKind::MsilText)),
         FutamuraProjectionFamily::Jvm => ("jvm-binary", "jvm.classfile", TargetLane::Jvm, Some(BackendInputKind::JvmClassFile)),
@@ -191,7 +193,7 @@ fn planning_can_promote_operation_level_reference_management_hint() {
         entries: Vec::new(),
         imports: Vec::new(),
         exports: Vec::new(),
-        functions: vec![nyar::FunctionAnalysis {
+        functions: vec![FunctionAnalysis {
             symbol: operation.clone(),
             is_external: false,
             can_suspend: false,
@@ -252,7 +254,7 @@ fn planning_splits_partitions_by_dimension() {
         imports: Vec::new(),
         exports: Vec::new(),
         functions: vec![
-            nyar::FunctionAnalysis {
+            FunctionAnalysis {
                 symbol: base_operation.clone(),
                 is_external: false,
                 can_suspend: false,
@@ -262,7 +264,7 @@ fn planning_splits_partitions_by_dimension() {
                 host_provider_for: None,
                 reference_management_hint: None,
             },
-            nyar::FunctionAnalysis {
+            FunctionAnalysis {
                 symbol: host_operation.clone(),
                 is_external: false,
                 can_suspend: false,
@@ -272,7 +274,7 @@ fn planning_splits_partitions_by_dimension() {
                 host_provider_for: None,
                 reference_management_hint: Some(ReferenceManagement::HostGc),
             },
-            nyar::FunctionAnalysis {
+            FunctionAnalysis {
                 symbol: suspend_operation.clone(),
                 is_external: false,
                 can_suspend: true,

@@ -1,6 +1,9 @@
 pub mod control_flow;
 pub mod rewrite_theory_manifest;
 
+#[cfg(test)]
+mod tests;
+
 pub use rewrite_theory_manifest::{
     RewriteTheoryEquationEntryV1, RewriteTheoryManifestV1, RewriteTheoryRuleEntryV1, RewriteTheoryTermRewriteEntryV1, builtin_graphic_manifest,
     builtin_neural_manifest,
@@ -54,7 +57,7 @@ pub enum PlanningError {
 
 /// 进入 `nyar` 规划层的中性输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlanningInput {
+struct PlanningInput {
     /// 逻辑模块名。
     pub module_name: QualifiedName,
     /// 目标。
@@ -224,7 +227,7 @@ impl ArtifactPartitionPlan {
     }
 
     /// 基于程序事实生成最小分区计划。
-    pub fn from_input(input: PlanningInput) -> Result<Self, PlanningError> {
+    fn from_input(input: PlanningInput) -> Result<Self, PlanningError> {
         let PlanningInput {
             module_name,
             target,

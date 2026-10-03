@@ -28,7 +28,7 @@ pub use self::{
     packaging::{ArtifactDescriptor, ArtifactSet, OutputSpec, TargetLane},
     planning::{
         ArtifactPartition, ArtifactPartitionPlan, ControlFlowPayload, FragmentOptimizationView, PartitionBackendRequirement, PlanningError,
-        PlanningInput, SemanticFragment, SuspendConsumptionModel, SuspendContinuationArtifact, SuspendDispatchCase, SuspendFunctionArtifact,
+        SemanticFragment, SuspendConsumptionModel, SuspendContinuationArtifact, SuspendDispatchCase, SuspendFunctionArtifact,
         SuspendRuntimeFunctionArtifact, SuspendRuntimePayload, SuspendStateArtifact, SuspendWitnessBinding, builtin_graphic_manifest,
         builtin_neural_manifest, suspend_consumption_model, suspend_consumption_model_for_lane,
     },
