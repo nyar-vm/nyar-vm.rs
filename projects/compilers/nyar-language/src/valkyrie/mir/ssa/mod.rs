@@ -92,6 +92,11 @@ pub enum MirDiagnostic {
         /// 请求的 variant 名称。
         variant: String,
     },
+    /// 完整依赖闭包冻结后仍无法绑定的 callable identity。
+    UnresolvedCallableIdentity {
+        /// 上游解析保留的限定名称，仅用于诊断。
+        symbol: String,
+    },
 }
 
 /// `SSA` 形式的 `MIR` 模块。
@@ -400,6 +405,9 @@ pub enum MirValueOrigin {
 pub enum MirOperand {
     Value(MirValueRef),
     Constant(MirConstant),
+    /// Compiler 在依赖闭包冻结后分配的 callable identity。
+    Callable(ItemInstanceId),
+    /// HIR/链接阶段尚未完成 identity 冻结的结构化名称；不得进入 Canonical 成功值。
     Symbol(NamePath),
 }
 
@@ -786,6 +794,36 @@ fn callable_identity_table(functions: &[MirFunction], external_calls: &[MirExter
 pub fn rebuild_callable_identities(module: &mut MirModule) {
     module.callable_identities = callable_identity_table(&module.functions, &module.external_calls);
     module.type_identities = type_identity_table(&module.functions, &module.external_calls, &module.structs);
+}
+
+/// 在完整依赖闭包冻结后，将所有静态调用从名称改写为稳定 callable identity。
+///
+/// 该边界是名称进入身份的唯一位置。Canonical producer 不得再次从名称反查，
+/// 未解析名称保留为诊断并在 Semantic MIR 校验边界失败。
+pub fn resolve_callable_operands(module: &mut MirModule) {
+    let identities = module.callable_identities.clone();
+    let mut unresolved = Vec::new();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let operation = std::mem::replace(&mut instruction.kind, MirOperation::Copy { source: MirOperand::Value(MirValueRef(u32::MAX)) });
+                instruction.kind = match operation {
+                    MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => {
+                        let name = symbol.to_string();
+                        if let Some(identity) = identities.get(&name).copied() {
+                            MirOperation::Call { callee: MirOperand::Callable(identity), arguments }
+                        }
+                        else {
+                            unresolved.push(name);
+                            MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments }
+                        }
+                    }
+                    operation => operation,
+                };
+            }
+        }
+    }
+    module.diagnostics.extend(unresolved.into_iter().map(|symbol| MirDiagnostic::UnresolvedCallableIdentity { symbol }));
 }
 
 fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {

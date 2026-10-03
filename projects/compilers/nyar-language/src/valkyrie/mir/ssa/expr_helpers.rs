@@ -139,6 +139,7 @@ pub(super) fn infer_builder_operand_type(operand: &MirOperand, value_types: &BTr
     match operand {
         MirOperand::Value(value_ref) => value_types.get(value_ref).cloned(),
         MirOperand::Constant(constant) => infer_builder_constant_type(constant),
+        MirOperand::Callable(_) => None,
         MirOperand::Symbol(_) => None,
     }
 }

@@ -419,6 +419,9 @@ imply SwissTable<K, V> {
                     MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => {
                         Some(crate::types::hir::ValkyrieType::Utf8)
                     }
+                    MirOperand::Callable(identity) => {
+                        panic!("block {} jump to {} arg {} contains callable identity {:?}", block.id.0, target.0, index, identity);
+                    }
                     MirOperand::Symbol(symbol) => {
                         panic!(
                             "block {} jump to {} arg {} is bare symbol {:?}",

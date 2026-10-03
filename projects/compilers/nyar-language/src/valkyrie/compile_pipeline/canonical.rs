@@ -302,7 +302,8 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
 fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
-        MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*symbols.get(&symbol.to_string()).ok_or_else(|| error_without_module("CAN007", "调用身份未解析"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
+        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*identity), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
+        MirOperation::Call { callee: MirOperand::Symbol(_), .. } => Err(error_without_module("CAN007", "Semantic MIR 仍包含未冻结的 callable 名称")),
         MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Value(MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
         MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
         MirOperation::AggregateCopy { source, dest } => Ok(CanonicalOperation::AggregateCopy {

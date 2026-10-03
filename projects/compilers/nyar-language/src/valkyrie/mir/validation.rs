@@ -333,6 +333,7 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
         MirOperand::Constant(MirConstant::Int(_)) => Some(ValkyrieType::Integer64 { signed: true }),
         MirOperand::Constant(MirConstant::Float64(_)) => Some(ValkyrieType::Float64),
         MirOperand::Constant(MirConstant::Unit) => Some(ValkyrieType::Unit),
+        MirOperand::Callable(_) => None,
         MirOperand::Symbol(_) => None,
     };
     for block in &function.blocks {
@@ -373,12 +374,17 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
             }
             if let MirOperation::Call { callee, arguments } = &instruction.kind {
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
-                if let MirOperand::Symbol(symbol) = callee {
-                    let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == symbol.to_string()).collect();
+                let target_symbol = match callee {
+                    MirOperand::Symbol(symbol) => Some(symbol.to_string()),
+                    MirOperand::Callable(identity) => module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone())),
+                    _ => None,
+                };
+                if let Some(target_symbol) = target_symbol {
+                    let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == target_symbol).collect();
                     if candidates.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
                     }
-                    let external: Vec<_> = module.external_calls.iter().filter(|candidate| candidate.symbol == *symbol).collect();
+                    let external: Vec<_> = module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
                     if external.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
                     }
@@ -500,14 +506,15 @@ fn validate_static_call_resolution(
     else {
         return Ok(());
     };
+    if let MirOperand::Callable(identity) = callee {
+        if module.callable_identities.values().any(|candidate| candidate == identity) {
+            return Ok(());
+        }
+        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "callable identity is absent from the Compiler identity table".to_string() });
+    }
     let MirOperand::Symbol(symbol) = callee
     else {
-        return Err(SemanticMirContractError {
-            code: "SMIR003",
-            function: function.symbol.clone(),
-            location,
-            detail: "static call requires an explicit callee symbol".to_string(),
-        });
+        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "static call requires a frozen callable identity".to_string() });
     };
     if is_language_operator_symbol(symbol) || is_language_builtin_symbol(symbol) {
         return Ok(());
@@ -549,6 +556,9 @@ pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
             }
             MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
                 return Err(ParseError::invalid(format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")));
+            }
+            MirDiagnostic::UnresolvedCallableIdentity { symbol } => {
+                return Err(ParseError::invalid(format!("MIR lowering unresolved callable identity `{symbol}`")));
             }
         }
     }
@@ -794,6 +804,7 @@ fn infer_operand_static_type(function: &MirFunction, operand: &MirOperand) -> Op
                 _ => None,
             }
         }),
+        MirOperand::Callable(_) => None,
         MirOperand::Symbol(_) => None,
     }
 }
