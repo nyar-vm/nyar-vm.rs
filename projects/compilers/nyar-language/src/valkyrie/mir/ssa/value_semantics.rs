@@ -258,26 +258,16 @@ fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
     // (e.g. `core.text.TextSpan`={offset,length} vs `std.data.text.von.TextSpan`={start,stop}).
     // Dropping the second entry made StructNew field_slot_index miss `start`/`stop` (both
     // wrote local+0) and JVM VerifyError: "Register N contains wrong type".
-    // Keep every distinct (namespace, name) in `layouts`; map qualified key always; map
-    // simple name only when free (first wins for unqualified lookup / CLR TypeDef alias).
+    // Keep every distinct (namespace, name) in `layouts` and expose only the qualified
+    // key. A bare name is not a layout identity and must never become a first-wins alias.
     let qualified = layout_qualified_key(&layout);
     if plan.layouts.iter().any(|existing| existing.name == layout.name && existing.namespace == layout.namespace) {
         return;
     }
     if layout.storage == MirStorageKind::Value {
-        plan.value_type_names.insert(layout.name.clone());
         plan.value_type_names.insert(qualified.clone());
     }
     plan.type_name_to_layout.insert(qualified, layout.id);
-    match plan.type_name_to_layout.get(&layout.name).copied() {
-        None => {
-            plan.type_name_to_layout.insert(layout.name.clone(), layout.id);
-        }
-        Some(existing) if existing == layout.id => {}
-        Some(_) => {
-            plan.type_name_to_layout.remove(&layout.name);
-        }
-    }
     plan.layouts.push(layout);
 }
 
