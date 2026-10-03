@@ -70,8 +70,8 @@ pub fn assemble_fragment(
         ));
     }
 
-    let external_import_links =
-        merge_program_external_import_links(&fragment.external_import_links, &build_output.neutral_plan().program_facts.functions)?;
+    let canonical_import_links = canonical_external_import_links(build_output.compiled_program())?;
+    let external_import_links = merge_program_external_import_links(&fragment.external_import_links, &canonical_import_links)?;
     let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
@@ -120,22 +120,30 @@ fn resolve_callable_roots(
     }).collect()
 }
 
+fn canonical_external_import_links(
+    program: &nyar_types::CompiledProgram,
+) -> MietteResult<Vec<(QualifiedName, ExternalImportLink)>> {
+    let linked = &program.canonical().linked;
+    linked.imports.values().map(|record| {
+        let symbol = linked.callable_names.get(&record.callee)
+            .ok_or_else(|| miette!("Compiler 外部导入 `{}` 缺少 callable identity", record.capability))?
+            .clone();
+        Ok((symbol, record.link.clone()))
+    }).collect()
+}
+
 fn merge_program_external_import_links(
     fragment_links: &BTreeMap<QualifiedName, ExternalImportLink>,
-    functions: &[nyar::FunctionAnalysis],
+    compiler_links: &[(QualifiedName, ExternalImportLink)],
 ) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
     let mut links = fragment_links.clone();
-    for function in functions {
-        let Some(link) = function.external_import_link.as_ref()
-        else {
-            continue;
-        };
-        if let Some(existing) = links.get(&function.symbol) {
+    for (symbol, link) in compiler_links {
+        if let Some(existing) = links.get(symbol) {
             if existing != link {
-                return Err(miette!("导入身份 `{}` 对应冲突合同", function.symbol));
+                return Err(miette!("导入身份 `{}` 对应冲突合同", symbol));
             }
         } else {
-            links.insert(function.symbol.clone(), link.clone());
+            links.insert(symbol.clone(), link.clone());
         }
     }
     for (symbol, link) in &links {
