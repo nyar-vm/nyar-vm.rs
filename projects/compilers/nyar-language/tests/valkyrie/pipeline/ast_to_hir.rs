@@ -1,5 +1,5 @@
 use nyar_language::{
-    AstToHir, CaptureAnalyzer, FrontendNeutralPlan, MirEffectKind, MirOperation, MirValueOrigin, ValkyrieCompiler,
+    AstToHir, CaptureAnalyzer, MirEffectKind, MirOperation, MirValueOrigin, ValkyrieCompiler,
     types::{
         SourceID,
         hir::{CaptureMode, HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, HirStatementKind, ValkyrieType},
@@ -194,10 +194,12 @@ fn test_compile_source_to_mir_and_build_output() {
         )
         .unwrap();
     assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
-    let neutral_plan: &FrontendNeutralPlan = build_output.neutral_plan();
-    assert_eq!(neutral_plan.semantic_fragments.len(), 1);
-    assert_eq!(neutral_plan.semantic_fragments[0].exported_operations.len(), 1);
-    assert_eq!(neutral_plan.semantic_fragments[0].entry_operation.as_ref().map(ToString::to_string), Some("main::main".to_string()));
+    let fragments = &build_output.compiled_program().canonical().linked.fragments;
+    assert_eq!(fragments.len(), 1);
+    let fragment = fragments.values().next().expect("Canonical 片段");
+    assert_eq!(fragment.exported_operations.len(), 1);
+    let entry = fragment.entry_operation.expect("Canonical 入口");
+    assert_eq!(build_output.compiled_program().canonical().linked.callable_names[&entry].to_string(), "main::main");
 }
 
 #[test]
@@ -217,8 +219,9 @@ micro main() {
         )
         .unwrap();
 
-    let neutral_plan: &FrontendNeutralPlan = build_output.neutral_plan();
-    assert_eq!(neutral_plan.semantic_fragments[0].entry_operation.as_ref().map(ToString::to_string), Some("main::helper_entry".to_string()));
+    let linked = &build_output.compiled_program().canonical().linked;
+    let entry = linked.fragments.values().next().and_then(|fragment| fragment.entry_operation).expect("Canonical 入口");
+    assert_eq!(linked.callable_names[&entry].to_string(), "main::helper_entry");
 }
 
 #[test]
@@ -239,13 +242,13 @@ micro beta_entry() {
         )
         .unwrap();
 
-    let neutral_plan: &FrontendNeutralPlan = build_output.neutral_plan();
-    assert_eq!(neutral_plan.semantic_fragments.len(), 2);
+    let linked = &build_output.compiled_program().canonical().linked;
+    assert_eq!(linked.fragments.len(), 2);
     assert_eq!(
-        neutral_plan
-            .semantic_fragments
+        linked
+            .fragments
             .iter()
-            .map(|fragment| fragment.entry_operation.as_ref().map(ToString::to_string).unwrap_or_default())
+            .map(|(_, fragment)| fragment.entry_operation.map(|entry| linked.callable_names[&entry].to_string()).unwrap_or_default())
             .collect::<Vec<_>>(),
         vec!["main::alpha_entry".to_string(), "main::beta_entry".to_string()]
     );
@@ -345,5 +348,5 @@ fn lowers_array_literal_to_builtin_array_literal_in_mir_and_build_output() {
 
     let build_output = compiler.compile_source_to_build_output(source).unwrap();
     assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
-    assert_eq!(build_output.neutral_plan().semantic_fragments.len(), 1);
+    assert_eq!(build_output.compiled_program().canonical().linked.fragments.len(), 1);
 }

@@ -212,7 +212,11 @@ micro main() {
     let target = nyar_language::CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");
     let target_profile = target.to_profile(None);
     let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");
-    let backend_registry = clr_bundled_registry(&build_output.neutral_plan().semantic_fragments, &target_profile, &projection_policy);
+    let backend_registry = nyar_emitter::bundled_backend_registry_from_canonical(
+        &build_output.compiled_program().canonical().linked.fragments,
+        &target_profile,
+        &projection_policy,
+    );
     let artifact_plan = plan_artifacts_from_build_output(&build_output, target, ClrSuspendStrategy::default())
             .expect("artifact plan");
     let fragment = assemble_fragment(&build_output, &artifact_plan, 0).expect("backend fragment");

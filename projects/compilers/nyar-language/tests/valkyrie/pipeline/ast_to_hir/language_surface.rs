@@ -23,7 +23,7 @@ fn compiler_facade_lowers_into_mir_and_build_output_from_moved_tests() {
         )
         .unwrap();
     assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
-    assert_eq!(build_output.neutral_plan().semantic_fragments.len(), 1);
+    assert_eq!(build_output.compiled_program().canonical().linked.fragments.len(), 1);
 }
 
 #[test]
@@ -66,19 +66,13 @@ micro helper(message: utf16) {{
 "#
             ))
             .unwrap();
-        let neutral_plan = build_output.neutral_plan();
-
-        assert!(neutral_plan.program_facts.requires_capability("host-interop"));
-        assert_eq!(neutral_plan.program_facts.capabilities.len(), 1);
-        assert_eq!(neutral_plan.program_facts.capabilities[0].as_str(), "host-interop");
-        assert_eq!(neutral_plan.program_facts.runtime_requirements.len(), 1);
-        assert_eq!(neutral_plan.program_facts.runtime_requirements[0].key, "host-interop");
-        assert_eq!(neutral_plan.program_facts.runtime_requirements[0].value, "required");
-        assert!(neutral_plan.program_facts.functions[0].uses_host_interop);
-        assert!(neutral_plan.program_facts.functions[0].external_import_link.is_some());
-        assert_eq!(neutral_plan.semantic_fragments[0].external_import_links.len(), 1);
-        assert!(neutral_plan.semantic_fragments[0].external_call_edges.is_empty());
-        let link = neutral_plan.program_facts.functions[0].external_import_link.as_ref().unwrap();
+        let linked = &build_output.compiled_program().canonical().linked;
+        let fragment = linked.fragments.values().next().expect("Canonical 片段");
+        assert!(fragment.required_capabilities.iter().any(|capability| capability.as_str() == "host-interop"));
+        assert_eq!(linked.imports.len(), 1);
+        assert!(fragment.external_imports.len() == 1);
+        assert!(fragment.external_call_edges.is_empty());
+        let link = &linked.imports.values().next().expect("Canonical 导入").link;
         assert!(link.matches_boundary("host"));
         assert!(link.platform_tag.is_none());
         assert_eq!(link.locator_segments().len(), argument_count);
@@ -102,11 +96,13 @@ micro main() -> i64 {
 "#,
         )
         .unwrap();
-    let fragment = &build_output.neutral_plan().semantic_fragments[0];
+    let linked = &build_output.compiled_program().canonical().linked;
+    let fragment = linked.fragments.values().next().expect("Canonical 片段");
 
     assert_eq!(fragment.external_call_edges.len(), 1);
-    assert_eq!(fragment.external_call_edges[0].caller.to_string(), "main::main");
-    assert_eq!(fragment.external_call_edges[0].callee_symbol.to_string(), "main::console_write_line");
+    assert_eq!(linked.callable_names[&fragment.external_call_edges[0].caller].to_string(), "main::main");
+    let import = linked.imports.get(&fragment.external_call_edges[0].import).expect("Canonical 导入");
+    assert_eq!(linked.callable_names[&import.callee].to_string(), "main::console_write_line");
 }
 
 #[test]

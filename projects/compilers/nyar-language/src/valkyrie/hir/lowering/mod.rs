@@ -28,6 +28,7 @@ use crate::{
     },
 };
 use nyar_types::NyarType;
+use nyar::SemanticFragment;
 use ordered_float::OrderedFloat;
 use std_data::text::valkyrie::{
     AstParser, AttributeItem, BinaryOperator, ClassDeclaration, ClassLikeKind, DeclarationBody, FlagsDeclaration, FlagsMemberDeclaration,
@@ -346,30 +347,24 @@ pub struct CompilerSourceGroup {
 /// Stable frontend build output consumed by the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrontendBuildOutput {
-    neutral_plan: FrontendNeutralPlan,
     compiled_program: nyar_types::CompiledProgram,
 }
 
 impl FrontendBuildOutput {
     /// Build output from a lowered HIR module.
     pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
-        let neutral_plan = hir_module_to_frontend_neutral_plan(&hir_module);
+        let semantic_fragments = hir_module_to_frontend_neutral_plan(&hir_module).semantic_fragments;
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-        Self::from_neutral_and_semantic_mir(neutral_plan, semantic_mir)
+        Self::from_semantic_fragments_and_mir(semantic_fragments, semantic_mir)
     }
 
-    fn from_neutral_and_semantic_mir(
-        neutral_plan: FrontendNeutralPlan,
+    fn from_semantic_fragments_and_mir(
+        semantic_fragments: Vec<SemanticFragment>,
         semantic_mir: crate::valkyrie::mir::MirModule,
     ) -> Result<Self, ParseError> {
-        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &neutral_plan.semantic_fragments)
+        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &semantic_fragments)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
-        Ok(Self { neutral_plan, compiled_program })
-    }
-
-    /// 返回中性的前端计划。
-    pub fn neutral_plan(&self) -> &FrontendNeutralPlan {
-        &self.neutral_plan
+        Ok(Self { compiled_program })
     }
 
     /// 返回 Compiler 已验证的 CanonicalProgram；消费者不得重新生产。
@@ -643,8 +638,8 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        let neutral_plan = hir_module_to_frontend_neutral_plan(&final_hir);
-        FrontendBuildOutput::from_neutral_and_semantic_mir(neutral_plan, final_mir)
+        let semantic_fragments = hir_module_to_frontend_neutral_plan(&final_hir).semantic_fragments;
+        FrontendBuildOutput::from_semantic_fragments_and_mir(semantic_fragments, final_mir)
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.
