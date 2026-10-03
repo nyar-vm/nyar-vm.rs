@@ -1,61 +1,21 @@
 //! Driver-agnostic assembled fragment payload shared by frontends and the driver.
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use nyar_optimizer::TheoryBundle;
-use nyar_types::{
-    AggregateLayoutPlan, CapabilityTag, CompiledProgram, ExternalCallEdge, ExternalImportLink, FlagsLayout, Identifier, InternalCallEdge,
-    ItemInstanceId, QualifiedName, SingletonInstancePlan, SumTypeLayout, WitnessCallEdge, WitnessSubmission,
-};
-
-use crate::planning::{ControlFlowPayload, SuspendRuntimePayload};
+use nyar_types::{CompiledProgram, Identifier, ItemInstanceId};
 
 /// Fragment payload produced by a language frontend after MIR lowering.
 ///
-/// The driver wraps this into a backend [`FragmentSubmission`]-equivalent with an
-/// executable provider. This type is intentionally free of driver crate types.
+/// The driver receives the verified compiler payload and derives its backend submission view exactly once.
 #[derive(Debug, Clone)]
 pub struct AssembledFragment {
     /// Logical module name.
     pub module_name: String,
     /// Semantic fragment identifier.
     pub fragment_id: Identifier,
-    /// Exported stable operations.
-    pub exported_operations: Vec<QualifiedName>,
-    /// Required capability constraints.
-    pub required_capabilities: Vec<CapabilityTag>,
-    /// Theory bundle for this fragment.
+    /// Optimizer theory selected for this fragment.
     pub theory_bundle: TheoryBundle,
-    /// Interpretive entry operation, if any.
-    pub entry_operation: Option<QualifiedName>,
-    /// Compiler 已解析的导出/入口 callable 根；后端不得从 ABI 名称反查。
+    /// Compiler-resolved callable roots for backend closure construction.
     pub callable_roots: Vec<ItemInstanceId>,
-    /// Stable operation → external import link map.
-    pub external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
-    /// Resolved external call edges.
-    pub external_call_edges: Vec<ExternalCallEdge>,
-    /// Resolved internal call edges.
-    pub internal_call_edges: Vec<InternalCallEdge>,
-    /// Named trait witness table payloads.
-    pub witness_tables: Vec<WitnessSubmission>,
-    /// Entry witness dynamic call edges.
-    pub witness_calls: Vec<WitnessCallEdge>,
-    /// Suspend control-flow rewrite payload (state-machine backends).
-    pub control_flow: Option<ControlFlowPayload>,
-    /// First-class suspend runtime payload.
-    pub suspend_runtime: Option<SuspendRuntimePayload>,
-    /// Aggregate memory layout plan.
-    pub aggregate_layouts: AggregateLayoutPlan,
-    /// Sum type discriminant layouts.
-    pub sum_types: Vec<SumTypeLayout>,
-    /// Flags bitmask layouts.
-    pub flags_types: Vec<FlagsLayout>,
-    // 已删除：intrinsics / nullable_intrinsics / nullable_try_calls / nullable_bool_profiles。
     /// Compiler 产生的完整 canonical/representation 成功载荷。
-    /// 后端私有计划只能从此合同生成，不得从 HIR 或 Semantic MIR 重建。
     pub compiled_program: CompiledProgram,
-    /// Singleton global instance initialization plans.
-    pub singleton_instances: Vec<SingletonInstancePlan>,
-    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。
-    pub wasm_export_names: BTreeMap<QualifiedName, String>,
 }

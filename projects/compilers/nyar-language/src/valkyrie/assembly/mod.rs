@@ -5,17 +5,12 @@
 
 mod nullable;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use miette::{Result as MietteResult, miette};
-use nyar::{
-    ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, ExternalImportLink, Identifier, PlanningError,
-    QualifiedName, TheoryBundle, projection_policy_for_target_profile,
-};
+use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
 use nyar_types::ItemInstanceId;
-use crate::{
-    FrontendBuildOutput,
-};
+use crate::FrontendBuildOutput;
 
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
@@ -25,7 +20,6 @@ pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize
     let linked = &build_output.compiled_program().canonical().linked;
     (linked.exports.len(), linked.entries.len())
 }
-
 /// Plan artifacts from `FrontendBuildOutput` using injected target and projection policy.
 pub fn plan_artifacts_from_build_output(
     build_output: &FrontendBuildOutput,
@@ -72,83 +66,15 @@ pub fn assemble_fragment(
         ));
     }
 
-    let external_import_links = canonical_fragment_import_links(linked, fragment)?;
-    let exported_operations = canonical_fragment_operation_names(linked, &fragment.exported_operations)?;
-    let entry_operation = fragment.entry_operation.as_ref().map(|instance| callable_name(linked, *instance)).transpose()?;
-    let external_call_edges = canonical_external_call_edges(linked, fragment)?;
-    let internal_call_edges = canonical_internal_call_edges(linked, fragment)?;
-    let wasm_export_names = canonical_wasm_export_names(linked, fragment)?;
     let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
         module_name: build_output.compiled_program().canonical().linked.module_name.clone(),
         fragment_id: fragment.id.clone(),
-        exported_operations,
-        required_capabilities: fragment.required_capabilities.clone(),
         theory_bundle: fragment_view.theory_bundle.clone(),
-        entry_operation,
         callable_roots,
-        external_import_links,
-        external_call_edges,
-        internal_call_edges,
-        witness_tables: Vec::new(),
-        witness_calls: Vec::new(),
-        control_flow: None,
-        suspend_runtime: None,
-        aggregate_layouts: build_output.compiled_program().canonical().linked.aggregate_layouts.clone(),
-        sum_types: build_output.compiled_program().canonical().linked.sum_types.clone(),
-        flags_types: build_output.compiled_program().canonical().linked.flags_types.clone(),
         compiled_program: build_output.compiled_program().clone(),
-        singleton_instances: build_output.compiled_program().canonical().linked.singleton_instances.clone(),
-        wasm_export_names,
     })
-}
-
-fn callable_name(linked: &nyar_types::LinkedSemanticProgram, instance: ItemInstanceId) -> MietteResult<QualifiedName> {
-    linked.callable_names.get(&instance).cloned()
-        .ok_or_else(|| miette!("Canonical callable `{instance:?}` 缺少 ABI 名称"))
-}
-
-fn canonical_fragment_operation_names(
-    linked: &nyar_types::LinkedSemanticProgram,
-    instances: &[ItemInstanceId],
-) -> MietteResult<Vec<QualifiedName>> {
-    instances.iter().copied().map(|instance| callable_name(linked, instance)).collect()
-}
-
-fn canonical_fragment_import_links(
-    linked: &nyar_types::LinkedSemanticProgram,
-    fragment: &nyar_types::CanonicalFragment,
-) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
-    fragment.external_imports.iter().map(|(instance, link)| Ok((callable_name(linked, *instance)?, link.clone()))).collect()
-}
-
-fn canonical_external_call_edges(
-    linked: &nyar_types::LinkedSemanticProgram,
-    fragment: &nyar_types::CanonicalFragment,
-) -> MietteResult<Vec<nyar::ExternalCallEdge>> {
-    fragment.external_call_edges.iter().map(|edge| {
-        let callee = linked.imports.get(&edge.import)
-            .ok_or_else(|| miette!("Canonical 外部调用缺少 ImportIndex `{}`", edge.import.index()))?;
-        let callee_name = callable_name(linked, callee.callee)?;
-        Ok(nyar::ExternalCallEdge::new(callable_name(linked, edge.caller)?, callee_name, edge.arguments.clone()))
-    }).collect()
-}
-
-fn canonical_internal_call_edges(
-    linked: &nyar_types::LinkedSemanticProgram,
-    fragment: &nyar_types::CanonicalFragment,
-) -> MietteResult<Vec<nyar::InternalCallEdge>> {
-    fragment.internal_call_edges.iter().map(|edge| {
-        Ok(nyar::InternalCallEdge::new(callable_name(linked, edge.caller)?, callable_name(linked, edge.callee)?))
-    }).collect()
-}
-
-fn canonical_wasm_export_names(
-    linked: &nyar_types::LinkedSemanticProgram,
-    fragment: &nyar_types::CanonicalFragment,
-) -> MietteResult<BTreeMap<QualifiedName, String>> {
-    fragment.wasm_export_names.iter().map(|(instance, name)| Ok((callable_name(linked, *instance)?, name.clone()))).collect()
 }
 
 fn resolve_callable_roots(
@@ -166,18 +92,6 @@ fn resolve_callable_roots(
         program.canonical().mir.functions.contains_key(&instance)
             .then_some(instance)
             .ok_or_else(|| miette!("Compiler callable `{instance:?}` 缺少稳定实例身份"))
-    }).collect()
-}
-
-fn canonical_external_import_links(
-    program: &nyar_types::CompiledProgram,
-) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
-    let linked = &program.canonical().linked;
-    linked.imports.values().map(|record| {
-        let symbol = linked.callable_names.get(&record.callee)
-            .ok_or_else(|| miette!("Compiler 外部导入 `{}` 缺少 callable identity", record.capability))?
-            .clone();
-        Ok((symbol, record.link.clone()))
     }).collect()
 }
 
