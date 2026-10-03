@@ -56,9 +56,6 @@ pub struct FrontendNeutralPlan {
     pub rewrite_theory: RewriteTheory,
 }
 
-impl FrontendNeutralPlan {
-}
-
 pub fn hir_module_to_program_facts(module: &HirModule) -> ProgramFacts {
     let module_name = qualified_name(&module.name);
     let function_interop_contracts = module.functions.iter().map(|function| function_interop_contract(function)).collect::<Vec<_>>();

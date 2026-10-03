@@ -194,6 +194,35 @@ pub struct ArtifactPartitionPlan {
 }
 
 impl ArtifactPartitionPlan {
+    /// 从已验证的 Canonical 程序派生分区规划输入。
+    ///
+    /// 这里的 `SemanticFragment` 只是 optimizer 的临时投影，所有 callable、
+    /// import、entry 与 capability 事实都来自 Canonical；不得从 HIR 或旧
+    /// `FrontendNeutralPlan` 重新收集。
+    pub fn from_canonical_program(
+        program: &nyar_types::CanonicalProgram,
+        target: CanonicalTarget,
+        rewrite_theory: RewriteTheory,
+        projection_policy: ProjectionPolicy,
+        backend_registry: BackendRegistry,
+        clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+    ) -> Result<Self, PlanningError> {
+        let linked = &program.linked;
+        let module_name = qualified_module_name(&linked.module_name);
+        let (program_facts, semantic_fragments, object_algebraic_program) = canonical_planning_inputs(linked)?;
+        Self::from_input(PlanningInput {
+            module_name,
+            target,
+            program_facts,
+            semantic_fragments,
+            object_algebraic_program,
+            rewrite_theory,
+            projection_policy,
+            backend_registry,
+            clr_suspend_strategy,
+        })
+    }
+
     /// 基于程序事实生成最小分区计划。
     pub fn from_input(input: PlanningInput) -> Result<Self, PlanningError> {
         let PlanningInput {
@@ -246,6 +275,70 @@ impl ArtifactPartitionPlan {
             reference_management: partition.reference_management,
         })
     }
+}
+
+fn qualified_module_name(module_name: &str) -> QualifiedName {
+    QualifiedName::new(module_name.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect())
+}
+
+fn canonical_planning_inputs(
+    linked: &nyar_types::LinkedSemanticProgram,
+) -> Result<(ProgramFacts, Vec<SemanticFragment>, ObjectAlgebraicProgram), PlanningError> {
+    let module_name = qualified_module_name(&linked.module_name);
+    let callable_name = |instance: nyar_types::ItemInstanceId| {
+        linked.callable_names.get(&instance).cloned().ok_or_else(|| PlanningError::SemanticContract {
+            module: linked.module_name.clone(),
+            stage: nyar_types::CompileStage::RepresentationPlan,
+            detail: format!("Canonical callable `{instance:?}` 缺少限定名称"),
+        })
+    };
+    let mut capabilities = Vec::new();
+    let mut fragments = Vec::new();
+    for fragment in linked.fragments.values() {
+        for capability in &fragment.required_capabilities {
+            if !capabilities.contains(capability) { capabilities.push(capability.clone()); }
+        }
+        let exported_operations = fragment.exported_operations.iter().copied().map(&callable_name).collect::<Result<Vec<_>, _>>()?;
+        let entry_operation = fragment.entry_operation.map(&callable_name).transpose()?;
+        let external_import_links = fragment.external_imports.iter().map(|(instance, link)| Ok((callable_name(*instance)?, link.clone()))).collect::<Result<BTreeMap<_, _>, PlanningError>>()?;
+        let external_call_edges = fragment.external_call_edges.iter().map(|edge| {
+            let import = linked.imports.get(&edge.import).ok_or_else(|| PlanningError::SemanticContract {
+                module: linked.module_name.clone(), stage: nyar_types::CompileStage::RepresentationPlan,
+                detail: format!("Canonical 外部调用缺少 ImportIndex `{}`", edge.import.index()),
+            })?;
+            Ok(ExternalCallEdge::new(callable_name(edge.caller)?, callable_name(import.callee)?, edge.arguments.clone()))
+        }).collect::<Result<Vec<_>, PlanningError>>()?;
+        let internal_call_edges = fragment.internal_call_edges.iter().map(|edge| {
+            Ok(InternalCallEdge::new(callable_name(edge.caller)?, callable_name(edge.callee)?))
+        }).collect::<Result<Vec<_>, PlanningError>>()?;
+        let wasm_export_names = fragment.wasm_export_names.iter().map(|(instance, name)| Ok((callable_name(*instance)?, name.clone()))).collect::<Result<BTreeMap<_, _>, PlanningError>>()?;
+        fragments.push(SemanticFragment {
+            id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(),
+            reference_management_hint: None, entry_operation, external_import_links, external_call_edges,
+            internal_call_edges, witness_tables: Vec::new(), witness_calls: Vec::new(),
+            rewrite_theory: RewriteTheory::default(), wasm_export_names,
+        });
+    }
+    let exports = linked.exports.iter().map(|(instance, record)| Ok(nyar_analyzer::ExportContract {
+        exported_name: Identifier::new(&record.exported_name), local_name: callable_name(*instance)?, partition: None,
+    })).collect::<Result<Vec<_>, PlanningError>>()?;
+    let entries = linked.entries.keys().copied().map(|instance| Ok(nyar_analyzer::EntryContract {
+        symbol: callable_name(instance)?, requires_wrapper: false,
+    })).collect::<Result<Vec<_>, PlanningError>>()?;
+    let program_facts = ProgramFacts {
+        module_name: module_name.clone(), entries, imports: Vec::new(), exports, functions: Vec::new(),
+        type_definitions: Vec::new(), capabilities, reference_management: None, runtime_requirements: Vec::new(),
+    };
+    let object_algebraic_program = ObjectAlgebraicProgram {
+        module_name: module_name.clone(),
+        exports: program_facts.exports.iter().map(|export| export.local_name.clone()).collect(),
+        dimensions: fragments.iter().map(|fragment| ObjectAlgebraicDimension {
+            name: fragment.id.clone(), exported_operations: fragment.exported_operations.clone(),
+            required_capabilities: fragment.required_capabilities.clone(), reference_management_hint: None,
+        }).collect(),
+        structured_terms: Vec::new(),
+    };
+    Ok((program_facts, fragments, object_algebraic_program))
 }
 
 fn build_effective_program(
