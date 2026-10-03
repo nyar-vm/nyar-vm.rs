@@ -1,3 +1,5 @@
+#![cfg(feature = "legacy-lanes-clr-jvm-native")]
+
 use std::collections::BTreeMap;
 
 use nyar::{Identifier, QualifiedName};
@@ -99,7 +101,8 @@ fn feature_matrix_test_bundle_clr_types_have_unique_names() {
         combined.push('\n');
     }
     let build_output = ValkyrieCompiler::new(SourceID { version_id: 9998 }).compile_source_to_build_output(&combined).expect("compile bundle");
-    let (sum_types, _) = nyar_language::mir::compute_nominal_layouts(build_output.hir_module());
+    let feature_hir = ValkyrieCompiler::new(SourceID { version_id: 9998 }).compile_source(&combined).expect("compile feature source");
+    let (sum_types, _) = nyar_language::mir::compute_nominal_layouts(&feature_hir);
     let option_sum = sum_types.iter().find(|item| item.name == "Option");
     assert!(option_sum.is_some_and(|item| item.is_unite), "Option sum type should be unite");
     let target = CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");

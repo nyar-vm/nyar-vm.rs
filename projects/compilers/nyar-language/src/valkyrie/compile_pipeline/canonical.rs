@@ -407,7 +407,7 @@ mod tests {
                 "[export(name: \"public_main\")] [main] micro main() -> unit { return }",
             )
             .expect("源码必须完成前端分析");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("[export(name: \"public_main\")] [main] micro main() -> unit { return }").expect("source for canonical test"));
         let program = canonical_program_from_semantic_mir(&semantic_mir).expect("公开合同必须进入 canonical");
         assert_eq!(program.linked.exports.len(), 1);
         assert_eq!(program.linked.entries.len(), 1);
@@ -421,7 +421,7 @@ mod tests {
         let output = crate::ValkyrieCompiler::default()
             .compile_source_to_build_output("micro select(value: bool, other: i32) -> bool { return value }")
             .expect("源码必须完成前端分析");
-        let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("micro select(value: bool, other: i32) -> bool { return value }").expect("source for canonical test"));
         canonical_program_from_semantic_mir(&module).expect("合法入口必须产生 CanonicalProgram");
 
         let mut missing = module.clone();
@@ -492,7 +492,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn producer_carries_singleton_lifecycle_contract() {
         let output = crate::ValkyrieCompiler::default()
             .compile_source_to_build_output(
@@ -508,6 +507,7 @@ mod tests {
         assert_eq!(plans[0].instance_field, "INSTANCE");
     }
 
+    #[test]
     fn producer_binds_external_callable_to_import_index_and_signature() {
         let mut module = module_with(
             MirOperation::LoadConstant { constant: MirConstant::Unit, ty: Some(ValkyrieType::Unit) },

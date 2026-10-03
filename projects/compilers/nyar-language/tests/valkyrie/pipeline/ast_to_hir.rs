@@ -193,7 +193,7 @@ fn test_compile_source_to_mir_and_build_output() {
 "#,
         )
         .unwrap();
-    assert_eq!(build_output.hir_function_count(), 1);
+    assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     let neutral_plan: &FrontendNeutralPlan = build_output.neutral_plan();
     assert_eq!(neutral_plan.semantic_fragments.len(), 1);
     assert_eq!(neutral_plan.semantic_fragments[0].exported_operations.len(), 1);
@@ -344,6 +344,6 @@ fn lowers_array_literal_to_builtin_array_literal_in_mir_and_build_output() {
     }));
 
     let build_output = compiler.compile_source_to_build_output(source).unwrap();
-    assert_eq!(build_output.hir_function_count(), 1);
+    assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     assert_eq!(build_output.neutral_plan().semantic_fragments.len(), 1);
 }

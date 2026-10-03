@@ -208,7 +208,7 @@ micro main() {
 "#;
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 9505 });
     let build_output = compiler.compile_source_to_build_output(source).expect("build output");
-    let mir = MirLowerer::lower_module_semantic(build_output.hir_module());
+    let mir = MirLowerer::lower_module_semantic(&compiler.compile_source(source).expect("semantic MIR source"));
     let target = nyar_language::CanonicalTarget::parse("clr-microsoft-unknown-managed").expect("clr target");
     let target_profile = target.to_profile(None);
     let projection_policy = projection_policy_for_target_profile(&target_profile).expect("projection policy");

@@ -46,7 +46,7 @@ fn array_literal_lowers_to_builtin_array_literal_without_array_call() {
     }));
 
     let build_output = compiler.compile_source_to_build_output(source).expect("build output ok");
-    assert_eq!(build_output.hir_function_count(), 1);
+    assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     assert_eq!(build_output.neutral_plan().semantic_fragments.len(), 1);
 }
 
@@ -101,7 +101,7 @@ micro main(): ExitCode {
 "#,
         )
         .unwrap();
-    assert_eq!(wrapped_build_output.hir_function_count(), 1);
+    assert_eq!(wrapped_build_output.canonical_program().mir.functions.len(), 1);
 }
 
 #[test]

@@ -344,7 +344,7 @@ micro declaration(message: utf8): unit;
         assert!(declaration.is_abstract);
         assert!(function_interop_contract(declaration).is_none());
         let output = compiler.compile_source_to_build_output("micro declaration(message: utf8): unit;").expect("declaration output");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("micro declaration(message: utf8): unit;").expect("declaration source"));
         assert!(semantic_mir.external_calls.is_empty());
     }
 
@@ -364,7 +364,7 @@ micro declaration(message: utf8): unit;
         assert!(contract.matches_boundary("host"));
         assert!(contract.locator_segments().is_empty());
         let output = compiler.compile_source_to_build_output("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"));
         assert_eq!(semantic_mir.external_calls.len(), 1);
     }
 

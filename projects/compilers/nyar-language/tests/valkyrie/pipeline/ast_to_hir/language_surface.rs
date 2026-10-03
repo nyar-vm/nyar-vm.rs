@@ -22,7 +22,7 @@ fn compiler_facade_lowers_into_mir_and_build_output_from_moved_tests() {
 "#,
         )
         .unwrap();
-    assert_eq!(build_output.hir_function_count(), 1);
+    assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     assert_eq!(build_output.neutral_plan().semantic_fragments.len(), 1);
 }
 

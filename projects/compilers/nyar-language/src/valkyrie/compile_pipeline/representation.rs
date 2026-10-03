@@ -103,7 +103,7 @@ mod tests {
         let plan = output.compiled_program().representation();
         assert_eq!(program.linked.nominal_instances.len(), 2);
         assert_eq!(plan.adt_reps.len(), 2);
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("structure Point { value: i32 } class Node { value: i32 } micro value_identity(value: Point) -> Point { return value } micro reference_identity(value: Node) -> Node { return value }").expect("source for representation test"));
         for aggregate in &semantic_mir.structs {
             let ty = crate::valkyrie::types::hir::ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&aggregate.name));
             let declaration = semantic_mir.type_identities[&ty];

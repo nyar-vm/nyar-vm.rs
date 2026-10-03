@@ -65,9 +65,8 @@ mod source_group_tests {
             },
         ];
         let output = ValkyrieCompiler::default().compile_source_groups(&groups).expect("compiler closes source groups");
-        assert_eq!(output.hir_module().name.to_string(), "app");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
-        assert!(semantic_mir.functions.iter().any(|function| function.symbol == "core::answer"));
+        assert_eq!(output.canonical_program().linked.module_name, "app");
+        assert!(output.canonical_program().linked.callable_names.values().any(|name| name.to_string() == "core::answer"));
     }
 
     #[test]
@@ -333,7 +332,6 @@ pub struct CompilerSourceGroup {
 /// Stable frontend build output consumed by the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrontendBuildOutput {
-    hir_module: HirModule,
     neutral_plan: FrontendNeutralPlan,
     compiled_program: nyar_types::CompiledProgram,
 }
@@ -343,22 +341,16 @@ impl FrontendBuildOutput {
     pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
         let neutral_plan = hir_module_to_frontend_neutral_plan(&hir_module);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-        Self::from_hir_and_semantic_mir(hir_module, neutral_plan, semantic_mir)
+        Self::from_neutral_and_semantic_mir(neutral_plan, semantic_mir)
     }
 
-    fn from_hir_and_semantic_mir(
-        hir_module: HirModule,
+    fn from_neutral_and_semantic_mir(
         neutral_plan: FrontendNeutralPlan,
         semantic_mir: crate::valkyrie::mir::MirModule,
     ) -> Result<Self, ParseError> {
         let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
-        Ok(Self { hir_module, neutral_plan, compiled_program })
-    }
-
-    /// 返回 lowering 后的 HIR 模块。
-    pub fn hir_module(&self) -> &HirModule {
-        &self.hir_module
+        Ok(Self { neutral_plan, compiled_program })
     }
 
     /// 返回中性的前端计划。
@@ -376,10 +368,6 @@ impl FrontendBuildOutput {
         &self.compiled_program
     }
 
-    /// 返回 `HIR` 函数数量，供装配层做调试输出。
-    pub fn hir_function_count(&self) -> usize {
-        self.hir_module.functions.len()
-    }
 }
 
 /// Collect sum-type and flags layouts from a lowered HIR module.
@@ -642,7 +630,7 @@ impl ValkyrieCompiler {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
         let neutral_plan = hir_module_to_frontend_neutral_plan(&final_hir);
-        FrontendBuildOutput::from_hir_and_semantic_mir(final_hir, neutral_plan, final_mir)
+        FrontendBuildOutput::from_neutral_and_semantic_mir(neutral_plan, final_mir)
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.
@@ -1686,7 +1674,7 @@ mod sum_discriminator_tests {
         let output = ValkyrieCompiler::default()
             .compile_source_to_build_output("[main] micro entry() -> i32 { return 23 }")
             .expect("普通源码必须完成正式 Compiler 成功边界");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(output.hir_module());
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&ValkyrieCompiler::default().compile_source("[main] micro entry() -> i32 { return 23 }").expect("test source"));
         assert!(semantic_mir.sum_types.is_empty());
         assert!(output.compiled_program().canonical().linked.variants.is_empty());
     }
