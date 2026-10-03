@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     frontend_contract::{
-        planning::{FrontendNeutralPlan, hir_module_to_frontend_neutral_plan},
+        planning::{FrontendNeutralPlan, hir_module_to_semantic_fragments},
     },
     hir::{
         BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,
@@ -353,7 +353,7 @@ pub struct FrontendBuildOutput {
 impl FrontendBuildOutput {
     /// Build output from a lowered HIR module.
     pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
-        let semantic_fragments = hir_module_to_frontend_neutral_plan(&hir_module).semantic_fragments;
+        let semantic_fragments = hir_module_to_semantic_fragments(&hir_module);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
         Self::from_semantic_fragments_and_mir(semantic_fragments, semantic_mir)
     }
@@ -638,7 +638,7 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        let semantic_fragments = hir_module_to_frontend_neutral_plan(&final_hir).semantic_fragments;
+        let semantic_fragments = hir_module_to_semantic_fragments(&final_hir);
         FrontendBuildOutput::from_semantic_fragments_and_mir(semantic_fragments, final_mir)
     }
 

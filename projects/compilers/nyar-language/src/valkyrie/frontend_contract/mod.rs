@@ -13,5 +13,6 @@ pub use nyar_type::{
 
 pub use planning::{
     FrontendNeutralPlan, NyarPlanningContract, hir_module_to_analysis_artifact, hir_module_to_frontend_neutral_plan,
+    hir_module_to_semantic_fragments,
     hir_module_to_object_algebraic_program, hir_module_to_program_facts,
 };

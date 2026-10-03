@@ -326,6 +326,32 @@ fn reachable_internal_callee_closure(
 pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutralPlan {
     let program_facts = hir_module_to_program_facts(module);
     let object_algebraic_program = hir_module_to_object_algebraic_program(module);
+    let semantic_fragments = hir_module_to_semantic_fragments_with_facts(module, &program_facts, &object_algebraic_program);
+
+    FrontendNeutralPlan {
+        module_name: program_facts.module_name.clone(),
+        program_facts,
+        semantic_fragments,
+        object_algebraic_program,
+        rewrite_theory: RewriteTheory::default(),
+    }
+}
+
+/// 从已完成 HIR 语义分析的事实中生成 Compiler 内部 fragment 输入。
+///
+/// 该函数只返回 Compiler 继续闭合 Semantic MIR 所需的 fragment，不构造
+/// `FrontendNeutralPlan`，因此生产成功载荷不会再携带 neutral plan。
+pub fn hir_module_to_semantic_fragments(module: &HirModule) -> Vec<SemanticFragment> {
+    let program_facts = hir_module_to_program_facts(module);
+    let object_algebraic_program = hir_module_to_object_algebraic_program(module);
+    hir_module_to_semantic_fragments_with_facts(module, &program_facts, &object_algebraic_program)
+}
+
+fn hir_module_to_semantic_fragments_with_facts(
+    module: &HirModule,
+    program_facts: &ProgramFacts,
+    object_algebraic_program: &ObjectAlgebraicProgram,
+) -> Vec<SemanticFragment> {
     let external_call_edges = external_call_edges(module, &program_facts.functions);
     let internal_call_edges = internal_call_edges(module, &program_facts.functions);
     let witness_tables = Vec::new();
@@ -376,13 +402,7 @@ pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutra
         })
         .collect();
 
-    FrontendNeutralPlan {
-        module_name: program_facts.module_name.clone(),
-        program_facts,
-        semantic_fragments,
-        object_algebraic_program,
-        rewrite_theory: RewriteTheory::default(),
-    }
+    semantic_fragments
 }
 
 fn qualified_name(path: &NamePath) -> QualifiedName {
