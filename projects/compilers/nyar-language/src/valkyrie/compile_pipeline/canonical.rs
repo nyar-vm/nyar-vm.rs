@@ -132,7 +132,9 @@ fn canonical_fragments(
         }).transpose()?;
         let external_imports = fragment.external_import_links.keys().map(|name| {
             let instance = callable_instance(linked, name).ok_or_else(|| error(module, "CAN044", format!("片段 `{}` 的导入 `{name}` 缺少 callable identity", fragment.id)))?;
-            let link = fragment.external_import_links.get(name).expect("片段导入键刚由 map 迭代取得").clone();
+            let link = fragment.external_import_links.get(name)
+                .cloned()
+                .ok_or_else(|| error(module, "CAN052", format!("片段 `{}` 的导入 `{name}` 缺少链接合同", fragment.id)))?;
             Ok((instance, link))
         }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
         let internal_call_edges = fragment.internal_call_edges.iter().map(|edge| {
