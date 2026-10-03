@@ -70,8 +70,7 @@ pub fn assemble_fragment(
         ));
     }
 
-    let canonical_import_links = canonical_external_import_links(build_output.compiled_program())?;
-    let external_import_links = merge_program_external_import_links(&fragment.external_import_links, &canonical_import_links)?;
+    let external_import_links = canonical_external_import_links(build_output.compiled_program())?;
     let callable_roots = resolve_callable_roots(build_output.compiled_program(), &fragment.exported_operations, fragment.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
@@ -122,7 +121,7 @@ fn resolve_callable_roots(
 
 fn canonical_external_import_links(
     program: &nyar_types::CompiledProgram,
-) -> MietteResult<Vec<(QualifiedName, ExternalImportLink)>> {
+) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
     let linked = &program.canonical().linked;
     linked.imports.values().map(|record| {
         let symbol = linked.callable_names.get(&record.callee)
@@ -130,28 +129,6 @@ fn canonical_external_import_links(
             .clone();
         Ok((symbol, record.link.clone()))
     }).collect()
-}
-
-fn merge_program_external_import_links(
-    fragment_links: &BTreeMap<QualifiedName, ExternalImportLink>,
-    compiler_links: &[(QualifiedName, ExternalImportLink)],
-) -> MietteResult<BTreeMap<QualifiedName, ExternalImportLink>> {
-    let mut links = fragment_links.clone();
-    for (symbol, link) in compiler_links {
-        if let Some(existing) = links.get(symbol) {
-            if existing != link {
-                return Err(miette!("导入身份 `{}` 对应冲突合同", symbol));
-            }
-        } else {
-            links.insert(symbol.clone(), link.clone());
-        }
-    }
-    for (symbol, link) in &links {
-        if link.matches_boundary("host") && link.locator_segments().is_empty() {
-            return Err(miette!("host 合同 `{symbol}` 尚未由 Compiler 绑定 provider"));
-        }
-    }
-    Ok(links)
 }
 
 #[cfg(test)]
@@ -204,24 +181,4 @@ mod import_contract_tests {
         assert!(error.to_string().contains("DuplicateExportName"), "{error}");
     }
 
-    #[test]
-    fn unresolved_host_contract_does_not_select_similarly_named_ffi() {
-        let contract = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("write")]);
-        let ffi = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("__console_write")]);
-        let links = BTreeMap::from([
-            (contract, ExternalImportLink::host(None, Vec::new())),
-            (ffi, ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".to_owned(), "write".to_owned()])),
-        ]);
-        let error = merge_program_external_import_links(&links, &[]).expect_err("unresolved provider");
-        assert!(error.to_string().contains("Compiler"));
-    }
-
-    #[test]
-    fn explicit_ffi_import_keeps_exact_contract() {
-        let symbol = QualifiedName::new(vec![Identifier::new("binding"), Identifier::new("write")]);
-        let links = BTreeMap::from([
-            (symbol, ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".to_owned(), "write".to_owned()])),
-        ]);
-        assert_eq!(merge_program_external_import_links(&links, &[]).expect("explicit import"), links);
-    }
 }
