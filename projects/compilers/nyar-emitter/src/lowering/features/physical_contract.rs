@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar::QualifiedName;
-use nyar_types::{NamePath, NyarType};
+use nyar_types::{ItemInstanceId, NamePath, NyarType};
 
 use crate::{
     BackendPrivatePlan,
@@ -41,7 +41,7 @@ pub(crate) enum PhysicalValueCategory {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PhysicalCallContract {
-    pub callee: QualifiedName,
+    pub callee: ItemInstanceId,
     pub parameters: Vec<PhysicalValueCategory>,
 }
 
@@ -186,31 +186,28 @@ fn build_function_plan(
                 continue;
             };
             let location = format!("block {} instruction {instruction_index}", block.id.0);
-            let ExecutableOperand::Symbol(path) = callee
-            else {
-                // Indirect / value callees are planned later via BackendPrivatePlan.
-                continue;
+            let callee = match callee {
+                ExecutableOperand::Item(instance) => *instance,
+                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => continue,
+                ExecutableOperand::Symbol(_) => {
+                    return Err(PhysicalPlanError::new(
+                        "BPHYS004",
+                        function,
+                        location.clone(),
+                        "ordinary callable must carry a resolved item identity",
+                    ));
+                }
+                ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => continue,
             };
-            if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
-                continue;
-            }
-            let callee = QualifiedName::new(path.parts().to_vec());
-            if executable.get_function(&callee).is_none() {
+            let Some(callee_view) = executable.get_function_by_instance(callee) else {
                 return Err(PhysicalPlanError::new(
                     "BPHYS004",
                     function,
                     location.clone(),
-                    "static call target is not an exact local semantic function",
+                    "call identity is not an exact local semantic function",
                 ));
-            }
-            let callee_param_types = executable.get_function(&callee).ok_or_else(|| {
-                PhysicalPlanError::new(
-                    "BPHYS004",
-                    function,
-                    location.clone(),
-                    "exact static call target disappeared before physical planning",
-                )
-            })?.function.param_types.clone();
+            };
+            let callee_param_types = callee_view.function.param_types;
             let parameters = arguments
                 .iter()
                 .enumerate()
@@ -230,6 +227,14 @@ fn build_function_plan(
                                 format!("bare symbol argument has no callee parameter type at index {arg_index}"),
                             )
                         })?,
+                        ExecutableOperand::Item(_) => {
+                            return Err(PhysicalPlanError::new(
+                                "BPHYS004",
+                                function,
+                                location.clone(),
+                                "callable identity cannot be used as a call argument",
+                            ));
+                        }
                     };
                     physical_category(
                         backend,
@@ -324,7 +329,8 @@ mod tests {
     use std::sync::Arc;
 
     use nyar::{Identifier, QualifiedName};
-    use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef};
+    use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
+    use std::collections::BTreeMap;
 
 
     use super::{PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission};
@@ -363,8 +369,32 @@ mod tests {
     }
 
     fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> crate::FragmentSubmission {
+        let mut functions = functions.into_iter().collect::<BTreeMap<_, _>>();
+        let identities = functions
+            .keys()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), ItemInstanceId::from_index(index as u32).expect("测试函数身份")))
+            .collect::<BTreeMap<_, _>>();
+        for function in functions.values_mut() {
+            for block in &mut function.blocks {
+                for instruction in &mut block.instructions {
+                    if let InstructionKind::Call { callee, .. } = &mut instruction.kind {
+                        let instance = match &*callee {
+                            Operand::Symbol(path) => {
+                                let operation = QualifiedName::new(path.parts().to_vec());
+                                identities.get(&operation).copied()
+                            }
+                            _ => None,
+                        };
+                        if let Some(instance) = instance {
+                            *callee = Operand::Item(instance);
+                        }
+                    }
+                }
+            }
+        }
         crate::FragmentSubmission {
-            backend_plan: Arc::new(crate::BackendPrivatePlan::from_functions(functions.into_iter().collect())),
+            backend_plan: Arc::new(crate::BackendPrivatePlan::from_functions(functions)),
             ..Default::default()
         }
     }

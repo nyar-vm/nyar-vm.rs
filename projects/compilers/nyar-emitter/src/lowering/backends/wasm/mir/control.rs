@@ -97,6 +97,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirOperand::Constant(constant) => self.emit_load_constant_for_slot(constant, expected),
             MirOperand::Symbol(_) => panic!("WASM CFG 操作数必须是 SSA 值或已类型化常量"),
+            MirOperand::Item(_) => panic!("WASM CFG callable identity cannot be a block operand"),
         }
     }
 

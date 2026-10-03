@@ -605,28 +605,37 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
                 continue;
             };
             let location = format!("block {} instruction {index}", block.id.0);
-            let ExecutableOperand::Symbol(path) = callee
-            else {
-                return Err(SemanticMirContractError {
-                    code: "SMIR003",
-                    function: function.symbol.clone(),
-                    location,
-                    detail: "static call requires an explicit callee symbol".to_string(),
-                });
-            };
-            let symbol = path.to_string();
-            if is_language_operator_symbol(path) || is_language_builtin_symbol(path) {
-                continue;
-            }
-            let local = static_callee_is_registered(&submission.backend_plan, path);
-            let external = submission.external_import_links.contains_key(&QualifiedName::new(path.parts().to_vec()));
-            if !local && !external {
-                return Err(SemanticMirContractError {
-                    code: "SMIR003",
-                    function: function.symbol.clone(),
-                    location,
-                    detail: format!("static callee `{symbol}` is absent from the exact function registry and external import registry"),
-                });
+            match callee {
+                ExecutableOperand::Item(instance) => {
+                    let name = submission.backend_plan.abi_name_for_instance(*instance);
+                    let local = submission.backend_plan.get_function_by_instance(*instance).is_some();
+                    let external = name.as_ref().is_some_and(|name| submission.external_import_links.contains_key(name));
+                    if !local && !external {
+                        return Err(SemanticMirContractError {
+                            code: "SMIR003",
+                            function: function.symbol.clone(),
+                            location,
+                            detail: format!("call identity `{instance:?}` is absent from the exact function and import registries"),
+                        });
+                    }
+                }
+                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => {}
+                ExecutableOperand::Symbol(path) => {
+                    return Err(SemanticMirContractError {
+                        code: "SMIR003",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: format!("ordinary callable `{path}` must carry a resolved item identity"),
+                    });
+                }
+                ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => {
+                    return Err(SemanticMirContractError {
+                        code: "SMIR003",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: "call callee must be a resolved item identity or function value".to_string(),
+                    });
+                }
             }
         }
     }
@@ -799,6 +808,7 @@ fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOp
         ExecutableOperand::Constant(Constant::Utf16(_)) => Some(NyarType::Utf16),
         ExecutableOperand::Constant(Constant::Unit) => Some(NyarType::Unit),
         ExecutableOperand::Symbol(_) => None,
+        ExecutableOperand::Item(_) => None,
     }
 }
 

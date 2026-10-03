@@ -2517,6 +2517,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirOperand::Constant(constant) => self.emit_load_constant(constant),
             MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
+            MirOperand::Item(_) => panic!("WASM callable identity cannot be used as a value operand"),
         }
     }
 

@@ -72,6 +72,18 @@ impl BackendPrivatePlan {
         self.functions.get(instance).cloned().map(|function| FunctionView { function })
     }
 
+    pub fn get_function_by_instance(&self, instance: ItemInstanceId) -> Option<FunctionView> {
+        self.functions.get(&instance).cloned().map(|function| FunctionView { function })
+    }
+
+    pub fn abi_name_for_instance(&self, instance: ItemInstanceId) -> Option<QualifiedName> {
+        self.abi_names.iter().find_map(|(name, candidate)| (*candidate == instance).then_some(name.clone()))
+    }
+
+    pub fn instance_for_operation(&self, operation: &QualifiedName) -> Option<ItemInstanceId> {
+        self.abi_names.get(operation).copied()
+    }
+
     pub fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
         let instance = self.abi_names.get(operation)?;
         self.functions.get(instance).and_then(SuspendMetadataView::from_function)
@@ -142,9 +154,11 @@ fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::Canonic
     let value = |id: nyar_types::MirValueId| Operand::Value(ValueRef(id.index()));
     Ok(match &instruction.operation {
         CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), arguments } => {
-            let name = program.linked.callable_names.get(instance).ok_or_else(|| miette!("调用 identity 未解析"))?.clone();
+            if !program.linked.item_instances.contains_key(instance) {
+                return Err(miette!("调用 identity `{instance:?}` 未解析"));
+            }
             callees.push(*instance);
-            InstructionKind::Call { callee: Operand::Symbol(nyar_types::NamePath::new(name.parts().to_vec())), arguments: arguments.iter().map(|id| value(*id)).collect() }
+            InstructionKind::Call { callee: Operand::Item(*instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() },
         CanonicalOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
@@ -213,7 +227,8 @@ mod representation_contract_tests {
                  micro entry(value: i32) -> i32 { return identity(value) }",
             )
             .expect("单测源码必须完成 HIR 分析");
-        let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
+        let mut mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
+        nyar_language::valkyrie::mir::ssa::resolve_callable_operands(&mut mir);
         let canonical = nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
             .expect("单测 MIR 必须满足 Canonical 合同");
         let representation = nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical)

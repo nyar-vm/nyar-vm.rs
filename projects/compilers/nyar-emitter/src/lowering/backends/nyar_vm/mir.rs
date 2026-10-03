@@ -10,8 +10,8 @@ use crate::{
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
 };
-use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, IntrinsicId, LayoutId, builtin_operator};
+use nyar::{NamePath, QualifiedName};
+use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId, builtin_operator};
 use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
     NYAR_VERSION,
@@ -136,6 +136,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
 
     let mut function_index_by_name = BTreeMap::<String, i32>::new();
+    let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
         let exec = &submission.backend_plan;
         let operations: Vec<QualifiedName> = exec
@@ -144,6 +145,10 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             .filter(|operation| exec.get_function(operation).is_some())
             .collect();
         function_index_by_name = build_nyar_function_index_map(submission, exec.as_ref(), &operations);
+        for (index, operation) in operations.iter().enumerate() {
+            let instance = exec.instance_for_operation(operation).expect("后端计划操作必须保留 stable callable identity");
+            function_index_by_instance.insert(instance, index as i32);
+        }
         let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
 
         for operation in operations {
@@ -161,6 +166,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 submission,
                 mir_fn,
                 &function_index_by_name,
+                &function_index_by_instance,
                 &function_entry_arities,
                 &mut emitter,
                 &mut module.layouts,
@@ -262,6 +268,7 @@ fn lower_mir_function_to_bytecode(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
     function_index_by_name: &BTreeMap<String, i32>,
+    function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
@@ -278,6 +285,7 @@ fn lower_mir_function_to_bytecode(
         slots,
         emitter,
         function_index_by_name,
+        function_index_by_instance,
         function_entry_arities,
         layouts,
         layout_index_by_id,
@@ -298,6 +306,7 @@ struct NyarMirLowerer<'a, 'e> {
     slots: ExecutableSlotPlan,
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_name: &'a BTreeMap<String, i32>,
+    function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
     layouts: &'a mut Vec<NyarLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
@@ -428,6 +437,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
             MirInstructionKind::Call { callee, arguments } => {
+                if let MirOperand::Item(instance) = callee {
+                    let index = self.function_index_by_instance.get(instance).copied().unwrap_or_else(|| {
+                        panic!("validated callable identity has no Nyar function index: {instance:?}")
+                    });
+                    let name = self.submission.backend_plan.abi_name_for_instance(*instance).unwrap_or_else(|| {
+                        panic!("validated callable identity has no diagnostic name: {instance:?}")
+                    });
+                    let path = NamePath::new(name.parts().to_vec());
+                    self.emit_direct_call(index, &path, arguments, output);
+                    return;
+                }
                 if let MirOperand::Symbol(path) = callee {
                     if self.try_emit_language_operator_call(path, arguments, output) {
                         return;
@@ -1192,6 +1212,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 true
             }
             MirOperand::Symbol(_) => false,
+            MirOperand::Item(_) => false,
         }
     }
 

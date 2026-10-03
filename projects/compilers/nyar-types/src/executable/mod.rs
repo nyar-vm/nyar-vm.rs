@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use ordered_float::OrderedFloat;
 
-use crate::{NamePath, NyarType};
+use crate::{ItemInstanceId, NamePath, NyarType};
 
 /// 墓碑模块：禁止把 IntrinsicOpcode 重新当作 MIR 权威。
 pub mod intrinsic;
@@ -97,6 +97,8 @@ pub enum Operand {
     Value(ValueRef),
     /// Immediate constant.
     Constant(Constant),
+    /// Compiler-resolved callable identity.
+    Item(ItemInstanceId),
     /// Named symbol path.
     Symbol(NamePath),
 }
