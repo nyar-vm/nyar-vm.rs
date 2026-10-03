@@ -35,7 +35,7 @@ impl MirBuilder {
                 // Always lower FieldAccess callees as method calls (receiver + method name).
                 // Requiring a root binding incorrectly collapsed nested field chains like
                 // `plan.source_closure.package_names.length()` into a dotted Symbol with no args.
-                let receiver_operand = self.lower_expr_to_operand(object);
+                let receiver_operand = self.lower_singleton_field_object(object).unwrap_or_else(|| self.lower_expr_to_operand(object));
                 Some((receiver_operand, field.clone()))
             }
             // Typechecker may flatten `plan.source_closure.package_names.length` into a Path.
@@ -44,6 +44,11 @@ impl MirBuilder {
             HirExprKind::Path(path) if path.parts().len() >= 2 => {
                 let parts = path.parts();
                 let root = parts[0].as_str();
+                if self.singleton_accessors.contains_key(root) {
+                    let method_name = parts.last()?.clone();
+                    let receiver_operand = self.emit_singleton_instance_operand(root);
+                    return Some((receiver_operand, method_name));
+                }
                 if !self.bindings.contains_key(root) {
                     return None;
                 }
