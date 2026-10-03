@@ -271,6 +271,7 @@ mod tests {
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
         crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
@@ -401,6 +402,7 @@ mod tests {
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
         let dependency = MirModule {
@@ -417,6 +419,7 @@ mod tests {
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");
@@ -572,6 +575,7 @@ mod tests {
             }],
             flags_types: Vec::new(),
             singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
         link_reachable_dependency_mir(&mut consumer, &[dependency]).expect("link contract");

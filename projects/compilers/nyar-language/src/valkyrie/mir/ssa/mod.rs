@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::builtin_attribute;
+use nyar::SemanticFragment;
 
 use crate::{
     symbols::stable_hir_function_symbol,
@@ -123,6 +124,8 @@ pub struct MirModule {
     pub flags_types: Vec<FlagsLayout>,
     /// Compiler 在 Semantic MIR 边界确定的 singleton 生命周期合同。
     pub singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
+    /// 与本模块 Semantic MIR 同步生成的唯一分区语义合同。后续阶段不得从 HIR 旁路重新生成片段。
+    pub semantic_fragments: Vec<SemanticFragment>,
     /// `MIR` lowering 过程中收集的编译期诊断，由校验层转化为编译错误。
     pub diagnostics: Vec<MirDiagnostic>,
 }
@@ -754,6 +757,7 @@ impl MirLowerer {
             sum_types,
             flags_types,
             singleton_instances: crate::valkyrie::mir::collect_singleton_instance_plans(module),
+            semantic_fragments: crate::frontend_contract::planning::hir_module_to_semantic_fragments(module),
             diagnostics,
         };
         result

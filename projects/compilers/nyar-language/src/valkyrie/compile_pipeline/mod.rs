@@ -20,7 +20,7 @@ mod representation;
 
 pub use diagnostics::{diagnostic, fail_stage};
 pub use backend_bundle::compile_source_groups_to_artifacts;
-pub(crate) use driver::{compile_linked_semantic_mir, compile_linked_semantic_mir_with_fragments};
+pub(crate) use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use canonical::canonical_program_from_semantic_mir;
 pub(crate) use link::link_reachable_dependency_mir;

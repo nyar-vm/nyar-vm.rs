@@ -11,24 +11,17 @@ use nyar_types::{
 };
 use nyar_types::canonical_program::{CanonicalEffectKind, EntryRecord, ExportRecord};
 
+use nyar::SemanticFragment;
+
 use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
     types::hir::ValkyrieType,
 };
-use nyar::SemanticFragment;
 
 use super::diagnostics::fail_stage;
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值。
 pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
-    canonical_program_from_semantic_mir_with_fragments(module, &[])
-}
-
-/// 从 Semantic MIR 与编译器已收集的片段输入生产唯一 Canonical 成功值。
-pub fn canonical_program_from_semantic_mir_with_fragments(
-    module: &MirModule,
-    fragments: &[SemanticFragment],
-) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
@@ -106,7 +99,7 @@ pub fn canonical_program_from_semantic_mir_with_fragments(
             return_type: type_id(&type_values, &contract.return_type)?,
         });
     }
-    linked.fragments = canonical_fragments(module, &linked, fragments)?;
+    linked.fragments = canonical_fragments(module, &linked, &module.semantic_fragments)?;
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
         let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
@@ -444,7 +437,8 @@ mod tests {
             }],
             structs: Vec::new(), imports: Vec::new(), external_calls: Vec::new(), exports: Vec::new(), entries: Vec::new(), callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]), type_identities: BTreeMap::new(), aggregate_layouts: AggregateLayoutPlan::default(),
             sum_types: Vec::new(), flags_types: Vec::new(),
-            singleton_instances: Vec::new(), diagnostics: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(), diagnostics: Vec::new(),
         };
         crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
         module

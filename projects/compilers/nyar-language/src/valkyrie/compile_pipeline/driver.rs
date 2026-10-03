@@ -3,18 +3,9 @@
 use nyar_types::{CompiledProgram, CompileStage, StageResult, pipeline::RepresentationPlanStage};
 
 use crate::valkyrie::mir::{MirModule, validation::validate_semantic_module};
-use nyar::SemanticFragment;
-
 use super::{CanonicalRepresentationPlanner, canonical_program_from_semantic_mir, fail_stage};
 
 pub(crate) fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledProgram> {
-    compile_linked_semantic_mir_with_fragments(module, &[])
-}
-
-pub(crate) fn compile_linked_semantic_mir_with_fragments(
-    module: &MirModule,
-    fragments: &[SemanticFragment],
-) -> StageResult<CompiledProgram> {
     if let Err(error) = validate_semantic_module(module) {
         return fail_stage(
             CompileStage::ValidateMir,
@@ -23,7 +14,7 @@ pub(crate) fn compile_linked_semantic_mir_with_fragments(
             format!("Semantic MIR 合同失败: {error:?}"),
         );
     }
-    let canonical = super::canonical::canonical_program_from_semantic_mir_with_fragments(module, fragments)?;
+    let canonical = canonical_program_from_semantic_mir(module)?;
     let representation = CanonicalRepresentationPlanner.plan(&canonical)?;
     match CompiledProgram::new(canonical, representation) {
         Ok(program) => Ok(program),

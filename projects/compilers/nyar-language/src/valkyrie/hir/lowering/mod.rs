@@ -1,9 +1,6 @@
 use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
-    frontend_contract::{
-        planning::hir_module_to_semantic_fragments,
-    },
     hir::{
         BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,
         overload::{resolve_hir_calls, validate_extractor_patterns},
@@ -28,7 +25,6 @@ use crate::{
     },
 };
 use nyar_types::NyarType;
-use nyar::SemanticFragment;
 use ordered_float::OrderedFloat;
 use std_data::text::valkyrie::{
     AstParser, AttributeItem, BinaryOperator, ClassDeclaration, ClassLikeKind, DeclarationBody, FlagsDeclaration, FlagsMemberDeclaration,
@@ -346,16 +342,8 @@ pub struct CompilerSourceGroup {
 
 /// 从已降低的 HIR 模块生产唯一语义成功载荷。
 pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, ParseError> {
-    let semantic_fragments = hir_module_to_semantic_fragments(&hir_module);
     let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-    compiled_program_from_semantic_mir(semantic_fragments, semantic_mir)
-}
-
-fn compiled_program_from_semantic_mir(
-    semantic_fragments: Vec<SemanticFragment>,
-    semantic_mir: crate::valkyrie::mir::MirModule,
-) -> Result<nyar_types::CompiledProgram, ParseError> {
-    let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &semantic_fragments)
+    let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
         .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
     Ok(compiled_program)
 }
@@ -618,8 +606,7 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        let semantic_fragments = hir_module_to_semantic_fragments(&final_hir);
-        compiled_program_from_semantic_mir(semantic_fragments, final_mir)
+        crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir).map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }
 
     /// 解析源码文件并降低为唯一语义成功载荷。
