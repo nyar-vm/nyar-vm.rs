@@ -114,14 +114,6 @@ impl OverloadCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedOverload {
-    pub symbol: NamePath,
-    pub domain: OverloadDomain,
-    pub signature: OverloadSignature,
-    pub match_kind: OverloadMatchKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadMatchKind {
     NominalExact,
     NominalSubtype { distance: usize },
@@ -135,42 +127,18 @@ pub enum OverloadResolutionError {
     Ambiguous { candidates: Vec<NamePath> },
 }
 
-pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<ResolvedOverload, OverloadResolutionError> {
-    let mut ranked = candidates.iter().map(|candidate| (rank(&candidate.match_kind), candidate)).collect::<Vec<_>>();
-
-    ranked.sort_by_key(|(rank, _)| *rank);
-
-    let Some((best_rank, best_candidate)) = ranked.first()
-    else {
-        return Err(OverloadResolutionError::NoMatch);
-    };
-
+pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCandidate, OverloadResolutionError> {
+    let best_rank = candidates.iter().map(|candidate| rank(&candidate.match_kind)).min().ok_or(OverloadResolutionError::NoMatch)?;
     let mut tied = Vec::new();
-    for (_, candidate) in ranked.iter().filter(|(rank, _)| rank == best_rank) {
-        // Owner must participate: bare method symbols are often just `get`, and
-        // Array.get vs HashMap.get must not collapse into one overload identity.
-        let identity = (
-            candidate.owner.clone(),
-            candidate.symbol.clone(),
-            candidate.domain.clone(),
-            candidate.signature.clone(),
-            candidate.match_kind.clone(),
-        );
-        if !tied.contains(&identity) {
-            tied.push(identity);
+    for candidate in candidates.iter().filter(|candidate| rank(&candidate.match_kind) == best_rank) {
+        if !tied.contains(&candidate) {
+            tied.push(candidate);
         }
     }
-
-    if tied.len() > 1 {
-        Err(OverloadResolutionError::Ambiguous { candidates: tied.into_iter().map(|(_, symbol, _, _, _)| symbol).collect() })
-    }
-    else {
-        Ok(ResolvedOverload {
-            symbol: best_candidate.symbol.clone(),
-            domain: best_candidate.domain.clone(),
-            signature: best_candidate.signature.clone(),
-            match_kind: best_candidate.match_kind.clone(),
-        })
+    match tied.as_slice() {
+        [selected] => Ok((*selected).clone()),
+        [] => Err(OverloadResolutionError::NoMatch),
+        ambiguous => Err(OverloadResolutionError::Ambiguous { candidates: ambiguous.iter().map(|candidate| candidate.symbol.clone()).collect() }),
     }
 }
 
@@ -1301,11 +1269,11 @@ fn try_resolve_call(
         filtered.retain(|candidate| candidate.domain == OverloadDomain::Constructor);
     }
     let resolved = resolve_overload(&filtered).ok()?;
-    let matched =
-        filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain).unwrap_or(&filtered[0]);
+    let has_receiver = candidate_has_receiver_parameter(&resolved);
+    let symbol = overload_symbol_path(&resolved);
     let return_type = if is_boolean_operator(&callee_name) { ValkyrieType::Boolean } else { resolved.signature.return_type };
     Some(HirResolvedCall {
-        symbol: overload_symbol_path(matched),
+        symbol,
         domain: match resolved.domain {
             OverloadDomain::Function => HirCallableDomain::Function,
             OverloadDomain::Constructor => HirCallableDomain::Constructor,
@@ -1314,7 +1282,7 @@ fn try_resolve_call(
         },
         return_type,
         parameter_types: resolved.signature.params,
-        has_receiver: candidate_has_receiver_parameter(matched),
+        has_receiver,
         extractor_payload_type: None,
     })
 }
@@ -1558,14 +1526,13 @@ fn try_resolve_instance_method(
         })
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
-    let matched =
-        filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain).unwrap_or(&filtered[0]);
+    let has_receiver = candidate_has_receiver_parameter(&resolved);
     Some(HirResolvedCall {
-        symbol: overload_symbol_path(matched),
+        symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Function,
         return_type: resolved.signature.return_type,
         parameter_types: resolved.signature.params,
-        has_receiver: candidate_has_receiver_parameter(matched),
+        has_receiver,
         extractor_payload_type: None,
     })
 }
@@ -1750,19 +1717,15 @@ fn try_resolve_type_static_method(
         return None;
     }
     let resolved = resolve_overload(&filtered).ok()?;
-    let matched = filtered
-        .iter()
-        .find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain)
-        .unwrap_or(&filtered[0]);
     Some(HirResolvedCall {
-        symbol: overload_symbol_path(matched),
-        domain: match matched.domain {
+        symbol: overload_symbol_path(&resolved),
+        domain: match resolved.domain {
             OverloadDomain::Constructor => HirCallableDomain::Constructor,
             _ => HirCallableDomain::Function,
         },
         return_type: substitute_self_type(&resolved.signature.return_type, Some(type_owner)),
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
-        has_receiver: candidate_has_receiver_parameter(matched),
+        has_receiver: candidate_has_receiver_parameter(&resolved),
         extractor_payload_type: None,
     })
 }
@@ -1856,25 +1819,27 @@ fn try_resolve_singleton_method(
         })
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
-    let original = candidates
-        .iter()
-        .find(|candidate| candidate.symbol == resolved.symbol && candidate.owner.as_ref() == Some(owner))
-        .or_else(|| filtered.iter().find(|candidate| candidate.symbol == resolved.symbol))
-        .unwrap_or(&filtered[0]);
-    let actual_receiver = args.first().and_then(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names));
-    let (return_type, parameter_types) = match (original.signature.params.first(), actual_receiver.as_ref()) {
+    let has_receiver = candidate_has_receiver_parameter(&resolved);
+    let symbol = overload_symbol_path(&resolved);
+    let actual_receiver = if strip_receiver_arg && has_receiver {
+        args.first().and_then(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names))
+    }
+    else {
+        None
+    };
+    let (return_type, parameter_types) = match (resolved.signature.params.first(), actual_receiver.as_ref()) {
         (Some(receiver_type), Some(actual_receiver)) => (
-            substitute_type_parameters(&original.signature.return_type, receiver_type, actual_receiver),
-            original.signature.params.iter().map(|param| substitute_type_parameters(param, receiver_type, actual_receiver)).collect(),
+            substitute_type_parameters(&resolved.signature.return_type, receiver_type, actual_receiver),
+            resolved.signature.params.iter().map(|param| substitute_type_parameters(param, receiver_type, actual_receiver)).collect(),
         ),
         _ => (resolved.signature.return_type, resolved.signature.params),
     };
     Some(HirResolvedCall {
-        symbol: NamePath::new(vec![owner.clone(), method_name.clone()]),
+        symbol,
         domain: HirCallableDomain::Function,
         return_type,
         parameter_types,
-        has_receiver: candidate_has_receiver_parameter(original),
+        has_receiver,
         extractor_payload_type: None,
     })
 }
@@ -1918,13 +1883,9 @@ fn match_singleton_method_candidate(
         return None;
     };
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_types)?;
-    Some(OverloadCandidate::new(
-        candidate.symbol.clone(),
-        candidate.domain.clone(),
-        expected_types,
-        candidate.signature.return_type.clone(),
-        match_kind,
-    ))
+    let mut matched = candidate.clone();
+    matched.match_kind = match_kind;
+    Some(matched)
 }
 
 fn impl_nominal_type_name(ty: &ValkyrieType) -> Option<&str> {
@@ -2009,9 +1970,8 @@ fn try_resolve_constructor(
         .filter_map(|candidate| match_call_candidate(candidate, &arguments, type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
-    let matched = filtered.iter().find(|candidate| candidate.symbol == resolved.symbol && candidate.domain == resolved.domain)?;
     Some(HirResolvedCall {
-        symbol: overload_symbol_path(matched),
+        symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Constructor,
         return_type: resolved.signature.return_type,
         parameter_types: resolved.signature.params,
@@ -2121,21 +2081,15 @@ fn try_resolve_pattern_extractor(
         .filter_map(|candidate| {
             let receiver_type = pattern_extractor_receiver_type(candidate)?;
             let match_kind = matches_extractor_receiver_type(actual_type, &receiver_type, type_relations)?;
-            Some(
-                OverloadCandidate::new(
-                    candidate.symbol.clone(),
-                    OverloadDomain::Extractor,
-                    candidate.signature.params.clone(),
-                    candidate.signature.return_type.clone(),
-                    match_kind,
-                )
-                .with_param_specs(candidate.param_specs.clone()),
-            )
+            let mut matched = candidate.clone();
+            matched.domain = OverloadDomain::Extractor;
+            matched.match_kind = match_kind;
+            Some(matched)
         })
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
-    let matched = filtered.iter().find(|candidate| candidate.symbol == resolved.symbol)?;
-    let receiver_type = pattern_extractor_receiver_type(matched)?;
+    let has_receiver = candidate_has_receiver_parameter(&resolved);
+    let receiver_type = pattern_extractor_receiver_type(&resolved)?;
     let return_type = substitute_type_parameters(&resolved.signature.return_type, &receiver_type, actual_type);
     let payload_type = nullable_payload_type(&return_type)?;
     let parameter_types =
@@ -2145,7 +2099,7 @@ fn try_resolve_pattern_extractor(
         domain: HirCallableDomain::Extractor,
         return_type,
         parameter_types,
-        has_receiver: candidate_has_receiver_parameter(matched),
+        has_receiver,
         extractor_payload_type: Some(payload_type),
     })
 }
@@ -2969,7 +2923,106 @@ fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
 #[cfg(test)]
 mod identity_tests {
     use super::*;
-    use crate::{ValkyrieCompiler, types::SourceID};
+    use crate::{ValkyrieCompiler, types::{SourceID, hir::HirTraitBound}};
+
+    #[test]
+    fn selected_overload_preserves_all_declaration_facts_in_any_order() {
+        let selected = declaration_candidate();
+        let mut other = selected.clone();
+        other.owner = Some(Identifier::new("OtherOwner"));
+        other.trait_owner = Some(Identifier::new("OtherTrait"));
+        other.param_specs.clear();
+        other.generic_binders.clear();
+        other.where_constraints.clear();
+        other.match_kind = OverloadMatchKind::Trait;
+
+        for candidates in [vec![other.clone(), selected.clone()], vec![selected.clone(), other]] {
+            assert_eq!(resolve_overload(&candidates).unwrap(), selected);
+        }
+    }
+
+    #[test]
+    fn equal_rank_declarations_cannot_merge_after_erasing_facts() {
+        let declaration = declaration_candidate();
+        let mut different_owner = declaration.clone();
+        different_owner.owner = Some(Identifier::new("OtherOwner"));
+        let mut different_trait = declaration.clone();
+        different_trait.trait_owner = Some(Identifier::new("OtherTrait"));
+        let mut different_receiver = declaration.clone();
+        different_receiver.param_specs[0].name.name = Identifier::new("value");
+        let mut different_binders = declaration.clone();
+        different_binders.generic_binders.insert(Identifier::new("OtherType"));
+        let mut different_constraints = declaration.clone();
+        different_constraints.where_constraints[0].bounds[0].trait_path = path("OtherBound");
+
+        for (fact, other) in [
+            ("owner", different_owner),
+            ("trait_owner", different_trait),
+            ("receiver", different_receiver),
+            ("generic_binders", different_binders),
+            ("where_constraints", different_constraints),
+        ] {
+            for candidates in [vec![declaration.clone(), other.clone()], vec![other, declaration.clone()]] {
+                assert_eq!(
+                    resolve_overload(&candidates),
+                    Err(OverloadResolutionError::Ambiguous { candidates: vec![path("apply"), path("apply")] }),
+                    "{fact}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_complete_candidate_preserves_the_declaration() {
+        let declaration = declaration_candidate();
+        assert_eq!(resolve_overload(&[declaration.clone(), declaration.clone()]).unwrap(), declaration);
+    }
+
+    #[test]
+    fn empty_overload_set_fails_without_a_default_candidate() {
+        assert_eq!(resolve_overload(&[]), Err(OverloadResolutionError::NoMatch));
+    }
+
+    #[test]
+    fn singleton_matching_preserves_the_complete_declared_signature() {
+        let declaration = declaration_candidate();
+        let matched = match_singleton_method_candidate(
+            &declaration,
+            &[],
+            &TypeRelationContext::from_module(&HirModule::default()),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            true,
+        ).expect("singleton 匹配不得擦除 self 或声明合同");
+        assert_eq!(matched, declaration);
+    }
+
+    fn declaration_candidate() -> OverloadCandidate {
+        let mut declaration = candidate("apply", OverloadMatchKind::NominalExact);
+        declaration.owner = Some(Identifier::new("Owner"));
+        declaration.trait_owner = Some(Identifier::new("Trait"));
+        let mut receiver = HirParam::default();
+        receiver.name.name = Identifier::new("self");
+        receiver.ty = ValkyrieType::Named(Identifier::new("Owner"));
+        declaration.signature.params = vec![receiver.ty.clone()];
+        declaration.where_constraints.push(HirWhereConstraint {
+            target: ValkyrieType::Named(Identifier::new("Element")),
+            bounds: vec![HirTraitBound { trait_path: path("Bound"), type_arguments: vec![], associated_types: vec![] }],
+            span: receiver.name.span.clone(),
+        });
+        declaration.param_specs = vec![receiver];
+        declaration.generic_binders.insert(Identifier::new("Element"));
+        declaration
+    }
+
+    fn candidate(name: &str, match_kind: OverloadMatchKind) -> OverloadCandidate {
+        OverloadCandidate::new(path(name), OverloadDomain::Function, vec![], ValkyrieType::Unit, match_kind)
+    }
+
+    fn path(name: &str) -> NamePath {
+        NamePath::new(vec![Identifier::new(name)])
+    }
 
     fn resolve_constructor_contract(candidates: &[OverloadCandidate], actual: &[Option<ValkyrieType>]) -> Option<HirResolvedCall> {
         let mut locals = BTreeMap::new();
@@ -3264,7 +3317,7 @@ private micro __f64_add(lhs: f64, rhs: f64): f64 { }
     }
 
     #[test]
-    fn resolves_singleton_static_method_call() {
+    fn resolves_singleton_instance_method_from_singleton_owner() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4201 });
         let hir = compiler
             .compile_source(

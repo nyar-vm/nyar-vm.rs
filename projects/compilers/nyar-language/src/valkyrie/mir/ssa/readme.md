@@ -29,8 +29,9 @@
 
 以下是当前源码的未完成项，不是允许保留的兼容合同：
 
-1. `hir/overload.rs` 的候选携带 owner，但 `ResolvedOverload` 未保留该字段；
-   `HirResolvedCall` 仍以名称及签名描述解析结果，没有完整声明与 substitution 身份。
+1. `hir/overload.rs` 的重载选择直接返回完整候选；调用分支不再按名称二次找回候选，
+   singleton 与 extractor 匹配也保留声明事实。`HirResolvedCall` 仍以名称及签名
+   描述解析结果，没有完整声明与 substitution 身份；这一断链尚未闭合。
 2. `expr_helpers.rs` 的 `lower_callee_operand` 将已解析 operator 路径截成末段，
    并在没有解析结果时从表达式拼写生产静态 Symbol。这让后续阶段重新取得解释权。
 3. `compile_pipeline/link.rs` 以函数 symbol 建依赖池；`mod.rs` 的
