@@ -346,13 +346,13 @@ pub struct CompilerSourceGroup {
 
 /// Stable frontend build output consumed by the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FrontendBuildOutput {
+pub(crate) struct FrontendBuildOutput {
     compiled_program: nyar_types::CompiledProgram,
 }
 
 impl FrontendBuildOutput {
     /// Build output from a lowered HIR module.
-    pub fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
+    pub(crate) fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
         let semantic_fragments = hir_module_to_semantic_fragments(&hir_module);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
         Self::from_semantic_fragments_and_mir(semantic_fragments, semantic_mir)
@@ -581,14 +581,14 @@ impl ValkyrieCompiler {
     }
 
     /// Parses source text and lowers it into the stable frontend build bundle.
-    pub fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
+    pub(crate) fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_source(source)?;
         FrontendBuildOutput::from_hir_module(hir_module)
     }
 
     /// Builds the stable frontend bundle with resolved nominal dependency
     /// exports available to call resolution and extractor validation.
-    pub fn compile_source_to_build_output_with_semantic_exports(
+    pub(crate) fn compile_source_to_build_output_with_semantic_exports(
         &self,
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
@@ -601,7 +601,7 @@ impl ValkyrieCompiler {
     ///
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
-    pub fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
+    pub(crate) fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         for group in groups {
@@ -643,7 +643,7 @@ impl ValkyrieCompiler {
     }
 
     /// Parses a source file and lowers it into the stable frontend build bundle.
-    pub fn compile_path_to_build_output(&self, path: &Path) -> Result<FrontendBuildOutput, ParseError> {
+    pub(crate) fn compile_path_to_build_output(&self, path: &Path) -> Result<FrontendBuildOutput, ParseError> {
         let hir_module = self.compile_path(path)?;
         FrontendBuildOutput::from_hir_module(hir_module)
     }

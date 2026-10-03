@@ -206,14 +206,19 @@ mod representation_contract_tests {
     use super::*;
 
     fn source_program() -> CompiledProgram {
-        nyar_language::ValkyrieCompiler::default()
-            .compile_source_to_build_output(
+        use nyar_types::pipeline::RepresentationPlanStage;
+        let hir = nyar_language::ValkyrieCompiler::default()
+            .compile_source(
                 "micro identity(value: i32) -> i32 { return value } \
                  micro entry(value: i32) -> i32 { return identity(value) }",
             )
-            .expect("当前源码必须产生已验证的编译合同")
-            .compiled_program()
-            .clone()
+            .expect("单测源码必须完成 HIR 分析");
+        let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
+        let canonical = nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
+            .expect("单测 MIR 必须满足 Canonical 合同");
+        let representation = nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical)
+            .expect("单测 Canonical 必须形成表示计划");
+        CompiledProgram::new(canonical, representation).expect("单测表示输入必须一致，不代表生产流水线验收")
     }
 
     fn prepare(program: &CompiledProgram) -> Result<BackendPrivatePlan> {

@@ -24,7 +24,7 @@ pub mod typing;
 /// 跨 HIR 与 Semantic MIR 的编译器一致性校验入口。
 pub mod validation;
 
-pub use assembly::{
+pub(crate) use assembly::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
     build_output_surface_counts,
     assemble_fragment,

@@ -35,16 +35,14 @@ pub use nyar::{
     ProgramFacts, PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
 };
 pub use valkyrie::{
-    AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
-    assemble_fragment,
     compile_pipeline::compile_source_groups_to_artifacts,
-    build_output_surface_counts, derive,
+    derive,
     frontend_contract::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
         concretize_type, concretize_type_lossy, hir_module_to_analysis_artifact,
         hir_module_to_object_algebraic_program, hir_module_to_program_facts,
     },
-    hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, FrontendBuildOutput, ValkyrieCompiler, compute_nominal_layouts},
+    hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, ValkyrieCompiler, compute_nominal_layouts},
     mir,
     mir::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,
@@ -53,7 +51,7 @@ pub use valkyrie::{
         compute_aggregate_layout_plan, layout_id_for_nyar_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
         storage_kind_for_type,
     },
-        module, plan_artifacts_from_build_output, type_checker, types,
+        module, type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
     typing, validation,
     validation::ControlFlowScheduler,

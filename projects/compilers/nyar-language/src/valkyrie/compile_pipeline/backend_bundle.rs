@@ -12,7 +12,8 @@ use nyar::{
     TargetLane, VmSuspendStrategy,
 };
 
-use crate::{CompilerSourceGroup, FrontendBuildOutput, ValkyrieCompiler, assemble_fragment, build_output_surface_counts, plan_artifacts_from_build_output};
+use crate::{CompilerSourceGroup, ValkyrieCompiler};
+use crate::valkyrie::{FrontendBuildOutput, assemble_fragment, build_output_surface_counts, plan_artifacts_from_build_output};
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {

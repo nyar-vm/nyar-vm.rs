@@ -10,18 +10,18 @@ use std::collections::BTreeSet;
 use miette::{Result as MietteResult, miette};
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
 use nyar_types::ItemInstanceId;
-use crate::FrontendBuildOutput;
+use crate::hir::FrontendBuildOutput;
 
 pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
-pub fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize, usize) {
+pub(crate) fn build_output_surface_counts(build_output: &FrontendBuildOutput) -> (usize, usize) {
     let linked = &build_output.compiled_program().canonical().linked;
     (linked.exports.len(), linked.entries.len())
 }
 /// Plan artifacts from `FrontendBuildOutput` using injected target and projection policy.
-pub fn plan_artifacts_from_build_output(
+pub(crate) fn plan_artifacts_from_build_output(
     build_output: &FrontendBuildOutput,
     target: CanonicalTarget,
     clr_suspend_strategy: ClrSuspendStrategy,
@@ -40,7 +40,7 @@ pub fn plan_artifacts_from_build_output(
 }
 
 /// Assemble a platform [`AssembledFragment`] for the given partition.
-pub fn assemble_fragment(
+pub(crate) fn assemble_fragment(
     build_output: &FrontendBuildOutput,
     plan: &ArtifactPartitionPlan,
     partition_index: usize,
