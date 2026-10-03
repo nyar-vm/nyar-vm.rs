@@ -15,7 +15,7 @@ use nyar::{
 use crate::{CompilerSourceGroup, FrontendBuildOutput, ValkyrieCompiler, assemble_fragment, build_output_surface_counts, plan_artifacts_from_build_output};
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
-pub struct CompilerBuildBundle {
+struct CompilerBuildBundle {
     build_output: FrontendBuildOutput,
     artifact_plan: ArtifactPartitionPlan,
     wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
@@ -23,18 +23,14 @@ pub struct CompilerBuildBundle {
 
 impl CompilerBuildBundle {
     /// 返回已由 Canonical 成功载荷确认的导出和入口数量。
-    pub fn surface_counts(&self) -> (usize, usize) {
+    fn surface_counts(&self) -> (usize, usize) {
         build_output_surface_counts(&self.build_output)
     }
 
-    /// 返回 Compiler 已规划的分区数量。
-    pub fn partition_count(&self) -> usize {
-        self.artifact_plan.partitions.len()
-    }
 }
 
 /// 从 Resolver 提供的源码组生产唯一目标 bundle。
-pub fn compile_source_groups_to_backend_bundle(
+fn compile_source_groups_to_backend_bundle(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
     arch: &str,
@@ -55,7 +51,57 @@ pub fn compile_source_groups_to_backend_bundle(
         .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
     let artifact_plan = plan_artifacts_from_build_output(&build_output, target, clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
-    Ok(CompilerBuildBundle { build_output, artifact_plan, wasm_package_kind })
+    let bundle = CompilerBuildBundle { build_output, artifact_plan, wasm_package_kind };
+    validate_artifact_surface(&bundle, wasm_package_kind)?;
+    Ok(bundle)
+}
+
+/// 从源码闭包直接生产完整目标产物报告。
+pub fn compile_source_groups_to_artifacts(
+    compiler: &ValkyrieCompiler,
+    groups: &[CompilerSourceGroup],
+    arch: &str,
+    target: CanonicalTarget,
+    clr_suspend_strategy: ClrSuspendStrategy,
+    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    output_dir: &Path,
+    project_name: &str,
+    emit_msil_sidecar: bool,
+    emit_wat_sidecar: bool,
+    generate_runtime_config: bool,
+) -> Result<emitter::DriverCompileReport> {
+    let bundle = compile_source_groups_to_backend_bundle(
+        compiler,
+        groups,
+        arch,
+        target,
+        clr_suspend_strategy,
+        wasm_package_kind,
+    )?;
+    emitter::compile_frontend_bundle_with_bundled_backends(
+        &bundle,
+        output_dir,
+        project_name,
+        emit_msil_sidecar,
+        emit_wat_sidecar,
+        generate_runtime_config,
+    )
+}
+
+fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
+    if bundle.artifact_plan.target.to_profile(None).backend_family != TargetBackendFamily::Wasm {
+        return Ok(());
+    }
+    let (export_count, entry_count) = bundle.surface_counts();
+    match wasm_package_kind {
+        emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
+            Err(miette!("`artifact: library` requires at least one resolved export"))
+        }
+        emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
+            Err(miette!("`artifact: binary` requires a resolved main entry"))
+        }
+        _ => Ok(()),
+    }
 }
 
 impl FrontendBuildBundle for CompilerBuildBundle {

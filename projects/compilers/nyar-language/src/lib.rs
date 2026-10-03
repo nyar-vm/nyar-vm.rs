@@ -37,7 +37,7 @@ pub use nyar::{
 pub use valkyrie::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
     assemble_fragment,
-    compile_pipeline::{CompilerBuildBundle, compile_source_groups_to_backend_bundle},
+    compile_pipeline::compile_source_groups_to_artifacts,
     build_output_surface_counts, derive,
     frontend_contract::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
