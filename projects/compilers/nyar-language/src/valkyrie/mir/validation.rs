@@ -544,6 +544,9 @@ pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
             MirDiagnostic::UnsupportedExpression { span, kind } => {
                 return Err(ParseError::invalid(format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")));
             }
+            MirDiagnostic::UnresolvedValueType { context } => {
+                return Err(ParseError::invalid(format!("MIR lowering missing value type fact: {context}")));
+            }
             MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
                 return Err(ParseError::invalid(format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")));
             }

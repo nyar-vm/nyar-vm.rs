@@ -80,6 +80,11 @@ pub enum MirDiagnostic {
         span: crate::SourceSpan,
         kind: String,
     },
+    /// 操作数的类型事实缺失，不能用 `Unit` 或其他默认类型继续 lowering。
+    UnresolvedValueType {
+        /// 缺失类型事实的语义位置。
+        context: String,
+    },
     /// 语义 sum registry 中不存在 lowering 请求的 variant。
     UnresolvedVariantIdentity {
         /// 声明的 sum owner。

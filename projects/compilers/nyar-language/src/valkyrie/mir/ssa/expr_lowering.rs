@@ -570,18 +570,19 @@ impl MirBuilder {
                 }
                 if callee_name_matches(&callee.kind, "tuple") {
                     let fields = args.iter().map(|arg| self.lower_expr_to_operand(&arg.value)).collect::<Vec<_>>();
-                    let element_types = resolved
-                        .as_ref()
-                        .and_then(|call| match &call.return_type {
-                            ValkyrieType::Tuple(types) => Some(types.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| {
-                            fields
-                                .iter()
-                                .map(|operand| infer_builder_operand_type(operand, &self.value_types).unwrap_or(ValkyrieType::Unit))
-                                .collect()
-                        });
+                    let element_types = if let Some(types) = resolved.as_ref().and_then(|call| match &call.return_type {
+                        ValkyrieType::Tuple(types) => Some(types.clone()),
+                        _ => None,
+                    }) {
+                        types
+                    }
+                    else {
+                        let Some(types) = fields.iter().map(|operand| infer_builder_operand_type(operand, &self.value_types)).collect::<Option<Vec<_>>>() else {
+                            self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: "tuple 构造元素".to_string() });
+                            return MirOperand::Constant(MirConstant::Unit);
+                        };
+                        types
+                    };
                     let tuple_type =
                         resolved.as_ref().map(|call| call.return_type.clone()).unwrap_or_else(|| ValkyrieType::Tuple(element_types.clone()));
                     let storage = MirStorageKind::Value;
@@ -816,7 +817,7 @@ impl MirBuilder {
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
                 // `unit` 不得占用物理 value 槽（BPHYS001）——一律经 `push_call_returning`。
-                let return_type = array_index_call_output_type(&arguments, &self.value_types)
+                let Some(return_type) = array_index_call_output_type(&arguments, &self.value_types)
                     .or_else(|| function_ty.map(|func| func.return_type))
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                     .or_else(|| match &callee {
@@ -824,7 +825,10 @@ impl MirBuilder {
                         _ => None,
                     })
                     .or_else(|| expected_type.cloned())
-                    .unwrap_or(ValkyrieType::Unit);
+                else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: format!("调用结果 `{:?}`", callee) });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
                 self.push_call_returning(callee, arguments, return_type)
             }
             HirExprKind::ArrayNew { element_type, length } => {

@@ -57,8 +57,10 @@ impl MirBuilder {
         self.current_label = "try_propagate_ok".to_string();
         self.instructions.clear();
         self.terminator = None;
-        let payload_type =
-            infer_builder_operand_type(&value, &self.value_types).and_then(|ty| nullable_payload_type(&ty)).unwrap_or(ValkyrieType::Unit);
+        let Some(payload_type) = infer_builder_operand_type(&value, &self.value_types).and_then(|ty| nullable_payload_type(&ty)) else {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: "nullable try-propagate 载荷".to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
         self.lower_nullable_payload_operand(value, &payload_type)
     }
 
