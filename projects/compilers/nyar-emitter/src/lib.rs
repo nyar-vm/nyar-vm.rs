@@ -853,7 +853,7 @@ impl LoweredBackendInput {
     }
 
     /// 基于前端片段提交生成驱动层 backend 输入。
-    pub fn from_fragment_submission(
+    fn from_fragment_submission(
         submission: &FragmentSubmission,
         backend_family: TargetBackendFamily,
         host_boundary: HostProjectionBoundary,
