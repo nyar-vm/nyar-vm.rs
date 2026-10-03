@@ -117,10 +117,10 @@ fn source_field_declarations_keep_qualified_owners_and_reject_short_name_aliases
 
 #[test]
 fn source_field_declaration_reaches_canonical_without_a_construction_seed() {
-    let output = ValkyrieCompiler::default().compile_source_to_build_output(
+    let output = ValkyrieCompiler::default().compile_source_to_program(
         "structure Flag { value: bool } micro read(flag: Flag) -> bool { return flag.value }",
     ).expect("当前源码字段声明必须贯穿 Compiler 成功载荷");
-    let program = output.canonical_program();
+    let program = output.canonical();
     program.validate().expect("Canonical 完整字段身份与结果合同");
     let mut reads = 0;
     for function in program.mir.functions.values() {
@@ -129,7 +129,7 @@ fn source_field_declaration_reaches_canonical_without_a_construction_seed() {
                 reads += 1;
                 let record = &program.linked.fields[field];
                 assert_eq!(record.ty, function.value_types[&instruction.results[0]]);
-                assert!(output.compiled_program().representation().adt_reps.contains_key(&record.owner));
+                assert!(output.representation().adt_reps.contains_key(&record.owner));
             }
         }
     }

@@ -28,7 +28,7 @@ pub(crate) use assembly::{
     AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
     build_output_surface_counts,
     assemble_fragment,
-    plan_artifacts_from_build_output,
+    plan_artifacts_from_compiled_program,
 };
 pub use frontend_contract::{
     ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,

@@ -45,7 +45,6 @@ pub use control_flow_validation::{
     function_can_suspend, function_has_suspend_effects, function_is_async, function_needs_suspend_fragment, validate_control_flow_module,
 };
 pub use lowering::{AstToHir, CompilerSourceGroup, ValkyrieCompiler, compute_nominal_layouts};
-pub(crate) use lowering::FrontendBuildOutput;
 pub use nominal_registry::{NominalTypeRegistry, variant_constructor_param_types};
 pub use try_propagate::{
     TryPropagateKind, classify_try_operand, is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type,

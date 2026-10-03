@@ -43,12 +43,12 @@ mod tests {
 
     #[test]
     fn source_calls_and_branch_values_reach_the_success_contract() {
-        let output = ValkyrieCompiler::default().compile_source_to_build_output(
+        let output = ValkyrieCompiler::default().compile_source_to_program(
             "micro identity(value: i32) -> i32 { return value } \
              micro choose(flag: bool, value: i32) -> i32 { \
                  if flag { return identity(value) } else { return value } }",
         ).expect("当前源码经过真实构建入口完成语义与表示合同");
-        let program = output.compiled_program();
+        let program = &output;
         assert_eq!(program.canonical().mir.functions.len(), 2);
         assert_eq!(program.representation().invoke_lowerings.len(), 1);
         assert_eq!(

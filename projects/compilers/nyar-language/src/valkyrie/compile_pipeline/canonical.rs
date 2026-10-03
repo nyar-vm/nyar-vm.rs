@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn producer_carries_export_and_entry_contracts_by_callable_identity() {
         let output = crate::ValkyrieCompiler::default()
-            .compile_source_to_build_output(
+            .compile_source_to_program(
                 "[export(name: \"public_main\")] [main] micro main() -> unit { return }",
             )
             .expect("源码必须完成前端分析");
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
         let output = crate::ValkyrieCompiler::default()
-            .compile_source_to_build_output("micro select(value: bool, other: i32) -> bool { return value }")
+            .compile_source_to_program("micro select(value: bool, other: i32) -> bool { return value }")
             .expect("源码必须完成前端分析");
         let module = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("micro select(value: bool, other: i32) -> bool { return value }").expect("source for canonical test"));
         canonical_program_from_semantic_mir(&module).expect("合法入口必须产生 CanonicalProgram");
@@ -555,13 +555,13 @@ mod tests {
     #[test]
     fn producer_carries_singleton_lifecycle_contract() {
         let output = crate::ValkyrieCompiler::default()
-            .compile_source_to_build_output(
+            .compile_source_to_program(
                 r#"lazy singleton Counter {
     total: i64 = 0
 }"#,
             )
             .expect("singleton 源码必须产生完整 Canonical 合同");
-        let plans = &output.compiled_program().canonical().linked.singleton_instances;
+        let plans = &output.canonical().linked.singleton_instances;
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].qualified_name(), "Counter");
         assert!(plans[0].is_lazy);

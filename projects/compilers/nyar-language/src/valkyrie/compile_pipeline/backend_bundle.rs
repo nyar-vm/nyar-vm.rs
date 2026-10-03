@@ -13,11 +13,11 @@ use nyar::{
 };
 
 use crate::{CompilerSourceGroup, ValkyrieCompiler};
-use crate::valkyrie::{FrontendBuildOutput, assemble_fragment, build_output_surface_counts, plan_artifacts_from_build_output};
+use crate::valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
-    build_output: FrontendBuildOutput,
+    compiled_program: nyar_types::CompiledProgram,
     artifact_plan: ArtifactPartitionPlan,
     wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
 }
@@ -25,7 +25,7 @@ struct CompilerBuildBundle {
 impl CompilerBuildBundle {
     /// 返回已由 Canonical 成功载荷确认的导出和入口数量。
     fn surface_counts(&self) -> (usize, usize) {
-        build_output_surface_counts(&self.build_output)
+        build_output_surface_counts(&self.compiled_program)
     }
 
 }
@@ -47,12 +47,12 @@ fn compile_source_groups_to_backend_bundle(
             group
         })
         .collect::<Vec<_>>();
-    let build_output = compiler
-        .compile_source_groups(&groups)
+    let compiled_program = compiler
+        .compile_source_groups_to_program(&groups)
         .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
-    let artifact_plan = plan_artifacts_from_build_output(&build_output, target, clr_suspend_strategy)
+    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, target, clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
-    let bundle = CompilerBuildBundle { build_output, artifact_plan, wasm_package_kind };
+    let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind };
     validate_artifact_surface(&bundle, wasm_package_kind)?;
     Ok(bundle)
 }
@@ -122,7 +122,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         output_dir: &Path,
         _lane: TargetLane,
     ) -> Result<LoweredBackendInput> {
-        let fragment = assemble_fragment(&self.build_output, &self.artifact_plan, partition_index)?;
+        let fragment = assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index)?;
         let partition = self
             .artifact_plan
             .partitions

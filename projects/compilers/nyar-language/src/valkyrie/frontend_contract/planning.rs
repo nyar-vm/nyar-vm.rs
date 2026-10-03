@@ -56,10 +56,8 @@ pub fn hir_module_to_program_facts(module: &HirModule) -> ProgramFacts {
         })
         .collect::<Vec<FunctionAnalysis>>();
 
-    // Semantic-group builds keep only the consumer HIR in FrontendBuildOutput; dependency
-    // `[wasm]` / `[clr]` / host_provider surfaces live on imported_semantic_exports.
-    // Fold those interop contracts into program facts so assembly can register real
-    // external imports (N2) instead of soft-stubbing std.io callees.
+    // 源码组降低时保留应用 HIR；依赖的显式互操作声明来自 imported_semantic_exports。
+    // 这些声明进入程序事实并形成真实导入，不能以宿主桩代替缺失合同。
     for export in &module.imported_semantic_exports {
         let export_module_name = qualified_name(&export.module);
         for function in &export.functions {

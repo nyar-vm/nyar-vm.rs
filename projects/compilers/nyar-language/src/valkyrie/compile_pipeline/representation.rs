@@ -94,13 +94,13 @@ mod tests {
 
     #[test]
     fn source_aggregate_semantics_reach_the_representation_plan_without_construction() {
-        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
             "structure Point { value: i32 } class Node { value: i32 } \
              micro value_identity(value: Point) -> Point { return value } \
              micro reference_identity(value: Node) -> Node { return value }",
         ).expect("声明与参数源码必须完成编译，不依赖构造指令补布局");
-        let program = output.canonical_program();
-        let plan = output.compiled_program().representation();
+        let program = output.canonical();
+        let plan = output.representation();
         assert_eq!(program.linked.nominal_instances.len(), 2);
         assert_eq!(plan.adt_reps.len(), 2);
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&crate::ValkyrieCompiler::default().compile_source("structure Point { value: i32 } class Node { value: i32 } micro value_identity(value: Point) -> Point { return value } micro reference_identity(value: Node) -> Node { return value }").expect("source for representation test"));
@@ -144,11 +144,11 @@ mod tests {
     fn planner_requires_each_complete_nominal_type_before_representation() {
         use nyar_types::{NominalInstanceId, SubstitutionId, TypeId, TypeRecord};
 
-        let output = crate::ValkyrieCompiler::default().compile_source_to_build_output(
+        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
             "class Node {} micro first(value: Node, tag: bool) -> Node { return value } \
              micro second(value: Node, tag: i32) -> Node { return value }",
         ).expect("源码声明与函数合同必须完成编译");
-        let mut program = output.canonical_program().clone();
+        let mut program = output.canonical().clone();
         let original = program.linked.nominal_instances.values().next().unwrap().clone();
         let functions = program.mir.functions.keys().copied().collect::<Vec<_>>();
         let mut instantiated_types = Vec::new();
@@ -195,12 +195,12 @@ mod tests {
     #[test]
     fn source_function_values_keep_their_owners_through_representation_planning() {
         let output = crate::ValkyrieCompiler::default()
-            .compile_source_to_build_output(
+            .compile_source_to_program(
                 "micro boolean_identity(value: bool) -> bool { return value } \
                  micro integer_identity(value: i32) -> i32 { return value }",
             )
             .expect("源码必须完成前端分析");
-        let program = output.canonical_program();
+        let program = output.canonical();
         let plan = CanonicalRepresentationPlanner.plan(&program).expect("完整语义合同必须完成表示规划");
         let functions = program.mir.functions.values().collect::<Vec<_>>();
         assert_eq!(functions.len(), 2);

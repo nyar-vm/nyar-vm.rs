@@ -312,7 +312,7 @@ micro main() -> i64 {
         assert_eq!(contract.locator_segments(), &["syscall", "1"]);
 
         let build_output = compiler
-            .compile_source_to_build_output(
+            .compile_source_to_program(
                 r#"
 [syscall(1)]
 micro console_write(message: utf8): i32;
@@ -325,7 +325,7 @@ micro main() -> i64 {
 "#,
             )
             .unwrap();
-        let fragment = build_output.compiled_program().canonical().linked.fragments.values().next().expect("Canonical 片段");
+        let fragment = build_output.canonical().linked.fragments.values().next().expect("Canonical 片段");
         assert_eq!(fragment.external_imports.len(), 1, "links={:?}", fragment.external_imports);
         assert_eq!(fragment.external_call_edges.len(), 1, "edges={:?}", fragment.external_call_edges);
     }
@@ -343,7 +343,7 @@ micro declaration(message: utf8): unit;
         let declaration = module.functions.iter().find(|function| function.name.as_str() == "declaration").expect("declaration");
         assert!(declaration.is_abstract);
         assert!(function_interop_contract(declaration).is_none());
-        let output = compiler.compile_source_to_build_output("micro declaration(message: utf8): unit;").expect("declaration output");
+        let output = compiler.compile_source_to_program("micro declaration(message: utf8): unit;").expect("declaration output");
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("micro declaration(message: utf8): unit;").expect("declaration source"));
         assert!(semantic_mir.external_calls.is_empty());
     }
@@ -363,7 +363,7 @@ micro declaration(message: utf8): unit;
         let contract = function_interop_contract(declaration).expect("explicit host contract");
         assert!(contract.matches_boundary("host"));
         assert!(contract.locator_segments().is_empty());
-        let output = compiler.compile_source_to_build_output("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
+        let output = compiler.compile_source_to_program("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"));
         assert_eq!(semantic_mir.external_calls.len(), 1);
     }

@@ -65,19 +65,19 @@ mod source_group_tests {
                 direct_dependencies: vec!["core".into()],
             },
         ];
-        let output = ValkyrieCompiler::default().compile_source_groups(&groups).expect("compiler closes source groups");
-        assert_eq!(output.canonical_program().linked.module_name, "app");
-        assert!(output.canonical_program().linked.callable_names.values().any(|name| name.to_string() == "core::answer"));
+        let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("compiler closes source groups");
+        assert_eq!(output.canonical().linked.module_name, "app");
+        assert!(output.canonical().linked.callable_names.values().any(|name| name.to_string() == "core::answer"));
     }
 
     #[test]
     fn compiler_carries_fragment_contracts_into_canonical_program() {
         let output = ValkyrieCompiler::default()
-            .compile_source_to_build_output(
+            .compile_source_to_program(
                 "[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
             )
             .expect("源码必须形成完整 Canonical 成功载荷");
-        let linked = &output.compiled_program().canonical().linked;
+        let linked = &output.canonical().linked;
         let fragment = linked.fragments.values().next().expect("Compiler 必须绑定至少一个语义片段");
         assert!(!fragment.exported_operations.is_empty(), "片段不得丢失 callable identity");
         assert!(fragment.entry_operation.is_some(), "片段不得丢失入口 identity");
@@ -92,7 +92,7 @@ mod source_group_tests {
             source: "micro main() { return }".into(),
             direct_dependencies: vec!["missing".into()],
         }];
-        let error = ValkyrieCompiler::default().compile_source_groups(&groups).expect_err("unknown dependency must fail at Compiler boundary");
+        let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("unknown dependency must fail at Compiler boundary");
         assert!(error.to_string().contains("semantic dependency export `missing`"));
     }
 
@@ -112,7 +112,7 @@ mod source_group_tests {
                 direct_dependencies: Vec::new(),
             },
         ];
-        let error = ValkyrieCompiler::default().compile_source_groups(&groups).expect_err("duplicate dependency identity must fail");
+        let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("duplicate dependency identity must fail");
         assert!(error.to_string().contains("identity collision"));
     }
 }
@@ -344,39 +344,20 @@ pub struct CompilerSourceGroup {
     pub direct_dependencies: Vec<String>,
 }
 
-/// Stable frontend build output consumed by the application layer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FrontendBuildOutput {
-    compiled_program: nyar_types::CompiledProgram,
+/// 从已降低的 HIR 模块生产唯一语义成功载荷。
+pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, ParseError> {
+    let semantic_fragments = hir_module_to_semantic_fragments(&hir_module);
+    let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
+    compiled_program_from_semantic_mir(semantic_fragments, semantic_mir)
 }
 
-impl FrontendBuildOutput {
-    /// Build output from a lowered HIR module.
-    pub(crate) fn from_hir_module(hir_module: HirModule) -> Result<Self, ParseError> {
-        let semantic_fragments = hir_module_to_semantic_fragments(&hir_module);
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-        Self::from_semantic_fragments_and_mir(semantic_fragments, semantic_mir)
-    }
-
-    fn from_semantic_fragments_and_mir(
-        semantic_fragments: Vec<SemanticFragment>,
-        semantic_mir: crate::valkyrie::mir::MirModule,
-    ) -> Result<Self, ParseError> {
-        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &semantic_fragments)
-            .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
-        Ok(Self { compiled_program })
-    }
-
-    /// 返回 Compiler 已验证的 CanonicalProgram；消费者不得重新生产。
-    pub fn canonical_program(&self) -> &nyar_types::CanonicalProgram {
-        self.compiled_program.canonical()
-    }
-
-    /// 返回 Compiler 生成的不可拆分成功载荷。
-    pub fn compiled_program(&self) -> &nyar_types::CompiledProgram {
-        &self.compiled_program
-    }
-
+fn compiled_program_from_semantic_mir(
+    semantic_fragments: Vec<SemanticFragment>,
+    semantic_mir: crate::valkyrie::mir::MirModule,
+) -> Result<nyar_types::CompiledProgram, ParseError> {
+    let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &semantic_fragments)
+        .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
+    Ok(compiled_program)
 }
 
 /// Collect sum-type and flags layouts from a lowered HIR module.
@@ -580,28 +561,27 @@ impl ValkyrieCompiler {
         self.compile_vx_source(&source)
     }
 
-    /// Parses source text and lowers it into the stable frontend build bundle.
-    pub(crate) fn compile_source_to_build_output(&self, source: &str) -> Result<FrontendBuildOutput, ParseError> {
+    /// 解析源码并降低为唯一语义成功载荷。
+    pub(crate) fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, ParseError> {
         let hir_module = self.compile_source(source)?;
-        FrontendBuildOutput::from_hir_module(hir_module)
+        compiled_program_from_hir_module(hir_module)
     }
 
-    /// Builds the stable frontend bundle with resolved nominal dependency
-    /// exports available to call resolution and extractor validation.
-    pub(crate) fn compile_source_to_build_output_with_semantic_exports(
+    /// 根据已解析依赖导出生产完整语义成功载荷。
+    pub(crate) fn compile_source_to_program_with_semantic_exports(
         &self,
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
-    ) -> Result<FrontendBuildOutput, ParseError> {
+    ) -> Result<nyar_types::CompiledProgram, ParseError> {
         let hir_module = self.compile_source_with_semantic_exports(source, imported_semantic_exports)?;
-        FrontendBuildOutput::from_hir_module(hir_module)
+        compiled_program_from_hir_module(hir_module)
     }
 
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
     ///
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
-    pub(crate) fn compile_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<FrontendBuildOutput, ParseError> {
+    pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         for group in groups {
@@ -639,13 +619,13 @@ impl ValkyrieCompiler {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
         let semantic_fragments = hir_module_to_semantic_fragments(&final_hir);
-        FrontendBuildOutput::from_semantic_fragments_and_mir(semantic_fragments, final_mir)
+        compiled_program_from_semantic_mir(semantic_fragments, final_mir)
     }
 
-    /// Parses a source file and lowers it into the stable frontend build bundle.
-    pub(crate) fn compile_path_to_build_output(&self, path: &Path) -> Result<FrontendBuildOutput, ParseError> {
+    /// 解析源码文件并降低为唯一语义成功载荷。
+    pub(crate) fn compile_path_to_program(&self, path: &Path) -> Result<nyar_types::CompiledProgram, ParseError> {
         let hir_module = self.compile_path(path)?;
-        FrontendBuildOutput::from_hir_module(hir_module)
+        compiled_program_from_hir_module(hir_module)
     }
 
     /// Lowers parser output into a HIR module.
@@ -1681,11 +1661,11 @@ mod sum_discriminator_tests {
     #[test]
     fn sum_layouts_are_not_synthesized_without_source_declarations() {
         let output = ValkyrieCompiler::default()
-            .compile_source_to_build_output("[main] micro entry() -> i32 { return 23 }")
+            .compile_source_to_program("[main] micro entry() -> i32 { return 23 }")
             .expect("普通源码必须完成正式 Compiler 成功边界");
         let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&ValkyrieCompiler::default().compile_source("[main] micro entry() -> i32 { return 23 }").expect("test source"));
         assert!(semantic_mir.sum_types.is_empty());
-        assert!(output.compiled_program().canonical().linked.variants.is_empty());
+        assert!(output.canonical().linked.variants.is_empty());
     }
 
     #[test]
