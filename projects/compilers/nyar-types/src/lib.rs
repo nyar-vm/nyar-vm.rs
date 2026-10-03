@@ -7,7 +7,7 @@ pub use self::{
         CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
         CanonicalOperand, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CompiledProgram, CompiledProgramError, CompileStage, DiagnosticRecord, EvidenceRecord,
         FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, CanonicalPrimitiveType,
-        CanonicalTypeKind, NominalValueSemantics, pipeline,
+        CanonicalTypeKind, NominalValueSemantics, CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, pipeline,
     },
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     errors::{NyarError, NyarErrorKind},

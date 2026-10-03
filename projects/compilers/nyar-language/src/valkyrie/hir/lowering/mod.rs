@@ -70,6 +70,20 @@ mod source_group_tests {
     }
 
     #[test]
+    fn compiler_carries_fragment_contracts_into_canonical_program() {
+        let output = ValkyrieCompiler::default()
+            .compile_source_to_build_output(
+                "[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
+            )
+            .expect("源码必须形成完整 Canonical 成功载荷");
+        let linked = &output.compiled_program().canonical().linked;
+        let fragment = linked.fragments.values().next().expect("Compiler 必须绑定至少一个语义片段");
+        assert!(!fragment.exported_operations.is_empty(), "片段不得丢失 callable identity");
+        assert!(fragment.entry_operation.is_some(), "片段不得丢失入口 identity");
+        assert!(fragment.exported_operations.iter().all(|instance| linked.callable_names.contains_key(instance)));
+    }
+
+    #[test]
     fn compiler_rejects_unknown_dependency_identity() {
         let groups = vec![CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -348,7 +362,7 @@ impl FrontendBuildOutput {
         neutral_plan: FrontendNeutralPlan,
         semantic_mir: crate::valkyrie::mir::MirModule,
     ) -> Result<Self, ParseError> {
-        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
+        let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir_with_fragments(&semantic_mir, &neutral_plan.semantic_fragments)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
         Ok(Self { neutral_plan, compiled_program })
     }

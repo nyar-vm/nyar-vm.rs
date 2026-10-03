@@ -3,7 +3,7 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::{AggregateLayoutPlan, FlagsLayout, QualifiedName, SumTypeLayout, semantic_ids::{
+use crate::{AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalImportLink, FlagsLayout, Identifier, QualifiedName, SumTypeLayout, semantic_ids::{
     layout_choice::RepresentationPlan,
     EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
     SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
@@ -103,6 +103,49 @@ pub struct LinkedSemanticProgram {
     pub flags_types: Vec<FlagsLayout>,
     /// Compiler 解析出的 singleton 生命周期合同。
     pub singleton_instances: Vec<crate::SingletonInstancePlan>,
+    /// 已完成稳定身份绑定的语义片段；装配只能消费该表。
+    pub fragments: BTreeMap<Identifier, CanonicalFragment>,
+}
+
+/// Canonical 程序中的稳定语义片段合同。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CanonicalFragment {
+    /// 片段身份。
+    pub id: Identifier,
+    /// 片段公开及闭包内操作的 callable identity。
+    pub exported_operations: Vec<ItemInstanceId>,
+    /// 片段要求的能力。
+    pub required_capabilities: Vec<CapabilityTag>,
+    /// 片段入口 callable identity。
+    pub entry_operation: Option<ItemInstanceId>,
+    /// 片段使用的外部导入合同，键为外部 callable identity。
+    pub external_imports: BTreeMap<ItemInstanceId, ExternalImportLink>,
+    /// 已绑定身份的外部调用边。
+    pub external_call_edges: Vec<CanonicalExternalCallEdge>,
+    /// 已绑定身份的内部调用边。
+    pub internal_call_edges: Vec<CanonicalCallEdge>,
+    /// callable identity 到公开 Wasm 名称的映射。
+    pub wasm_export_names: BTreeMap<ItemInstanceId, String>,
+}
+
+/// Canonical 片段内的内部调用边。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CanonicalCallEdge {
+    /// 调用方 callable identity。
+    pub caller: ItemInstanceId,
+    /// 被调用方 callable identity。
+    pub callee: ItemInstanceId,
+}
+
+/// Canonical 片段内的外部调用边。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CanonicalExternalCallEdge {
+    /// 调用方 callable identity。
+    pub caller: ItemInstanceId,
+    /// 外部导入槽 identity。
+    pub import: ImportIndex,
+    /// 编译器已绑定的最小调用参数合同。
+    pub arguments: Vec<ExternalCallArgument>,
 }
 
 /// 一个已链接 callable 的公开导出合同。

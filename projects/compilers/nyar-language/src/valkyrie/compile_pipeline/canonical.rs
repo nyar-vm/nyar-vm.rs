@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use nyar_types::{
-    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
+    CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
     CanonicalCallee, CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
     ItemId, ItemInstanceId, ItemInstanceRecord, LinkedSemanticProgram, MirValueId, NominalInstanceId, NominalInstanceRecord, NominalValueSemantics,
     FieldId, FieldRecord, Identifier, ImportCapability, ImportIndex, ImportRecord, QualifiedName, StructuredDiagnosticSet, SubstitutionId, TypeId,
@@ -15,11 +15,20 @@ use crate::valkyrie::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin},
     types::hir::ValkyrieType,
 };
+use nyar::SemanticFragment;
 
 use super::diagnostics::fail_stage;
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值。
 pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
+    canonical_program_from_semantic_mir_with_fragments(module, &[])
+}
+
+/// 从 Semantic MIR 与编译器已收集的片段输入生产唯一 Canonical 成功值。
+pub fn canonical_program_from_semantic_mir_with_fragments(
+    module: &MirModule,
+    fragments: &[SemanticFragment],
+) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
@@ -97,6 +106,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             return_type: type_id(&type_values, &contract.return_type)?,
         });
     }
+    linked.fragments = canonical_fragments(module, &linked, fragments)?;
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
         let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
@@ -105,6 +115,55 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
     Ok(program)
+}
+
+fn canonical_fragments(
+    module: &MirModule,
+    linked: &LinkedSemanticProgram,
+    fragments: &[SemanticFragment],
+) -> Result<BTreeMap<Identifier, CanonicalFragment>, StructuredDiagnosticSet> {
+    let mut result = BTreeMap::new();
+    for fragment in fragments {
+        let exported_operations = fragment.exported_operations.iter().map(|name| {
+            callable_instance(linked, name).ok_or_else(|| error(module, "CAN042", format!("片段 `{}` 的操作 `{name}` 缺少 callable identity", fragment.id)))
+        }).collect::<Result<Vec<_>, _>>()?;
+        let entry_operation = fragment.entry_operation.as_ref().map(|name| {
+            callable_instance(linked, name).ok_or_else(|| error(module, "CAN043", format!("片段 `{}` 的入口 `{name}` 缺少 callable identity", fragment.id)))
+        }).transpose()?;
+        let external_imports = fragment.external_import_links.keys().map(|name| {
+            let instance = callable_instance(linked, name).ok_or_else(|| error(module, "CAN044", format!("片段 `{}` 的导入 `{name}` 缺少 callable identity", fragment.id)))?;
+            let link = fragment.external_import_links.get(name).expect("片段导入键刚由 map 迭代取得").clone();
+            Ok((instance, link))
+        }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+        let internal_call_edges = fragment.internal_call_edges.iter().map(|edge| {
+            Ok(CanonicalCallEdge {
+                caller: callable_instance(linked, &edge.caller).ok_or_else(|| error(module, "CAN045", format!("片段 `{}` 的调用方 `{}` 缺少 callable identity", fragment.id, edge.caller)))?,
+                callee: callable_instance(linked, &edge.callee_symbol).ok_or_else(|| error(module, "CAN046", format!("片段 `{}` 的被调用方 `{}` 缺少 callable identity", fragment.id, edge.callee_symbol)))?,
+            })
+        }).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
+        let external_call_edges = fragment.external_call_edges.iter().map(|edge| {
+            let caller = callable_instance(linked, &edge.caller).ok_or_else(|| error(module, "CAN047", format!("片段 `{}` 的外部调用方 `{}` 缺少 callable identity", fragment.id, edge.caller)))?;
+            let callee = callable_instance(linked, &edge.callee_symbol).ok_or_else(|| error(module, "CAN048", format!("片段 `{}` 的外部被调用方 `{}` 缺少 callable identity", fragment.id, edge.callee_symbol)))?;
+            let import = linked.imports.iter().find_map(|(index, record)| (record.callee == callee).then_some(*index))
+                .ok_or_else(|| error(module, "CAN049", format!("片段 `{}` 的外部调用 `{}` 缺少 ImportIndex", fragment.id, edge.callee_symbol)))?;
+            Ok(CanonicalExternalCallEdge { caller, import, arguments: edge.arguments.clone() })
+        }).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
+        let wasm_export_names = fragment.wasm_export_names.iter().map(|(name, export)| {
+            let instance = callable_instance(linked, name).ok_or_else(|| error(module, "CAN050", format!("片段 `{}` 的公开操作 `{name}` 缺少 callable identity", fragment.id)))?;
+            Ok((instance, export.clone()))
+        }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+        if result.insert(fragment.id.clone(), CanonicalFragment {
+            id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(), entry_operation,
+            external_imports, external_call_edges, internal_call_edges, wasm_export_names,
+        }).is_some() {
+            return Err(error(module, "CAN051", format!("片段 identity `{}` 重复", fragment.id)));
+        }
+    }
+    Ok(result)
+}
+
+fn callable_instance(linked: &LinkedSemanticProgram, name: &QualifiedName) -> Option<ItemInstanceId> {
+    linked.callable_names.iter().find_map(|(instance, candidate)| (candidate == name).then_some(*instance))
 }
 
 type AggregateIdentity = (NominalInstanceId, TypeId, NominalValueSemantics);
