@@ -681,15 +681,13 @@ pub trait FrontendBuildBundle {
     /// 返回驱动层可消费的分区计划视图。
     fn planned_partitions(&self) -> &dyn PlannedArtifactPartitionsView;
 
-    /// 为指定分区提交驱动层可消费的目标输入。
-    fn submit_backend_input_for_partition(
-        &self,
-        partition_index: usize,
-        backend_family: TargetBackendFamily,
-        host_boundary: HostProjectionBoundary,
-        output_dir: &Path,
-        lane: TargetLane,
-    ) -> Result<LoweredBackendInput>;
+    /// 为指定分区提交 Compiler 已完成语义装配的 fragment。
+    ///
+    /// 前端不得在此边界生产目标私有输入；目标 lowering 由 Emitter 统一完成。
+    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<nyar::AssembledFragment>;
+
+    /// 返回目标 profile 的 host flavor，供 Emitter 选择目标私有编码。
+    fn target_host_flavor(&self) -> Option<String>;
 
     /// Wasm glue package mode from manifest (`binary` runs `main`, `library` exposes `callExport`).
     fn wasm_package_kind(&self) -> nyar_backend_wasi::WasmPackageKind {
@@ -1033,12 +1031,21 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             backend_family_for_partition(partition),
         );
         let lowering_started_at = std::time::Instant::now();
-        let lowered_input = request.bundle.submit_backend_input_for_partition(
-            partition_index,
+        let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
+        let host_flavor = request
+            .bundle
+            .target_host_flavor()
+            .ok_or_else(|| miette!("分区计划缺少目标 host flavor"))?;
+        let lowered_input = LoweredBackendInput::from_assembled_fragment(
+            fragment,
             backend_family_for_partition(partition),
             partition.host_boundary,
             request.output_dir,
             partition.lane,
+            partition.clr_suspend_strategy,
+            VmSuspendStrategy::default(),
+            &host_flavor,
+            request.bundle.wasm_package_kind(),
         )?;
         eprintln!(
             "[seed-debug] backend input lowered {}/{} elapsed_ms={}",

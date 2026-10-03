@@ -5,12 +5,9 @@
 
 use std::path::Path;
 
-use emitter::{FrontendBuildBundle, LoweredBackendInput, PlannedArtifactPartitionsView};
+use emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 use miette::{Result, miette};
-use nyar::{
-    ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, HostProjectionBoundary, TargetBackendFamily,
-    TargetLane, VmSuspendStrategy,
-};
+use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, TargetBackendFamily};
 
 use crate::{CompilerSourceGroup, ValkyrieCompiler};
 use crate::valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
@@ -114,32 +111,13 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         self.wasm_package_kind
     }
 
-    fn submit_backend_input_for_partition(
-        &self,
-        partition_index: usize,
-        backend_family: TargetBackendFamily,
-        host_boundary: HostProjectionBoundary,
-        output_dir: &Path,
-        _lane: TargetLane,
-    ) -> Result<LoweredBackendInput> {
-        let fragment = assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index)?;
-        let partition = self
-            .artifact_plan
-            .partitions
-            .get(partition_index)
-            .ok_or_else(|| miette!("分区索引 `{partition_index}` 超出范围"))?;
-        let host_flavor = self.artifact_plan.target.to_profile(None).host_flavor;
-        LoweredBackendInput::from_assembled_fragment(
-            fragment,
-            backend_family,
-            host_boundary,
-            output_dir,
-            partition.lane,
-            partition.clr_suspend_strategy,
-            VmSuspendStrategy::default(),
-            &host_flavor,
-            self.wasm_package_kind,
-        )
+    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<nyar::AssembledFragment> {
+        assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index)
+            .map_err(|error| miette!("Compiler fragment 装配失败: {error}"))
+    }
+
+    fn target_host_flavor(&self) -> Option<String> {
+        Some(self.artifact_plan.target.to_profile(None).host_flavor)
     }
 }
 
