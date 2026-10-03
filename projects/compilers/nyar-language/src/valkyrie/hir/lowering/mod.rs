@@ -340,7 +340,8 @@ pub struct CompilerSourceGroup {
     pub direct_dependencies: Vec<String>,
 }
 
-/// 从已降低的 HIR 模块生产唯一语义成功载荷。
+/// 单元测试中从 HIR 构造阶段夹具，不作为生产源码闭包入口。
+#[cfg(test)]
 pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, ParseError> {
     let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
     let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
