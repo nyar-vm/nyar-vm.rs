@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar::{
-    ArtifactPartitionPlan, BackendRegistry, CanonicalTarget, CapabilityTag, ClrSuspendStrategy, EntryContract, ExportContract,
+    CapabilityTag, EntryContract, ExportContract,
     ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FunctionAnalysis, Identifier, ImportContract, InternalCallEdge,
-    ObjectAlgebraicDimension, ObjectAlgebraicProgram, PlanningError, PlanningInput, ProgramFacts, ProjectionPolicy, QualifiedName,
+    ObjectAlgebraicDimension, ObjectAlgebraicProgram, ProgramFacts, QualifiedName,
     RewriteTheory, RuntimeRequirement, SemanticFragment, WitnessCallEdge, WitnessMethodSlotSubmission, WitnessSubmission,
 };
 
@@ -27,16 +27,6 @@ pub trait NyarPlanningContract {
     fn program_facts(&self) -> ProgramFacts;
     fn object_algebraic_program(&self) -> ObjectAlgebraicProgram;
     fn neutral_plan(&self) -> FrontendNeutralPlan;
-
-    fn artifact_plan(
-        &self,
-        target: CanonicalTarget,
-        projection_policy: ProjectionPolicy,
-        backend_registry: BackendRegistry,
-        clr_suspend_strategy: ClrSuspendStrategy,
-    ) -> Result<ArtifactPartitionPlan, PlanningError> {
-        self.neutral_plan().artifact_plan(target, projection_policy, backend_registry, clr_suspend_strategy)
-    }
 }
 
 impl NyarPlanningContract for HirModule {
@@ -67,25 +57,6 @@ pub struct FrontendNeutralPlan {
 }
 
 impl FrontendNeutralPlan {
-    pub fn artifact_plan(
-        &self,
-        target: CanonicalTarget,
-        projection_policy: ProjectionPolicy,
-        backend_registry: BackendRegistry,
-        clr_suspend_strategy: ClrSuspendStrategy,
-    ) -> Result<ArtifactPartitionPlan, PlanningError> {
-        ArtifactPartitionPlan::from_input(PlanningInput {
-            module_name: self.module_name.clone(),
-            target,
-            program_facts: self.program_facts.clone(),
-            semantic_fragments: self.semantic_fragments.clone(),
-            object_algebraic_program: self.object_algebraic_program.clone(),
-            rewrite_theory: self.rewrite_theory.clone(),
-            projection_policy,
-            backend_registry,
-            clr_suspend_strategy,
-        })
-    }
 }
 
 pub fn hir_module_to_program_facts(module: &HirModule) -> ProgramFacts {
