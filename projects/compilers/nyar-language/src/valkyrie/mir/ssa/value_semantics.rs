@@ -109,22 +109,7 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
         }
     }
     let key = layout_key_for_type(ty)?;
-    plan.type_name_to_layout.get(&key).copied().or_else(|| {
-        let suffix = format!(".{key}");
-        let mut candidate = None;
-        for (qualified, id) in &plan.type_name_to_layout {
-            if !qualified.ends_with(&suffix) {
-                continue;
-            }
-            if let Some(existing) = candidate {
-                if existing != *id {
-                    return None;
-                }
-            }
-            candidate = Some(*id);
-        }
-        candidate
-    })
+    plan.type_name_to_layout.get(&key).copied()
 }
 
 pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan {
@@ -197,43 +182,6 @@ pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType)
 
 /// Register a named aggregate layout discovered during StructNew when the
 /// declaring HIR struct was not present in this module's layout plan (imports).
-pub fn ensure_named_aggregate_layout(
-    plan: &mut AggregateLayoutPlan,
-    name: &str,
-    storage: MirStorageKind,
-    fields: &[(String, ValkyrieType)],
-) -> LayoutId {
-    // Prefer an existing layout with the same simple name AND compatible fields.
-    // `TextSpan` exists as both core.text{offset,length} and von{start,stop}; returning
-    // the first simple-name hit made StructNew disagree with layout metadata (SMIR010).
-    if let Some(id) = plan.layouts.iter().find_map(|layout| {
-        if layout.name != name {
-            return None;
-        }
-        let compatible = fields.len() == layout.fields.len()
-            && fields.iter().all(|(field_name, _)| layout.fields.iter().any(|field| field.name == *field_name));
-        compatible.then_some(layout.id)
-    }) {
-        return id;
-    }
-    if fields.is_empty() {
-        if let Some(id) = plan.type_name_to_layout.get(name).copied() {
-            return id;
-        }
-    }
-    let specs = fields
-        .iter()
-        .map(|(field_name, ty)| {
-            let (size, align) = scalar_layout(ty, plan);
-            FieldSpec { name: field_name.clone(), ty: ty.clone(), size, align }
-        })
-        .collect::<Vec<_>>();
-    let layout = build_aggregate_layout(next_layout_id(plan), name, String::new(), storage, specs);
-    let id = layout.id;
-    register_layout(plan, layout);
-    id
-}
-
 /// Unite/Result/Option runtime shape for MIR `FieldGet tag` / `FieldGet payload`.
 ///
 /// Matches CLR/Wasm GC convention: reference aggregate with `tag: i32` + opaque payload.
@@ -247,12 +195,19 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, sum_name: &str
             return id;
         }
     }
-    ensure_named_aggregate_layout(
-        plan,
+    let layout = build_aggregate_layout(
+        next_layout_id(plan),
         sum_name,
+        String::new(),
         MirStorageKind::Reference,
-        &[("tag".to_string(), ValkyrieType::Integer32 { signed: true }), ("payload".to_string(), ValkyrieType::Utf8)],
-    )
+        vec![
+            FieldSpec { name: "tag".to_string(), ty: ValkyrieType::Integer32 { signed: true }, size: 4, align: 4 },
+            FieldSpec { name: "payload".to_string(), ty: ValkyrieType::Utf8, size: 8, align: 8 },
+        ],
+    );
+    let id = layout.id;
+    register_layout(plan, layout);
+    id
 }
 
 /// Ensure every unite in `sum_types` has a tagged aggregate layout for FieldGet contracts.
@@ -314,7 +269,15 @@ fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
         plan.value_type_names.insert(qualified.clone());
     }
     plan.type_name_to_layout.insert(qualified, layout.id);
-    plan.type_name_to_layout.entry(layout.name.clone()).or_insert(layout.id);
+    match plan.type_name_to_layout.get(&layout.name).copied() {
+        None => {
+            plan.type_name_to_layout.insert(layout.name.clone(), layout.id);
+        }
+        Some(existing) if existing == layout.id => {}
+        Some(_) => {
+            plan.type_name_to_layout.remove(&layout.name);
+        }
+    }
     plan.layouts.push(layout);
 }
 

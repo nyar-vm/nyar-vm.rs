@@ -22,7 +22,7 @@ use super::{
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
-        ensure_layout_for_type, ensure_named_aggregate_layout, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
+        ensure_layout_for_type, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
     },
 };
 
@@ -466,16 +466,7 @@ impl MirBuilder {
         }
         match ty {
             ValkyrieType::Named(name) => {
-                let simple = name.as_str();
-                if matches!(simple, "any" | "null" | "object" | "Self" | "__auto" | "__opaque") {
-                    return None;
-                }
-                let fields = self.struct_field_layouts.get(simple)?;
-                if fields.is_empty() {
-                    return None;
-                }
-                let storage = self.storage_for_type(ty);
-                Some(ensure_named_aggregate_layout(&mut self.aggregate_layouts, simple, storage, fields))
+                None
             }
             _ if self.storage_for_type(ty) == MirStorageKind::Value => ensure_layout_for_type(&mut self.aggregate_layouts, ty),
             _ => None,
@@ -980,37 +971,6 @@ impl MirBuilder {
                     self.value_types.insert(value, return_type);
                     return MirOperand::Value(value);
                 }
-                let storage = storage_kind_for_named_type(&struct_type_name, &self.struct_is_value_type);
-                let field_names: Vec<&str> = fields.iter().map(|(field_name, _)| field_name.as_str()).collect();
-                let layout_id = self
-                    .aggregate_layouts
-                    .layouts
-                    .iter()
-                    .find(|layout| {
-                        layout.name == struct_type_name.as_str()
-                            && field_names.len() == layout.fields.len()
-                            && field_names.iter().all(|field_name| layout.fields.iter().any(|field| field.name == *field_name))
-                    })
-                    .map(|layout| layout.id)
-                    .or_else(|| {
-                        let field_types = fields
-                            .iter()
-                            .map(|(field_name, operand)| {
-                                let ty = self
-                                    .lookup_struct_field_type(struct_type_name.as_str(), field_name)
-                                    .map(|ty| super::resolve_self_type_with_owner(&ty, self.impl_owner_type.as_ref()))
-                                    .or_else(|| infer_builder_operand_type(operand, &self.value_types))
-                                    .unwrap_or(ValkyrieType::Unit);
-                                (field_name.clone(), ty)
-                            })
-                            .collect::<Vec<_>>();
-                        Some(ensure_named_aggregate_layout(
-                            &mut self.aggregate_layouts,
-                            struct_type_name.as_str(),
-                            storage,
-                            &field_types,
-                        ))
-                    });
                 let value = self.next_value(MirValueOrigin::Temporary);
                 self.push_instruction(MirOperation::StructNew { type_name: NamePath::new(vec![Identifier::new(&struct_type_name)]), fields: fields.into_iter().map(|(name, value)| (Identifier::new(&name), value)).collect() }, vec![value]);
                 self.value_types.insert(value, self.struct_construct_result_type(name, resolved.as_ref()));

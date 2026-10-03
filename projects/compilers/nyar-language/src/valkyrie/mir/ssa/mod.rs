@@ -47,7 +47,7 @@ mod workload_phase_tests;
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
-    compute_aggregate_layout_plan, ensure_layout_for_type, ensure_named_aggregate_layout, layout_id_for_nyar_type, layout_id_for_type,
+    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_nyar_type, layout_id_for_type,
     layout_key_for_nyar_type, layout_key_for_type, merge_aggregate_layout_plan, storage_kind_for_named_type, storage_kind_for_type,
     value_type_names_from_module,
 };
