@@ -31,8 +31,8 @@ pub use assembly::{
     plan_artifacts_from_build_output,
 };
 pub use frontend_contract::{
-    ConcretizeError, FrontendNeutralPlan, NyarPlanningContract, concretize_mir_function_types, concretize_mir_function_types_lossy,
-    concretize_type, concretize_type_lossy, hir_module_to_analysis_artifact, hir_module_to_frontend_neutral_plan,
+    ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
+    concretize_type, concretize_type_lossy, hir_module_to_analysis_artifact,
     hir_module_to_object_algebraic_program, hir_module_to_program_facts,
 };
 pub use hir::{CaptureAnalyzer, function_body_contains_yield, *};

@@ -23,39 +23,6 @@ use crate::valkyrie::{
 };
 use nyar_types::builtin_attribute;
 
-pub trait NyarPlanningContract {
-    fn program_facts(&self) -> ProgramFacts;
-    fn object_algebraic_program(&self) -> ObjectAlgebraicProgram;
-    fn neutral_plan(&self) -> FrontendNeutralPlan;
-}
-
-impl NyarPlanningContract for HirModule {
-    fn program_facts(&self) -> ProgramFacts {
-        hir_module_to_program_facts(self)
-    }
-
-    fn object_algebraic_program(&self) -> ObjectAlgebraicProgram {
-        hir_module_to_object_algebraic_program(self)
-    }
-
-    fn neutral_plan(&self) -> FrontendNeutralPlan {
-        hir_module_to_frontend_neutral_plan(self)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// ArtifactPartition / 片段装配用的过渡中立 plan。
-///
-/// 目标是以 LinkedSemanticProgram 为唯一权威；在该接线落地前，
-/// seed 装配仍需要 plan 上的这些侧表。
-pub struct FrontendNeutralPlan {
-    pub module_name: QualifiedName,
-    pub program_facts: ProgramFacts,
-    pub semantic_fragments: Vec<SemanticFragment>,
-    pub object_algebraic_program: ObjectAlgebraicProgram,
-    pub rewrite_theory: RewriteTheory,
-}
-
 pub fn hir_module_to_program_facts(module: &HirModule) -> ProgramFacts {
     let module_name = qualified_name(&module.name);
     let function_interop_contracts = module.functions.iter().map(|function| function_interop_contract(function)).collect::<Vec<_>>();
@@ -321,20 +288,6 @@ fn reachable_internal_callee_closure(
     }
     visited.remove(entry);
     visited
-}
-
-pub fn hir_module_to_frontend_neutral_plan(module: &HirModule) -> FrontendNeutralPlan {
-    let program_facts = hir_module_to_program_facts(module);
-    let object_algebraic_program = hir_module_to_object_algebraic_program(module);
-    let semantic_fragments = hir_module_to_semantic_fragments_with_facts(module, &program_facts, &object_algebraic_program);
-
-    FrontendNeutralPlan {
-        module_name: program_facts.module_name.clone(),
-        program_facts,
-        semantic_fragments,
-        object_algebraic_program,
-        rewrite_theory: RewriteTheory::default(),
-    }
 }
 
 /// 从已完成 HIR 语义分析的事实中生成 Compiler 内部 fragment 输入。

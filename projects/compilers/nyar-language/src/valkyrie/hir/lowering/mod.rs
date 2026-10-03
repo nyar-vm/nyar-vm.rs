@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     frontend_contract::{
-        planning::{FrontendNeutralPlan, hir_module_to_semantic_fragments},
+        planning::hir_module_to_semantic_fragments,
     },
     hir::{
         BuiltinTypeAliasScope, ModuleTypeAliasScope, hoist_anonymous_classes, lower_type_expression,

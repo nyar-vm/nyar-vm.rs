@@ -1,7 +1,7 @@
 use nyar::{CapabilityTag, Identifier};
 use nyar_language::{
     SourceID, ValkyrieCompiler,
-    valkyrie::frontend_contract::{NyarPlanningContract, hir_module_to_object_algebraic_program, hir_module_to_program_facts},
+    valkyrie::frontend_contract::{hir_module_to_object_algebraic_program, hir_module_to_program_facts},
 };
 
 #[test]
@@ -21,7 +21,7 @@ micro gen() {
         )
         .expect("hir");
 
-    let facts = hir.program_facts();
+    let facts = hir_module_to_program_facts(&hir);
     assert!(facts.capabilities.iter().any(|cap| cap.as_str() == "suspend"));
     assert!(facts.functions.iter().any(|function| function.can_suspend));
 
