@@ -35,7 +35,7 @@ pub(crate) fn plan_artifacts_from_compiled_program(
     )
 }
 
-/// Assemble a platform [`AssembledFragment`] for the given partition.
+/// 从指定分区装配目标载荷，拒绝任何与 Canonical 身份不一致的计划。
 pub(crate) fn assemble_fragment(
     compiled_program: &CompiledProgram,
     plan: &ArtifactPartitionPlan,
@@ -53,6 +53,12 @@ pub(crate) fn assemble_fragment(
     let linked = &compiled_program.canonical().linked;
     let fragment = linked.fragments.get(&partition.fragment)
         .ok_or_else(|| miette!("分区 `{}` 对应的 Canonical 语义片段不存在", partition.name))?;
+    if partition.exported_operations != fragment.exported_operations
+        || partition.entry_operation != fragment.entry_operation
+        || fragment_view.canonical_operations != fragment.exported_operations
+    {
+        return Err(miette!("分区 `{}` 的 callable 身份与 Canonical 片段合同不一致", partition.name));
+    }
 
     let fragment_requires_suspend = fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend");
     if fragment_requires_suspend {
@@ -62,7 +68,7 @@ pub(crate) fn assemble_fragment(
         ));
     }
 
-    let callable_roots = resolve_callable_roots(compiled_program, &fragment.exported_operations, fragment.entry_operation.as_ref())?;
+    let callable_roots = resolve_callable_roots(compiled_program, &partition.exported_operations, partition.entry_operation.as_ref())?;
 
     Ok(AssembledFragment {
         module_name: compiled_program.canonical().linked.module_name.clone(),
@@ -138,6 +144,78 @@ mod import_contract_tests {
             "[export(name: \"same\")] micro first() -> unit { return }\n[export(name: \"same\")] micro second() -> unit { return }",
         ).expect_err("重复公开名不能进入装配");
         assert!(error.to_string().contains("DuplicateExportName"), "{error}");
+    }
+
+    fn source_partition_contract() -> (CompiledProgram, ArtifactPartitionPlan) {
+        let program = crate::ValkyrieCompiler::default().compile_source_to_program(
+            "[export(name: \"first\")] [main] micro first() -> unit { return } \
+             [export(name: \"second\")] micro second() -> unit { return }",
+        ).expect("当前多导出源码必须形成完整成功载荷");
+        let plan = plan_artifacts_from_compiled_program(&program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+            .expect("分区必须消费已验证的 Canonical 合同");
+        (program, plan)
+    }
+
+    #[test]
+    fn partition_identity_survives_planning_and_assembly() {
+        let (program, plan) = source_partition_contract();
+        assert!(!plan.partitions.is_empty());
+        for (index, partition) in plan.partitions.iter().enumerate() {
+            let fragment = program.canonical().linked.fragments.get(&partition.fragment).expect("Canonical 片段");
+            assert_eq!(partition.exported_operations, fragment.exported_operations);
+            assert_eq!(partition.entry_operation, fragment.entry_operation);
+            let assembled = assemble_fragment(&program, &plan, index).expect("身份一致的分区必须装配成功");
+            assert_eq!(assembled.callable_roots, resolve_callable_roots(&program, &fragment.exported_operations, fragment.entry_operation.as_ref()).unwrap());
+        }
+    }
+
+    #[test]
+    fn assembly_rejects_changed_partition_and_view_identities() {
+        let (program, plan) = source_partition_contract();
+        let missing = ItemInstanceId::from_index(999).expect("测试 identity");
+        for mutation in 0..3 {
+            let mut changed = plan.clone();
+            match mutation {
+                0 => changed.partitions[0].exported_operations = vec![missing],
+                1 => changed.partitions[0].entry_operation = Some(missing),
+                _ => {
+                    let identity = changed.partitions[0].fragment.clone();
+                    changed.fragment_views.iter_mut().find(|view| view.fragment_id == identity)
+                        .expect("片段视图").canonical_operations = vec![missing];
+                }
+            }
+            let error = assemble_fragment(&program, &changed, 0).expect_err("不一致身份不得被 Canonical 原始根兜底掩盖");
+            assert!(error.to_string().contains("callable 身份与 Canonical 片段合同不一致"), "{error}");
+        }
+    }
+
+    #[test]
+    fn algebraic_name_equations_cannot_rebind_callable_roots() {
+        let (program, original) = source_partition_contract();
+        let linked = &program.canonical().linked;
+        let mut names = linked.callable_names.values();
+        let left = names.next().expect("第一个 callable").clone();
+        let right = names.next().expect("第二个 callable").clone();
+        let target = CanonicalTarget::wasm();
+        let profile = target.to_profile(None);
+        let policy = projection_policy_for_target_profile(&profile).expect("目标 projection");
+        let registry = emitter::bundled_backend_registry_from_canonical(&linked.fragments, &profile, &policy);
+        let mut theory = nyar::RewriteTheory::default();
+        theory.equate(nyar::RewriteEquation {
+            left, right, phase: nyar::RewritePhase::Normalize, required_capabilities: Vec::new(),
+        });
+        let rewritten = ArtifactPartitionPlan::from_canonical_program(
+            program.canonical(), target, theory, policy, registry, ClrSuspendStrategy::default(),
+        ).expect("名称等式优化不得改写函数绑定");
+        assert_ne!(rewritten.optimization.program.dimensions, original.optimization.program.dimensions,
+            "测试必须实际改变等式名称视图，不能以未触发优化证明身份隔离");
+        assert_eq!(rewritten.partitions.len(), original.partitions.len());
+        for (index, partition) in rewritten.partitions.iter().enumerate() {
+            assert_eq!(partition.exported_operations, original.partitions[index].exported_operations);
+            assert_eq!(partition.entry_operation, original.partitions[index].entry_operation);
+            let assembled = assemble_fragment(&program, &rewritten, index).expect("优化后稳定实例仍可装配");
+            assert_eq!(assembled.callable_roots, assemble_fragment(&program, &original, index).unwrap().callable_roots);
+        }
     }
 
 }

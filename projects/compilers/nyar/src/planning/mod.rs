@@ -68,7 +68,7 @@ struct OptimizerInput {
     pub semantic_fragments: Vec<OptimizerFragment>,
     /// 已经完成前端翻译的 `Object Algebraic` 程序。
     ///
-    /// 当 `semantic_fragments` 为空时，仍回退使用这条旧入口。
+    /// 仅用于等式优化，不承担 callable、入口或导入绑定。
     pub object_algebraic_program: ObjectAlgebraicProgram,
     /// 当前启用的等价理论。
     pub rewrite_theory: RewriteTheory,
@@ -114,34 +114,20 @@ pub struct SemanticFragment {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct PlannerFacts {
     module_name: QualifiedName,
-    entries: Vec<nyar_analyzer::EntryContract>,
     exports: Vec<nyar_analyzer::ExportContract>,
     capabilities: Vec<CapabilityTag>,
     reference_management: Option<ReferenceManagement>,
     runtime_requirements: Vec<RuntimeRequirement>,
 }
 
-impl PlannerFacts {
-    fn reference_management_for_operations(&self, _operations: &[QualifiedName]) -> Option<ReferenceManagement> {
-        self.reference_management
-    }
-}
-
-/// 优化器使用的局部片段视图；所有身份均由 Canonical 闭包投影而来。
+/// 仅供等式优化的局部名称视图，不携带可执行入口、导入或调用绑定合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OptimizerFragment {
     id: Identifier,
     exported_operations: Vec<QualifiedName>,
     required_capabilities: Vec<CapabilityTag>,
     reference_management_hint: Option<ReferenceManagement>,
-    entry_operation: Option<QualifiedName>,
-    external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
-    external_call_edges: Vec<ExternalCallEdge>,
-    internal_call_edges: Vec<InternalCallEdge>,
-    witness_tables: Vec<WitnessSubmission>,
-    witness_calls: Vec<WitnessCallEdge>,
     rewrite_theory: RewriteTheory,
-    wasm_export_names: std::collections::BTreeMap<QualifiedName, String>,
 }
 
 /// 单个分区计划。
@@ -150,7 +136,7 @@ pub struct ArtifactPartition {
     /// 当前分区对应的语义片段。
     pub fragment: Identifier,
     /// 当前片段的解释入口。
-    pub entry_operation: Option<QualifiedName>,
+    pub entry_operation: Option<nyar_types::ItemInstanceId>,
     /// 选中的后端名。
     pub backend_name: String,
     /// 选中的解释器名。
@@ -158,7 +144,7 @@ pub struct ArtifactPartition {
     /// 分区逻辑名。
     pub name: String,
     /// 当前分区对外暴露的操作。
-    pub exported_operations: Vec<QualifiedName>,
+    pub exported_operations: Vec<nyar_types::ItemInstanceId>,
     /// 目标路线。
     pub lane: TargetLane,
     /// 面向的二进制目标。
@@ -203,8 +189,8 @@ pub struct PartitionBackendRequirement {
 pub struct FragmentOptimizationView {
     /// 片段标识。
     pub fragment_id: Identifier,
-    /// 经 `E-Graph` canonicalize 后的稳定操作。
-    pub canonical_operations: Vec<QualifiedName>,
+    /// Canonical 合同确定的稳定操作；等式优化不得重绑定函数身份。
+    pub canonical_operations: Vec<nyar_types::ItemInstanceId>,
     /// 经抽取后的结构化项（M1 为全局 terms；Phase 2 起可按 operation 过滤）。
     pub structured_terms: Vec<AlgebraicTerm>,
     /// 本轮采用的规则名。
@@ -231,9 +217,8 @@ pub struct ArtifactPartitionPlan {
 impl ArtifactPartitionPlan {
     /// 从已验证的 Canonical 程序派生分区规划输入。
     ///
-    /// 这里的 `SemanticFragment` 只是 optimizer 的临时投影，所有 callable、
-    /// import、entry 与 capability 事实都来自 Canonical；不得从 HIR 或旧
-    /// 旧前端计划重新收集。
+    /// 可执行入口与根直接保留 Canonical 身份；optimizer 名称视图只用于等式优化，
+    /// 不得从 HIR 或旧前端计划重新收集绑定事实。
     pub fn from_canonical_program(
         program: &nyar_types::CanonicalProgram,
         target: CanonicalTarget,
@@ -242,6 +227,11 @@ impl ArtifactPartitionPlan {
         backend_registry: BackendRegistry,
         clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
     ) -> Result<Self, PlanningError> {
+        program.validate().map_err(|error| PlanningError::SemanticContract {
+            module: program.linked.module_name.clone(),
+            stage: nyar_types::CompileStage::RepresentationPlan,
+            detail: format!("{error:?}"),
+        })?;
         let linked = &program.linked;
         let module_name = qualified_module_name(&linked.module_name);
         let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(linked)?;
@@ -255,11 +245,14 @@ impl ArtifactPartitionPlan {
             projection_policy,
             backend_registry,
             clr_suspend_strategy,
-        })
+        }, &linked.fragments)
     }
 
     /// 基于程序事实生成最小分区计划。
-    fn plan_from_optimizer_input(input: OptimizerInput) -> Result<Self, PlanningError> {
+    fn plan_from_optimizer_input(
+        input: OptimizerInput,
+        fragments: &BTreeMap<Identifier, nyar_types::CanonicalFragment>,
+    ) -> Result<Self, PlanningError> {
         let OptimizerInput {
             module_name,
             target,
@@ -290,9 +283,9 @@ impl ArtifactPartitionPlan {
             rewrite_theory,
             projection_policy,
         });
-        let fragment_views = build_fragment_views(&module_name, &shared_rewrite_theory, &semantic_fragments, &optimization)?;
+        let fragment_views = build_fragment_views(&module_name, &shared_rewrite_theory, &semantic_fragments, &optimization, fragments)?;
         let binary_target: BinaryTarget = target.into();
-        let partitions = build_partitions(&program_facts, &optimization, binary_target, &backend_registry, clr_suspend_strategy)?;
+        let partitions = build_partitions(&program_facts, &optimization, binary_target, &backend_registry, clr_suspend_strategy, fragments)?;
         Ok(Self { module_name, target, optimization, fragment_views, partitions })
     }
 
@@ -334,34 +327,16 @@ fn canonical_optimizer_input(
             if !capabilities.contains(capability) { capabilities.push(capability.clone()); }
         }
         let exported_operations = fragment.exported_operations.iter().copied().map(&callable_name).collect::<Result<Vec<_>, _>>()?;
-        let entry_operation = fragment.entry_operation.map(&callable_name).transpose()?;
-        let external_import_links = fragment.external_imports.iter().map(|(instance, link)| Ok((callable_name(*instance)?, link.clone()))).collect::<Result<BTreeMap<_, _>, PlanningError>>()?;
-        let external_call_edges = fragment.external_call_edges.iter().map(|edge| {
-            let import = linked.imports.get(&edge.import).ok_or_else(|| PlanningError::SemanticContract {
-                module: linked.module_name.clone(), stage: nyar_types::CompileStage::RepresentationPlan,
-                detail: format!("Canonical 外部调用缺少 ImportIndex `{}`", edge.import.index()),
-            })?;
-            Ok(ExternalCallEdge::new(callable_name(edge.caller)?, callable_name(import.callee)?, edge.arguments.clone()))
-        }).collect::<Result<Vec<_>, PlanningError>>()?;
-        let internal_call_edges = fragment.internal_call_edges.iter().map(|edge| {
-            Ok(InternalCallEdge::new(callable_name(edge.caller)?, callable_name(edge.callee)?))
-        }).collect::<Result<Vec<_>, PlanningError>>()?;
-        let wasm_export_names = fragment.wasm_export_names.iter().map(|(instance, name)| Ok((callable_name(*instance)?, name.clone()))).collect::<Result<BTreeMap<_, _>, PlanningError>>()?;
         fragments.push(OptimizerFragment {
             id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(),
-            reference_management_hint: None, entry_operation, external_import_links, external_call_edges,
-            internal_call_edges, witness_tables: Vec::new(), witness_calls: Vec::new(),
-            rewrite_theory: RewriteTheory::default(), wasm_export_names,
+            reference_management_hint: None, rewrite_theory: RewriteTheory::default(),
         });
     }
     let exports = linked.exports.iter().map(|(instance, record)| Ok(nyar_analyzer::ExportContract {
         exported_name: Identifier::new(&record.exported_name), local_name: callable_name(*instance)?, partition: None,
     })).collect::<Result<Vec<_>, PlanningError>>()?;
-    let entries = linked.entries.keys().copied().map(|instance| Ok(nyar_analyzer::EntryContract {
-        symbol: callable_name(instance)?, requires_wrapper: false,
-    })).collect::<Result<Vec<_>, PlanningError>>()?;
     let program_facts = PlannerFacts {
-        module_name: module_name.clone(), entries, exports, capabilities, reference_management: linked.reference_management, runtime_requirements: linked.runtime_requirements.clone(),
+        module_name: module_name.clone(), exports, capabilities, reference_management: linked.reference_management, runtime_requirements: linked.runtime_requirements.clone(),
     };
     let object_algebraic_program = ObjectAlgebraicProgram {
         module_name: module_name.clone(),
@@ -429,6 +404,7 @@ fn build_fragment_views(
     shared_theory: &RewriteTheory,
     semantic_fragments: &[OptimizerFragment],
     optimization: &OptimizationResult,
+    fragments: &BTreeMap<Identifier, nyar_types::CanonicalFragment>,
 ) -> Result<Vec<FragmentOptimizationView>, PlanningError> {
     optimization
         .program
@@ -447,7 +423,7 @@ fn build_fragment_views(
                 .clone();
             Ok(FragmentOptimizationView {
                 fragment_id: dimension.name.clone(),
-                canonical_operations: dimension.exported_operations.clone(),
+                canonical_operations: canonical_fragment(fragments, &dimension.name, module_name)?.exported_operations.clone(),
                 structured_terms: optimization.program.structured_terms.clone(),
                 applied_rules: optimization.applied_rules.clone(),
                 theory_bundle: TheoryBundle { shared: shared_theory.clone(), fragment: fragment_theory },
@@ -476,7 +452,6 @@ fn resolve_reference_management(
 
 fn resolve_partition_reference_management(
     program_facts: &PlannerFacts,
-    operations: &[QualifiedName],
     dimension_hint: Option<ReferenceManagement>,
     fallback: ReferenceManagement,
     family: FutamuraProjectionFamily,
@@ -485,7 +460,7 @@ fn resolve_partition_reference_management(
         return ReferenceManagement::PerceusRc;
     }
 
-    program_facts.reference_management_for_operations(operations).or(dimension_hint).or(program_facts.reference_management).unwrap_or(fallback)
+    dimension_hint.or(program_facts.reference_management).unwrap_or(fallback)
 }
 
 fn clr_suspend_strategy_for_lane(
@@ -501,17 +476,18 @@ fn build_partitions(
     binary_target: BinaryTarget,
     backend_registry: &BackendRegistry,
     clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+    fragments: &BTreeMap<Identifier, nyar_types::CanonicalFragment>,
 ) -> Result<Vec<ArtifactPartition>, PlanningError> {
     optimization
         .program
         .dimensions
         .iter()
         .map(|dimension| {
+            let fragment = canonical_fragment(fragments, &dimension.name, &program_facts.module_name)?;
             let capabilities =
                 resolve_partition_capabilities(&optimization.projection.preserved_capabilities, &dimension.required_capabilities);
             let reference_management = resolve_partition_reference_management(
                 program_facts,
-                &dimension.exported_operations,
                 dimension.reference_management_hint,
                 optimization.projection.reference_management,
                 optimization.projection.family,
@@ -532,11 +508,11 @@ fn build_partitions(
                 })?;
             Ok(ArtifactPartition {
                 fragment: dimension.name.clone(),
-                entry_operation: entry_operation_for_dimension(program_facts, &dimension.exported_operations),
+                entry_operation: fragment.entry_operation,
                 backend_name: backend.backend_name,
                 interpreter: backend.interpreter,
                 name: format!("{}::{}", optimization.program.module_name, dimension.name),
-                exported_operations: dimension.exported_operations.clone(),
+                exported_operations: fragment.exported_operations.clone(),
                 lane: backend.lane,
                 binary_target: binary_target.clone(),
                 input_kind: backend.input_kind,
@@ -550,11 +526,16 @@ fn build_partitions(
         .collect()
 }
 
-fn entry_operation_for_dimension(program_facts: &PlannerFacts, operations: &[QualifiedName]) -> Option<QualifiedName> {
-    program_facts
-        .entries
-        .iter()
-        .find_map(|entry| operations.iter().any(|operation| operation == &entry.symbol).then(|| entry.symbol.clone()))
+fn canonical_fragment<'program>(
+    fragments: &'program BTreeMap<Identifier, nyar_types::CanonicalFragment>,
+    identity: &Identifier,
+    module_name: &QualifiedName,
+) -> Result<&'program nyar_types::CanonicalFragment, PlanningError> {
+    fragments.get(identity).ok_or_else(|| PlanningError::SemanticContract {
+        module: module_name.to_string(),
+        stage: nyar_types::CompileStage::RepresentationPlan,
+        detail: format!("优化维度 `{identity}` 缺少 Canonical 片段合同"),
+    })
 }
 
 fn resolve_partition_capabilities(
