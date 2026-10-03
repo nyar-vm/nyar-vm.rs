@@ -15,6 +15,8 @@ pub use theory::{TermRewrite, builtin_core_rewrite_theory, builtin_core_term_rew
 use egraph::EGraphHost as OptimizerEGraph;
 use nyar_types::{CapabilityTag, Identifier, QualifiedName};
 
+pub use nyar_types::ReferenceManagement;
+
 /// 单个 `Object Algebraic` 语义维度的清单。
 ///
 /// 这里记录的是“这个程序对外暴露了哪些语义视图”，
@@ -248,15 +250,6 @@ impl FutamuraProjectionFamily {
             Self::Gpu => "futa_gpu",
         }
     }
-}
-
-/// 引用语义对象的管理策略。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ReferenceManagement {
-    /// 交给精准式托管 `GC` 管理。
-    HostGc,
-    /// 交给 `Perceus RC` 管理。
-    PerceusRc,
 }
 
 /// 目标宿主边界。

@@ -105,6 +105,10 @@ pub struct LinkedSemanticProgram {
     pub singleton_instances: Vec<crate::SingletonInstancePlan>,
     /// 已完成稳定身份绑定的语义片段；装配只能消费该表。
     pub fragments: BTreeMap<Identifier, CanonicalFragment>,
+    /// Compiler 已确定的模块级引用管理合同。
+    pub reference_management: Option<crate::ReferenceManagement>,
+    /// Compiler 已确定的模块级运行时合同需求。
+    pub runtime_requirements: Vec<crate::RuntimeRequirement>,
 }
 
 /// Canonical 程序中的稳定语义片段合同。

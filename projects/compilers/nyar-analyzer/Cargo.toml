@@ -8,5 +8,5 @@ license.workspace = true
 
 [dependencies]
 nyar-optimizer = { workspace = true }
-nyar-types = { workspace = true }
+nyar-types = { workspace = true, features = ["serde"] }
 serde = { workspace = true }

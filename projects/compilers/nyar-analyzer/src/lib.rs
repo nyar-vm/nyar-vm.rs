@@ -8,8 +8,9 @@ pub mod highlight;
 /// 前端无关报告 / SSG / hydrate 岛契约（平台层）。
 pub mod report;
 
-use nyar_optimizer::ReferenceManagement;
-use nyar_types::{CapabilityTag, ExternalImportLink, Identifier, NamePath, QualifiedName};
+use nyar_types::{CapabilityTag, ExternalImportLink, Identifier, NamePath, QualifiedName, ReferenceManagement};
+
+pub use nyar_types::RuntimeRequirement;
 
 /// 中性入口约定。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,15 +39,6 @@ pub struct ExportContract {
     pub local_name: QualifiedName,
     /// CLR / Unity 分区名（如 `unity.runtime`）；`None` 表示默认分区。
     pub partition: Option<String>,
-}
-
-/// 运行时需求。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeRequirement {
-    /// 需求键。
-    pub key: String,
-    /// 需求值。
-    pub value: String,
 }
 
 /// 单个函数的分析结果。

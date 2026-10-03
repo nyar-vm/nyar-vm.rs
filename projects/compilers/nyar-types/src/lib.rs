@@ -97,6 +97,26 @@ impl From<String> for CapabilityTag {
     }
 }
 
+/// 引用语义对象的管理策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ReferenceManagement {
+    /// 交给精准式托管 GC 管理。
+    HostGc,
+    /// 交给 Perceus RC 管理。
+    PerceusRc,
+}
+
+/// 编译器确定的运行时合同需求。
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RuntimeRequirement {
+    /// 需求键。
+    pub key: String,
+    /// 需求值。
+    pub value: String,
+}
+
 impl std::fmt::Display for CapabilityTag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
