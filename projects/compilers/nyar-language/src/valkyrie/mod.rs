@@ -25,8 +25,7 @@ pub mod typing;
 pub mod validation;
 
 pub(crate) use assembly::{
-    AssembledFragment, FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall,
-    build_output_surface_counts,
+    AssembledFragment, build_output_surface_counts,
     assemble_fragment,
     plan_artifacts_from_compiled_program,
 };

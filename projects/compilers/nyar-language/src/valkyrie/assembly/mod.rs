@@ -2,8 +2,6 @@
 //!
 //! 分区选择不重新生产语义事实；共享提交载荷只携带已验证程序及其稳定实例根。
 
-mod nullable;
-
 use std::collections::BTreeSet;
 
 use miette::{Result as MietteResult, miette};
@@ -11,7 +9,6 @@ use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifie
 use nyar_types::ItemInstanceId;
 use nyar_types::CompiledProgram;
 
-pub use nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall};
 pub use nyar::AssembledFragment;
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
