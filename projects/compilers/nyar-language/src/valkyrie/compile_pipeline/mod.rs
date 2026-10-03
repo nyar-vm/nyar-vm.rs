@@ -11,6 +11,7 @@
 //! 目标 preparation 与旧装配成功链的替换尚未完成。
 
 mod diagnostics;
+mod backend_bundle;
 mod driver;
 mod envelope_checks;
 mod canonical;
@@ -18,6 +19,7 @@ mod link;
 mod representation;
 
 pub use diagnostics::{diagnostic, fail_stage};
+pub use backend_bundle::{CompilerBuildBundle, compile_source_groups_to_backend_bundle};
 pub(crate) use driver::{compile_linked_semantic_mir, compile_linked_semantic_mir_with_fragments};
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use canonical::canonical_program_from_semantic_mir;
