@@ -292,8 +292,8 @@ fn reachable_internal_callee_closure(
 
 /// 从已完成 HIR 语义分析的事实中生成 Compiler 内部 fragment 输入。
 ///
-/// 该函数只返回 Compiler 继续闭合 Semantic MIR 所需的 fragment，不构造
-/// `FrontendNeutralPlan`，因此生产成功载荷不会再携带 neutral plan。
+/// 该函数只返回 Compiler 继续闭合 Semantic MIR 所需的 fragment，不构造旧前端计划，
+/// 因此生产成功载荷不会再携带重复的中间语义模型。
 pub fn hir_module_to_semantic_fragments(module: &HirModule) -> Vec<SemanticFragment> {
     let program_facts = hir_module_to_program_facts(module);
     let object_algebraic_program = hir_module_to_object_algebraic_program(module);

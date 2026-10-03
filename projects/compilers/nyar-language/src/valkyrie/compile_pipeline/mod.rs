@@ -6,7 +6,7 @@
 //! ```
 //!
 //! 本模块只负责编排。不得复活并行权威
-//! （`FrontendNeutralPlan`、`FragmentSubmission` 体旁路、God Call 字段）。
+//! （旧前端计划、`FragmentSubmission` 体旁路、God Call 字段）。
 //! 依赖闭包完成后，由同一入口校验 Semantic MIR 并生产表示规划成功载荷。
 //! 目标 preparation 与旧装配成功链的替换尚未完成。
 

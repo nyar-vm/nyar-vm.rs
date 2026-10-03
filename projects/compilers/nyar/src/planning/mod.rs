@@ -198,7 +198,7 @@ impl ArtifactPartitionPlan {
     ///
     /// 这里的 `SemanticFragment` 只是 optimizer 的临时投影，所有 callable、
     /// import、entry 与 capability 事实都来自 Canonical；不得从 HIR 或旧
-    /// `FrontendNeutralPlan` 重新收集。
+    /// 旧前端计划重新收集。
     pub fn from_canonical_program(
         program: &nyar_types::CanonicalProgram,
         target: CanonicalTarget,
