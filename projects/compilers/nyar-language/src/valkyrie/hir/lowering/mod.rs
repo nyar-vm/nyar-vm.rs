@@ -549,19 +549,10 @@ impl ValkyrieCompiler {
         self.compile_vx_source(&source)
     }
 
-    /// 解析源码并降低为唯一语义成功载荷。
+    /// 测试夹具：将单一源码降低为成功载荷。
+    #[cfg(test)]
     pub(crate) fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, ParseError> {
         let hir_module = self.compile_source(source)?;
-        compiled_program_from_hir_module(hir_module)
-    }
-
-    /// 根据已解析依赖导出生产完整语义成功载荷。
-    pub(crate) fn compile_source_to_program_with_semantic_exports(
-        &self,
-        source: &str,
-        imported_semantic_exports: &[HirDependencySemanticExport],
-    ) -> Result<nyar_types::CompiledProgram, ParseError> {
-        let hir_module = self.compile_source_with_semantic_exports(source, imported_semantic_exports)?;
         compiled_program_from_hir_module(hir_module)
     }
 
@@ -607,12 +598,6 @@ impl ValkyrieCompiler {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir).map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
-    }
-
-    /// 解析源码文件并降低为唯一语义成功载荷。
-    pub(crate) fn compile_path_to_program(&self, path: &Path) -> Result<nyar_types::CompiledProgram, ParseError> {
-        let hir_module = self.compile_path(path)?;
-        compiled_program_from_hir_module(hir_module)
     }
 
     /// Lowers parser output into a HIR module.
