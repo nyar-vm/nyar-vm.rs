@@ -42,6 +42,7 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
                 .wrap_err_with(|| format!("写入 suspend_runtime sidecar 失败：{}", sidecar_path.display()))?;
             artifacts.push(ArtifactDescriptor {
                 name: sidecar_name,
+                path: format!("{}.suspend_runtime.json", request.artifact_name),
                 kind: ArtifactKind::AssemblyListing,
                 format: ArtifactFormat::RawBinary,
                 target: request.options.target.clone(),
@@ -58,6 +59,7 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
                 .wrap_err_with(|| format!("写入 control_flow sidecar 失败：{}", sidecar_path.display()))?;
             artifacts.push(ArtifactDescriptor {
                 name: sidecar_name,
+                path: format!("{}.control_flow.json", request.artifact_name),
                 kind: ArtifactKind::AssemblyListing,
                 format: ArtifactFormat::RawBinary,
                 target: request.options.target.clone(),
@@ -72,6 +74,7 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
             emit_nyar_module(module, &nyar_path)?;
             artifacts.push(ArtifactDescriptor {
                 name: nyar_name,
+                path: format!("{}.nyar", request.artifact_name),
                 kind: ArtifactKind::Executable,
                 format: ArtifactFormat::RawBinary,
                 target: request.options.target.clone(),

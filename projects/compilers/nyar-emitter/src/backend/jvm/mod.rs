@@ -129,6 +129,7 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
         let mut artifacts = ArtifactSet::default();
         artifacts.push(ArtifactDescriptor {
             name: options.artifact_name.clone(),
+            path: format!("{}.jar", options.artifact_name),
             kind: nyar::ArtifactKind::Executable,
             format: ArtifactFormat::RawBinary,
             target: options.target.clone(),
@@ -137,6 +138,7 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
         if input.emit_class_file {
             artifacts.push(ArtifactDescriptor {
                 name: format!("{}.class", class_file.internal_name.replace('/', ".")),
+                path: format!("{}.class", class_file.internal_name.replace('/', ".")),
                 kind: nyar::ArtifactKind::AssemblyListing,
                 format: ArtifactFormat::RawBinary,
                 target: options.target.clone(),

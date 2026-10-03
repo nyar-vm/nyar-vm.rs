@@ -60,6 +60,7 @@ impl HostBindingBuilder for WitBindingBuilder {
 
         Ok(vec![ArtifactDescriptor {
             name: format!("{}.component", context.artifact_name),
+            path: format!("{}.component.wit", context.artifact_name),
             kind: nyar::ArtifactKind::AssemblyListing,
             format: ArtifactFormat::RawBinary,
             target: context.target.clone(),

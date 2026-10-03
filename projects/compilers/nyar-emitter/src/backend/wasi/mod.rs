@@ -186,13 +186,37 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
         }
 
         let mut artifacts = ArtifactSet::default();
+        let core_path = if matches!(input.host_boundary, HostProjectionBoundary::WasmJsGlue) {
+            format!("{artifact_stem}.wasm")
+        } else {
+            format!("{artifact_stem}.core.wasm")
+        };
         artifacts.push(ArtifactDescriptor {
             name: artifact_stem.clone(),
+            path: core_path,
             kind: nyar::ArtifactKind::Executable,
             format: ArtifactFormat::RawBinary,
             target: options.target.clone(),
             lane: TargetLane::Wasm,
         });
+        if matches!(input.host_boundary, HostProjectionBoundary::WasiComponent) && input.package_as_wasi_command {
+            artifacts.push(ArtifactDescriptor {
+                name: format!("{}.component", artifact_stem),
+                path: format!("{artifact_stem}.wasi"),
+                kind: nyar::ArtifactKind::Executable,
+                format: ArtifactFormat::RawBinary,
+                target: options.target.clone(),
+                lane: TargetLane::Wasm,
+            });
+            artifacts.push(ArtifactDescriptor {
+                name: format!("{}.component", artifact_stem),
+                path: format!("{artifact_stem}.component.wit"),
+                kind: nyar::ArtifactKind::AssemblyListing,
+                format: ArtifactFormat::RawBinary,
+                target: options.target.clone(),
+                lane: TargetLane::Wasm,
+            });
+        }
 
         let binding_artifacts = generate_host_binding_artifacts(
             input.host_boundary,

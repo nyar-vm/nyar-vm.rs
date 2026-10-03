@@ -143,6 +143,7 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
             let mut artifacts = ArtifactSet::default();
             artifacts.push(ArtifactDescriptor {
                 name: options.artifact_name.clone(),
+                path: module_file_name.clone(),
                 kind: image_kind.artifact_kind(),
                 format: ArtifactFormat::Pe,
                 target: options.target.clone(),

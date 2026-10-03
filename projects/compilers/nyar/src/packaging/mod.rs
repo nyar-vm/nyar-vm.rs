@@ -26,8 +26,10 @@ pub enum TargetLane {
 /// 单个产物描述。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactDescriptor {
-    /// 文件逻辑名。
+    /// 逻辑产物名。
     pub name: String,
+    /// 输出目录内的精确物理相对路径。
+    pub path: String,
     /// 产物种类。
     pub kind: ArtifactKind,
     /// 文件格式。

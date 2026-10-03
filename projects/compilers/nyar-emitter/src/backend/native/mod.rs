@@ -106,6 +106,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
     let mut artifacts = ArtifactSet::default();
     artifacts.push(ArtifactDescriptor {
         name: options.artifact_name.clone(),
+        path: format!("{}.exe", options.artifact_name),
         kind: nyar::ArtifactKind::Executable,
         format: ArtifactFormat::Pe,
         target: options.target.clone(),
@@ -113,6 +114,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
     });
     artifacts.push(ArtifactDescriptor {
         name: options.artifact_name.clone(),
+        path: object_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| miette::miette!("COFF sidecar 文件名无效"))?.to_owned(),
         kind: nyar::ArtifactKind::Object,
         format: ArtifactFormat::Coff,
         target: options.target.clone(),
@@ -141,6 +143,7 @@ fn compile_elf(input: NativeBinaryBackendInput, options: &CompilationOptions) ->
     let mut artifacts = ArtifactSet::default();
     artifacts.push(ArtifactDescriptor {
         name: options.artifact_name.clone(),
+        path: file_name.clone(),
         kind: nyar::ArtifactKind::Executable,
         format: if matches!(kind, NativeExecutableKind::ElfShared) { ArtifactFormat::Elf } else { ArtifactFormat::Elf },
         target: options.target.clone(),

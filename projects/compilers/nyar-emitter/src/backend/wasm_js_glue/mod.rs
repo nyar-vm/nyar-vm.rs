@@ -39,6 +39,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
 
         Ok(vec![ArtifactDescriptor {
             name: format!("{}.launcher", context.artifact_name),
+            path: format!("{}.mjs", context.artifact_name),
             kind: nyar::ArtifactKind::AssemblyListing,
             format: ArtifactFormat::RawBinary,
             target: context.target.clone(),

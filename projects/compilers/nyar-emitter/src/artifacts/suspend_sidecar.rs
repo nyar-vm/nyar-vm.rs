@@ -134,6 +134,7 @@ pub(crate) fn write_control_flow_sidecar(
     fs::write(&sidecar_path, body).into_diagnostic().wrap_err_with(|| format!("写入 control_flow sidecar 失败：{}", sidecar_path.display()))?;
     artifacts.push(ArtifactDescriptor {
         name: sidecar_name,
+        path: format!("{artifact_name}.control_flow.json"),
         kind: ArtifactKind::AssemblyListing,
         format: ArtifactFormat::RawBinary,
         target: target.clone(),
