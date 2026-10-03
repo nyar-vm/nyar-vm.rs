@@ -487,41 +487,6 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
     }
 }
 
-/// 基于 target profile 与语义片段生成 bundled backend registry。
-pub fn bundled_backend_registry(
-    fragments: &[nyar::SemanticFragment],
-    target_profile: &TargetProfile,
-    projection_policy: &ProjectionPolicy,
-) -> BackendRegistry {
-    let mut registry = BackendRegistry::default();
-    let binary_target: BinaryTarget = target_profile.canonical_target.into();
-    if target_profile.backend_family == TargetBackendFamily::Gpu {
-        for fragment in fragments {
-            nyar::backends::gpu::register_gpu_backends(
-                &mut registry,
-                fragment.id.clone(),
-                vec![projection_policy.family],
-                vec![binary_target.clone()],
-                fragment.required_capabilities.clone(),
-            );
-        }
-        return registry;
-    }
-    let Some(descriptor) = bundled_backend_capability_descriptor(target_profile.backend_family)
-    else {
-        return registry;
-    };
-    for fragment in fragments {
-        registry.register(descriptor.interpreter_registration(
-            fragment.id.clone(),
-            vec![projection_policy.family],
-            vec![binary_target.clone()],
-            fragment.required_capabilities.clone(),
-        ));
-    }
-    registry
-}
-
 /// 基于 Canonical fragment 生成 bundled backend registry。
 pub fn bundled_backend_registry_from_canonical(
     fragments: &std::collections::BTreeMap<nyar_types::Identifier, nyar_types::CanonicalFragment>,

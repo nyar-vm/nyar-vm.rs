@@ -5,7 +5,6 @@ use nyar::{
     builtin_graphic_manifest, builtin_neural_manifest,
     packaging::TargetLane,
 };
-use nyar_emitter::bundled_backend_registry;
 use nyar_language::{
     Identifier as ValkyrieIdentifier, NamePath,
     valkyrie::{
@@ -58,24 +57,6 @@ fn gpu_backend_placeholders_accept_spirv_and_dxil() {
     assert!(GpuSpirvBackend::accept(BackendInputKind::SpirvModule, TargetLane::Gpu));
     assert!(GpuDxilBackend::accept(BackendInputKind::DxilContainer, TargetLane::Gpu));
     assert!(!GpuSpirvBackend::accept(BackendInputKind::DxilContainer, TargetLane::Gpu));
-}
-
-#[test]
-fn gpu_bundled_registry_registers_spirv_and_dxil_backends() {
-    let module = shader_dot_module();
-    let fragments = hir_module_to_semantic_fragments(&module);
-    let mut profile = CanonicalTarget::clr().to_profile(None);
-    profile.backend_family = TargetBackendFamily::Gpu;
-    let projection = ProjectionPolicy {
-        family: FutamuraProjectionFamily::Gpu,
-        host_boundary: HostProjectionBoundary::Native,
-        reference_management: ReferenceManagement::PerceusRc,
-        prefer_small_artifacts: false,
-        preserve_effect_boundaries: true,
-    };
-    let registry = bundled_backend_registry(&fragments, &profile, &projection);
-    assert!(registry.registrations.iter().any(|reg| reg.backend_name == "gpu-spirv"));
-    assert!(registry.registrations.iter().any(|reg| reg.backend_name == "gpu-dxil"));
 }
 
 #[test]
