@@ -45,17 +45,10 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
-                    callee_return = self
-                        .return_types_by_function_index
-                        .get(&function_index)
-                        .copied()
-                        .flatten()
-                        .or_else(|| self.resolve_callee_return_type(callee, None));
-                    let param_types = self
-                        .param_types_by_function_index
-                        .get(&function_index)
-                        .cloned()
-                        .unwrap_or_else(|| self.resolve_callee_param_types(callee, None));
+                    callee_return = *self.return_types_by_function_index.get(&function_index)
+                        .expect("WASM 函数下标缺少返回签名");
+                    let param_types = self.param_types_by_function_index.get(&function_index)
+                        .expect("WASM 函数下标缺少参数签名").clone();
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(function_index);
                 }
@@ -126,26 +119,22 @@ impl<'a> WasmMirLowerer<'a> {
 
     pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> Vec<u8> {
         if let Some(index) = import_index {
-            return self.import_param_types.get(index as usize).cloned().unwrap_or_default();
+            return self.import_param_types.get(index as usize).expect("WASM 导入缺少参数签名").clone();
         }
-        let MirOperand::Symbol(path) = callee
-        else {
-            return Vec::new();
+        let MirOperand::Item(instance) = callee else {
+            panic!("WASM 普通调用缺少实例身份");
         };
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        lookup_by_path_parts(&self.param_types_by_name, &parts).cloned().unwrap_or_default()
+        self.param_types_by_instance.get(instance).expect("WASM 实例缺少参数签名").clone()
     }
 
     pub(super) fn resolve_callee_return_type(&self, callee: &MirOperand, import_index: Option<u32>) -> Option<u8> {
         if let Some(index) = import_index {
-            return self.import_return_types.get(index as usize).copied().flatten();
+            return *self.import_return_types.get(index as usize).expect("WASM 导入缺少返回签名");
         }
-        let MirOperand::Symbol(path) = callee
-        else {
-            return None;
+        let MirOperand::Item(instance) = callee else {
+            panic!("WASM 普通调用缺少实例身份");
         };
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        lookup_by_path_parts(&self.return_types_by_name, &parts).copied().flatten()
+        *self.return_types_by_instance.get(instance).expect("WASM 实例缺少返回签名")
     }
 
     pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> u8 {
@@ -237,13 +226,9 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_operand(operand);
     }
 
-    pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, arguments: &[MirOperand]) -> Option<u32> {
-        let path = match callee {
-            MirOperand::Symbol(path) => path,
-            _ => return None,
-        };
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        lookup_by_path_parts(&self.callee_import_index, &parts).copied()
+    pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {
+        let MirOperand::Item(instance) = callee else { return None; };
+        self.callee_import_index.get(instance).copied()
     }
 
     /// 判定 callee 是否为 i32 原语运算（经 [`OperatorId`]，非 `infix ==` 字符串表）。

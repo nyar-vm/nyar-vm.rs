@@ -103,6 +103,7 @@ pub enum HirCallableDomain {
     Extractor,
 }
 
+
 /// Resolved call metadata attached to canonical HIR calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

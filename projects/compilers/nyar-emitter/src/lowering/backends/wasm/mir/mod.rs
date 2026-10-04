@@ -27,7 +27,7 @@ use crate::{
 use nyar::{NamePath, QualifiedName};
 
 use crate::lowering::shared::witness_abi::is_tuple_get_stub_name;
-use nyar_types::{AggregateLayout, FieldLayout, LayoutId, builtin_operator};
+use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId, builtin_operator};
 
 use super::{
     super::{
@@ -316,11 +316,12 @@ fn wasi_core_import_name<'a>(module: &'a str, field: &'a str, preview: crate::ny
     (module, field)
 }
 
-fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String, String)]) -> BTreeMap<String, u32> {
+fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String, String)]) -> BTreeMap<ItemInstanceId, u32> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
-    for (callee, link) in &submission.external_import_links {
+    for (callee, import) in submission.backend_plan.imports() {
+        let link = &import.link;
         let Some(target) = wasm_host_import_target(link)
         else {
             continue;
@@ -329,16 +330,7 @@ fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String
         else {
             continue;
         };
-        callee_import_index.insert(callee.to_string(), index);
-        if let Some(last) = callee.parts().last() {
-            callee_import_index.insert(last.as_str().to_string(), index);
-        }
-    }
-    // 按导入字段名建索引，?MIR 短名方法（`trim` →?`utf8_trim`）解析?
-    for (index, (module, field)) in imports.iter().enumerate() {
-        if module == "env" {
-            callee_import_index.entry(field.clone()).or_insert(index as u32);
-        }
+        callee_import_index.insert(*callee, index);
     }
     callee_import_index
 }
@@ -350,11 +342,12 @@ fn build_wasi_callee_import_index(
     submission: &FragmentSubmission,
     imports: &[(String, String)],
     preview: crate::nyar_backend_wasi::WasiPreview,
-) -> BTreeMap<String, u32> {
+) -> BTreeMap<ItemInstanceId, u32> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
-    for (callee, link) in &submission.external_import_links {
+    for (callee, import) in submission.backend_plan.imports() {
+        let link = &import.link;
         let Some(target) = wasi_host_import_target(link)
         else {
             continue;
@@ -368,10 +361,7 @@ fn build_wasi_callee_import_index(
         else {
             continue;
         };
-        callee_import_index.insert(callee.to_string(), index);
-        if let Some(last) = callee.parts().last() {
-            callee_import_index.insert(last.as_str().to_string(), index);
-        }
+        callee_import_index.insert(*callee, index);
     }
     callee_import_index
 }
@@ -454,120 +444,28 @@ fn wasm_function_type_result_byte(type_bytes: &[u8]) -> Option<u8> {
     type_bytes.get(offset).copied()
 }
 
-/// 在完整路?map 中按「简单名 / `::简单名`」唯一匹配；多名碰撞则 `None`（fail-closed）?
-/// Lookup registry keys for a MIR [`NamePath`]（`.`）against [`QualifiedName`]（`::`）maps.
-fn lookup_by_path_parts<'a, V>(map: &'a BTreeMap<String, V>, parts: &[&str]) -> Option<&'a V> {
-    if parts.is_empty() {
-        return None;
-    }
-    let colon = parts.join("::");
-    let dotted = parts.join(".");
-    map.get(&colon).or_else(|| map.get(&dotted))
-}
-
-#[cfg(test)]
-mod callable_lookup_tests {
-    use super::*;
-
-    #[test]
-    fn callable_lookup_preserves_full_owner() {
-        let indices = BTreeMap::from([
-            ("first::Owner::method".to_owned(), 3),
-            ("second::Owner::method".to_owned(), 7),
-        ]);
-        assert_eq!(lookup_by_path_parts(&indices, &["first", "Owner", "method"]), Some(&3));
-        assert_eq!(lookup_by_path_parts(&indices, &["second", "Owner", "method"]), Some(&7));
-        assert_eq!(lookup_by_path_parts(&indices, &["Owner", "method"]), None);
-        assert_eq!(lookup_by_path_parts(&indices, &["method"]), None);
-        assert_eq!(lookup_by_path_parts(&indices, &["third", "Owner", "method"]), None);
-    }
-
-    #[test]
-    fn callable_lookup_does_not_infer_unique_suffix() {
-        let indices = BTreeMap::from([("namespace::Owner::method".to_owned(), 3)]);
-        assert_eq!(lookup_by_path_parts(&indices, &["Owner", "method"]), None);
-        assert_eq!(lookup_by_path_parts(&indices, &["method"]), None);
-    }
-}
-
-fn build_param_types_by_name(
+fn build_param_types_by_instance(
     ctx: &ExecutableLoweringContext,
     submission: &FragmentSubmission,
-    operations: &[QualifiedName],
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<String, Vec<u8>> {
-    let mut map = BTreeMap::new();
-    let mut ambiguous = BTreeSet::new();
-    for operation in operations {
-        let Some(mir_fn) = submission.backend_plan.get_function(operation).map(|view| view.function)
-        else {
-            continue;
-        };
-        let params = wasm_param_types(&ctx, &mir_fn, gc_struct_type_indices, js_glue_utf8_as_anyref);
-        let full = operation.to_string();
-        map.insert(full.clone(), params.clone());
-        if full.contains("::") {
-            map.entry(full.replace("::", ".")).or_insert_with(|| params.clone());
-        }
-        if let Some(last) = operation.parts().last() {
-            let simple = last.as_str();
-            if ambiguous.contains(simple) {
-                continue;
-            }
-            match map.get(simple) {
-                Some(existing) if existing == &params => {}
-                Some(_) => {
-                    ambiguous.insert(simple.to_string());
-                    map.remove(simple);
-                }
-                None => {
-                    map.insert(simple.to_string(), params);
-                }
-            }
-        }
-    }
-    map
+) -> BTreeMap<ItemInstanceId, Vec<u8>> {
+    submission.backend_plan.instances().map(|instance| {
+        let view = submission.backend_plan.get_function_by_instance(instance).expect("Compiler 实例必须有函数体");
+        (instance, wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+    }).collect()
 }
 
-fn build_return_types_by_name(
+fn build_return_types_by_instance(
     ctx: &ExecutableLoweringContext,
     submission: &FragmentSubmission,
-    operations: &[QualifiedName],
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> BTreeMap<String, Option<u8>> {
-    let mut map = BTreeMap::new();
-    let mut ambiguous = BTreeSet::new();
-    for operation in operations {
-        let Some(mir_fn) = submission.backend_plan.get_function(operation).map(|view| view.function)
-        else {
-            continue;
-        };
-        let return_type = wasm_return_value_type(ctx, &mir_fn, gc_struct_type_indices, js_glue_utf8_as_anyref);
-        let full = operation.to_string();
-        map.insert(full.clone(), return_type);
-        if full.contains("::") {
-            map.entry(full.replace("::", ".")).or_insert(return_type);
-        }
-        if let Some(last) = operation.parts().last() {
-            let simple = last.as_str();
-            if ambiguous.contains(simple) {
-                continue;
-            }
-            match map.get(simple) {
-                Some(existing) if existing == &return_type => {}
-                Some(_) => {
-                    ambiguous.insert(simple.to_string());
-                    map.remove(simple);
-                }
-                None => {
-                    map.insert(simple.to_string(), return_type);
-                }
-            }
-        }
-    }
-    map
+) -> BTreeMap<ItemInstanceId, Option<u8>> {
+    submission.backend_plan.instances().map(|instance| {
+        let view = submission.backend_plan.get_function_by_instance(instance).expect("Compiler 实例必须有函数体");
+        (instance, wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+    }).collect()
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module(
@@ -579,7 +477,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module(
         export_name,
         crate::nyar_backend_wasi::WasiPreview::Preview2,
         crate::nyar_backend_wasi::WasmPackageKind::Binary,
-    )
+    ).expect("测试 Wasm MIR 输入必须满足完整 lowering 合同")
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
@@ -587,7 +485,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     export_name: &str,
     wasi_preview: crate::nyar_backend_wasi::WasiPreview,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
-) -> (WasmBinaryModule, Vec<(String, String)>) {
+) -> miette::Result<(WasmBinaryModule, Vec<(String, String)>)> {
     let wasi_mode = export_name == "_start";
     let operations: Vec<QualifiedName> = submission.backend_plan.operations();
     let string_literals = if export_name == "main" || wasi_mode { collect_mir_string_literals(submission, &operations) } else { Vec::new() };
@@ -677,7 +575,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 构建 function_index_by_name / type_index_by_name：完整路径必注册?
     // 简单名仅在无碰撞时注册（`get`/`length` 等多 overload 不得覆盖）?
     let mut function_index_by_name: BTreeMap<String, u32> = BTreeMap::new();
-    let mut type_index_by_name: BTreeMap<String, u32> = BTreeMap::new();
+    let mut function_index_by_instance = BTreeMap::new();
+    let mut type_index_by_instance = BTreeMap::new();
     let mut param_types_by_function_index: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
     for (dense, (operation, mir_fn)) in mir_operations.iter().enumerate() {
@@ -689,11 +588,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         param_types_by_function_index.insert(wasm_idx, params);
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_name.insert(full.clone(), wasm_idx);
-        type_index_by_name.insert(full.clone(), type_idx);
+        let instance = submission.backend_plan.instance_for_operation(operation).expect("目标函数必须保留 Compiler 实例身份");
+        function_index_by_instance.insert(instance, wasm_idx);
+        type_index_by_instance.insert(instance, type_idx);
     }
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
-    let param_types_by_name = build_param_types_by_name(&ctx, submission, &operations, &gc_struct_type_indices, js_glue_utf8_as_anyref);
-    let return_types_by_name = build_return_types_by_name(&ctx, submission, &operations, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+    let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
+    let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
         .map(|(module, field)| {
@@ -739,10 +640,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             return_value_type,
             js_glue_utf8_as_anyref,
             wasi_mode,
-            &function_index_by_name,
-            &type_index_by_name,
-            &param_types_by_name,
-            &return_types_by_name,
+            &function_index_by_instance,
+            &type_index_by_instance,
+            &param_types_by_instance,
+            &return_types_by_instance,
             &param_types_by_function_index,
             &return_types_by_function_index,
             &import_param_types,
@@ -789,10 +690,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 wasm_return_value_type(&ctx, &mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref),
                 js_glue_utf8_as_anyref,
                 wasi_mode,
-                &function_index_by_name,
-                &type_index_by_name,
-                &param_types_by_name,
-                &return_types_by_name,
+                &function_index_by_instance,
+                &type_index_by_instance,
+                &param_types_by_instance,
+                &return_types_by_instance,
                 &param_types_by_function_index,
                 &return_types_by_function_index,
                 &import_param_types,
@@ -823,10 +724,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 wasm_return_value_type(&ctx, &mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref),
                 js_glue_utf8_as_anyref,
                 wasi_mode,
-                &function_index_by_name,
-                &type_index_by_name,
-                &param_types_by_name,
-                &return_types_by_name,
+                &function_index_by_instance,
+                &type_index_by_instance,
+                &param_types_by_instance,
+                &return_types_by_instance,
                 &param_types_by_function_index,
                 &return_types_by_function_index,
                 &import_param_types,
@@ -869,21 +770,17 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // `ref.cast`/`array.len`), call entry, drop any return, then Ok(0) for CLI run.
             // (Nonzero guest status belongs on `wasi:cli/exit`, not this empty `result`.)
             // Full argv via `get-arguments` cabi is follow-up; empty argv still exercises help.
-            let entry_return = submission.entry_operation.as_ref().and_then(|op| {
-                return_types_by_name
-                    .get(&op.to_string())
-                    .copied()
-                    .or_else(|| op.parts().last().and_then(|part| return_types_by_name.get(part.as_str()).copied()))
-            });
+            let entry_instance = submission.entry_operation.as_ref()
+                .and_then(|operation| submission.backend_plan.instance_for_operation(operation))
+                .expect("WASI 入口必须保留 Compiler 实例身份");
+            let entry_return = return_types_by_instance.get(&entry_instance).copied();
             let entry_mir_params: Vec<NyarType> = submission
                 .entry_operation
                 .as_ref()
                 .and_then(|op| submission.backend_plan.get_function(op))
                 .map(|view| view.function.param_types.clone())
                 .unwrap_or_default();
-            let entry_wasm_params = param_types_by_function_index.get(&index).cloned().unwrap_or_else(|| {
-                submission.entry_operation.as_ref().and_then(|op| param_types_by_name.get(&op.to_string()).cloned()).unwrap_or_default()
-            });
+            let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
 
             let get_arguments_import = host_imports.iter().position(|(_, field)| field == "get-arguments").map(|index| index as u32);
             let argv_array_ty = prefer_utf8_argv_array_type(&gc_array_type_indices);
@@ -1017,7 +914,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         &gc_array_type_indices,
         gc_i64_box_type_index,
         js_glue_utf8_as_anyref,
-    );
+    )?;
 
     module.sections.push(type_section_bytes(type_indices));
     if !host_imports.is_empty() {
@@ -1088,7 +985,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         &gc_struct_type_indices,
         &gc_array_type_indices,
     );
-    (module, host_imports)
+    Ok((module, host_imports))
 }
 
 fn is_generic_array_element_type(element_type: &NyarType) -> bool {
@@ -1335,10 +1232,10 @@ fn lower_mir_function_to_wasm_bytes(
     return_value_type: Option<u8>,
     js_glue_utf8_as_anyref: bool,
     wasi_mode: bool,
-    function_index_by_name: &BTreeMap<String, u32>,
-    type_index_by_name: &BTreeMap<String, u32>,
-    param_types_by_name: &BTreeMap<String, Vec<u8>>,
-    return_types_by_name: &BTreeMap<String, Option<u8>>,
+    function_index_by_instance: &BTreeMap<ItemInstanceId, u32>,
+    type_index_by_instance: &BTreeMap<ItemInstanceId, u32>,
+    param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<u8>>,
+    return_types_by_instance: &BTreeMap<ItemInstanceId, Option<u8>>,
     param_types_by_function_index: &BTreeMap<u32, Vec<u8>>,
     return_types_by_function_index: &BTreeMap<u32, Option<u8>>,
     import_param_types: &[Vec<u8>],
@@ -1348,7 +1245,7 @@ fn lower_mir_function_to_wasm_bytes(
     gc_sum_type_indices: &BTreeMap<String, u32>,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
-    callee_import_index: &BTreeMap<String, u32>,
+    callee_import_index: &BTreeMap<ItemInstanceId, u32>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
@@ -1364,10 +1261,10 @@ fn lower_mir_function_to_wasm_bytes(
         return_value_type,
         js_glue_utf8_as_anyref,
         wasi_mode,
-        function_index_by_name,
-        type_index_by_name,
-        param_types_by_name,
-        return_types_by_name,
+        function_index_by_instance,
+        type_index_by_instance,
+        param_types_by_instance,
+        return_types_by_instance,
         param_types_by_function_index,
         return_types_by_function_index,
         import_param_types,
@@ -1413,11 +1310,11 @@ struct WasmMirLowerer<'a> {
     reference_locals: BTreeMap<MirValueRef, u32>,
     block_order: Vec<MirBlockRef>,
     block_index: BTreeMap<MirBlockRef, usize>,
-    function_index_by_name: &'a BTreeMap<String, u32>,
-    type_index_by_name: &'a BTreeMap<String, u32>,
-    param_types_by_name: &'a BTreeMap<String, Vec<u8>>,
-    return_types_by_name: &'a BTreeMap<String, Option<u8>>,
-    /// ?`function_index_by_name` 下标对齐?callee 形参 wasm 类型（call 实参 coerce 权威来源）?
+    function_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
+    type_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
+    param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<u8>>,
+    return_types_by_instance: &'a BTreeMap<ItemInstanceId, Option<u8>>,
+    /// ?`function_index_by_instance` 下标对齐?callee 形参 wasm 类型（call 实参 coerce 权威来源）?
     param_types_by_function_index: &'a BTreeMap<u32, Vec<u8>>,
     return_types_by_function_index: &'a BTreeMap<u32, Option<u8>>,
     import_param_types: &'a [Vec<u8>],
@@ -1432,7 +1329,7 @@ struct WasmMirLowerer<'a> {
     gc_i64_box_type_index: u32,
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
     gc_array_type_indices: &'a BTreeMap<String, u32>,
-    callee_import_index: &'a BTreeMap<String, u32>,
+    callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     host_imports: &'a [(String, String)],
     string_literal_index: &'a BTreeMap<String, u32>,
@@ -1451,10 +1348,10 @@ impl<'a> WasmMirLowerer<'a> {
         return_value_type: Option<u8>,
         js_glue_utf8_as_anyref: bool,
         wasi_mode: bool,
-        function_index_by_name: &'a BTreeMap<String, u32>,
-        type_index_by_name: &'a BTreeMap<String, u32>,
-        param_types_by_name: &'a BTreeMap<String, Vec<u8>>,
-        return_types_by_name: &'a BTreeMap<String, Option<u8>>,
+        function_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
+        type_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
+        param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<u8>>,
+        return_types_by_instance: &'a BTreeMap<ItemInstanceId, Option<u8>>,
         param_types_by_function_index: &'a BTreeMap<u32, Vec<u8>>,
         return_types_by_function_index: &'a BTreeMap<u32, Option<u8>>,
         import_param_types: &'a [Vec<u8>],
@@ -1464,7 +1361,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_sum_type_indices: &'a BTreeMap<String, u32>,
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
-        callee_import_index: &'a BTreeMap<String, u32>,
+        callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
@@ -1494,10 +1391,10 @@ impl<'a> WasmMirLowerer<'a> {
             reference_locals: BTreeMap::new(),
             block_order,
             block_index,
-            function_index_by_name,
-            type_index_by_name,
-            param_types_by_name,
-            return_types_by_name,
+            function_index_by_instance,
+            type_index_by_instance,
+            param_types_by_instance,
+            return_types_by_instance,
             param_types_by_function_index,
             return_types_by_function_index,
             import_param_types,
@@ -2269,45 +2166,9 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     fn emit_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) {
-        if param_types.is_empty() {
-            for argument in arguments {
-                let expected = self.infer_call_argument_type(argument);
-                self.emit_operand_coerced(argument, expected);
-            }
-            return;
-        }
-        for (index, expected) in param_types.iter().enumerate() {
-            if let Some(argument) = arguments.get(index) {
-                self.emit_operand_coerced(argument, *expected);
-            }
-            else {
-                self.emit_missing_call_argument(*expected);
-            }
-        }
-    }
-
-    fn infer_call_argument_type(&self, argument: &MirOperand) -> u8 {
-        match argument {
-            MirOperand::Value(vref) => self
-                .mir_fn
-                .value_types
-                .get(vref)
-                .map(|ty| wasm_param_value_type(self.ctx, ty, self.js_glue_utf8_as_anyref))
-                .unwrap_or_else(|| self.operand_wasm_stack_type(argument)),
-            // WASI 轨：字符串字面量作为 i32 偏移量，不走 anyref 路径?
-            MirOperand::Constant(MirConstant::Utf8(_)) if self.wasi_mode => VALTYPE_I32,
-            MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Unit) => WASM_GC_ANYREF,
-            _ => self.operand_wasm_stack_type(argument),
-        }
-    }
-
-    fn emit_missing_call_argument(&mut self, expected: u8) {
-        match expected {
-            VALTYPE_I32 => self.emit_i32_const(0),
-            VALTYPE_I64 => self.emit_i64_const(0),
-            VALTYPE_F64 => self.emit_f64_const(0.0),
-            WASM_GC_EXTERNREF => self.emit_ref_null_extern(),
-            _ => self.emit_ref_null_anyref(),
+        assert_eq!(arguments.len(), param_types.len(), "WASM 调用实参与已解析签名不一致");
+        for (argument, expected) in arguments.iter().zip(param_types) {
+            self.emit_operand_coerced(argument, *expected);
         }
     }
 
@@ -2352,42 +2213,18 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    /// Resolves a callee operand to its WASM function index.
-    ///
-    /// 注册表键来自 [`QualifiedName`]（`::` 连接）；MIR callee 多为 [`NamePath`]（`.` 连接）。
-    /// 两种拼写都查；再回退到唯一简单名 / `::简单名` 后缀（碰撞则 fail-closed）。
+    /// 普通调用只按 Compiler 实例身份查询物理函数下标。
     fn resolve_callee_function_index(&self, callee: &MirOperand) -> Option<u32> {
-        let path = match callee {
-            MirOperand::Symbol(path) => path,
-            _ => return None,
-        };
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        lookup_by_path_parts(&self.function_index_by_name, &parts).copied()
+        let MirOperand::Item(instance) = callee else { return None; };
+        self.function_index_by_instance.get(instance).copied()
     }
 
-    /// Resolve the WASM type section index for a callee operand.
-    ///
-    /// For witness dispatch, the type_index must match the callee's signature
-    /// in the WASM type section. Falls back to the first MIR function type
-    /// (smallest type index in `type_index_by_name`) when the callee cannot be
-    /// resolved by name. Note: this is NOT necessarily index 1, because
-    /// `register_gc_struct_types` pushes structtype entries before the
-    /// function types, so the first function type lives at
-    /// `function_type_base` (= 1 + structtype_count).
+    /// 类型化调用必须具备对应实例的物理签名，禁止选择第一个函数类型。
     fn resolve_callee_type_index(&self, callee: &MirOperand) -> u32 {
-        let first_fn_type = self.first_function_type_index();
-        let path = match callee {
-            MirOperand::Symbol(path) => path,
-            _ => return first_fn_type,
+        let MirOperand::Item(instance) = callee else {
+            panic!("WASM 调用缺少 Compiler 实例身份");
         };
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        lookup_by_path_parts(&self.type_index_by_name, &parts).copied().unwrap_or(first_fn_type)
-    }
-
-    /// Returns the smallest function type index in the type section.
-    /// This is the first functype entry after `main_type` + any structtype/arraytype entries.
-    fn first_function_type_index(&self) -> u32 {
-        self.type_index_by_name.values().copied().min().unwrap_or(1)
+        *self.type_index_by_instance.get(instance).expect("WASM 调用缺少实例签名")
     }
 
     /// Emits the WASM `call` instruction (opcode 0x10).

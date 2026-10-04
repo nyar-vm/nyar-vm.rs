@@ -607,9 +607,8 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
             let location = format!("block {} instruction {index}", block.id.0);
             match callee {
                 ExecutableOperand::Item(instance) => {
-                    let name = submission.backend_plan.abi_name_for_instance(*instance);
                     let local = submission.backend_plan.get_function_by_instance(*instance).is_some();
-                    let external = name.as_ref().is_some_and(|name| submission.external_import_links.contains_key(name));
+                    let external = submission.backend_plan.imports().contains_key(instance);
                     if !local && !external {
                         return Err(SemanticMirContractError {
                             code: "SMIR003",

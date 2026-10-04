@@ -94,7 +94,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
         }
         boundary_entry_name
     };
-    let (mut module, imports) = mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind);
+    let (mut module, imports) = mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, wasi_preview, wasm_package_kind)?;
 
     prepend_nyar_custom_sections(&mut module, submission);
     super::singleton::append_singleton_metadata_sections(&mut module, submission);

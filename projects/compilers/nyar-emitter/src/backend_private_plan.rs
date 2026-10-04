@@ -21,6 +21,16 @@ use crate::{
 pub struct BackendPrivatePlan {
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
     abi_names: BTreeMap<QualifiedName, ItemInstanceId>,
+    imports: BTreeMap<ItemInstanceId, BackendImport>,
+}
+
+/// 已由 Compiler 绑定身份、签名和链接合同的导入。
+#[derive(Debug, Clone)]
+pub struct BackendImport {
+    pub index: nyar_types::ImportIndex,
+    pub link: nyar_types::ExternalImportLink,
+    pub parameter_types: Vec<NyarType>,
+    pub return_type: NyarType,
 }
 
 impl BackendPrivatePlan {
@@ -38,6 +48,15 @@ impl BackendPrivatePlan {
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
     pub fn from_compiled_program(program: &CompiledProgram, roots: &[ItemInstanceId]) -> Result<Self> {
         let canonical = program.canonical();
+        let mut declared_imports = BTreeMap::new();
+        for (index, import) in &canonical.linked.imports {
+            if canonical.mir.functions.contains_key(&import.callee) {
+                return Err(miette!("callable 实例 `{:?}` 同时绑定函数体与导入", import.callee));
+            }
+            if declared_imports.insert(import.callee, (*index, import)).is_some() {
+                return Err(miette!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
+            }
+        }
         let mut pending = roots.iter().copied().map(|instance| {
             if !canonical.mir.functions.contains_key(&instance) {
                 return Err(miette!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
@@ -47,8 +66,18 @@ impl BackendPrivatePlan {
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
         let mut abi_names = BTreeMap::new();
+        let mut imports = BTreeMap::new();
         while let Some(instance) = pending.pop() {
             if !seen.insert(instance) { continue; }
+            if let Some((index, import)) = declared_imports.get(&instance) {
+                imports.insert(instance, BackendImport {
+                    index: *index,
+                    link: import.link.clone(),
+                    parameter_types: import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<_>>()?,
+                    return_type: lower_type(canonical, import.return_type)?,
+                });
+                continue;
+            }
             let name = canonical.linked.callable_names.get(&instance)
                 .ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
             if let Some(previous) = abi_names.insert(name.clone(), instance) {
@@ -60,7 +89,15 @@ impl BackendPrivatePlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
-        Ok(Self { functions, abi_names })
+        Ok(Self { functions, abi_names, imports })
+    }
+
+    pub fn instances(&self) -> impl Iterator<Item = ItemInstanceId> + '_ {
+        self.functions.keys().copied()
+    }
+
+    pub fn imports(&self) -> &BTreeMap<ItemInstanceId, BackendImport> {
+        &self.imports
     }
 
     pub fn operations(&self) -> Vec<QualifiedName> {

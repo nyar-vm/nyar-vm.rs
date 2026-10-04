@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use miette::{Result, miette};
 use nyar::NyarType;
 
 use crate::{
@@ -141,9 +142,9 @@ pub(super) fn append_library_mode_glue(
     gc_array_type_indices: &BTreeMap<String, u32>,
     gc_i64_box_type_index: u32,
     js_glue_utf8_as_anyref: bool,
-) {
+) -> Result<()> {
     if wasm_package_kind != WasmPackageKind::Library {
-        return;
+        return Ok(());
     }
 
     let mut invoke_exports = serde_json::Map::new();
@@ -152,13 +153,13 @@ pub(super) fn append_library_mode_glue(
     for (operation, public_name) in &submission.wasm_export_names {
         let Some(mir_fn) = executable.get_function(operation).map(|view| view.function.clone())
         else {
-            continue;
+            return Err(miette!("library export `{operation}` 缺少 Compiler-owned 函数体"));
         };
 
         let params = mir_param_abi_kinds(&mir_fn);
         let returns = mir_return_abi_kind(&mir_fn);
         if params.iter().any(|kind| kind.is_none()) || returns.is_none() {
-            continue;
+            return Err(miette!("library export `{operation}` 的 JSON ABI 尚无完整类型合同"));
         }
         invoke_exports.insert(
             public_name.clone(),
@@ -170,7 +171,7 @@ pub(super) fn append_library_mode_glue(
     }
 
     if invoke_exports.is_empty() {
-        return;
+        return Err(miette!("library wasm package 没有可表达的导出合同"));
     }
 
     for (glue_name, source_name) in [
@@ -178,18 +179,17 @@ pub(super) fn append_library_mode_glue(
         (GLUE_LIST_PUSH, "ArrayList::push"),
         (GLUE_LIST_LENGTH, "ArrayList::length"),
     ] {
-        if let Some(&function_index) = function_index_by_name.get(source_name) {
-            exports.push((glue_name, WasmExternalKind::Func.as_u8(), function_index));
-        }
+        let function_index = function_index_by_name
+            .get(source_name)
+            .copied()
+            .ok_or_else(|| miette!("library glue `{glue_name}` 缺少已规划的 `{source_name}` 函数"))?;
+        exports.push((glue_name, WasmExternalKind::Func.as_u8(), function_index));
     }
 
-    if let Some(array_list_struct_type) = resolve_array_list_struct_type_index(ctx, gc_struct_type_indices) {
-        let (items_array_type, items_element_valtype) = resolve_array_list_items_array_type(ctx, gc_array_type_indices, js_glue_utf8_as_anyref)
-            .unwrap_or_else(|| {
-                let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-                type_indices.push(wasm_gc_array_type(VALTYPE_I64));
-                (type_index, VALTYPE_I64)
-            });
+    let array_list_struct_type = resolve_array_list_struct_type_index(ctx, gc_struct_type_indices)
+        .ok_or_else(|| miette!("library glue requires the Compiler-planned ArrayList layout"))?;
+    let (items_array_type, items_element_valtype) = resolve_array_list_items_array_type(ctx, gc_array_type_indices, js_glue_utf8_as_anyref)
+        .ok_or_else(|| miette!("library glue requires the Compiler-planned ArrayList items array layout"))?;
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[VALTYPE_ANYREF, VALTYPE_I32], &[VALTYPE_I64]));
         function_indices.push(type_index);
@@ -201,7 +201,6 @@ pub(super) fn append_library_mode_glue(
             gc_i64_box_type_index,
         )));
         exports.push((GLUE_LIST_AT, WasmExternalKind::Func.as_u8(), function_index));
-    }
 
     let payload = serde_json::json!({
         "exports": invoke_exports,
@@ -219,6 +218,7 @@ pub(super) fn append_library_mode_glue(
         name: Some("nyar.library_invoke".to_string()),
         bytes: payload.to_string().into_bytes(),
     });
+    Ok(())
 }
 
 fn mir_param_abi_kinds(mir_fn: &MirFunction) -> Vec<Option<&'static str>> {
