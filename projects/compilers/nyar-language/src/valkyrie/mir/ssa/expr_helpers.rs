@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::types::{
     Identifier, NamePath,
-    hir::{HirCallableDomain, HirExpr, HirExprKind, HirResolvedCall},
+    hir::{HirExpr, HirExprKind, HirResolvedCall},
 };
 
 use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
@@ -264,31 +264,23 @@ pub(super) fn lower_callee_operand(
     expr: &HirExpr,
     resolved: Option<&crate::types::hir::HirResolvedCall>,
     builder: &mut MirBuilder,
-) -> MirOperand {
+) -> Option<MirOperand> {
     // Locals / parameters (including function-typed `f`) must stay SSA Values so CLR can
     // emit an indirect invoke. Prefer bindings over any free-function `resolved` symbol.
     if let HirExprKind::Variable(identifier) = &expr.kind {
         if let Some(bound) = builder.bindings.get(identifier.name.as_str()) {
-            return bound.clone();
+            return Some(bound.clone());
         }
     }
     // Free-function / operator calls only. Instance/method callees must go through
     // `extract_method_call` so MIR keeps the receiver argument for virtual dispatch.
     if let Some(resolved) = resolved {
-        let symbol = &resolved.symbol;
-        if resolved.domain == HirCallableDomain::Operator {
-            let bare = symbol.parts().last().cloned().unwrap_or_else(|| Identifier::new("unknown"));
-            return MirOperand::Symbol(NamePath::new(vec![bare]));
-        }
-        return MirOperand::Symbol(symbol.clone());
+        return Some(MirOperand::Symbol(resolved.symbol.clone()));
     }
     match &expr.kind {
-        HirExprKind::Path(path) => MirOperand::Symbol(path.clone()),
-        HirExprKind::Variable(identifier) => MirOperand::Symbol(NamePath::new(vec![identifier.name.clone()])),
+        HirExprKind::Path(_) | HirExprKind::Variable(_) | HirExprKind::FieldAccess { .. } => None,
         HirExprKind::GenericApply { callee, .. } => lower_callee_operand(callee, None, builder),
-        // Fallthrough only: Call lowering should have used extract_method_call for FieldAccess.
-        HirExprKind::FieldAccess { field, .. } => MirOperand::Symbol(NamePath::new(vec![field.clone()])),
-        _ => builder.lower_expr_to_operand(expr),
+        _ => Some(builder.lower_expr_to_operand(expr)),
     }
 }
 

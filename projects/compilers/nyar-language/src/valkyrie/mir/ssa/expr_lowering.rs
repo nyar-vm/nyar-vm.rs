@@ -729,7 +729,12 @@ impl MirBuilder {
                     return self.push_call_returning(callee, arguments, return_type);
                 }
                 let is_prefix_not = callee_name_matches(&callee.kind, "prefix !");
-                let callee = lower_callee_operand(callee, resolved.as_ref(), self);
+                let Some(callee) = lower_callee_operand(callee, resolved.as_ref(), self) else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                        symbol: "静态调用缺少 HIR callable contract".to_string(),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
                 let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
                 // Lower args left-to-right so `push([T], Variant { … })` can hint the variant
                 // Construct with element type T (shared names like Label/Goto/Field).
