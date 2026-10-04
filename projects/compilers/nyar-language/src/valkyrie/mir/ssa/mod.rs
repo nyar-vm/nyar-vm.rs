@@ -161,6 +161,8 @@ pub struct MirExternalCallContract {
 /// 已解析 callable 的公开导出合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirExportContract {
+    /// HIR 已绑定的公开项实例，名称只能用于诊断和 ABI。
+    pub instance: Option<ItemInstanceId>,
     /// 已解析的 callable 符号；Canonical producer 只用它查 Compiler identity。
     pub symbol: NamePath,
     /// 公开 ABI 名称。
@@ -170,6 +172,8 @@ pub struct MirExportContract {
 /// 已解析 callable 的程序入口合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirEntryContract {
+    /// HIR 已绑定的入口实例，不能由入口名称恢复。
+    pub instance: Option<ItemInstanceId>,
     /// 已解析的 callable 符号。
     pub symbol: NamePath,
 }
@@ -874,10 +878,10 @@ fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec
         for function in &module.functions {
             let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function);
             if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
-                exports.push(MirExportContract { symbol: symbol.clone(), exported_name: spec.resolve_exported_name(&function.name) });
+                exports.push(MirExportContract { instance: function.instance, symbol: symbol.clone(), exported_name: spec.resolve_exported_name(&function.name) });
             }
             if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
-                entries.push(MirEntryContract { symbol });
+                entries.push(MirEntryContract { instance: function.instance, symbol });
             }
         }
         for submodule in &module.submodules {

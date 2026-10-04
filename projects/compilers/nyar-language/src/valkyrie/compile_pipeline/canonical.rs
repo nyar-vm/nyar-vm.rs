@@ -33,7 +33,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
-    for (symbol, instance) in &module.callable_identities {
+    for (symbol, instance) in module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
+        .chain(module.external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance)))) {
         let parts = symbol
             .split("::")
             .filter(|part| !part.is_empty())
@@ -43,7 +44,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             return Err(error(module, "CAN040", format!("callable `{symbol}` 没有完整限定 identity")));
         }
         let name = QualifiedName::new(parts);
-        if let Some(previous) = linked.callable_names.insert(*instance, name.clone())
+        if let Some(previous) = linked.callable_names.insert(instance, name.clone())
             && previous != name
         {
             return Err(error(module, "CAN041", format!("callable identity `{instance}` 对应多个限定名称")));
@@ -59,7 +60,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     linked.fields = field_records;
     for function in &module.functions {
-        let instance = *module.callable_identities.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: function.declaration.ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.symbol)))?,
             substitution: monomorphic_substitution(function)?,
@@ -69,20 +70,20 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     for export in &module.exports {
         let symbol = export.symbol.to_string();
-        let instance = *module.callable_identities.get(&symbol).ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
+        let instance = export.instance.ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
         if linked.exports.insert(instance, ExportRecord { exported_name: export.exported_name.clone() }).is_some() {
             return Err(error(module, "CAN037", format!("callable `{symbol}` 存在重复导出合同")));
         }
     }
     for entry in &module.entries {
         let symbol = entry.symbol.to_string();
-        let instance = *module.callable_identities.get(&symbol).ok_or_else(|| error(module, "CAN038", format!("入口 `{symbol}` 缺少 Compiler callable identity")))?;
+        let instance = entry.instance.ok_or_else(|| error(module, "CAN038", format!("入口 `{symbol}` 缺少 Compiler callable identity")))?;
         if linked.entries.insert(instance, EntryRecord).is_some() {
             return Err(error(module, "CAN039", format!("callable `{symbol}` 存在重复入口合同")));
         }
     }
     for (offset, contract) in module.external_calls.iter().enumerate() {
-        let instance = *module.callable_identities.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
+        let instance = contract.instance.ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: contract.declaration.ok_or_else(|| error(module, "CAN053", format!("导入 `{}` 缺少声明 identity", contract.symbol)))?,
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
@@ -102,7 +103,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.fragments = canonical_fragments(module, &linked, &module.semantic_fragments)?;
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
-        let instance = *module.callable_identities.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         Ok((instance, lower_function(function, instance, &type_values, &nominals, &fields, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
@@ -190,24 +191,21 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
 }
 
 fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
-    if module.callable_identities.is_empty() && (!module.functions.is_empty() || !module.external_calls.is_empty()) {
-        return Err(error(module, "CAN034", "Semantic MIR 缺少 Compiler callable identity 表"));
-    }
     let mut instances = BTreeMap::new();
     for function in &module.functions {
-        let Some(identity) = module.callable_identities.get(&function.symbol) else {
+        let Some(identity) = function.instance else {
             return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)));
         };
-        if instances.insert(*identity, function.symbol.clone()).is_some() {
+        if instances.insert(identity, function.symbol.clone()).is_some() {
             return Err(error(module, "CAN001", format!("callable identity `{identity}` 重复")));
         }
     }
     for contract in &module.external_calls {
         let symbol = contract.symbol.to_string();
-        let Some(identity) = module.callable_identities.get(&symbol) else {
+        let Some(identity) = contract.instance else {
             return Err(error(module, "CAN034", format!("导入 `{symbol}` 缺少 Compiler callable identity")));
         };
-        if instances.insert(*identity, symbol.clone()).is_some() {
+        if instances.insert(identity, symbol.clone()).is_some() {
             return Err(error(module, "CAN001", format!("callable identity `{identity}` 重复")));
         }
     }
@@ -415,6 +413,44 @@ mod tests {
     use crate::valkyrie::mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef};
     use crate::valkyrie::types::{Identifier, NamePath};
     use std::collections::BTreeMap;
+
+    fn source_surface_module() -> MirModule {
+        let hir = crate::ValkyrieCompiler::default().compile_source(
+            "[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
+        ).expect("源码导出及入口合同");
+        crate::MirLowerer::lower_module_semantic(&hir)
+    }
+
+    #[test]
+    fn source_instances_reach_canonical_without_a_name_binding_table() {
+        let mut module = source_surface_module();
+        let instance = module.functions[0].instance.expect("Compiler 实例 identity");
+        module.callable_identities.clear();
+        let program = canonical_program_from_semantic_mir(&module).expect("Canonical 只消费节点实例，不按名称重绑");
+        assert!(program.mir.functions.contains_key(&instance));
+        assert!(program.linked.exports.contains_key(&instance));
+        assert!(program.linked.entries.contains_key(&instance));
+    }
+
+    #[test]
+    fn source_export_and_entry_diagnostic_names_cannot_rebind_instances() {
+        let mut module = source_surface_module();
+        let expected = module.functions[0].instance.expect("Compiler 实例 identity");
+        module.exports[0].symbol = NamePath::new(vec![Identifier::new("unrelated_export_label")]);
+        module.entries[0].symbol = NamePath::new(vec![Identifier::new("unrelated_entry_label")]);
+        let program = canonical_program_from_semantic_mir(&module).expect("诊断标签不参与语义绑定");
+        assert!(program.linked.exports.contains_key(&expected));
+        assert!(program.linked.entries.contains_key(&expected));
+    }
+
+    #[test]
+    fn source_missing_node_instance_cannot_be_recovered_from_a_name_table() {
+        let mut module = source_surface_module();
+        assert!(module.functions[0].instance.take().is_some());
+        assert!(!module.callable_identities.is_empty());
+        let error = canonical_program_from_semantic_mir(&module).expect_err("名称表不能补造缺失节点身份");
+        assert_eq!(error.records[0].code, "CAN034");
+    }
 
     fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value_types: BTreeMap<MirValueRef, ValkyrieType>) -> MirModule {
         let mut module = MirModule {
