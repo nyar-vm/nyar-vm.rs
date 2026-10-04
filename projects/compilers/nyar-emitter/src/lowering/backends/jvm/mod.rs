@@ -91,19 +91,6 @@ fn expand_jvm_operations_with_mir_callees(submission: &FragmentSubmission, opera
                         operations.push(callee_op);
                     }
                 }
-                // Single-segment method names: include every simple-name match so the
-                // call-site resolver cannot pick a candidate whose body was skipped.
-                if path.parts().len() == 1 {
-                    if let Some(method_name) = path.parts().last() {
-                        for op in exec.operations() {
-                            if op.parts().last().map(|part| part.as_str()) == Some(method_name.as_str()) {
-                                if !operations.iter().any(|existing| existing == &op) {
-                                    operations.push(op);
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -114,14 +101,8 @@ fn resolve_jvm_mir_callee_operation(
     path: &nyar::NamePath,
     _arguments: &[crate::backend_plan_views::ExecutableOperand],
 ) -> Option<QualifiedName> {
-    let method_name = path.parts().last()?.as_str();
-    if path.parts().len() > 1 {
-        let qualified = QualifiedName::new(path.parts().to_vec());
-        if exec.get_function(&qualified).is_some() {
-            return Some(qualified);
-        }
-    }
-    exec.operations().iter().find(|operation| operation.parts().last().map(|part| part.as_str()) == Some(method_name)).cloned()
+    let qualified = QualifiedName::new(path.parts().to_vec());
+    exec.get_function(&qualified).is_some().then_some(qualified)
 }
 
 /// Fail-closed for linkage: every self `InvokeStatic` must resolve to a method body.
