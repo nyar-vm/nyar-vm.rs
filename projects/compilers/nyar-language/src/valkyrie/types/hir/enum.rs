@@ -25,6 +25,9 @@ use crate::Identifier;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirEnum {
+    /// Compiler 分配的 enum 声明身份不是变体身份；每个 variant 另有声明记录。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub declaration: Option<nyar_types::ItemId>,
     /// The name of the enum.
     pub name: Identifier,
     /// Documentation for the enum.
@@ -49,6 +52,12 @@ pub struct HirEnum {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirVariant {
+    /// Compiler 分配的变体构造声明身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub declaration: Option<nyar_types::ItemId>,
+    /// 完成单态化后的变体构造实例身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub instance: Option<nyar_types::ItemInstanceId>,
     /// The name of the variant.
     pub name: Identifier,
     /// Documentation for the variant.
@@ -66,7 +75,7 @@ pub struct HirVariant {
 
 impl Default for HirVariant {
     fn default() -> Self {
-        Self { name: Identifier::new(""), doc: HirDocumentation::default(), fields: Vec::new(), result_type: None, discriminator: None }
+        Self { declaration: None, instance: None, name: Identifier::new(""), doc: HirDocumentation::default(), fields: Vec::new(), result_type: None, discriminator: None }
     }
 }
 
@@ -124,6 +133,7 @@ pub struct HirFlagMember {
 impl Default for HirEnum {
     fn default() -> Self {
         Self {
+            declaration: None,
             name: Identifier::new(""),
             doc: HirDocumentation::default(),
             generics: Vec::new(),

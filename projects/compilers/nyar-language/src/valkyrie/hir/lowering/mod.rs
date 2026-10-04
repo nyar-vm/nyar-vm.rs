@@ -785,12 +785,39 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
         register(function, next, next_instance, true)?;
     }
     for structure in &mut module.structs {
+        if structure.constructor_declaration.is_some() || structure.constructor_instance.is_some() {
+            return Err(ParseError::invalid("结构构造声明不能重复注册"));
+        }
+        structure.constructor_declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        if structure.generics.is_empty() {
+            structure.constructor_instance = Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
+            *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+        }
         for method in &mut structure.methods {
             register(method, next, next_instance, structure.generics.is_empty())?;
         }
         for property in &mut structure.properties {
             for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
                 register(accessor, next, next_instance, structure.generics.is_empty())?;
+            }
+        }
+    }
+    for enum_definition in &mut module.enums {
+        if enum_definition.declaration.is_some() {
+            return Err(ParseError::invalid("枚举声明不能重复注册"));
+        }
+        enum_definition.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+        *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        for variant in &mut enum_definition.variants {
+            if variant.declaration.is_some() || variant.instance.is_some() {
+                return Err(ParseError::invalid("变体构造声明不能重复注册"));
+            }
+            variant.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+            *next = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+            if enum_definition.generics.is_empty() {
+                variant.instance = Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
+                *next_instance = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
             }
         }
     }
@@ -1181,6 +1208,8 @@ impl AstToHir {
 
     fn lower_class(&self, class_decl: &ClassDeclaration, namespace: &[Identifier]) -> HirStruct {
         HirStruct {
+            constructor_declaration: None,
+            constructor_instance: None,
             name: class_decl.name.name.clone(),
             namespace: namespace.to_vec(),
             doc: lower_documentation(&class_decl.annotations),
@@ -1520,6 +1549,8 @@ impl AstToHir {
                 }
             });
         HirVariant {
+            declaration: None,
+            instance: None,
             name: variant.name.name.clone(),
             doc: lower_documentation(&variant.annotations),
             fields: variant.fields.iter().map(lower_field).collect(),
@@ -2124,6 +2155,7 @@ enums Status {
             HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(value)), span: test_span() }
         };
         let bad_enum = HirEnum {
+            declaration: None,
             name: Identifier::new("Status"),
             doc: Default::default(),
             generics: Vec::new(),
@@ -2134,6 +2166,7 @@ enums Status {
                     fields: Vec::new(),
                     result_type: None,
                     discriminator: Some(duplicate_tag(0)),
+                    ..Default::default()
                 },
                 HirVariant {
                     name: Identifier::new("Paused"),
@@ -2141,6 +2174,7 @@ enums Status {
                     fields: Vec::new(),
                     result_type: None,
                     discriminator: Some(duplicate_tag(0)),
+                    ..Default::default()
                 },
             ],
             visibility: Default::default(),

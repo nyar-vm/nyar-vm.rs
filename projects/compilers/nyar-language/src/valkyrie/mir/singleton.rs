@@ -95,6 +95,8 @@ fn plan_from_singleton(singleton: &HirSingleton) -> SingletonInstancePlan {
 /// View a singleton as a reference `HirStruct` for aggregate layout planning.
 pub fn singleton_as_struct(singleton: &HirSingleton) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: singleton.name.clone(),
         namespace: singleton.namespace.clone(),
         doc: singleton.doc.clone(),

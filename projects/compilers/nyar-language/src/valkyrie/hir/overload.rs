@@ -457,6 +457,8 @@ fn build_struct_constructor_candidate(item: &HirStruct) -> OverloadCandidate {
     for generic in &item.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
+    candidate.declaration = item.constructor_declaration;
+    candidate.instance = item.constructor_instance;
     candidate
 }
 
@@ -503,6 +505,8 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
     for generic in &enum_def.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
+    candidate.declaration = variant.declaration;
+    candidate.instance = variant.instance;
     candidate
 }
 

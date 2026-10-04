@@ -138,6 +138,12 @@ fn to_snake_case(name: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirStruct {
+    /// Compiler 分配的构造器声明身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub constructor_declaration: Option<nyar_types::ItemId>,
+    /// 完成单态化后的构造器实例身份。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub constructor_instance: Option<nyar_types::ItemInstanceId>,
     /// The name of the struct.
     pub name: Identifier,
     /// 所属命名空间路径（如 `["core", "text"]`）。

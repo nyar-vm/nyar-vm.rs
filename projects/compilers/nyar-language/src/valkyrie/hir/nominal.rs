@@ -215,6 +215,8 @@ pub fn lower_unite(enum_def: &HirEnum, layout: UniteLayout) -> LoweredUnite {
     let parent_generics = enum_def.generics.iter().map(lower_unite_generic_argument).collect::<Vec<_>>();
 
     let base = HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: base_name,
         namespace: vec![],
         doc: enum_def.doc.clone(),
@@ -319,6 +321,8 @@ fn lower_variant(
         .unwrap_or_else(|| enum_def.generics.clone());
 
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: variant.name.clone(),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -478,6 +482,7 @@ mod nominal_contract_tests {
                 }],
                 result_type: None,
                 discriminator: None,
+                ..Default::default()
             },
             HirVariant {
                 name: Identifier::new("None"),
@@ -485,6 +490,7 @@ mod nominal_contract_tests {
                 fields: vec![],
                 result_type: None,
                 discriminator: None,
+                ..Default::default()
             },
         ];
         enum_def
@@ -507,6 +513,7 @@ mod nominal_contract_tests {
                 }],
                 result_type: Some(ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Expr"))), vec![ValkyrieType::Float64])),
                 discriminator: None,
+                ..Default::default()
             },
             HirVariant {
                 name: Identifier::new("If"),
@@ -535,6 +542,7 @@ mod nominal_contract_tests {
                     vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                 )),
                 discriminator: None,
+                ..Default::default()
             },
         ];
         enum_def
