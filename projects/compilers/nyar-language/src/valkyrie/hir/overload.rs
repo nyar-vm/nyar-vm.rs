@@ -2889,6 +2889,45 @@ mod identity_tests {
     use crate::{ValkyrieCompiler, types::{SourceID, hir::HirTraitBound}};
 
     #[test]
+    fn nested_call_type_requires_the_selected_contract() {
+        let compiler = ValkyrieCompiler::default();
+        let mut hir = compiler.compile_source(
+            "micro produce() -> i64 { 7 } micro consume(value: i64) -> i64 { value } micro caller() -> i64 { consume(produce()) }",
+        ).expect("嵌套调用必须从源码完成声明选择");
+        compiler.validate_hir_semantic_contract(&hir).expect("完整调用合同必须通过");
+        let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
+        let HirExprKind::Call { args, .. } = &mut caller.body.expr.as_mut().unwrap().kind else { panic!("预期外层调用"); };
+        let nested = &mut args[0].value;
+        let expected = Some(ValkyrieType::Integer64 { signed: true });
+        assert_eq!(infer_expr_type(nested, &BTreeMap::new()), expected);
+        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
+        let HirExprKind::Call { resolved, .. } = &mut nested.kind else { panic!("预期嵌套调用"); };
+        assert!(resolved.take().is_some());
+        assert_eq!(infer_expr_type(nested, &BTreeMap::new()), None);
+        assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
+        assert!(compiler.validate_hir_semantic_contract(&hir).is_err());
+    }
+
+    #[test]
+    fn construction_type_requires_the_selected_contract() {
+        let compiler = ValkyrieCompiler::default();
+        let mut hir = compiler.compile_source(
+            "structure Parcel { value: i64 } micro create() -> Parcel { Parcel { value: 7 } }",
+        ).expect("构造必须从源码完成字段绑定与声明选择");
+        compiler.validate_hir_semantic_contract(&hir).expect("完整构造合同必须通过");
+        let create = hir.functions.iter_mut().find(|function| function.name.as_str() == "create").unwrap();
+        let construction = create.body.expr.as_mut().unwrap();
+        let expected = Some(ValkyrieType::Named(Identifier::new("Parcel")));
+        assert_eq!(infer_expr_type(construction, &BTreeMap::new()), expected);
+        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
+        let HirExprKind::Construct { resolved, .. } = &mut construction.kind else { panic!("预期结构构造"); };
+        assert!(resolved.take().is_some());
+        assert_eq!(infer_expr_type(construction, &BTreeMap::new()), None);
+        assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
+        assert!(compiler.validate_hir_semantic_contract(&hir).is_err());
+    }
+
+    #[test]
     fn selected_overload_preserves_all_declaration_facts_in_any_order() {
         let selected = declaration_candidate();
         let mut other = selected.clone();
