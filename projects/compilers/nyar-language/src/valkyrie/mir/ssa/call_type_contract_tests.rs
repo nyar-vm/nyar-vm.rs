@@ -1,5 +1,43 @@
-use super::{MirLowerer, MirOperand, MirOperation};
-use crate::{ValkyrieCompiler, types::hir::ValkyrieType};
+use super::{MirDiagnostic, MirLowerer, MirOperand, MirOperation};
+use crate::{Identifier, NamePath, ValkyrieCompiler, types::hir::{HirCallableDomain, HirExprKind, ValkyrieType}};
+
+#[test]
+fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
+    let mut hir = ValkyrieCompiler::default().compile_source(
+        "micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }",
+    ).expect("源码必须先完成解析");
+    let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
+    let HirExprKind::Call { resolved, .. } = &mut caller.body.expr.as_mut().unwrap().kind else {
+        panic!("预期调用表达式");
+    };
+    assert!(resolved.take().is_some());
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(mir.diagnostics.iter().any(|diagnostic| matches!(diagnostic, MirDiagnostic::UnresolvedCallableIdentity { .. })));
+    let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
+    assert!(!caller.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. })));
+    assert!(crate::valkyrie::mir::validation::validate_semantic_module(&mir).is_err());
+}
+
+#[test]
+fn resolved_operator_path_is_not_reduced_to_a_short_name() {
+    let mut hir = ValkyrieCompiler::default().compile_source(
+        "micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }",
+    ).expect("源码必须先完成解析");
+    let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &mut caller.body.expr.as_mut().unwrap().kind else {
+        panic!("预期已解析调用");
+    };
+    let path = NamePath::new(vec![Identifier::new("Owner"), Identifier::new("infix +")]);
+    resolved.symbol = path.clone();
+    resolved.domain = HirCallableDomain::Operator;
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
+    let callees = caller.blocks.iter().flat_map(|block| &block.instructions).filter_map(|instruction| match &instruction.kind {
+        MirOperation::Call { callee, .. } => Some(callee.clone()),
+        _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(callees, vec![MirOperand::Symbol(path)]);
+}
 
 #[test]
 fn same_method_names_keep_declared_result_types() {
