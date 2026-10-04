@@ -32,8 +32,8 @@
 1. `hir/overload.rs` 的重载选择直接返回完整候选；调用分支不再按名称二次找回候选，
    singleton 与 extractor 匹配也保留声明事实。`HirResolvedCall` 仍以名称及签名
    描述解析结果，没有完整声明与 substitution 身份；这一断链尚未闭合。
-2. `expr_helpers.rs` 的 `lower_callee_operand` 将已解析 operator 路径截成末段，
-   并在没有解析结果时从表达式拼写生产静态 Symbol。这让后续阶段重新取得解释权。
+2. `expr_helpers.rs` 的 `lower_callee_operand` 已不再截断已解析 operator 路径；
+   但在没有解析结果时仍会从表达式拼写生产静态 Symbol，必须在调用解析边界失败。
 3. `compile_pipeline/link.rs` 以函数 symbol 建依赖池；`mod.rs` 的
    `callable_identity_table` 对名称排序、去重、编号，再由 `resolve_callable_operands`
    改写调用。晚期编号不是从声明解析贯穿的实例身份。
