@@ -82,6 +82,46 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
 }
 
 #[test]
+fn declared_operator_uses_its_callable_identity_and_signature() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+structure Number { }
+imply Number {
+    infix `+`(self, rhs: Number) -> bool { true }
+}
+micro apply(left: Number, right: Number) -> bool { left + right }
+"#,
+        )
+        .expect("用户运算符必须经声明 overload 解析");
+    let operator = &hir.impls[0].methods[0];
+    let instance = operator.instance.expect("operator 声明实例身份");
+    let apply = hir.functions.iter().find(|function| function.name.as_str() == "apply").expect("apply");
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind else {
+        panic!("运算符调用必须绑定声明");
+    };
+    assert_eq!(resolved.instance, Some(instance));
+    assert!(resolved.has_receiver, "receiver 由声明中的 self 参数决定");
+    assert_eq!(resolved.return_type, ValkyrieType::Boolean);
+    assert_eq!(resolved.parameter_types.len(), 2);
+
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let apply = mir.functions.iter().find(|function| function.symbol.ends_with("::apply")).expect("Semantic MIR apply");
+    let calls = apply
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match &instruction.kind {
+            MirOperation::Call { callee: MirOperand::Callable(callee), arguments } if *callee == instance => Some((instruction, arguments)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1.len(), 2, "显式参数包含签名声明的 self，不由语法补造");
+    assert_eq!(apply.value_types.get(&calls[0].0.results[0]), Some(&ValkyrieType::Boolean));
+}
+
+#[test]
 fn integer_pattern_comparisons_fail_without_operator_callable_contracts() {
     let hir = ValkyrieCompiler::default()
         .compile_source(

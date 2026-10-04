@@ -24,7 +24,7 @@ use crate::{
     },
     valkyrie::{hir::PatternRefutability, mir::collect_aggregate_field_map},
 };
-use nyar_types::{IntrinsicId, builtin_operator};
+use nyar_types::IntrinsicId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadDomain {
@@ -1242,28 +1242,6 @@ fn try_resolve_call(
     }
 
     let callee_name = extract_callable_name(callee)?;
-    if let Some(resolved) = primitive_operator_contract(&callee_name, args, candidates, locals, struct_fields, singleton_names) {
-        return Some(resolved);
-    }
-    // The parser also canonicalizes chained calls as `name(receiver, args...)`.
-    // Reuse the typed primitive registry for that representation; do not infer
-    // semantics from the source symbol or from a backend-specific fallback.
-    if let Some(receiver) = args.first() {
-        if let Some((return_type, parameter_types)) =
-            primitive_operation_contract(&receiver.value, &callee_name, args, locals, struct_fields, singleton_names)
-        {
-            return Some(HirResolvedCall {
-                declaration: None,
-                instance: None,
-                symbol: primitive_operation_symbol(&receiver.value, &callee_name, locals, struct_fields, singleton_names)?,
-                domain: HirCallableDomain::Function,
-                return_type,
-                parameter_types,
-                has_receiver: false,
-                extractor_payload_type: None,
-            });
-        }
-    }
     if let Some(owner) = args.first().and_then(|arg| extract_singleton_type_name(&arg.value, locals, singleton_names)) {
         if let Some(resolved) = try_resolve_singleton_method(
             &owner,
@@ -1297,7 +1275,7 @@ fn try_resolve_call(
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let symbol = overload_symbol_path(&resolved);
-    let return_type = if is_boolean_operator(&callee_name) { ValkyrieType::Boolean } else { resolved.signature.return_type };
+    let return_type = resolved.signature.return_type;
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
@@ -1313,118 +1291,6 @@ fn try_resolve_call(
         has_receiver,
         extractor_payload_type: None,
     })
-}
-
-/// 将前端显示名映到内建 [`OperatorId`] 后做 primitive 合同分派。
-///
-/// 迁移期仍接受 `infix ==` 显示字符串作为查找键；分派只比较 [`OperatorId`]。
-/// 诊断符号暂保留显示名；后续 HIR 节点应直接持有 id。
-fn primitive_operator_contract(
-    operator: &Identifier,
-    args: &[HirCallArgument],
-    candidates: &[OverloadCandidate],
-    locals: &BTreeMap<String, ValkyrieType>,
-    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-    singleton_names: &BTreeSet<Identifier>,
-) -> Option<HirResolvedCall> {
-    let operator_id = builtin_operator::lookup_display_name(operator.as_str())?;
-    let diagnostic_symbol = NamePath::new(vec![Identifier::new("primitive"), operator.clone()]);
-
-    if operator_id == builtin_operator::prefix_not() && args.len() == 1 {
-        let operand = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-        if !matches!(operand, ValkyrieType::Boolean) {
-            return None;
-        }
-        return Some(HirResolvedCall {
-            declaration: None,
-            instance: None,
-            symbol: diagnostic_symbol,
-            domain: HirCallableDomain::Operator,
-            return_type: ValkyrieType::Boolean,
-            parameter_types: vec![ValkyrieType::Boolean],
-            has_receiver: false,
-            extractor_payload_type: None,
-        });
-    }
-    if operator_id == builtin_operator::prefix_neg() && args.len() == 1 {
-        let operand = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-        if !is_numeric_type(&operand) {
-            return None;
-        }
-        return Some(HirResolvedCall {
-            declaration: None,
-            instance: None,
-            symbol: diagnostic_symbol,
-            domain: HirCallableDomain::Operator,
-            return_type: operand.clone(),
-            parameter_types: vec![operand],
-            has_receiver: false,
-            extractor_payload_type: None,
-        });
-    }
-    if args.len() != 2 {
-        return None;
-    }
-    let left = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-    let right = match &args[1].value.kind {
-        HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if is_numeric_type(&left) => left.clone(),
-        _ => infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?,
-    };
-    if left != right {
-        return None;
-    }
-    // Utf8/boolean operator IntrinsicOpcode paths DELETED — fail closed until Invoke+adaptor.
-    if matches!(left, ValkyrieType::Utf8) || is_boolean_type(&left) {
-        return None;
-    }
-    // Nominal sum equality is a structural language operation.  The only
-    // authority used here is the constructor metadata collected for the
-    // module; do not infer it from a function/library/type spelling.
-    if operator_id == builtin_operator::infix_eq()
-        && matches!(&left, ValkyrieType::Named(name) if candidates.iter().any(|candidate| {
-            matches!(candidate.domain, OverloadDomain::Constructor)
-                && candidate.owner.as_ref() == Some(name)
-        }))
-    {
-        return Some(HirResolvedCall {
-            declaration: None,
-            instance: None,
-            symbol: diagnostic_symbol,
-            domain: HirCallableDomain::Operator,
-            return_type: ValkyrieType::Boolean,
-            parameter_types: vec![left, right],
-            has_receiver: false,
-            extractor_payload_type: None,
-        });
-    }
-    if !is_numeric_type(&left) {
-        return None;
-    }
-    // HIR may still type operators; MUST NOT mint IntrinsicOpcode (deleted).
-    let return_type = if builtin_operator::is_numeric_result(operator_id) {
-        left.clone()
-    }
-    else if builtin_operator::is_boolean_result(operator_id) {
-        ValkyrieType::Boolean
-    }
-    else {
-        return None;
-    };
-    Some(HirResolvedCall {
-        declaration: None,
-        instance: None,
-        symbol: diagnostic_symbol,
-        domain: HirCallableDomain::Operator,
-        return_type,
-        parameter_types: vec![left, right],
-        has_receiver: false,
-        extractor_payload_type: None,
-    })
-}
-
-fn is_boolean_type(ty: &ValkyrieType) -> bool {
-    matches!(ty, ValkyrieType::Boolean)
-        || matches!(ty, ValkyrieType::Named(name) if matches!(name.as_str(), "bool" | "core.primitive.bool" | "core::primitive::bool"))
 }
 
 fn is_numeric_type(ty: &ValkyrieType) -> bool {
@@ -1513,21 +1379,6 @@ fn try_resolve_instance_method(
     let mut full_args = Vec::with_capacity(args.len() + 1);
     full_args.push(receiver_arg);
     full_args.extend_from_slice(args);
-
-    if let Some((return_type, parameter_types)) =
-        primitive_operation_contract(receiver, method_name, &full_args, locals, struct_fields, singleton_names)
-    {
-        return Some(HirResolvedCall {
-            declaration: None,
-            instance: None,
-            symbol: primitive_operation_symbol(receiver, method_name, locals, struct_fields, singleton_names)?,
-            domain: HirCallableDomain::Function,
-            return_type,
-            parameter_types,
-            has_receiver: true,
-            extractor_payload_type: None,
-        });
-    }
 
     let receiver_type = infer_expr_type(receiver, locals)
         .or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
@@ -1669,38 +1520,6 @@ fn generic_type_parameter_name(ty: &ValkyrieType) -> Option<Identifier> {
         ValkyrieType::Named(name) => Some(name.clone()),
         _ => None,
     }
-}
-
-/// A primitive call keeps a language-level locator for diagnostics and later
-/// contract checks. The receiver's resolved semantic family is authoritative;
-/// no host carrier or imported declaration name participates in this choice.
-fn primitive_operation_symbol(
-    receiver: &HirExpr,
-    method_name: &Identifier,
-    locals: &BTreeMap<String, ValkyrieType>,
-    struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-    singleton_names: &BTreeSet<Identifier>,
-) -> Option<NamePath> {
-    let receiver_type =
-        infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names))?;
-    let family = match receiver_type {
-        ValkyrieType::Utf8 => "Utf8",
-        ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. } => "Array",
-        _ => "Primitive",
-    };
-    Some(NamePath::new(vec![Identifier::new(family), method_name.clone()]))
-}
-
-/// Operators / text / array methods must resolve to std adaptor Invoke — not IntrinsicOpcode.
-fn primitive_operation_contract(
-    _receiver: &HirExpr,
-    _method_name: &Identifier,
-    _full_args: &[HirCallArgument],
-    _locals: &BTreeMap<String, ValkyrieType>,
-    _struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-    _singleton_names: &BTreeSet<Identifier>,
-) -> Option<(ValkyrieType, Vec<ValkyrieType>)> {
-    None
 }
 
 fn extract_singleton_type_name(
@@ -1960,10 +1779,6 @@ fn overload_symbol_path(candidate: &OverloadCandidate) -> NamePath {
     else {
         candidate.symbol.clone()
     }
-}
-
-fn is_boolean_operator(name: &Identifier) -> bool {
-    builtin_operator::lookup_display_name(name.as_str()).is_some_and(builtin_operator::is_boolean_result)
 }
 
 fn try_resolve_constructor(
