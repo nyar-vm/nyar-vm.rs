@@ -278,6 +278,9 @@ pub(super) fn lower_callee_operand(
         if let Some(instance) = resolved.instance {
             return Some(MirOperand::Callable(instance));
         }
+        if resolved.declaration.is_some() {
+            return None;
+        }
         return Some(MirOperand::Symbol(resolved.symbol.clone()));
     }
     match &expr.kind {

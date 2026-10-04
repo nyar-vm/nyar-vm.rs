@@ -1,5 +1,5 @@
 use super::{MirDiagnostic, MirLowerer, MirOperand, MirOperation};
-use crate::{Identifier, NamePath, ValkyrieCompiler, types::hir::{HirCallableDomain, HirExprKind, ValkyrieType}};
+use crate::{Identifier, NamePath, ValkyrieCompiler, types::hir::{HirExprKind, ValkyrieType}};
 
 #[test]
 fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
@@ -19,7 +19,7 @@ fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
 }
 
 #[test]
-fn resolved_operator_path_is_not_reduced_to_a_short_name() {
+fn resolved_callable_identity_survives_diagnostic_name_changes() {
     let mut hir = ValkyrieCompiler::default().compile_source(
         "micro answer() -> i64 { 7 } micro caller() -> i64 { answer() }",
     ).expect("源码必须先完成解析");
@@ -28,15 +28,15 @@ fn resolved_operator_path_is_not_reduced_to_a_short_name() {
         panic!("预期已解析调用");
     };
     let path = NamePath::new(vec![Identifier::new("Owner"), Identifier::new("infix +")]);
+    let instance = resolved.instance.expect("源码解析必须持有实例身份");
     resolved.symbol = path.clone();
-    resolved.domain = HirCallableDomain::Operator;
     let mir = MirLowerer::lower_module_semantic(&hir);
     let caller = mir.functions.iter().find(|function| function.symbol.ends_with("::caller")).unwrap();
     let callees = caller.blocks.iter().flat_map(|block| &block.instructions).filter_map(|instruction| match &instruction.kind {
         MirOperation::Call { callee, .. } => Some(callee.clone()),
         _ => None,
     }).collect::<Vec<_>>();
-    assert_eq!(callees, vec![MirOperand::Symbol(path)]);
+    assert_eq!(callees, vec![MirOperand::Callable(instance)]);
 }
 
 #[test]
@@ -60,11 +60,13 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         ("BooleanOwner.read", ValkyrieType::Boolean),
         ("IntegerOwner.read", ValkyrieType::Integer64 { signed: true }),
     ] {
+        let instance = mir.functions.iter().find(|function| function.symbol == owner)
+            .and_then(|function| function.instance).expect("被调用方法实例");
         let mut matches = 0;
         for function in &mir.functions {
             for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-                if let MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } = &instruction.kind {
-                    if symbol.to_string() == owner {
+                if let MirOperation::Call { callee: MirOperand::Callable(callee), arguments } = &instruction.kind {
+                    if *callee == instance {
                         matches += 1;
                         assert!(arguments.is_empty(), "无 self 声明不得增加接收者");
                         assert_eq!(instruction.results.len(), 1, "非 unit 返回值必须绑定结果");

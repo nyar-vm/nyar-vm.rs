@@ -34,9 +34,10 @@ mod tests {
 
     #[test]
     fn source_without_instance_facts_cannot_mint_identity_from_function_names() {
-        let hir = ValkyrieCompiler::default().compile_source(
+        let mut hir = ValkyrieCompiler::default().compile_source(
             "micro identity(value: i32) -> i32 { return value }",
         ).expect("源码解析");
+        assert!(hir.functions[0].instance.take().is_some());
         let mir = MirLowerer::lower_module_semantic(&hir);
         assert!(mir.callable_identities.is_empty());
         let error = compile_linked_semantic_mir(&mir).expect_err("不能按函数名称补造实例身份");
