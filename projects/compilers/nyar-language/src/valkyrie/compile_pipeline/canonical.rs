@@ -26,14 +26,14 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
     let type_values = collect_types(module)?;
-    let symbols = collect_symbols(module)?;
+    validate_callable_identities(module)?;
     let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
-    for (symbol, instance) in &symbols {
+    for (symbol, instance) in &module.callable_identities {
         let parts = symbol
             .split("::")
             .filter(|part| !part.is_empty())
@@ -59,7 +59,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     linked.fields = field_records;
     for function in &module.functions {
-        let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        let instance = *module.callable_identities.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: item_id(instance.index()),
             substitution: monomorphic_substitution(function)?,
@@ -69,20 +69,20 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     for export in &module.exports {
         let symbol = export.symbol.to_string();
-        let instance = *symbols.get(&symbol).ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
+        let instance = *module.callable_identities.get(&symbol).ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
         if linked.exports.insert(instance, ExportRecord { exported_name: export.exported_name.clone() }).is_some() {
             return Err(error(module, "CAN037", format!("callable `{symbol}` 存在重复导出合同")));
         }
     }
     for entry in &module.entries {
         let symbol = entry.symbol.to_string();
-        let instance = *symbols.get(&symbol).ok_or_else(|| error(module, "CAN038", format!("入口 `{symbol}` 缺少 Compiler callable identity")))?;
+        let instance = *module.callable_identities.get(&symbol).ok_or_else(|| error(module, "CAN038", format!("入口 `{symbol}` 缺少 Compiler callable identity")))?;
         if linked.entries.insert(instance, EntryRecord).is_some() {
             return Err(error(module, "CAN039", format!("callable `{symbol}` 存在重复入口合同")));
         }
     }
     for (offset, contract) in module.external_calls.iter().enumerate() {
-        let instance = *symbols.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
+        let instance = *module.callable_identities.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
             declaration: item_id(instance.index()),
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
@@ -102,8 +102,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     linked.fragments = canonical_fragments(module, &linked, &module.semantic_fragments)?;
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
-        let instance = *symbols.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
-        Ok((instance, lower_function(function, instance, &symbols, &type_values, &nominals, &fields, &mut next_instruction)?))
+        let instance = *module.callable_identities.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
+        Ok((instance, lower_function(function, instance, &type_values, &nominals, &fields, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
@@ -189,33 +189,29 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
     Ok((nominals, fields, field_records))
 }
 
-fn collect_symbols(module: &MirModule) -> Result<BTreeMap<String, ItemInstanceId>, StructuredDiagnosticSet> {
+fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
     if module.callable_identities.is_empty() && (!module.functions.is_empty() || !module.external_calls.is_empty()) {
         return Err(error(module, "CAN034", "Semantic MIR 缺少 Compiler callable identity 表"));
     }
-    let mut symbols = BTreeMap::new();
+    let mut instances = BTreeMap::new();
     for function in &module.functions {
         let Some(identity) = module.callable_identities.get(&function.symbol) else {
             return Err(error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)));
         };
-        insert_symbol(&mut symbols, function.symbol.clone(), *identity, module)?;
+        if instances.insert(*identity, function.symbol.clone()).is_some() {
+            return Err(error(module, "CAN001", format!("callable identity `{identity}` 重复")));
+        }
     }
     for contract in &module.external_calls {
         let symbol = contract.symbol.to_string();
         let Some(identity) = module.callable_identities.get(&symbol) else {
             return Err(error(module, "CAN034", format!("导入 `{symbol}` 缺少 Compiler callable identity")));
         };
-        insert_symbol(&mut symbols, symbol, *identity, module)?;
+        if instances.insert(*identity, symbol.clone()).is_some() {
+            return Err(error(module, "CAN001", format!("callable identity `{identity}` 重复")));
+        }
     }
-    Ok(symbols)
-}
-
-fn insert_symbol(symbols: &mut BTreeMap<String, ItemInstanceId>, symbol: String, id: ItemInstanceId, module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
-    if symbols.insert(symbol.clone(), id).is_some() {
-        Err(error(module, "CAN001", format!("callable identity 重复: {symbol}")))
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
 
 fn collect_types(module: &MirModule) -> Result<BTreeMap<ValkyrieType, TypeId>, StructuredDiagnosticSet> {
@@ -257,7 +253,7 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
     })
 }
 
-fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+fn lower_function(function: &MirFunction, instance: ItemInstanceId, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let parameters = canonical_entry_parameters(function, ids)?;
     let blocks = function.blocks.iter().map(|block| {
@@ -269,7 +265,7 @@ fn lower_function(function: &MirFunction, instance: ItemInstanceId, symbols: &BT
         let instructions = block.instructions.iter().map(|instruction| {
             let id = nyar_types::InstructionId::from_index(*next_instruction).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
             *next_instruction = (*next_instruction).checked_add(1).ok_or_else(|| error_without_module("CAN016", "instruction identity 溢出"))?;
-            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, symbols, ids, nominals, fields)? })
+            Ok(CanonicalInstruction { id, results: instruction.results.iter().map(|value| MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))).collect::<Result<_, _>>()?, operation: lower_operation(&instruction.kind, &instruction.results, &function.value_types, ids, nominals, fields)? })
         }).collect::<Result<_, StructuredDiagnosticSet>>()?;
         Ok((id, CanonicalBlock { id, parameters, instructions, terminator: lower_terminator(&block.terminator)? }))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
@@ -299,7 +295,7 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
     }).collect()
 }
 
-fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, symbols: &BTreeMap<String, ItemInstanceId>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
         MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*identity), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
@@ -586,4 +582,3 @@ mod tests {
         assert_eq!(record.return_type, program.linked.types.iter().find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit)).then_some(*id)).unwrap());
     }
 }
-
