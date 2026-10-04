@@ -527,6 +527,24 @@ impl ValkyrieCompiler {
         Ok(hir)
     }
 
+    /// 正式源码组的第一阶段：只物化 HIR，不解析调用。
+    ///
+    /// 调用解析必须等完整源码闭包进入 Compiler 后统一进行；该入口不产生
+    /// 可执行产物，也不允许被装配层直接使用。
+    pub(crate) fn parse_source_group_without_call_resolution(
+        &self,
+        source: &str,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
+        let mut root = AstParser::parse_root(source)?;
+        expand_tgrammar_in_root(&mut root);
+        expand_macros_in_root(&mut root);
+        let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
+        validate_interop_surface(&hir)?;
+        Ok(hir)
+    }
+
     /// Parses a source file and lowers it into a minimal HIR module.
     pub fn compile_path(&self, path: &Path) -> Result<HirModule, ParseError> {
         let root = AstParser::parse_path(&path.to_path_buf())?;
@@ -571,7 +589,7 @@ impl ValkyrieCompiler {
                 .iter()
                 .map(|name| exports.get(name).cloned().ok_or_else(|| ParseError::invalid(format!("semantic dependency export `{name}` is unavailable for `{}`", group.name))))
                 .collect::<Result<Vec<_>, _>>()?;
-            let hir_module = self.compile_source_with_semantic_exports_and_name(
+            let hir_module = self.parse_source_group_without_call_resolution(
                 &group.source,
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
@@ -589,6 +607,11 @@ impl ValkyrieCompiler {
                 return Err(ParseError::invalid(format!("semantic dependency export identity collision for `{}`", group.dependency_key)));
             }
             hir_groups.push(hir_module);
+        }
+        for hir in &mut hir_groups {
+            resolve_hir_calls(hir);
+            validate_extractor_patterns(hir)?;
+            self.validate_hir_semantic_contract(hir)?;
         }
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let mir_groups = hir_groups
@@ -742,6 +765,19 @@ impl AstToHir {
 
     /// 在 HIR 调用解析前覆盖模块身份；仅供完整 source closure 编译使用。
     pub fn lower_root_with_semantic_exports_and_name(
+        &self,
+        root: &ValkyrieRoot,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name_override: Option<NamePath>,
+    ) -> Result<HirModule, ParseError> {
+        let mut hir = self.lower_root_without_call_resolution(root, imported_semantic_exports, module_name_override)?;
+        resolve_hir_calls(&mut hir);
+        validate_extractor_patterns(&hir)?;
+        Ok(hir)
+    }
+
+    /// 仅物化 HIR；调用身份必须由完整源码组阶段统一解析。
+    pub(crate) fn lower_root_without_call_resolution(
         &self,
         root: &ValkyrieRoot,
         imported_semantic_exports: &[HirDependencySemanticExport],
@@ -909,8 +945,6 @@ impl AstToHir {
             type_aliases,
         };
         hoist_anonymous_classes(&mut hir);
-        resolve_hir_calls(&mut hir);
-        validate_extractor_patterns(&hir)?;
         let mut injector = crate::valkyrie::derive::DeriveInjector::new();
         let derive_result = injector.inject_derives(&mut hir);
         if derive_result.has_errors() {
