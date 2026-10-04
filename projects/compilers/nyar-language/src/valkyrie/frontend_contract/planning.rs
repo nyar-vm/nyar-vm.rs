@@ -533,8 +533,7 @@ fn collect_internal_call_edges_from_expr(
 
             let callee_symbol = resolved
                 .as_ref()
-                .and_then(|resolved| resolve_internal_callee_symbol(caller, &resolved.symbol, module_symbols, external_symbols))
-                .or_else(|| resolve_internal_callee_expr(caller, callee, module_symbols, external_symbols));
+                .and_then(|resolved| resolve_internal_callee_symbol(&resolved.symbol, module_symbols, external_symbols));
 
             if let Some(callee_symbol) = callee_symbol {
                 edges.push(InternalCallEdge::new(caller.clone(), callee_symbol));
@@ -654,7 +653,6 @@ fn collect_internal_call_edges_from_arms_internal(
 }
 
 fn resolve_internal_callee_symbol(
-    caller: &QualifiedName,
     resolved_symbol: &NamePath,
     module_symbols: &[QualifiedName],
     external_symbols: &[QualifiedName],
@@ -663,39 +661,7 @@ fn resolve_internal_callee_symbol(
     if external_symbols.iter().any(|symbol| *symbol == direct) {
         return None;
     }
-    if module_symbols.iter().any(|symbol| *symbol == direct) {
-        return Some(direct);
-    }
-
-    if resolved_symbol.parts().len() != 1 {
-        return None;
-    }
-
-    let mut qualified_parts = if caller.parts().len() > 1 { caller.parts()[..caller.parts().len() - 1].to_vec() } else { Vec::new() };
-    if qualified_parts.is_empty() {
-        qualified_parts.push(Identifier::new("app"));
-    }
-    qualified_parts.extend_from_slice(resolved_symbol.parts());
-    let qualified = QualifiedName::new(qualified_parts);
-    if external_symbols.iter().any(|symbol| *symbol == qualified) {
-        return None;
-    }
-    module_symbols.iter().any(|symbol| *symbol == qualified).then_some(qualified)
-}
-
-fn resolve_internal_callee_expr(
-    caller: &QualifiedName,
-    callee: &HirExpr,
-    module_symbols: &[QualifiedName],
-    external_symbols: &[QualifiedName],
-) -> Option<QualifiedName> {
-    match &callee.kind {
-        HirExprKind::Variable(identifier) => {
-            resolve_internal_callee_symbol(caller, &NamePath::new(vec![identifier.name.clone()]), module_symbols, external_symbols)
-        }
-        HirExprKind::Path(path) => resolve_internal_callee_symbol(caller, path, module_symbols, external_symbols),
-        _ => None,
-    }
+    module_symbols.iter().any(|symbol| *symbol == direct).then_some(direct)
 }
 
 fn collect_external_call_edges_from_block(
@@ -737,8 +703,7 @@ fn collect_external_call_edges_from_expr(
 
             let callee_symbol = resolved
                 .as_ref()
-                .and_then(|resolved| resolve_external_callee_symbol(caller, &resolved.symbol, external_symbols))
-                .or_else(|| resolve_external_callee_expr(caller, callee, external_symbols));
+                .and_then(|resolved| resolve_external_callee_symbol(&resolved.symbol, external_symbols));
 
             if let Some(callee_symbol) = callee_symbol {
                 edges.push(ExternalCallEdge::new(
@@ -849,40 +814,11 @@ fn collect_external_call_edges_from_arms(
 }
 
 fn resolve_external_callee_symbol(
-    caller: &QualifiedName,
     resolved_symbol: &NamePath,
     external_symbols: &[QualifiedName],
 ) -> Option<QualifiedName> {
     let direct = qualified_name(resolved_symbol);
-    if external_symbols.iter().any(|symbol| *symbol == direct) {
-        return Some(direct);
-    }
-
-    if resolved_symbol.parts().len() != 1 {
-        return None;
-    }
-
-    let simple = resolved_symbol.parts().last()?;
-    if caller.parts().len() > 1 {
-        let mut qualified_parts = caller.parts()[..caller.parts().len() - 1].to_vec();
-        qualified_parts.push(simple.clone());
-        let qualified = QualifiedName::new(qualified_parts);
-        if external_symbols.iter().any(|symbol| *symbol == qualified) {
-            return Some(qualified);
-        }
-    }
-
-    external_symbols.iter().find(|symbol| symbol.parts().last() == Some(simple)).cloned()
-}
-
-fn resolve_external_callee_expr(caller: &QualifiedName, callee: &HirExpr, external_symbols: &[QualifiedName]) -> Option<QualifiedName> {
-    match &callee.kind {
-        HirExprKind::Variable(identifier) => {
-            resolve_external_callee_symbol(caller, &NamePath::new(vec![identifier.name.clone()]), external_symbols)
-        }
-        HirExprKind::Path(path) => resolve_external_callee_symbol(caller, path, external_symbols),
-        _ => None,
-    }
+    external_symbols.iter().any(|symbol| *symbol == direct).then_some(direct)
 }
 
 fn external_call_argument(expr: &HirExpr) -> Option<ExternalCallArgument> {
@@ -1047,4 +983,28 @@ fn witness_submission_from_impl(trait_impl: &HirImpl) -> Option<WitnessSubmissio
         methods,
         result_literal,
     })
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn path(parts: &[&str]) -> NamePath {
+        NamePath::new(parts.iter().map(|part| Identifier::new(part)).collect())
+    }
+
+    #[test]
+    fn planning_accepts_only_an_exact_resolved_callable_path() {
+        let symbols = vec![QualifiedName::new(vec![Identifier::new("std"), Identifier::new("io")])];
+        let imports = Vec::new();
+        assert_eq!(resolve_internal_callee_symbol(&path(&["std", "io"]), &symbols, &imports), Some(symbols[0].clone()));
+        assert_eq!(resolve_internal_callee_symbol(&path(&["io"]), &symbols, &imports), None);
+    }
+
+    #[test]
+    fn planning_does_not_rebind_an_external_suffix() {
+        let symbols = vec![QualifiedName::new(vec![Identifier::new("dep"), Identifier::new("read")])];
+        assert_eq!(resolve_external_callee_symbol(&path(&["read"]), &symbols), None);
+        assert_eq!(resolve_external_callee_symbol(&path(&["dep", "read"]), &symbols), Some(symbols[0].clone()));
+    }
 }
