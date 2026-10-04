@@ -176,6 +176,61 @@ mod source_group_tests {
     }
 
     #[test]
+    fn compiler_links_transitive_calls_by_instance_and_excludes_unused_bodies() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "base".into(), name: "base".into(),
+                source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into(),
+                direct_dependencies: vec![],
+            },
+            CompilerSourceGroup {
+                dependency_key: "library".into(), name: "library".into(),
+                source: "micro relay() -> i32 { return answer() }".into(),
+                direct_dependencies: vec!["base".into()],
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(), name: "app".into(),
+                source: "micro run() -> i32 { return relay() }".into(),
+                direct_dependencies: vec!["library".into()],
+            },
+        ];
+        let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("实例闭包必须贯穿 Canonical 校验及表示规划");
+        let program = output.canonical();
+        assert_eq!(program.mir.functions.len(), 3);
+        assert!(!program.linked.callable_names.values().any(|name| name.to_string() == "base::unused"));
+        let calls = program.mir.functions.values().flat_map(|function| function.blocks.values())
+            .flat_map(|block| &block.instructions).filter_map(|instruction| {
+                if let nyar_types::CanonicalOperation::Invoke { callee: nyar_types::CanonicalCallee::Item(instance), .. } = instruction.operation {
+                    Some(instance)
+                } else { None }
+            }).collect::<Vec<_>>();
+        assert_eq!(calls.len(), 2);
+        assert!(calls.iter().all(|instance| program.mir.functions.contains_key(instance)));
+    }
+
+    #[test]
+    fn constructor_identities_are_registered_before_overload_selection() {
+        let compiler = ValkyrieCompiler::default();
+        let hir = compiler.compile_source(
+            "structure Packet { value: i32 } unite State { Ready { value: i32 }, Empty } micro run(value: i32) -> Packet { let packet = Packet { value: value }; return packet }",
+        ).expect("源码构造声明");
+        let structure = &hir.structs[0];
+        let variant = &hir.enums[0].variants[0];
+        let structure_declaration = structure.constructor_declaration.expect("结构构造声明 identity");
+        assert!(structure.constructor_instance.is_some());
+        assert!(variant.instance.is_some());
+        assert_ne!(Some(structure_declaration), variant.declaration);
+        let super::HirStatementKind::Let { initializer: Some(expression), .. } = &hir.functions[0].body.statements[0].kind else {
+            panic!("缺少构造表达式");
+        };
+        let super::HirExprKind::Construct { resolved: Some(call), .. } = &expression.kind else {
+            panic!("构造调用未绑定");
+        };
+        assert_eq!(call.declaration, Some(structure_declaration));
+        assert_eq!(call.instance, structure.constructor_instance);
+    }
+
+    #[test]
     fn compiler_carries_fragment_contracts_into_canonical_program() {
         let output = ValkyrieCompiler::default()
             .compile_source_to_program(
@@ -691,11 +746,20 @@ impl ValkyrieCompiler {
     pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
         let mut hir_groups = self.resolve_source_groups(groups)?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        let mir_groups = hir_groups
+        let mut mir_groups = hir_groups
             .iter()
             .map(crate::valkyrie::mir::MirLowerer::lower_module_semantic)
             .collect::<Vec<_>>();
         let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
+        let modules = std::iter::once(&final_mir).chain(mir_groups.iter()).collect::<Vec<_>>();
+        let functions = modules.iter().flat_map(|module| module.functions.iter().cloned()).collect::<Vec<_>>();
+        let imports = modules.iter().flat_map(|module| module.external_calls.iter().cloned()).collect::<Vec<_>>();
+        let structures = modules.iter().flat_map(|module| module.structs.iter().cloned()).collect::<Vec<_>>();
+        let type_identities = crate::valkyrie::mir::ssa::type_identity_table(&functions, &imports, &structures);
+        final_mir.type_identities = type_identities.clone();
+        for module in &mut mir_groups {
+            module.type_identities = type_identities.clone();
+        }
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }

@@ -788,7 +788,7 @@ impl MirLowerer {
 
 }
 
-fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
+pub(crate) fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
     fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
         match ty {
             ValkyrieType::Apply(base, args) => { collect(set, base); for arg in args { collect(set, arg); } }
