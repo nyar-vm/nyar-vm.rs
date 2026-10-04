@@ -1863,24 +1863,12 @@ fn match_singleton_method_candidate(
     let actual_types = if param_specs.is_empty() {
         call_args.iter().map(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     }
-    else if let Ok(bound) = bind_call_arguments(&param_specs, call_args) {
+    else {
+        let bound = bind_call_arguments(&param_specs, call_args).ok()?;
         bound
             .iter()
-            .zip(param_specs.iter())
-            .map(|(arg, param)| infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names).unwrap_or_else(|| param.ty.clone()))
-            .collect()
-    }
-    else if call_args.len() == param_specs.len() {
-        call_args
-            .iter()
-            .zip(param_specs.iter())
-            .map(|(arg, param)| {
-                infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names).unwrap_or_else(|| param.ty.clone())
-            })
-            .collect()
-    }
-    else {
-        return None;
+            .map(|arg| infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names))
+            .collect::<Option<Vec<_>>>()?
     };
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_types)?;
     let mut matched = candidate.clone();
@@ -2996,6 +2984,25 @@ mod identity_tests {
             true,
         ).expect("singleton 匹配不得擦除 self 或声明合同");
         assert_eq!(matched, declaration);
+    }
+
+    #[test]
+    fn singleton_matching_rejects_an_argument_without_a_type_fact() {
+        let declaration = declaration_candidate();
+        let span = crate::types::SourceSpan::new(SourceID::default(), 0, 0);
+        let unknown = HirCallArgument::positional(HirExpr {
+            kind: HirExprKind::Variable(HirIdentifier { name: Identifier::new("unknown"), shadow_index: 0, span: span.clone() }),
+            span,
+        });
+        assert!(match_singleton_method_candidate(
+            &declaration,
+            &[unknown],
+            &TypeRelationContext::from_module(&HirModule::default()),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            true,
+        ).is_none());
     }
 
     fn declaration_candidate() -> OverloadCandidate {
