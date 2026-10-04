@@ -117,7 +117,7 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
         .filter(|operation| !is_direct_clr_import(submission, operation))
         .map(|operation| lower_operation_method(submission, operation))
         .collect::<Result<Vec<_>>>()?;
-    let legion_cli = submission.entry_operation.as_ref().is_some_and(|entry| is_cli_entry_main(submission, entry));
+    let legion_cli = submission.entry_operation.is_some_and(|entry| is_cli_entry_main(submission, entry));
     let entry_name = if legion_cli {
         "Main".to_string()
     }
@@ -139,7 +139,9 @@ pub(crate) fn lower_fragment_to_msil(submission: &FragmentSubmission) -> Result<
     let entry_instructions = if legion_cli {
         let entry_operation = submission.entry_operation.as_ref().expect("legion cli requires entry operation");
         let signature = method_signature_for(submission, entry_operation)?;
-        lower_entry_with_cli_args(entry_operation, signature)
+        let entry_name = submission.backend_plan.abi_name_for_instance(*entry_operation)
+            .ok_or_else(|| miette!("CLR entry instance 缺少 ABI 标签"))?;
+        lower_entry_with_cli_args(&entry_name.to_string(), signature)
     }
     else {
         lower_entry_instructions(submission, submission.entry_operation.as_ref())?

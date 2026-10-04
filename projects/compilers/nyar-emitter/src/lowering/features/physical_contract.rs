@@ -113,7 +113,7 @@ pub(crate) fn build_physical_plan(
 ) -> Result<Vec<PhysicalFunctionPlan>, PhysicalPlanError> {
     let executable = &submission.backend_plan;
     executable
-        .operations()
+        .instances()
         .into_iter()
         .map(|operation| {
             let view = executable.get_function(&operation).ok_or_else(|| PhysicalPlanError {
@@ -199,7 +199,7 @@ fn build_function_plan(
                 }
                 ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => continue,
             };
-            let Some(callee_view) = executable.get_function_by_instance(callee) else {
+            let Some(callee_view) = executable.get_function(&callee) else {
                 return Err(PhysicalPlanError::new(
                     "BPHYS004",
                     function,
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn entry_requires_an_exact_semantic_function() {
         let mut submission = submission(Vec::new());
-        submission.entry_operation = Some(QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("entry")]));
+        submission.entry_operation = Some(nyar_types::ItemInstanceId::from_index(0).expect("缺失的入口实例"));
         let error = validate_physical_submission(&submission, PhysicalBackend::WasiComponent)
             .expect_err("entry cannot be synthesized without Semantic MIR");
         assert_eq!(error.code, "BPHYS008");

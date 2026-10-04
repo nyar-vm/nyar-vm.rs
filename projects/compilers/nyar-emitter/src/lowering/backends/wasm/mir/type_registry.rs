@@ -27,7 +27,7 @@ use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) -> BTreeSet<LayoutId> {
     let mut ids = BTreeSet::new();
     let exec = &ctx.submission.backend_plan;
-    for operation in exec.operations() {
+    for operation in exec.instances() {
         let Some(view) = exec.get_function(&operation)
         else {
             continue;
@@ -155,7 +155,7 @@ pub(super) fn register_gc_array_types(
     };
     {
         let exec = &ctx.submission.backend_plan;
-        for operation in exec.operations() {
+        for operation in exec.instances() {
             let Some(view) = exec.get_function(&operation)
             else {
                 continue;

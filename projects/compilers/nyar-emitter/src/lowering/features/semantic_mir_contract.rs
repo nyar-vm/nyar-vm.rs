@@ -7,14 +7,13 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    BackendPrivatePlan,
     FragmentSubmission,
     backend_plan_views::{
         ExecutableFunction, ExecutableInstructionKind, ExecutableOperand,
     },
 };
 use nyar::QualifiedName;
-use nyar_types::{AggregateLayout, Constant, NamePath, NyarFunctionType, NyarType, ValueOrigin};
+use nyar_types::{AggregateLayout, Constant, NyarFunctionType, NyarType, ValueOrigin};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SemanticMirContractError {
@@ -57,7 +56,7 @@ pub(crate) fn validate_submission(submission: &FragmentSubmission) -> Result<(),
 
     let executable = &submission.backend_plan;
 
-    for operation in executable.operations() {
+    for operation in executable.instances() {
         let Some(view) = executable.get_function(&operation)
         else {
             return Err(SemanticMirContractError {
@@ -581,22 +580,6 @@ fn result_or_option_alias_compatible(actual: &NyarType, expected: &NyarType) -> 
     }
 }
 
-/// 与 `nyar-language` 运算符注册表保持对齐。
-fn is_language_operator_symbol(path: &NamePath) -> bool {
-    let name = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-    nyar_types::builtin_operator::lookup_display_name(name).is_some()
-}
-
-/// Language builtins / private intrinsic seeds — identity via [`IntrinsicId`]，不是 `builtin.array.push` 字符串三分支。
-fn is_language_builtin_symbol(path: &NamePath) -> bool {
-    let parts = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-    nyar_types::IntrinsicId::resolve_from_segments(&parts).is_some()
-}
-
-fn static_callee_is_registered(executable: &BackendPrivatePlan, path: &NamePath) -> bool {
-    executable.get_function(&QualifiedName::new(path.parts().to_vec())).is_some()
-}
-
 fn validate_static_call_resolution(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
@@ -607,7 +590,7 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
             let location = format!("block {} instruction {index}", block.id.0);
             match callee {
                 ExecutableOperand::Item(instance) => {
-                    let local = submission.backend_plan.get_function_by_instance(*instance).is_some();
+                    let local = submission.backend_plan.get_function(instance).is_some();
                     let external = submission.backend_plan.imports().contains_key(instance);
                     if !local && !external {
                         return Err(SemanticMirContractError {
@@ -618,7 +601,6 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
                         });
                     }
                 }
-                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => {}
                 ExecutableOperand::Symbol(path) => {
                     return Err(SemanticMirContractError {
                         code: "SMIR003",

@@ -703,21 +703,21 @@ pub struct FragmentSubmission {
     /// 当前语义片段标识。
     pub fragment_id: Identifier,
     /// 当前片段导出的稳定操作。
-    pub exported_operations: Vec<QualifiedName>,
+    pub exported_operations: Vec<nyar_types::ItemInstanceId>,
     /// 当前片段要求的能力约束。
     pub required_capabilities: Vec<CapabilityTag>,
     /// 当前片段携带的理论 bundle。
     pub theory_bundle: TheoryBundle,
     /// 当前片段的可解释入口。
-    pub entry_operation: Option<QualifiedName>,
+    pub entry_operation: Option<nyar_types::ItemInstanceId>,
     /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。
-    pub wasm_export_names: std::collections::BTreeMap<QualifiedName, String>,
+    pub wasm_export_names: std::collections::BTreeMap<nyar_types::ItemInstanceId, String>,
     /// 当前片段内稳定操作到外部导入链接的映射。
-    pub external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
+    pub external_import_links: BTreeMap<nyar_types::ItemInstanceId, ExternalImportLink>,
     /// 当前片段内已经解析好的外部调用边。
-    pub external_call_edges: Vec<ExternalCallEdge>,
+    pub external_call_edges: Vec<nyar_types::CanonicalExternalCallEdge>,
     /// 当前片段内已经解析好的内部调用边。
-    pub internal_call_edges: Vec<InternalCallEdge>,
+    pub internal_call_edges: Vec<nyar_types::CanonicalCallEdge>,
     /// 具名 trait 见证表载荷。
     pub witness_tables: Vec<WitnessSubmission>,
     /// 入口 witness 动态调用边。
@@ -880,7 +880,7 @@ impl LoweredBackendInput {
                 host_flavor,
                 wasm_package_kind,
             )?,
-            entry_artifact_name: submission.entry_operation.as_ref().and_then(entry_artifact_name),
+            entry_artifact_name: submission.entry_operation.and_then(|instance| submission.backend_plan.abi_name_for_instance(instance)).as_ref().and_then(entry_artifact_name),
         })
     }
 

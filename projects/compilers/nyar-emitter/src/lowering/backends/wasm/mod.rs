@@ -67,7 +67,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
         miette::miette!("physical contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
     })?;
     validate_text_encoding_projection(submission, host_boundary)?;
-    let has_executable = !submission.backend_plan.operations().is_empty();
+    let has_executable = !submission.backend_plan.instances().is_empty();
     if !has_executable {
         return Err(miette!("WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"));
     }
@@ -109,7 +109,7 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
 /// of the language encoding it represents.
 fn validate_text_encoding_projection(submission: &FragmentSubmission, host_boundary: HostProjectionBoundary) -> Result<()> {
     let executable = &submission.backend_plan;
-    for operation in executable.operations() {
+    for operation in executable.instances() {
         let Some(view) = executable.get_function(&operation)
         else {
             continue;

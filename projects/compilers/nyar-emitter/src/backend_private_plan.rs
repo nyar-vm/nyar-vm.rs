@@ -20,7 +20,7 @@ use crate::{
 #[cfg_attr(test, derive(Default))]
 pub struct BackendPrivatePlan {
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
-    abi_names: BTreeMap<QualifiedName, ItemInstanceId>,
+    abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
 }
 
@@ -39,7 +39,7 @@ impl BackendPrivatePlan {
         let mut plan = Self::default();
         for (index, (name, function)) in functions.into_iter().enumerate() {
             let instance = ItemInstanceId::from_index(u32::try_from(index).expect("测试函数身份溢出")).expect("测试函数身份溢出");
-            plan.abi_names.insert(name, instance);
+            plan.abi_names.insert(instance, name);
             plan.functions.insert(instance, function);
         }
         plan
@@ -80,9 +80,7 @@ impl BackendPrivatePlan {
             }
             let name = canonical.linked.callable_names.get(&instance)
                 .ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
-            if let Some(previous) = abi_names.insert(name.clone(), instance) {
-                return Err(miette!("callable 实例 `{previous:?}` 与 `{instance:?}` 共享 ABI 名称 `{name}`，拒绝覆盖函数体"));
-            }
+            abi_names.insert(instance, name.clone());
             let function = canonical.mir.functions.get(&instance)
                 .ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
             let (lowered, callees) = lower_function(program, function)?;
@@ -92,38 +90,24 @@ impl BackendPrivatePlan {
         Ok(Self { functions, abi_names, imports })
     }
 
-    pub fn instances(&self) -> impl Iterator<Item = ItemInstanceId> + '_ {
-        self.functions.keys().copied()
-    }
-
     pub fn imports(&self) -> &BTreeMap<ItemInstanceId, BackendImport> {
         &self.imports
     }
 
-    pub fn operations(&self) -> Vec<QualifiedName> {
-        self.abi_names.keys().cloned().collect()
+    pub fn instances(&self) -> Vec<ItemInstanceId> {
+        self.functions.keys().copied().collect()
     }
 
-    pub fn get_function(&self, operation: &QualifiedName) -> Option<FunctionView> {
-        let instance = self.abi_names.get(operation)?;
+    pub fn get_function(&self, instance: &ItemInstanceId) -> Option<FunctionView> {
         self.functions.get(instance).cloned().map(|function| FunctionView { function })
     }
 
-    pub fn get_function_by_instance(&self, instance: ItemInstanceId) -> Option<FunctionView> {
-        self.functions.get(&instance).cloned().map(|function| FunctionView { function })
-    }
-
     pub fn abi_name_for_instance(&self, instance: ItemInstanceId) -> Option<QualifiedName> {
-        self.abi_names.iter().find_map(|(name, candidate)| (*candidate == instance).then_some(name.clone()))
+        self.abi_names.get(&instance).cloned()
     }
 
-    pub fn instance_for_operation(&self, operation: &QualifiedName) -> Option<ItemInstanceId> {
-        self.abi_names.get(operation).copied()
-    }
-
-    pub fn suspend_metadata(&self, operation: &QualifiedName) -> Option<SuspendMetadataView> {
-        let instance = self.abi_names.get(operation)?;
-        self.functions.get(instance).and_then(SuspendMetadataView::from_function)
+    pub fn suspend_metadata(&self, instance: ItemInstanceId) -> Option<SuspendMetadataView> {
+        self.functions.get(&instance).and_then(SuspendMetadataView::from_function)
     }
 }
 
@@ -257,15 +241,18 @@ mod representation_contract_tests {
     use super::*;
 
     fn source_program() -> CompiledProgram {
+        source_program_from(
+            "micro identity(value: i32) -> i32 { return value } \
+             micro entry(value: i32) -> i32 { return identity(value) }",
+        )
+    }
+
+    fn source_program_from(source: &str) -> CompiledProgram {
         use nyar_types::pipeline::RepresentationPlanStage;
         let hir = nyar_language::ValkyrieCompiler::default()
-            .compile_source(
-                "micro identity(value: i32) -> i32 { return value } \
-                 micro entry(value: i32) -> i32 { return identity(value) }",
-            )
+            .compile_source(source)
             .expect("单测源码必须完成 HIR 分析");
-        let mut mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
-        nyar_language::valkyrie::mir::ssa::resolve_callable_operands(&mut mir);
+        let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
         let canonical = nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
             .expect("单测 MIR 必须满足 Canonical 合同");
         let representation = nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical)
@@ -307,6 +294,118 @@ mod representation_contract_tests {
             .expect("目标准备必须消费同一根身份");
         assert!(plan.functions.contains_key(&root));
         assert_eq!(plan.functions[&root].symbol, "renamed_boundary");
+    }
+
+    #[test]
+    fn operator_and_builtin_spellings_cannot_bypass_call_identity_validation() {
+        let program = source_program();
+        for parts in [vec!["infix +"], vec!["builtin", "array", "push"]] {
+            let mut plan = prepare(&program).expect("源码计划必须成功");
+            let call = plan.functions.values_mut().flat_map(|function| &mut function.blocks)
+                .flat_map(|block| &mut block.instructions).find_map(|instruction| match &mut instruction.kind {
+                    InstructionKind::Call { callee, .. } => Some(callee),
+                    _ => None,
+                }).expect("源码包含调用");
+            *call = Operand::Symbol(nyar::NamePath::new(parts.iter().map(|part| nyar::Identifier::new(part)).collect()));
+            let submission = crate::FragmentSubmission { backend_plan: std::sync::Arc::new(plan), ..Default::default() };
+            let error = crate::lowering::features::semantic_mir_contract::validate_submission(&submission)
+                .expect_err("拼写属于 builtin 或 operator 也不能替代实例合同");
+            assert_eq!(error.code, "SMIR003");
+        }
+    }
+
+    #[test]
+    fn duplicate_abi_labels_preserve_wasm_export_and_call_targets() {
+        let source = source_program_from(
+            "micro identity(value: i32) -> i32 { return value } \
+             micro entry(value: i32) -> i32 { return identity(17) }",
+        );
+        let mut canonical = source.canonical().clone();
+        let exports = canonical.linked.callable_names.clone();
+        for name in canonical.linked.callable_names.values_mut() {
+            *name = QualifiedName::new(vec![nyar::Identifier::new("same_label")]);
+        }
+        let program = CompiledProgram::new(canonical, source.representation().clone()).expect("标签不改变语义合同");
+        let submission = crate::FragmentSubmission {
+            wasm_export_names: exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect(),
+            backend_plan: std::sync::Arc::new(prepare(&program).expect("独立实例必须可准备")),
+            ..Default::default()
+        };
+        let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module(
+            &submission, nyar::HostProjectionBoundary::WasmJsGlue,
+        ).expect("Wasm 调用和导出只能沿实例编码");
+        let directory = tempfile::tempdir().expect("测试目录");
+        let artifact = directory.path().join("identity.wasm");
+        std::fs::write(&artifact, module.to_bytes().expect("Wasm 编码成功")).expect("写入测试产物");
+        let output = std::process::Command::new("node").args(["--input-type=module", "-e",
+            "import {readFileSync} from 'node:fs'; const {instance}=await WebAssembly.instantiate(readFileSync(process.argv[1])); if(instance.exports.identity(41)!==41 || instance.exports.entry(41)!==17) throw new Error('wrong instance target');",
+        ]).arg(&artifact).output().expect("Node 必须运行");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    #[test]
+    fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
+        let program = source_program_from("micro identity(value: i64) -> i64 { return value }");
+        let exports = program.canonical().linked.callable_names.clone();
+        let submission = crate::FragmentSubmission {
+            wasm_export_names: exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect(),
+            backend_plan: std::sync::Arc::new(prepare(&program).expect("标量导出有完整实例合同")),
+            ..Default::default()
+        };
+        let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module_for(
+            &submission, nyar::HostProjectionBoundary::WasmJsGlue,
+            crate::nyar_backend_wasi::WasiPreview::Preview2, crate::nyar_backend_wasi::WasmPackageKind::Library,
+        ).expect("标量库不得要求 ArrayList 函数或字段布局");
+        let section = module.sections.iter().find(|section| section.name.as_deref() == Some("nyar.library_invoke"))
+            .expect("必须提供明确导出 ABI");
+        let metadata: serde_json::Value = serde_json::from_slice(&section.bytes).expect("ABI JSON 有效");
+        assert_eq!(metadata["exports"]["identity"]["params"], serde_json::json!(["i64"]));
+        assert_eq!(metadata["exports"]["identity"]["returns"], "i64");
+        assert_eq!(metadata["glue"], serde_json::json!({}));
+    }
+
+    #[cfg(feature = "nyar-vm-lane")]
+    #[test]
+    fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
+        let source = source_program();
+        let mut canonical = source.canonical().clone();
+        let instances = canonical.mir.functions.keys().copied().collect::<Vec<_>>();
+        assert_eq!(instances.len(), 2);
+        for instance in &instances {
+            canonical.linked.callable_names.insert(*instance, QualifiedName::new(vec![nyar::Identifier::new("same_label")]));
+        }
+        let program = CompiledProgram::new(canonical, source.representation().clone()).expect("诊断名不能改变实例身份");
+        let plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
+        let submission = crate::FragmentSubmission {
+            exported_operations: instances.clone(),
+            wasm_export_names: instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect(),
+            backend_plan: std::sync::Arc::new(plan),
+            ..Default::default()
+        };
+        let module = crate::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&submission)
+            .expect("只允许沿已绑定实例发射");
+        assert_eq!(module.functions.len(), 2);
+        assert_eq!(module.exports.len(), 2);
+        for (index, export) in module.exports.iter().enumerate() {
+            assert_eq!(export.symbol_name, format!("export_{index}"));
+            assert_eq!(export.function_index, index as i32);
+        }
+        let mut calls = Vec::new();
+        let mut position = 0;
+        while position < module.code_bytes.len() {
+            let instruction = nyar_bytecode::decode_at(&module.code_bytes, position);
+            assert!(instruction.size > 0, "字节码必须可解码");
+            if instruction.code == nyar_bytecode::NyarHeadCode::Call {
+                calls.push(instruction.operand1);
+            }
+            position += instruction.size as usize;
+        }
+        let callee = source.canonical().mir.functions.values().flat_map(|function| function.blocks.values())
+            .flat_map(|block| &block.instructions).find_map(|instruction| match &instruction.operation {
+                CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), .. } => Some(*instance),
+                _ => None,
+            }).expect("源码包含普通调用");
+        assert_eq!(calls, vec![instances.iter().position(|instance| *instance == callee).expect("目标实例存在") as i32]);
     }
 
     #[test]

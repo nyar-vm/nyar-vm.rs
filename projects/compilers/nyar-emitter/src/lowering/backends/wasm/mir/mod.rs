@@ -13,6 +13,7 @@
 //! - **Node (`main`) and WASI (`_start`)**: both register structtype + arraytype (V8 13.6+ / wasmtime)
 
 use std::collections::{BTreeMap, BTreeSet};
+use miette::miette;
 
 use crate::{
     backend_plan_views::{
@@ -197,7 +198,7 @@ fn expand_wasi_cli_stream_intrinsics(imports: &mut Vec<(String, String)>) {
     }
 }
 
-fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[QualifiedName]) -> Vec<String> {
+fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[nyar_types::ItemInstanceId]) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut literals = Vec::new();
     let exec = &submission.backend_plan;
@@ -449,8 +450,8 @@ fn build_param_types_by_instance(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> BTreeMap<ItemInstanceId, Vec<u8>> {
-    submission.backend_plan.instances().map(|instance| {
-        let view = submission.backend_plan.get_function_by_instance(instance).expect("Compiler 实例必须有函数体");
+    submission.backend_plan.instances().into_iter().map(|instance| {
+        let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
         (instance, wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
     }).collect()
 }
@@ -461,8 +462,8 @@ fn build_return_types_by_instance(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> BTreeMap<ItemInstanceId, Option<u8>> {
-    submission.backend_plan.instances().map(|instance| {
-        let view = submission.backend_plan.get_function_by_instance(instance).expect("Compiler 实例必须有函数体");
+    submission.backend_plan.instances().into_iter().map(|instance| {
+        let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
         (instance, wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
     }).collect()
 }
@@ -486,7 +487,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> miette::Result<(WasmBinaryModule, Vec<(String, String)>)> {
     let wasi_mode = export_name == "_start";
-    let operations: Vec<QualifiedName> = submission.backend_plan.operations();
+    let operations = submission.backend_plan.instances();
     let string_literals = if export_name == "main" || wasi_mode { collect_mir_string_literals(submission, &operations) } else { Vec::new() };
     let host_imports = if wasi_mode {
         collect_wasi_host_imports(submission, wasi_preview)
@@ -559,37 +560,29 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // WASI 轨：构建字符串字面量到线性内存偏移量的映射，存入 data 段?
     let string_literal_offset = if wasi_mode { build_wasi_string_literal_offsets(&string_literals) } else { BTreeMap::new() };
     let const_utf8_import = const_utf8_import_index(&host_imports);
-    let entry_matches =
-        submission.entry_operation.as_ref().is_some_and(|op| submission.backend_plan.get_function(op).is_some());
     // 仅对确有 MIR 体的 operation 分配稠密函数下标，避免「operations 枚举下标」与
     // `code_bodies.len()` 错位：错位时 call 会打到别人的 (param i64) 却按本函?anyref 签名?ref.null?
-    let mir_operations: Vec<(QualifiedName, _)> = operations
+    let mir_operations: Vec<(nyar_types::ItemInstanceId, _)> = operations
         .iter()
         .filter_map(|operation| {
-            submission.backend_plan.get_function(operation).map(|view| (operation.clone(), view.function))
+            submission.backend_plan.get_function(operation).map(|view| (*operation, view.function))
         })
         .collect();
     eprintln!("[wasm::module-stage] mir_operations={} types={}", mir_operations.len(), type_indices.len());
-    let base_function_index = if entry_matches { import_count } else { import_count + 1 };
-    // 构建 function_index_by_name / type_index_by_name：完整路径必注册?
-    // 简单名仅在无碰撞时注册（`get`/`length` 等多 overload 不得覆盖）?
-    let mut function_index_by_name: BTreeMap<String, u32> = BTreeMap::new();
+    let base_function_index = import_count;
     let mut function_index_by_instance = BTreeMap::new();
     let mut type_index_by_instance = BTreeMap::new();
     let mut param_types_by_function_index: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
-    for (dense, (operation, mir_fn)) in mir_operations.iter().enumerate() {
-        let full = operation.to_string();
+    for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let wasm_idx = base_function_index + dense as u32;
         let type_idx = function_type_base + dense as u32;
         let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref);
         param_types_by_function_index.insert(wasm_idx, params);
         return_types_by_function_index.insert(wasm_idx, ret);
-        function_index_by_name.insert(full.clone(), wasm_idx);
-        let instance = submission.backend_plan.instance_for_operation(operation).expect("目标函数必须保留 Compiler 实例身份");
-        function_index_by_instance.insert(instance, wasm_idx);
-        type_index_by_instance.insert(instance, type_idx);
+        function_index_by_instance.insert(*instance, wasm_idx);
+        type_index_by_instance.insert(*instance, type_idx);
     }
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
     let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
@@ -610,11 +603,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         .collect();
     let mut mir_wasm_functions: Vec<(u32, String)> = Vec::new();
 
-    for (dense, (operation, mir_fn)) in mir_operations.iter().enumerate() {
+    for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
+        let full = submission.backend_plan.abi_name_for_instance(*instance)
+            .ok_or_else(|| miette!("函数实例缺少 ABI 标签"))?.to_string();
         eprintln!(
             "[wasm::function-lower-start] dense={dense}/{} symbol={} blocks={} instructions={}",
             mir_operations.len(),
-            operation,
+            full,
             mir_fn.blocks.len(),
             mir_fn.blocks.iter().map(|block| block.instructions.len()).sum::<usize>(),
         );
@@ -630,8 +625,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_indices.push(fn_type);
         let type_index = function_type_base + dense as u32;
         function_indices.push(type_index);
-        // 物理 code 下标始终?import_count 稠密排列；`!entry_matches` 时名称表已按
-        // base=import_count+1 预留合成入口，插入入口体后再与名称表对齐?
         let wasm_index = import_count + u32::try_from(code_bodies.len()).expect("code body index overflow");
         code_bodies.push(wasm_function_body(lower_mir_function_to_wasm_bytes(
             submission,
@@ -658,101 +651,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &string_literal_offset,
             const_utf8_import,
         )));
-        eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={operation}", mir_operations.len());
-        mir_wasm_functions.push((wasm_index, operation.to_string()));
-        if let Some(public_name) = submission.wasm_export_names.get(operation) {
-            let export_index = function_index_by_name.get(&operation.to_string()).copied().unwrap_or(wasm_index);
-            exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), export_index));
+        eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
+        mir_wasm_functions.push((wasm_index, full.clone()));
+        if let Some(public_name) = submission.wasm_export_names.get(instance) {
+            exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));
         }
-        else if submission.entry_operation.as_ref() == Some(operation) {
-            // 导出下标与名称表一致（entry_matches ?== 物理下标）?
-            let export_index = function_index_by_name.get(&operation.to_string()).copied().unwrap_or(wasm_index);
-            exports.push((export_name, WasmExternalKind::Func.as_u8(), export_index));
+        else if submission.entry_operation.as_ref() == Some(instance) {
+            exports.push((export_name, WasmExternalKind::Func.as_u8(), wasm_index));
         }
     }
 
-    if exports.is_empty() && submission.wasm_export_names.is_empty() {
-        assert!(
-            wasm_package_kind != crate::nyar_backend_wasi::WasmPackageKind::Library,
-            "library wasm package must not synthesize stub main"
-        );
-        function_indices.insert(0, 0);
-        let entry = submission
-            .entry_operation
-            .as_ref()
-            .and_then(|op| submission.backend_plan.get_function(op))
-            .map(|view| view.function);
-        let body = if let Some(mir_fn) = entry {
-            lower_mir_function_to_wasm_bytes(
-                submission,
-                &mir_fn,
-                wasm_return_value_type(&ctx, &mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref),
-                js_glue_utf8_as_anyref,
-                wasi_mode,
-                &function_index_by_instance,
-                &type_index_by_instance,
-                &param_types_by_instance,
-                &return_types_by_instance,
-                &param_types_by_function_index,
-                &return_types_by_function_index,
-                &import_param_types,
-                &import_return_types,
-                &gc_struct_type_indices,
-                &gc_array_type_indices,
-                &gc_sum_type_indices,
-                gc_i32_box_type_index,
-                gc_i64_box_type_index,
-                &callee_import_index,
-                &host_imports,
-                &string_literal_index,
-                &string_literal_offset,
-                const_utf8_import,
-            )
-        }
-        else if let Some(mir_fn) = submission
-            .backend_plan
-            .operations()
-            .into_iter()
-            .next()
-            .and_then(|op| submission.backend_plan.get_function(&op))
-            .map(|view| view.function)
-        {
-            lower_mir_function_to_wasm_bytes(
-                submission,
-                &mir_fn,
-                wasm_return_value_type(&ctx, &mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref),
-                js_glue_utf8_as_anyref,
-                wasi_mode,
-                &function_index_by_instance,
-                &type_index_by_instance,
-                &param_types_by_instance,
-                &return_types_by_instance,
-                &param_types_by_function_index,
-                &return_types_by_function_index,
-                &import_param_types,
-                &import_return_types,
-                &gc_struct_type_indices,
-                &gc_array_type_indices,
-                &gc_sum_type_indices,
-                gc_i32_box_type_index,
-                gc_i64_box_type_index,
-                &callee_import_index,
-                &host_imports,
-                &string_literal_index,
-                &string_literal_offset,
-                const_utf8_import,
-            )
-        }
-        else {
-            vec![WasmOpcode::Unreachable.as_u8(), WasmOpcode::End.as_u8()]
-        };
-        code_bodies.insert(0, wasm_function_body(body));
-        for (wasm_index, _) in &mut mir_wasm_functions {
-            if *wasm_index >= import_count {
-                *wasm_index += 1;
-            }
-        }
-        exports.push((export_name, WasmExternalKind::Func.as_u8(), import_count));
+    if exports.is_empty() {
+        return Err(miette!("Wasm 缺少已绑定的入口或公开导出，禁止重发函数体或选择首函数"));
     }
 
     // WASI command world: wasmtime looks for `wasi:cli/run@-?run` returning result (i32).
@@ -770,13 +680,12 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // (Nonzero guest status belongs on `wasi:cli/exit`, not this empty `result`.)
             // Full argv via `get-arguments` cabi is follow-up; empty argv still exercises help.
             let entry_instance = submission.entry_operation.as_ref()
-                .and_then(|operation| submission.backend_plan.instance_for_operation(operation))
                 .expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
             let entry_mir_params: Vec<NyarType> = submission
                 .entry_operation
                 .as_ref()
-                .and_then(|op| submission.backend_plan.get_function(op))
+                .and_then(|instance| submission.backend_plan.get_function(instance))
                 .map(|view| view.function.param_types.clone())
                 .unwrap_or_default();
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
@@ -883,18 +792,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     library_glue::append_library_mode_glue(
         wasm_package_kind,
         submission,
-        &ctx,
         &mut module,
-        &mut exports,
-        &mut type_indices,
-        &mut function_indices,
-        &mut code_bodies,
-        import_count,
-        &function_index_by_name,
-        &gc_struct_type_indices,
-        &gc_array_type_indices,
-        gc_i64_box_type_index,
-        js_glue_utf8_as_anyref,
     )?;
 
     module.sections.push(type_section_bytes(type_indices));
@@ -1140,7 +1038,7 @@ fn append_wasm_spy_metadata_sections(
     }
     {
         let exec = &submission.backend_plan;
-        for operation in exec.operations() {
+        for operation in exec.instances() {
             let Some(view) = exec.get_function(&operation)
             else {
                 continue;
@@ -1196,7 +1094,7 @@ fn append_wasm_spy_metadata_sections(
 }
 
 pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    let mir_functions_len = submission.backend_plan.operations().len();
+    let mir_functions_len = submission.backend_plan.instances().len();
     if mir_functions_len == 0 {
         return;
     }
@@ -2681,7 +2579,7 @@ mod cfg_dispatch_tests {
     fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
         let mut submission = FragmentSubmission::default();
         submission.module_name = "cfg_exec".to_string();
-        submission.entry_operation = Some(QualifiedName::new(vec![nyar::Identifier::new("main")]));
+        submission.entry_operation = Some(nyar_types::ItemInstanceId::from_index(0).expect("测试实例身份"));
         let mut mir_map = std::collections::BTreeMap::new();
         mir_map.insert(QualifiedName::new(vec![nyar::Identifier::new("main")]), leaf_i32_fn("main", blocks));
         submission.backend_plan = Arc::new(crate::BackendPrivatePlan::from_functions(mir_map));

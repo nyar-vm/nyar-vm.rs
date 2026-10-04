@@ -3,15 +3,15 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    contracts::{EffectKind, ValueOrigin, instruction_primary_result},
+    contracts::{EffectKind, ValueOrigin},
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
 };
-use nyar::{NamePath, QualifiedName};
-use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId, builtin_operator};
+use nyar::NamePath;
+use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 use nyar_bytecode::{
     NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
     NYAR_VERSION,
@@ -19,8 +19,6 @@ use nyar_bytecode::{
 
 use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-    nyar_vm::nyar_public_export_name,
-    singleton::{augment_nyar_module_with_singletons, nyar_singleton_accessor_export_name, nyar_singleton_method_export_name},
 };
 use crate::{BackendPrivatePlan, FragmentSubmission};
 
@@ -135,29 +133,26 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
 
-    let mut function_index_by_name = BTreeMap::<String, i32>::new();
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
         let exec = &submission.backend_plan;
-        let operations: Vec<QualifiedName> = exec
-            .operations()
+        let operations: Vec<ItemInstanceId> = exec
+            .instances()
             .into_iter()
-            .filter(|operation| exec.get_function(operation).is_some())
+            .filter(|instance| exec.get_function(instance).is_some())
             .collect();
-        function_index_by_name = build_nyar_function_index_map(submission, exec.as_ref(), &operations);
-        for (index, operation) in operations.iter().enumerate() {
-            let instance = exec.instance_for_operation(operation).expect("后端计划操作必须保留 stable callable identity");
-            function_index_by_instance.insert(instance, index as i32);
+        for (index, instance) in operations.iter().enumerate() {
+            function_index_by_instance.insert(*instance, index as i32);
         }
         let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
 
-        for operation in operations {
-            let Some(view) = exec.get_function(&operation)
+        for instance in operations {
+            let Some(view) = exec.get_function(&instance)
             else {
                 continue;
             };
             let mir_fn = &view.function;
-            let export_name = nyar_mir_export_name(submission, &operation);
+            let export_name = nyar_mir_export_name(submission, instance);
             let code_offset = module.code_bytes.len() as i32;
             let constants_base = module.constants.len() as i32;
             let mut emitter = BytecodeEmitter::new(constants_base, &mut module.imports);
@@ -165,7 +160,6 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             lower_mir_function_to_bytecode(
                 submission,
                 mir_fn,
-                &function_index_by_name,
                 &function_index_by_instance,
                 &function_entry_arities,
                 &mut emitter,
@@ -191,13 +185,11 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 code_offset,
                 code_length: module.code_bytes.len() as i32 - code_offset,
             });
-            if nyar_should_export_operation(submission, &operation) {
+            if nyar_should_export_operation(submission, instance) {
                 module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: export_name, function_index });
             }
         }
     }
-
-    augment_nyar_module_with_singletons(submission, &mut module, &function_index_by_name);
 
     module
 }
@@ -205,11 +197,11 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
 fn build_nyar_function_entry_arities(
     exec: &BackendPrivatePlan,
-    operations: &[QualifiedName],
+    operations: &[ItemInstanceId],
 ) -> BTreeMap<i32, usize> {
     let mut map = BTreeMap::new();
-    for (index, operation) in operations.iter().enumerate() {
-        let Some(view) = exec.get_function(operation) else {
+    for (index, instance) in operations.iter().enumerate() {
+        let Some(view) = exec.get_function(instance) else {
             continue;
         };
         let entry_arity = view
@@ -223,51 +215,26 @@ fn build_nyar_function_entry_arities(
     map
 }
 
-fn build_nyar_function_index_map(
-    _submission: &FragmentSubmission,
-    exec: &BackendPrivatePlan,
-    operations: &[QualifiedName],
-) -> BTreeMap<String, i32> {
-    let mut map = BTreeMap::new();
-    for (index, operation) in operations.iter().enumerate() {
-        let dense = index as i32;
-        map.insert(operation.to_string(), dense);
-        if let Some(view) = exec.get_function(operation) {
-            let symbol = view.function.symbol;
-            if symbol != operation.to_string() {
-                map.insert(symbol, dense);
-            }
-        }
-    }
-    map
-}
-
 /// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
-fn nyar_should_export_operation(submission: &FragmentSubmission, operation: &QualifiedName) -> bool {
-    if submission.wasm_export_names.contains_key(operation) {
+fn nyar_should_export_operation(submission: &FragmentSubmission, operation: ItemInstanceId) -> bool {
+    if submission.wasm_export_names.contains_key(&operation) {
         return true;
     }
-    submission.exported_operations.iter().any(|exported| exported == operation)
+    submission.exported_operations.iter().any(|exported| *exported == operation)
 }
 
-fn nyar_mir_export_name(submission: &FragmentSubmission, operation: &QualifiedName) -> String {
-    if let Some(public_name) = submission.wasm_export_names.get(operation) {
+fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstanceId) -> String {
+    if let Some(public_name) = submission.wasm_export_names.get(&operation) {
         return public_name.clone();
     }
-    if operation.parts().len() == 2 {
-        let type_name = operation.parts()[0].as_str();
-        let method_name = operation.parts()[1].as_str();
-        if submission.singleton_instances.iter().any(|plan| plan.name == type_name) {
-            return nyar_singleton_method_export_name(type_name, method_name);
-        }
-    }
-    nyar_public_export_name(submission, operation)
+    submission.backend_plan.abi_name_for_instance(operation)
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| panic!("函数实例缺少 ABI 标签: {operation:?}"))
 }
 
 fn lower_mir_function_to_bytecode(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
-    function_index_by_name: &BTreeMap<String, i32>,
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
     emitter: &mut BytecodeEmitter<'_>,
@@ -284,7 +251,6 @@ fn lower_mir_function_to_bytecode(
         mir_fn,
         slots,
         emitter,
-        function_index_by_name,
         function_index_by_instance,
         function_entry_arities,
         layouts,
@@ -305,7 +271,6 @@ struct NyarMirLowerer<'a, 'e> {
     mir_fn: &'a MirFunction,
     slots: ExecutableSlotPlan,
     emitter: &'a mut BytecodeEmitter<'e>,
-    function_index_by_name: &'a BTreeMap<String, i32>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
     layouts: &'a mut Vec<NyarLayout>,
@@ -448,30 +413,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emit_direct_call(index, &path, arguments, output);
                     return;
                 }
-                if let MirOperand::Symbol(path) = callee {
-                    if self.try_emit_language_operator_call(path, arguments, output) {
-                        return;
-                    }
-                    if self.try_emit_host_phase_call(path, arguments, output) {
-                        return;
-                    }
-                    if self.try_emit_array_storage_intrinsic(path, arguments, output) {
-                        return;
-                    }
-                    if self.try_emit_arraylist_element_get(path, arguments, output) {
-                        return;
-                    }
-                }
-                if let MirOperand::Symbol(path) = callee {
-                    if self.try_emit_singleton_call(path, arguments, output) {
-                        return;
-                    }
-                    if let Some(index) = self.resolve_function_index(path, arguments) {
-                        self.emit_direct_call(index, path, arguments, output);
-                        return;
-                    }
-                }
-                panic!("unresolved Nyar call in validated Semantic MIR");
+                panic!("Semantic MIR 调用未绑定 ItemInstanceId，拒绝进入 Nyar 后端: {callee:?}");
             }
             MirInstructionKind::ArrayGet { array, index } => {
                 self.emit_call_operand(array);
@@ -665,215 +607,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
-    /// 将显式 `begin_phase` / `end_phase` 调用降为 `nyar.host` `CallImport`（无专用 MIR opcode）。
-    ///
-    /// 符号末段必须精确匹配；参数按宿主合同：`begin_phase` 至少 1 个（阶段名），`end_phase` 1 个。
-    fn try_emit_host_phase_call(
-        &mut self,
-        path: &nyar::NamePath,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-    ) -> bool {
-        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-        let Some((symbol, min_argc)) = host_phase_import(simple)
-        else {
-            return false;
-        };
-        if arguments.len() < min_argc {
-            return false;
-        }
-        for argument in arguments {
-            self.emit_operand(argument);
-        }
-        self.emitter.emit_call_import(symbol, arguments.len() as i32);
-        if let Some(output) = output {
-            self.store_to_local(output);
-        }
-        else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
-        }
-        true
-    }
-
-    /// 尝试把语言 `Call` 降为 [`OperatorId`] 对应的 Nyar VM 指令 / 宿主 import。
-    ///
-    /// 先用 `lookup_display_name` 解析为 id，再按 [`OperatorId`] 发射，不按字符串猜语义。
-    fn try_emit_language_operator_call(
-        &mut self,
-        path: &nyar::NamePath,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-    ) -> bool {
-        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-        let Some(op) = builtin_operator::lookup_display_name(simple)
-        else {
-            return false;
-        };
-        if op == builtin_operator::prefix_not() {
-            if arguments.len() != 1 {
-                return false;
-            }
-            self.emit_operand(&arguments[0]);
-            self.emitter.emit_call_import("bool_not", 1);
-        }
-        else if op == builtin_operator::prefix_neg() {
-            if arguments.len() != 1 {
-                return false;
-            }
-            match self.infer_numeric_width(&arguments[0]) {
-                NumericWidth::I64 => {
-                    self.emit_operand(&arguments[0]);
-                    self.emitter.emit_call_import("i64_neg", 1);
-                }
-                NumericWidth::I32 => {
-                    self.emitter.emit_const_i32(0);
-                    self.emit_operand(&arguments[0]);
-                    self.emitter.emit_plain(NyarHeadCode::I32Sub);
-                }
-            }
-        }
-        else if op == builtin_operator::prefix_pos() {
-            if arguments.len() != 1 {
-                return false;
-            }
-            self.emit_operand(&arguments[0]);
-        }
-        else if op == builtin_operator::infix_eq()
-            || op == builtin_operator::infix_ne()
-            || op == builtin_operator::infix_lt()
-            || op == builtin_operator::infix_le()
-            || op == builtin_operator::infix_gt()
-            || op == builtin_operator::infix_ge()
-        {
-            if arguments.len() < 2 {
-                return false;
-            }
-            self.emit_operand(&arguments[0]);
-            self.emit_operand(&arguments[1]);
-            match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
-                NumericWidth::I64 => {
-                    let native = if op == builtin_operator::infix_eq() {
-                        "i64_eq"
-                    }
-                    else if op == builtin_operator::infix_ne() {
-                        "i64_ne"
-                    }
-                    else if op == builtin_operator::infix_lt() {
-                        "i64_lt"
-                    }
-                    else if op == builtin_operator::infix_le() {
-                        "i64_le"
-                    }
-                    else if op == builtin_operator::infix_gt() {
-                        "i64_gt"
-                    }
-                    else {
-                        "i64_ge"
-                    };
-                    self.emitter.emit_call_import(native, 2);
-                }
-                NumericWidth::I32 => {
-                    let opcode = if op == builtin_operator::infix_eq() {
-                        NyarHeadCode::I32Eq
-                    }
-                    else if op == builtin_operator::infix_ne() {
-                        NyarHeadCode::I32Ne
-                    }
-                    else if op == builtin_operator::infix_lt() {
-                        NyarHeadCode::I32LtS
-                    }
-                    else if op == builtin_operator::infix_le() {
-                        NyarHeadCode::I32LeS
-                    }
-                    else if op == builtin_operator::infix_gt() {
-                        NyarHeadCode::I32GtS
-                    }
-                    else {
-                        NyarHeadCode::I32GeS
-                    };
-                    self.emitter.emit_plain(opcode);
-                }
-            }
-        }
-        else if op == builtin_operator::infix_add()
-            || op == builtin_operator::infix_sub()
-            || op == builtin_operator::infix_mul()
-            || op == builtin_operator::infix_div()
-            || op == builtin_operator::infix_rem()
-        {
-            if arguments.len() < 2 {
-                return false;
-            }
-            self.emit_operand(&arguments[0]);
-            self.emit_operand(&arguments[1]);
-            match self.infer_numeric_width_from_pair(&arguments[0], &arguments[1]) {
-                NumericWidth::I64 => {
-                    let native = if op == builtin_operator::infix_add() {
-                        "i64_add"
-                    }
-                    else if op == builtin_operator::infix_sub() {
-                        "i64_sub"
-                    }
-                    else if op == builtin_operator::infix_mul() {
-                        "i64_mul"
-                    }
-                    else if op == builtin_operator::infix_div() {
-                        "i64_div"
-                    }
-                    else {
-                        "i64_rem"
-                    };
-                    self.emitter.emit_call_import(native, 2);
-                }
-                NumericWidth::I32 => {
-                    if op == builtin_operator::infix_div() || op == builtin_operator::infix_rem() {
-                        self.emitter.emit_call_import("i32_div", 2);
-                    }
-                    else {
-                        let opcode = if op == builtin_operator::infix_add() {
-                            NyarHeadCode::I32Add
-                        }
-                        else if op == builtin_operator::infix_sub() {
-                            NyarHeadCode::I32Sub
-                        }
-                        else {
-                            NyarHeadCode::I32Mul
-                        };
-                        self.emitter.emit_plain(opcode);
-                    }
-                }
-            }
-        }
-        else if op == builtin_operator::infix_bit_and()
-            || op == builtin_operator::infix_bit_or()
-            || op == builtin_operator::infix_and()
-            || op == builtin_operator::infix_or()
-        {
-            if arguments.len() < 2 {
-                return false;
-            }
-            self.emit_operand(&arguments[0]);
-            self.emit_operand(&arguments[1]);
-            let native = if op == builtin_operator::infix_bit_and() || op == builtin_operator::infix_and() {
-                "bool_and"
-            }
-            else {
-                "bool_or"
-            };
-            self.emitter.emit_call_import(native, 2);
-        }
-        else {
-            return false;
-        }
-        if let Some(output) = output {
-            self.store_to_local(output);
-        }
-        else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
-        }
-        true
-    }
-
     fn emit_direct_call(
         &mut self,
         function_index: i32,
@@ -895,203 +628,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
-    /// Call 实参：优先 local/LoadArg；失败时对定义该 SSA 值的 `FieldGet`/`Copy` 再求值。
+    /// Call 实参只能读取已规划的 SSA/local 值。
     fn emit_call_operand(&mut self, operand: &MirOperand) -> bool {
         if self.try_emit_operand(operand) {
             return true;
         }
         false
-    }
-
-    fn find_instruction_producing(&self, value: MirValueRef) -> Option<&MirInstruction> {
-        for block in &self.mir_fn.blocks {
-            for instruction in &block.instructions {
-                if instruction_primary_result(instruction) == Some(value) {
-                    return Some(instruction);
-                }
-            }
-        }
-        None
-    }
-
-    /// 数组存储 intrinsic：`builtin.array.*`，或首参为 `Array`/`FixedArray` 时的 push/len/get/set。
-    ///
-    /// 阻断 `ArrayList.push` 体内 `push(_items, v)` 被短名解析回 `ArrayList.push` 的递归。
-    fn try_emit_array_storage_intrinsic(
-        &mut self,
-        path: &nyar::NamePath,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-    ) -> bool {
-        let parts: Vec<&str> = path.parts().iter().map(|part| part.as_str()).collect();
-        let intrinsic = IntrinsicId::resolve_from_segments(&parts);
-        let Some(intrinsic) = intrinsic else {
-            return false;
-        };
-        let argc = match intrinsic {
-            IntrinsicId::ArrayPush => 2,
-            IntrinsicId::ArrayLen => 1,
-            IntrinsicId::ArrayGet => 2,
-            IntrinsicId::ArraySet => 3,
-            IntrinsicId::RefDeref | IntrinsicId::IsNull | IntrinsicId::UnwrapNull => return false,
-        };
-        if arguments.len() < argc {
-            return false;
-        }
-        for argument in &arguments[..argc] {
-            self.emit_call_operand(argument);
-        }
-        self.emitter.emit_call_intrinsic(intrinsic, argc as i32);
-        if let Some(output) = output {
-            self.store_to_local(output);
-        }
-        else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
-        }
-        true
-    }
-
-    /// `ArrayList.get` / `⁅ ⁆`：`_items` + 1-based ordinal → `ArrayGet`（0-based）。
-    ///
-    /// 闭包常只拉到 `length`/`push` 而漏 `get`；短名 `get` 还会与 `HashMap.get` 冲突。
-    fn try_emit_arraylist_element_get(
-        &mut self,
-        path: &nyar::NamePath,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-    ) -> bool {
-        if arguments.len() < 2 {
-            return false;
-        }
-        let Some(receiver_ty) = self.call_receiver_nyar_type(arguments) else {
-            return false;
-        };
-        let Some(receiver_name) = nyar_type_layout_name(&receiver_ty) else {
-            return false;
-        };
-        if receiver_name != "ArrayList" && !receiver_name.ends_with(".ArrayList") && !receiver_name.ends_with("::ArrayList") {
-            return false;
-        }
-        let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-        let is_cardinal_index = simple.contains('⁅');
-        let is_get = simple == "get" || simple.contains("subscript");
-        if !is_get && !is_cardinal_index {
-            return false;
-        }
-        // self._items
-        if !self.emit_call_operand(&arguments[0]) {
-            return false;
-        }
-        self.emitter.emit_imm1(NyarHeadCode::FieldGet, 0);
-        self.emit_call_operand(&arguments[1]);
-        // `get(ordinal)` 为 1-based；`⁅cardinal⁆` 已是 0-based（体内 get(cardinal+1)）。
-        if is_get && !is_cardinal_index {
-            self.emitter.emit_const_i32(1);
-            self.emitter.emit_plain(NyarHeadCode::I32Sub);
-        }
-        self.emitter.emit_call_intrinsic(IntrinsicId::ArrayGet, 2);
-        if let Some(output) = output {
-            self.store_to_local(output);
-        } else {
-            self.emitter.emit_plain(NyarHeadCode::Pop);
-        }
-        true
-    }
-
-    fn try_emit_singleton_call(&mut self, path: &nyar::NamePath, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
-        if path.parts().len() != 2 {
-            return false;
-        }
-        let type_name = path.parts()[0].as_str();
-        let method_name = path.parts()[1].as_str();
-        let Some(plan) = self.submission.singleton_instances.iter().find(|plan| plan.name == type_name)
-        else {
-            return false;
-        };
-        let export_name = if method_name == plan.accessor_method() && arguments.is_empty() {
-            nyar_singleton_accessor_export_name(plan)
-        }
-        else if method_name != plan.accessor_method() {
-            nyar_singleton_method_export_name(type_name, method_name)
-        }
-        else {
-            return false;
-        };
-        let Some(index) = self.function_index_by_name.get(&export_name).copied()
-        else {
-            return false;
-        };
-        self.emit_direct_call(index, path, arguments, output);
-        true
-    }
-
-    fn resolve_function_index(&self, path: &nyar::NamePath, _arguments: &[MirOperand]) -> Option<i32> {
-        {
-            let operation = nyar::QualifiedName::new(path.parts().to_vec());
-            if self.submission.backend_plan.get_function(&operation).is_some() {
-                return self.function_index_for_operation(&operation);
-            }
-        }
-        if let Some(index) = self.function_index_by_name.get(&path.to_string()) {
-            return Some(*index);
-        }
-        let colon_path = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("::");
-        if colon_path != path.to_string() {
-            if let Some(index) = self.function_index_by_name.get(&colon_path) {
-                return Some(*index);
-            }
-        }
-        None
-    }
-
-    fn call_receiver_nyar_type(&self, arguments: &[MirOperand]) -> Option<NyarType> {
-        let MirOperand::Value(value) = arguments.first()? else {
-            return None;
-        };
-        if let Some(ty) = self.mir_fn.value_types.get(value).cloned() {
-            return Some(ty);
-        }
-        // 与 executable_closure 对齐：FieldGet 结果缺 value_types 时按字段布局反查。
-        for block in &self.mir_fn.blocks {
-            for instruction in &block.instructions {
-                if instruction_primary_result(instruction) != Some(*value) {
-                    continue;
-                }
-                let MirInstructionKind::FieldGet { object, field } = &instruction.kind else {
-                    continue;
-                };
-                let owner = self.type_name_for_operand(object);
-                if owner.is_empty() {
-                    if let Some(self_ty) = self.mir_fn.param_types.first() {
-                        if let Some(name) = nyar_type_layout_name(self_ty) {
-                            return self.ctx.field_type(None, name.as_str(), field);
-                        }
-                    }
-                    continue;
-                }
-                return self.ctx.field_type(None, owner.as_str(), field);
-            }
-        }
-        None
-    }
-
-    fn function_index_for_operation(&self, operation: &QualifiedName) -> Option<i32> {
-        if let Some(index) = self.function_index_by_name.get(&operation.to_string()) {
-            return Some(*index);
-        }
-        {
-            let exec = &self.submission.backend_plan;
-            if let Some(view) = exec.get_function(operation) {
-                if let Some(index) = self.function_index_by_name.get(&view.function.symbol) {
-                    return Some(*index);
-                }
-                let dotted = view.function.symbol.replace('.', "::");
-                if let Some(index) = self.function_index_by_name.get(&dotted) {
-                    return Some(*index);
-                }
-            }
-        }
-        None
     }
 
     /// 解析聚合 layout：优先 layout_id，否则回退 type_name。
@@ -1233,67 +775,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         self.emitter.emit_imm1(NyarHeadCode::StoreLocal, local as i32);
     }
 
-    fn infer_numeric_width_from_pair(&self, lhs: &MirOperand, rhs: &MirOperand) -> NumericWidth {
-        self.infer_numeric_width(lhs).max(self.infer_numeric_width(rhs))
-    }
-
-    fn infer_numeric_width(&self, operand: &MirOperand) -> NumericWidth {
-        match self.operand_type(operand) {
-            Some(NyarType::Integer64 { .. }) => NumericWidth::I64,
-            _ => NumericWidth::I32,
-        }
-    }
-
-    fn operand_type(&self, operand: &MirOperand) -> Option<NyarType> {
-        match operand {
-            MirOperand::Value(value) => self.mir_fn.value_types.get(value).cloned(),
-            MirOperand::Constant(constant) => match constant {
-                MirConstant::Int(value) if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 => {
-                    Some(NyarType::Integer32 { signed: true })
-                }
-                MirConstant::Int(_) => Some(NyarType::Integer64 { signed: true }),
-                MirConstant::Bool(_) => Some(NyarType::Boolean),
-                MirConstant::Utf8(_) => Some(NyarType::Utf8),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
-fn nyar_type_layout_name(ty: &NyarType) -> Option<String> {
-    nyar_types::layout_key_for_nyar_type(ty).or_else(|| match ty {
-        NyarType::Named(name) => Some(name.as_str().to_string()),
-        NyarType::Apply(base, _) => nyar_type_layout_name(base),
-        _ => None,
-    })
-}
-
-/// 工作负载阶段宿主符号：末段名 → (`nyar.host` 符号, 最小参数个数)。
-fn host_phase_import(simple: &str) -> Option<(&'static str, usize)> {
-    match simple {
-        "begin_phase" => Some(("begin_phase", 1)),
-        "end_phase" => Some(("end_phase", 1)),
-        _ => None,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum NumericWidth {
-    I32,
-    I64,
-}
-
-#[cfg(test)]
-mod host_phase_tests {
-    use super::host_phase_import;
-
-    #[test]
-    fn recognizes_phase_host_symbols() {
-        assert_eq!(host_phase_import("begin_phase"), Some(("begin_phase", 1)));
-        assert_eq!(host_phase_import("end_phase"), Some(("end_phase", 1)));
-        assert_eq!(host_phase_import("console_log"), None);
-    }
 }
 
 impl BytecodeEmitter<'_> {
