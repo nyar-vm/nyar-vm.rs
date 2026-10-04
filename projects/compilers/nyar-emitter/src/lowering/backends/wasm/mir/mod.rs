@@ -57,7 +57,6 @@ use type_registry::*;
 use crate::{
     FragmentSubmission,
     contracts::{ArrayInitialization, instruction_primary_result},
-    lowering::tooling::wasm_cli,
 };
 use std_data::binary::wasm::{
     BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF, VALTYPE_REF_NULL, WasmExternalKind,
@@ -878,24 +877,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 code_bodies.push(wasm_function_body(wrapper));
                 exports.push((wasi_cli_run_export.as_str(), WasmExternalKind::Func.as_u8(), wrapper_func_index));
             }
-        }
-    }
-
-    // Node / JS-glue CLI 导出名：优先 `wasm_export_names`，否则经 `wasm_cli` 播种表（禁止散落叶名 match）。
-    if export_name == "main" {
-        for &(_, export) in wasm_cli::node_cli_export_seed_aliases() {
-            if exports.iter().any(|(name, _, _)| *name == export) {
-                continue;
-            }
-            let Some(operation) = wasm_cli::resolve_node_cli_export_operation(submission, &operations, export)
-            else {
-                continue;
-            };
-            let Some(&function_index) = function_index_by_name.get(&operation.to_string())
-            else {
-                continue;
-            };
-            exports.push((export, WasmExternalKind::Func.as_u8(), function_index));
         }
     }
 
