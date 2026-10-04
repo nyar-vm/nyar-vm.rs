@@ -46,6 +46,59 @@ mod source_group_tests {
     use super::{CompilerSourceGroup, ValkyrieCompiler};
 
     #[test]
+    fn materialized_hir_requires_call_resolution_before_semantic_success() {
+        let compiler = ValkyrieCompiler::default();
+        let source = "micro answer() -> i32 { return 1 } micro main() -> i32 { return answer() }";
+        let hir = compiler.parse_source_group_without_call_resolution(source, &[], None)
+            .expect("物化阶段不绑定调用");
+        let error = compiler.validate_hir_semantic_contract(&hir).expect_err("未绑定 HIR 不能越过语义边界");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+        compiler.compile_source(source).expect("分析入口必须执行解析和验证");
+    }
+
+    #[test]
+    fn source_closure_materialization_precedes_call_validation() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "library".into(),
+                name: "library".into(),
+                source: "micro helper() -> i32 { return missing() }".into(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(),
+                name: "app".into(),
+                source: "micro main(".into(),
+                direct_dependencies: vec!["library".into()],
+            },
+        ];
+        let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups)
+            .expect_err("完整源码闭包必须先完成物化");
+        assert!(!error.to_string().contains("SMIR003"), "调用验证不得先于后续源码解析: {error}");
+    }
+
+    #[test]
+    fn materialized_group_does_not_grant_undeclared_dependency_visibility() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "library".into(),
+                name: "library".into(),
+                source: "micro answer() -> i32 { return 1 }".into(),
+                direct_dependencies: Vec::new(),
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(),
+                name: "app".into(),
+                source: "micro main() -> i32 { return answer() }".into(),
+                direct_dependencies: Vec::new(),
+            },
+        ];
+        let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups)
+            .expect_err("完整闭包不授予未声明依赖可见性");
+        assert!(error.to_string().contains("SMIR003"), "{error}");
+    }
+
+    #[test]
     fn compiler_owns_dependency_group_linking() {
         let groups = vec![
             CompilerSourceGroup {
