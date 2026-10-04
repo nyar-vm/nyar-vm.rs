@@ -76,9 +76,6 @@ pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> s
     shared::executable::ExecutableLoweringContext::new(submission)
 }
 
-pub(crate) fn testing_field_slot_index(layouts: &FragmentSubmission, layout_id: Option<u32>, type_name: &str, field: &str) -> u16 {
-    shared::executable::ExecutableLoweringContext::new(layouts).field_slot_index(layout_id, type_name, field)
-}
 
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
 

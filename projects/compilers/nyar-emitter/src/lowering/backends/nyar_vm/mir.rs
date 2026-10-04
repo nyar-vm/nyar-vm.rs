@@ -383,8 +383,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldGet { object, field } => {
-                let type_name = self.type_name_for_operand(object);
-                let slot = self.nyar_field_slot(None, &type_name, field);
+                let slot = self.nyar_field_slot(field);
                 self.emit_operand(object);
                 self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
                 if let Some(output) = output {
@@ -396,8 +395,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
-                let type_name = self.type_name_for_operand(object);
-                let slot = self.nyar_field_slot(None, &type_name, field);
+                let slot = self.nyar_field_slot(field);
                 self.emit_field_set_slot(object, slot, value);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
@@ -655,23 +653,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
-    fn type_name_for_operand(&self, operand: &MirOperand) -> String {
-        match operand {
-            MirOperand::Value(value) => match self.mir_fn.value_types.get(value) {
-                Some(NyarType::Named(name)) => name.to_string(),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        }
-    }
-
-    /// 按布局解析字段槽，供 `FieldGet`/`FieldSet` 使用（与 JVM 槽位合同对齐）。
-    fn nyar_field_slot(&self, layout_id: Option<LayoutId>, type_name: &str, field: &str) -> i32 {
-        let Some(layout) = self.ctx.layout_for_named_field(layout_id, type_name, field)
-        else {
-            return 0;
-        };
-        layout.fields.iter().position(|entry| entry.name == field).unwrap_or(0) as i32
+    fn nyar_field_slot(&self, _field: &str) -> ! {
+        panic!("Nyar 结构字段缺少 Canonical FieldId/RepresentationPlan 合同")
     }
 
     fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {

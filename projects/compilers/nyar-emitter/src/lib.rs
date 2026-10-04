@@ -180,10 +180,6 @@ pub mod testing {
 
 
 
-    /// JVM/CLR shared helper: compute aggregate field local slot offset.
-    pub fn field_slot_index(submission: &FragmentSubmission, layout_id: Option<u32>, type_name: &str, field: &str) -> u16 {
-        super::lowering::testing_field_slot_index(submission, layout_id, type_name, field)
-    }
 
 
     /// Append singleton metadata custom sections to an existing WASM module.
