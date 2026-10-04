@@ -1143,34 +1143,6 @@ fn try_resolve_call(
             return None;
         }
     }
-    // Language `panic(...)`: core Option/Result abort. Not a library overload; returns Never.
-    // Language `format(...)`: runtime stub (wasm/CLR emitters); not a std overload.
-    if let Some(name) = extract_callable_name(callee) {
-        if name.as_str() == "panic" {
-            return Some(HirResolvedCall {
-                declaration: None,
-                instance: None,
-                symbol: NamePath::new(vec![Identifier::new("builtin"), Identifier::new("panic")]),
-                domain: HirCallableDomain::Function,
-                return_type: ValkyrieType::Named(Identifier::new("Never")),
-                parameter_types: args.iter().map(|_| ValkyrieType::AutoType).collect(),
-                has_receiver: false,
-                extractor_payload_type: None,
-            });
-        }
-        if name.as_str() == "format" {
-            return Some(HirResolvedCall {
-                declaration: None,
-                instance: None,
-                symbol: NamePath::new(vec![Identifier::new("format")]),
-                domain: HirCallableDomain::Function,
-                return_type: ValkyrieType::Utf8,
-                parameter_types: args.iter().map(|_| ValkyrieType::AutoType).collect(),
-                has_receiver: false,
-                extractor_payload_type: None,
-            });
-        }
-    }
     if let HirExprKind::Path(path) = &callee.kind {
         if path.parts().len() == 2 {
             let owner = &path.parts()[0];
@@ -2801,6 +2773,33 @@ mod identity_tests {
         assert_eq!(infer_expr_type(nested, &BTreeMap::new()), None);
         assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
         assert!(compiler.validate_hir_semantic_contract(&hir).is_err());
+    }
+
+    #[test]
+    fn panic_and_format_names_require_source_callable_declarations() {
+        let compiler = ValkyrieCompiler::default();
+        for source in [
+            "micro caller(value: i64) -> i64 { panic(value) }",
+            "micro formatter(value: i64) -> i64 { format(value) }",
+        ] {
+            let error = compiler.compile_source(source).expect_err("未声明名称不得获得合成 callable 合同");
+            assert!(error.to_string().contains("SMIR003"), "应在 Semantic HIR 合同边界失败：{error}");
+        }
+
+        let hir = compiler
+            .compile_source(
+                r#"
+micro panic(value: i64) -> i64 { value }
+micro caller(value: i64) -> i64 { panic(value) }
+"#,
+            )
+            .expect("显式声明应通过普通 callable resolver");
+        let declaration = hir.functions.iter().find(|function| function.name.as_str() == "panic").unwrap();
+        let caller = hir.functions.iter().find(|function| function.name.as_str() == "caller").unwrap();
+        let HirExprKind::Call { resolved: Some(call), .. } = &caller.body.expr.as_ref().unwrap().kind else {
+            panic!("显式声明必须得到正式调用合同");
+        };
+        assert_eq!(call.instance, declaration.instance);
     }
 
     #[test]

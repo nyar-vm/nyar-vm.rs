@@ -166,18 +166,6 @@ fn valkyrie_type_is_numeric(ty: &ValkyrieType) -> bool {
     )
 }
 
-/// 若 HIR 把数值算术误绑到 `Utf8Text`/`Utf16Text` 的 `infix +` 等，改回裸运算符名，
-/// 让后端走 intrinsic（与数组上误绑 `Utf8Text.length` 的处理对称）。
-pub(super) fn reject_text_operator_for_numeric_args(
-    callee: MirOperand,
-    _arguments: &[MirOperand],
-    _value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-) -> MirOperand {
-    // A nominal callee name is not semantic evidence. Numeric recovery must
-    // be decided by the resolved MIR operator contract, never by text names.
-    callee
-}
-
 pub(super) fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),

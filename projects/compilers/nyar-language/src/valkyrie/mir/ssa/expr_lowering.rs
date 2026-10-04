@@ -15,7 +15,7 @@ use super::{
     callee_name_matches,
     expr_helpers::{
         is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
-        qualify_instance_method_symbol, receiver_method_owner_name, reject_text_operator_for_numeric_args,
+        qualify_instance_method_symbol, receiver_method_owner_name,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -762,7 +762,6 @@ impl MirBuilder {
                         });
                     arguments.push(self.lower_expr_to_operand_with_hint(&arg.value, hint_owned.as_ref()));
                 }
-                let callee = reject_text_operator_for_numeric_args(callee, &arguments, &self.value_types);
                 // `Fine(x)` / `Fail(e)` / `Some(v)` resolve as Constructor calls.
                 // Emit `SumNew` so SMIR003 does not demand a fake `Result.Fail`
                 // function registry entry — unite construction is not a call.
