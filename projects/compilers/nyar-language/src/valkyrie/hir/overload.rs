@@ -312,13 +312,13 @@ fn match_intrinsic_builtin_candidate(
             if args.len() != 2 {
                 return None;
             }
-            let array_ty = infer_scrutinee_type(&args[0].value, &[], locals, struct_fields, singleton_names)?;
+            let array_ty = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
             let ValkyrieType::Array(element) = &array_ty
             else {
                 return None;
             };
             let element = element.as_ref().clone();
-            let value_ty = infer_scrutinee_type(&args[1].value, &[], locals, struct_fields, singleton_names)?;
+            let value_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
             if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
                 || matches!(
                     type_relations.match_parameter(&value_ty, &element),
@@ -657,7 +657,7 @@ fn resolve_statement_calls(
                 resolve_expr_calls(initializer, candidates, type_relations, locals, struct_fields, singleton_names);
             }
             let binding_type = ty.clone().or_else(|| {
-                initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, candidates, locals, struct_fields, singleton_names))
+                initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names))
             });
             if let Some(binding_type) = binding_type {
                 bind_pattern_type(pattern, &binding_type, locals);
@@ -740,14 +740,14 @@ fn resolve_expr_calls(
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } => {
             resolve_expr_calls(scrutinee, candidates, type_relations, locals, struct_fields, singleton_names);
-            let scrutinee_type = infer_scrutinee_type(scrutinee, candidates, locals, struct_fields, singleton_names);
+            let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, singleton_names);
             for arm in arms {
                 resolve_arm_calls(arm, candidates, type_relations, locals, scrutinee_type.as_ref(), struct_fields, singleton_names);
             }
         }
         HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch } => {
             resolve_expr_calls(scrutinee, candidates, type_relations, locals, struct_fields, singleton_names);
-            let scrutinee_type = infer_scrutinee_type(scrutinee, candidates, locals, struct_fields, singleton_names);
+            let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, singleton_names);
             resolve_pattern_calls(pattern, candidates, type_relations, scrutinee_type.as_ref(), struct_fields);
             let mut then_locals = locals.clone();
             if let Some(scrutinee_type) = scrutinee_type.as_ref() {
@@ -924,10 +924,10 @@ fn match_call_candidate(
         return Some(matched);
     }
     let actual_types = if candidate.param_specs.is_empty() {
-        args.iter().map(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
+        args.iter().map(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     } else {
         let bound = bind_call_arguments(&candidate.param_specs, args).ok()?;
-        bound.iter().map(|arg| infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
+        bound.iter().map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     };
     // `self: Self` / untyped `self` must mean the method owner, not "any receiver".
     // Otherwise `Array.get` and `HashMap.get` both see `AutoType` self and
@@ -1303,7 +1303,7 @@ fn primitive_operator_contract(
     let diagnostic_symbol = NamePath::new(vec![Identifier::new("primitive"), operator.clone()]);
 
     if operator_id == builtin_operator::prefix_not() && args.len() == 1 {
-        let operand = infer_scrutinee_type(&args[0].value, candidates, locals, struct_fields, singleton_names)?;
+        let operand = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
         if !matches!(operand, ValkyrieType::Boolean) {
             return None;
         }
@@ -1317,7 +1317,7 @@ fn primitive_operator_contract(
         });
     }
     if operator_id == builtin_operator::prefix_neg() && args.len() == 1 {
-        let operand = infer_scrutinee_type(&args[0].value, candidates, locals, struct_fields, singleton_names)?;
+        let operand = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
         if !is_numeric_type(&operand) {
             return None;
         }
@@ -1333,10 +1333,10 @@ fn primitive_operator_contract(
     if args.len() != 2 {
         return None;
     }
-    let left = infer_scrutinee_type(&args[0].value, candidates, locals, struct_fields, singleton_names)?;
+    let left = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
     let right = match &args[1].value.kind {
         HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(_)) if is_numeric_type(&left) => left.clone(),
-        _ => infer_scrutinee_type(&args[1].value, candidates, locals, struct_fields, singleton_names)?,
+        _ => infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?,
     };
     if left != right {
         return None;
@@ -1490,7 +1490,7 @@ fn try_resolve_instance_method(
     }
 
     let receiver_type = infer_expr_type(receiver, locals)
-        .or_else(|| infer_scrutinee_type(receiver, &[], locals, struct_fields, singleton_names));
+        .or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
     let generic_trait_owner = receiver_type.as_ref().and_then(|ty| match ty {
         ValkyrieType::Generic(generic) => constrained_trait_owner(&generic.name, type_relations.callable_constraints()),
         ValkyrieType::Named(name) => constrained_trait_owner(name, type_relations.callable_constraints()),
@@ -1640,7 +1640,7 @@ fn primitive_operation_symbol(
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<NamePath> {
     let receiver_type =
-        infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, &[], locals, struct_fields, singleton_names))?;
+        infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names))?;
     let family = match receiver_type {
         ValkyrieType::Utf8 => "Utf8",
         ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. } => "Array",
@@ -1822,7 +1822,7 @@ fn try_resolve_singleton_method(
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let symbol = overload_symbol_path(&resolved);
     let actual_receiver = if strip_receiver_arg && has_receiver {
-        args.first().and_then(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names))
+        args.first().and_then(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names))
     }
     else {
         None
@@ -1861,13 +1861,13 @@ fn match_singleton_method_candidate(
     };
     let expected_types = param_specs.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
     let actual_types = if param_specs.is_empty() {
-        call_args.iter().map(|arg| infer_scrutinee_type(&arg.value, &[], locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
+        call_args.iter().map(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     }
     else {
         let bound = bind_call_arguments(&param_specs, call_args).ok()?;
         bound
             .iter()
-            .map(|arg| infer_scrutinee_type(arg, &[], locals, struct_fields, singleton_names))
+            .map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names))
             .collect::<Option<Vec<_>>>()?
     };
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_types)?;
@@ -2196,12 +2196,7 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
             let item_type = items.first().and_then(|item| infer_expr_type(item, locals))?;
             Some(ValkyrieType::Array(Box::new(item_type)))
         }
-        HirExprKind::Construct { name, resolved, .. } => {
-            if let Some(resolved) = resolved {
-                return Some(resolved.return_type.clone());
-            }
-            Some(ValkyrieType::Named(name.clone()))
-        }
+        HirExprKind::Construct { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::If { then_branch, else_branch, .. } | HirExprKind::IfLet { then_branch, else_branch, .. } => {
             let then_type = then_branch.expr.as_ref().and_then(|expr| infer_expr_type(expr, locals))?;
             let else_type = else_branch.as_ref().and_then(|branch| branch.expr.as_ref()).and_then(|expr| infer_expr_type(expr, locals))?;
@@ -2232,7 +2227,6 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
 
 fn infer_scrutinee_type(
     expr: &HirExpr,
-    candidates: &[OverloadCandidate],
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
@@ -2260,27 +2254,8 @@ fn infer_scrutinee_type(
             if let Some(singleton_name) = extract_singleton_type_name(object, locals, singleton_names) {
                 return lookup_struct_field_type(&ValkyrieType::Named(singleton_name), field, struct_fields);
             }
-            let object_type = infer_scrutinee_type(object, candidates, locals, struct_fields, singleton_names)?;
+            let object_type = infer_scrutinee_type(object, locals, struct_fields, singleton_names)?;
             lookup_struct_field_type(&object_type, field, struct_fields)
-        }
-        HirExprKind::Call { callee, resolved, .. } => {
-            if let Some(resolved) = resolved {
-                return Some(resolved.return_type.clone());
-            }
-            let name = extract_callable_name(callee)?;
-            candidates
-                .iter()
-                .find(|candidate| candidate.domain == OverloadDomain::Function && candidate.symbol.parts().last() == Some(&name))
-                .map(|candidate| candidate.signature.return_type.clone())
-        }
-        HirExprKind::Construct { name, resolved, .. } => {
-            if let Some(resolved) = resolved {
-                return Some(resolved.return_type.clone());
-            }
-            candidates
-                .iter()
-                .find(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.symbol.parts().last() == Some(name))
-                .map(|candidate| candidate.signature.return_type.clone())
         }
         _ => None,
     }
@@ -2411,7 +2386,7 @@ fn validate_block_extractor_patterns(
                 // 由后续 `check_pattern_refutability` 统一拒绝。
                 if pattern.refutability() != PatternRefutability::Refutable {
                     let inferred_type = ty.as_ref().cloned().or_else(|| {
-                        initializer.as_ref().and_then(|init| infer_scrutinee_type(init, candidates, &locals, struct_fields, &BTreeSet::new()))
+                        initializer.as_ref().and_then(|init| infer_scrutinee_type(init, &locals, struct_fields, &BTreeSet::new()))
                     });
                     validate_pattern_extractor_contract(pattern, inferred_type.as_ref(), candidates, type_relations, struct_fields)?;
                 }
@@ -2422,7 +2397,7 @@ fn validate_block_extractor_patterns(
                     bind_pattern_type(pattern, ty, &mut locals);
                 }
                 else if let Some(initializer) = initializer {
-                    if let Some(binding_type) = infer_scrutinee_type(initializer, candidates, &locals, struct_fields, &BTreeSet::new()) {
+                    if let Some(binding_type) = infer_scrutinee_type(initializer, &locals, struct_fields, &BTreeSet::new()) {
                         bind_pattern_type(pattern, &binding_type, &mut locals);
                     }
                 }
@@ -2495,7 +2470,7 @@ fn validate_expr_extractor_patterns(
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } => {
             validate_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields)?;
-            let scrutinee_type = infer_scrutinee_type(scrutinee, candidates, locals, struct_fields, &BTreeSet::new());
+            let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, &BTreeSet::new());
             for arm in arms {
                 validate_pattern_extractor_contract(&arm.pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields)?;
                 if let Some(guard) = &arm.guard {
@@ -2506,7 +2481,7 @@ fn validate_expr_extractor_patterns(
         }
         HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch } => {
             validate_expr_extractor_patterns(scrutinee, candidates, type_relations, locals, struct_fields)?;
-            let scrutinee_type = infer_scrutinee_type(scrutinee, candidates, locals, struct_fields, &BTreeSet::new());
+            let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, &BTreeSet::new());
             validate_pattern_extractor_contract(pattern, scrutinee_type.as_ref(), candidates, type_relations, struct_fields)?;
             validate_block_extractor_patterns(then_branch, candidates, type_relations, locals, struct_fields)?;
             if let Some(else_branch) = else_branch {
