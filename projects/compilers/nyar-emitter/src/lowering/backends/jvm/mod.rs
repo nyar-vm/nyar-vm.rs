@@ -2,8 +2,7 @@ use crate::nyar_backend_jvm::{
     JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
 };
 use miette::{Result, miette};
-use nyar::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, Identifier, QualifiedName};
-use std_data::binary::class::JvmFieldRef;
+use nyar::{Identifier, QualifiedName};
 
 use super::{
     executable::executable_has_state_machine as mir_has_state_machine,
@@ -35,9 +34,6 @@ fn collect_jvm_local_operations(submission: &FragmentSubmission) -> Vec<Qualifie
         if !local_operations.iter().any(|operation| operation == &edge.caller) {
             local_operations.push(edge.caller.clone());
         }
-        if !local_operations.iter().any(|operation| operation == &edge.callee_symbol) {
-            local_operations.push(edge.callee_symbol.clone());
-        }
     }
     if let Some(entry_operation) = submission.entry_operation.as_ref() {
         if !local_operations.iter().any(|operation| operation == entry_operation) {
@@ -62,7 +58,6 @@ fn collect_jvm_local_operations(submission: &FragmentSubmission) -> Vec<Qualifie
     expand_jvm_operations_with_mir_callees(submission, &mut local_operations);
     local_operations
 }
-
 /// Walk MIR Call sites (like CLR `expand_operations_with_mir_callees`) so transitive
 /// callees (`has_cycle`, `Utf8Text.infix ==`, …) receive method bodies even when call
 /// edges were not recorded on the fragment.
@@ -213,23 +208,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
                 continue;
             }
         }
-        // No MIR body: only emit a placeholder for exported/external edges; never invent
-        // bodies for unresolved internal callees (fail-closed later via ensure_*).
-        if submission.exported_operations.iter().any(|op| op == operation)
-            || submission.external_call_edges.iter().any(|edge| &edge.callee_symbol == operation)
-        {
-            let external_call_edges = outgoing_external_call_edges(operation, &submission.external_call_edges);
-            class_file.methods.push(JvmMethodSignature {
-                name: method_name,
-                descriptor: JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Int),
-                access_flags: 0x0001 | 0x0008,
-                code: Some(JvmCodeBody {
-                    max_stack: 2,
-                    max_locals: 0,
-                    instructions: lower_operation_instructions(external_call_edges, &submission.external_import_links),
-                }),
-            });
-        }
+        return Err(miette!("JVM backend plan 缺少操作 `{operation}` 的已验证函数体"));
     }
     jvm_suspend::append_suspend_state_machine_methods(&mut class_file, submission);
     let witness_main = jvm_witness::append_witness_methods(&mut class_file, submission);
@@ -514,62 +493,3 @@ fn lower_sync_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstr
     Some(instructions)
 }
 
-fn lower_operation_instructions(
-    external_call_edges: Vec<&ExternalCallEdge>,
-    external_import_links: &std::collections::BTreeMap<QualifiedName, ExternalImportLink>,
-) -> Vec<JvmInstruction> {
-    let mut instructions = Vec::new();
-    for edge in external_call_edges {
-        let Some(target) = jvm_print_target(external_import_links.get(&edge.callee_symbol))
-        else {
-            continue;
-        };
-        let Some(message) = edge.arguments.iter().find_map(string_literal_argument)
-        else {
-            continue;
-        };
-
-        instructions.push(JvmInstruction::GetStatic(JvmFieldRef {
-            owner: target.field_owner,
-            name: target.field_name,
-            descriptor: JvmTypeDescriptor::Object(target.stream_owner.clone()),
-        }));
-        instructions.push(JvmInstruction::LdcString(message));
-        instructions.push(JvmInstruction::InvokeVirtual(JvmMethodRef {
-            owner: target.stream_owner,
-            name: target.method_name,
-            descriptor: JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Object("java/lang/String".to_string())], JvmTypeDescriptor::Void),
-        }));
-    }
-    instructions.push(JvmInstruction::IConst(0));
-    instructions.push(JvmInstruction::IReturn);
-    instructions
-}
-
-fn string_literal_argument(argument: &ExternalCallArgument) -> Option<String> {
-    match argument {
-        ExternalCallArgument::StringLiteral(value) => Some(value.clone()),
-    }
-}
-
-fn outgoing_external_call_edges<'a>(operation: &QualifiedName, edges: &'a [ExternalCallEdge]) -> Vec<&'a ExternalCallEdge> {
-    edges.iter().filter(|edge| &edge.caller == operation).collect()
-}
-
-fn jvm_print_target(external_import_link: Option<&ExternalImportLink>) -> Option<JvmPrintTarget> {
-    let target = jvm_host_print_target(external_import_link?)?;
-    let (field_name, method_name, stream_owner) = if let Some(dot_pos) = target.method_name.rfind('.') {
-        (target.method_name[..dot_pos].to_string(), target.method_name[dot_pos + 1..].to_string(), "java/io/PrintStream".to_string())
-    }
-    else {
-        (target.field_name.to_string(), target.method_name.to_string(), target.stream_owner.replace('.', "/"))
-    };
-    Some(JvmPrintTarget { field_owner: target.field_owner.replace('.', "/"), field_name, stream_owner, method_name })
-}
-
-struct JvmPrintTarget {
-    field_owner: String,
-    field_name: String,
-    stream_owner: String,
-    method_name: String,
-}
