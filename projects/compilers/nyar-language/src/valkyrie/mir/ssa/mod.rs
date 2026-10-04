@@ -227,6 +227,8 @@ pub struct MirField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirFunction {
     pub symbol: String,
+    /// HIR 声明对应的 Compiler ItemId；MIR 不再按符号重新铸造实例身份。
+    pub declaration: Option<nyar_types::ItemId>,
     /// 函数返回类型，用于后端判断调用是否返回 `void`。
     pub return_type: ValkyrieType,
     /// 函数参数类型列表，用于后端生成调用约定与方法签名。
@@ -755,6 +757,10 @@ impl MirLowerer {
         ));
         // MirFunction 不再携带 per-function diagnostics。
         let type_identities = type_identity_table(&functions, &external_calls, &structs);
+        let callable_identities = functions.iter()
+            .filter_map(|function| function.declaration.map(|declaration| (function.symbol.clone(), nyar_types::ItemInstanceId::from_index(declaration.index()))))
+            .filter_map(|(symbol, instance)| instance.map(|instance| (symbol, instance)))
+            .collect();
         let result = MirModule {
             name: module.name.to_string(),
             functions,
@@ -763,7 +769,7 @@ impl MirLowerer {
             external_calls,
             exports,
             entries,
-            callable_identities: BTreeMap::new(),
+            callable_identities,
             type_identities,
             aggregate_layouts,
             sum_types,
@@ -1226,6 +1232,7 @@ fn lower_function_semantic(
     diagnostics.append(&mut builder.diagnostics);
     let mut mir_function = MirFunction {
         symbol: stable_hir_function_symbol(&module.name, function),
+        declaration: function.declaration,
         return_type: resolved_return_type,
         param_types,
         value_types: builder.value_types,

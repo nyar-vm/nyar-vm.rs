@@ -421,6 +421,7 @@ mod tests {
             name: "demo".into(),
             functions: vec![MirFunction {
                 symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
                 return_type: return_value.map(|_| ValkyrieType::Boolean).unwrap_or(ValkyrieType::Unit),
                 param_types: Vec::new(),
                 value_types,
