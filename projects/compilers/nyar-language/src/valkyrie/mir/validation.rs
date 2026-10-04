@@ -560,6 +560,9 @@ pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
             MirDiagnostic::UnresolvedCallableIdentity { symbol } => {
                 return Err(ParseError::invalid(format!("MIR lowering unresolved callable identity `{symbol}`")));
             }
+            MirDiagnostic::UnresolvedOperatorCallable { operator } => {
+                return Err(ParseError::invalid(format!("MIR lowering unresolved operator callable `{operator:?}`")));
+            }
         }
     }
     validate_semantic_module(module)

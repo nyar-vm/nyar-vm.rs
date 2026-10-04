@@ -1,4 +1,4 @@
-use super::{MirDiagnostic, MirLowerer, MirOperand, MirOperation};
+use super::{MirBuilder, MirDiagnostic, MirLowerer, MirOperand, MirOperation};
 use crate::{Identifier, NamePath, ValkyrieCompiler, types::hir::{HirExprKind, ValkyrieType}};
 
 #[test]
@@ -47,9 +47,11 @@ fn same_method_names_keep_declared_result_types() {
 structure BooleanOwner {
     micro read() -> bool { return true }
 }
+
 structure IntegerOwner {
     micro read() -> i64 { return 7 }
 }
+
 micro read_boolean() -> bool { return BooleanOwner.read() }
 micro read_integer() -> i64 { return IntegerOwner.read() }
 "#,
@@ -77,4 +79,58 @@ micro read_integer() -> i64 { return IntegerOwner.read() }
         }
         assert_eq!(matches, 1, "调用必须保持完整 owner 身份");
     }
+}
+
+#[test]
+fn integer_pattern_comparisons_fail_without_operator_callable_contracts() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            r#"
+micro literal_match(value: i64) -> i64 {
+    return match value {
+        case 7: 1
+        else: 0
+    };
+}
+micro range_match(value: i64) -> i64 {
+    return match value {
+        case 2..=8: 1
+        else: 0
+    };
+}
+"#,
+        )
+        .expect("pattern source must parse and resolve types");
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    let unresolved = mir.diagnostics.iter().filter_map(|diagnostic| match diagnostic {
+        MirDiagnostic::UnresolvedOperatorCallable { operator } => Some(*operator),
+        _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(unresolved, vec![nyar_types::builtin_operator::infix_lt(); 2]);
+    assert!(crate::valkyrie::mir::validation::validate_module(&mir).is_err());
+}
+
+#[test]
+fn integer_literal_equality_does_not_fabricate_a_false_result() {
+    let mut builder = MirBuilder::new(
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        None,
+    );
+    let result = builder.lower_eq_constant_operand(
+        MirOperand::Constant(crate::valkyrie::mir::MirConstant::Int(1)),
+        crate::valkyrie::mir::MirConstant::Int(1),
+        &ValkyrieType::Integer64 { signed: true },
+    );
+    assert_eq!(result, MirOperand::Constant(crate::valkyrie::mir::MirConstant::Unit));
+    assert!(matches!(
+        builder.diagnostics.as_slice(),
+        [MirDiagnostic::UnresolvedOperatorCallable { operator }]
+            if *operator == nyar_types::builtin_operator::infix_eq()
+    ));
 }

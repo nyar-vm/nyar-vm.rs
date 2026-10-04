@@ -53,7 +53,7 @@ pub use value_semantics::{
 };
 
 use builtin_helpers::plain_type_pattern_matches;
-use nyar_types::{ItemInstanceId, VariantId};
+use nyar_types::{ItemInstanceId, OperatorId, VariantId};
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
 use expr_helpers::{callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, named_type_name};
 use expr_lowering::lower_literal;
@@ -96,6 +96,11 @@ pub enum MirDiagnostic {
     UnresolvedCallableIdentity {
         /// 上游解析保留的限定名称，仅用于诊断。
         symbol: String,
+    },
+    /// 已识别运算符缺少可调用身份，不能用常量结果替代。
+    UnresolvedOperatorCallable {
+        /// 运算符注册表身份。
+        operator: OperatorId,
     },
 }
 

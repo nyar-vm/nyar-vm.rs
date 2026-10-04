@@ -855,7 +855,7 @@ impl MirBuilder {
 
     pub(super) fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
         let _ = (lhs, rhs, ty);
-        MirOperand::Constant(MirConstant::Bool(false))
+        self.reject_unbound_operator(nyar_types::builtin_operator::infix_eq())
     }
 
     pub(super) fn lower_lt_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
@@ -864,7 +864,12 @@ impl MirBuilder {
 
     pub(super) fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
         let _ = (lhs, rhs, ty);
-        MirOperand::Constant(MirConstant::Bool(false))
+        self.reject_unbound_operator(nyar_types::builtin_operator::infix_lt())
+    }
+
+    fn reject_unbound_operator(&mut self, operator: nyar_types::OperatorId) -> MirOperand {
+        self.diagnostics.push(MirDiagnostic::UnresolvedOperatorCallable { operator });
+        MirOperand::Constant(MirConstant::Unit)
     }
 
     /// Short-circuit `!value`: `if value { false } else { true }`.
