@@ -176,7 +176,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 .get(mir_fn.entry.0 as usize)
                 .map(|block| block.parameters.len())
                 .unwrap_or(mir_fn.param_types.len()) as i32;
-            let local_count = ExecutableSlotPlan::plan_nyar(&ExecutableLoweringContext::new(submission), mir_fn).local_types.len() as i32;
+            let local_count = ExecutableSlotPlan::plan_nyar(mir_fn).local_types.len() as i32;
             let function_index = module.functions.len() as i32;
             module.functions.push(NyarFunction {
                 name: export_name.clone(),
@@ -242,7 +242,7 @@ fn lower_mir_function_to_bytecode(
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
 ) {
     let ctx = ExecutableLoweringContext::new(submission);
-    let slots = ExecutableSlotPlan::plan_nyar(&ctx, mir_fn);
+    let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
 
     let mut lowerer = NyarMirLowerer {

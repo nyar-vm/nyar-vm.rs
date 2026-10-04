@@ -23,11 +23,11 @@ pub use std_data::{
 
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result, WrapErr, miette};
+use miette::{Result, miette};
 use nyar::{
-    abstractions::{ArtifactFormat, BackendInputKind, BinaryTarget},
+    abstractions::BackendInputKind,
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend, clr::ClrImageKind},
-    packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
+    packaging::ArtifactSet,
 };
 /// `CLR` 二进制后端输入。
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ impl ClrBinaryBackend {
             descriptor: BackendDescriptor {
                 name: "clr-binary".to_string(),
                 input_kind: BackendInputKind::MsilText,
-                supported_targets: vec![BinaryTarget::clr()],
+                supported_targets: Vec::new(),
             },
         }
     }
@@ -75,82 +75,11 @@ impl TargetCodeGenBackend for ClrBinaryBackend {
         &self.descriptor
     }
 
-    fn validate(&self, input: &Self::Input) -> Result<()> {
-        if input.module.assembly.name.is_empty() {
-            return Err(miette!(code = "nyar::clr::backend::empty_assembly", help = "请先为 `MSIL` 模块填充程序集名称", "程序集名称不能为空"));
-        }
-
-        let has_entry = input.module.global_methods.iter().any(|m| m.is_entry_point)
-            || input.module.types.iter().flat_map(|t| t.methods.iter()).any(|m| m.is_entry_point);
-
-        if matches!(input.image_kind, Some(ClrImageKind::Executable)) && !has_entry {
-            return Err(miette!(
-                code = "nyar::clr::backend::no_entry_point",
-                help = "可执行 `CLR` 镜像必须包含入口点方法",
-                "可执行 `CLR` 镜像必须包含入口点"
-            ));
-        }
-
-        // Keep the pre-emission verifier mandatory at the public backend boundary.
-        // The lowering driver also checks this, but callers of this backend may
-        // provide an already-lowered module directly.
-        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-        {
-            crate::lowering::backends::clr::reject_unresolved_local_calls(&input.module)?;
-            Ok(())
-        }
-        #[cfg(not(feature = "legacy-lanes-clr-jvm-native"))]
-        {
-            let _ = input;
-            Err(miette!(
-                "CLR lane is frozen for 0.0.x Node/Wasm delivery. Enable Cargo feature `legacy-lanes-clr-jvm-native` to compile CLR lowering"
-            ))
-        }
+    fn validate(&self, _input: &Self::Input) -> Result<()> {
+        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 BackendPrivatePlan 编码器，拒绝编译"))
     }
 
-    fn compile(&self, input: Self::Input, options: &CompilationOptions) -> Result<ArtifactSet> {
-        #[cfg(not(feature = "legacy-lanes-clr-jvm-native"))]
-        {
-            let _ = (self, input, options);
-            return Err(miette!(
-                "CLR lane is frozen for 0.0.x Node/Wasm delivery. Enable Cargo feature `legacy-lanes-clr-jvm-native` to compile CLR lowering"
-            ));
-        }
-        #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-        {
-            crate::lowering::backends::clr::reject_unresolved_local_calls(&input.module)?;
-            let has_entry = input.module.global_methods.iter().any(|m| m.is_entry_point)
-                || input.module.types.iter().flat_map(|t| t.methods.iter()).any(|m| m.is_entry_point);
-            let image_kind = input.image_kind.unwrap_or_else(|| ClrImageKind::infer(has_entry));
-            let module_file_name = format!("{}.{}", options.artifact_name, image_kind.file_extension());
-            let pe_bytes = PeWriter::new(PeWriterOptions {
-                assembly_name: options.artifact_name.clone(),
-                module_name: options.artifact_name.clone(),
-                image_kind,
-            })
-            .write_module(&input.module)
-            .map_err(|error| miette!("PE 写入失败: {error}"))?;
-
-            std::fs::create_dir_all(&input.output_dir)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
-
-            let artifact_path = input.output_dir.join(&module_file_name);
-            std::fs::write(&artifact_path, &pe_bytes)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("写入 PE 文件失败：{}", artifact_path.display()))?;
-
-            let mut artifacts = ArtifactSet::default();
-            artifacts.push(ArtifactDescriptor {
-                name: options.artifact_name.clone(),
-                path: module_file_name.clone(),
-                kind: image_kind.artifact_kind(),
-                format: ArtifactFormat::Pe,
-                target: options.target.clone(),
-                lane: TargetLane::Clr,
-            });
-
-            Ok(artifacts)
-        }
+    fn compile(&self, _input: Self::Input, _options: &CompilationOptions) -> Result<ArtifactSet> {
+        Err(miette!(code = "nyar::clr::backend::unsupported", "CLR 尚无正式 BackendPrivatePlan 编码器，拒绝编译"))
     }
 }

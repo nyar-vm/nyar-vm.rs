@@ -3,12 +3,6 @@ use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
 
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-mod clr;
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-mod jvm;
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-mod native;
 #[cfg(feature = "nyar-vm-lane")]
 mod nyar_vm;
 mod wasm;
@@ -34,26 +28,11 @@ impl DriverCompilerRegistration {
     }
 }
 
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-static CLR_COMPILER: clr::ClrFamilyCompiler = clr::ClrFamilyCompiler;
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-static JVM_COMPILER: jvm::JvmFamilyCompiler = jvm::JvmFamilyCompiler;
 static WASM_COMPILER: wasm::WasmFamilyCompiler = wasm::WasmFamilyCompiler;
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-static NATIVE_COMPILER: native::NativeFamilyCompiler = native::NativeFamilyCompiler;
 #[cfg(feature = "nyar-vm-lane")]
 static NYAR_VM_COMPILER: nyar_vm::NyarVmFamilyCompiler = nyar_vm::NyarVmFamilyCompiler;
 
-#[cfg(all(feature = "nyar-vm-lane", feature = "legacy-lanes-clr-jvm-native"))]
-static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
-    DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
-    DriverCompilerRegistration { name: "jvm-binary", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
-    DriverCompilerRegistration { name: "native-binary", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
-    DriverCompilerRegistration { name: "nyar-vm", priority: 100, supports: nyar_vm::supports_requirement, compiler: &NYAR_VM_COMPILER },
-];
-
-#[cfg(all(feature = "nyar-vm-lane", not(feature = "legacy-lanes-clr-jvm-native")))]
+#[cfg(feature = "nyar-vm-lane")]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 2] = [
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
     DriverCompilerRegistration { name: "nyar-vm", priority: 100, supports: nyar_vm::supports_requirement, compiler: &NYAR_VM_COMPILER },
@@ -82,4 +61,41 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
         return Err(miette!("选中的 backend `{}` 没有关联 driver compiler", selected.name));
     };
     compiler.compile(request)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar::{HostProjectionBoundary, TargetBackendFamily};
+
+    #[test]
+    fn frozen_families_have_neither_capability_nor_lowering() {
+        for (family, boundary) in [
+            (TargetBackendFamily::Clr, HostProjectionBoundary::Clr),
+            (TargetBackendFamily::Jvm, HostProjectionBoundary::Jvm),
+            (TargetBackendFamily::Native, HostProjectionBoundary::Native),
+        ] {
+            assert!(crate::bundled_backend_capability_descriptor(family).is_none());
+            let result = crate::lowering::lower_fragment_to_driver_input(
+                &crate::FragmentSubmission::default(),
+                family,
+                boundary,
+                std::path::PathBuf::new(),
+                "",
+                crate::nyar_backend_wasi::WasmPackageKind::Binary,
+            );
+            let error = match result {
+                Ok(_) => panic!("冻结目标不得存在正式 lowering"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("拒绝切换目标或补造产物"), "{error}");
+        }
+        assert!(DRIVER_COMPILERS.iter().all(|registration| matches!(registration.name, "wasm-binary" | "nyar-vm")));
+    }
+
+    #[cfg(not(feature = "nyar-vm-lane"))]
+    #[test]
+    fn disabled_vm_does_not_advertise_capability() {
+        assert!(crate::bundled_backend_capability_descriptor(TargetBackendFamily::NyarVm).is_none());
+    }
 }

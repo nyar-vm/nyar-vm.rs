@@ -10,8 +10,6 @@ license.workspace = true
 default = []
 # 正式 Nyar 字节码编译与执行路径；Node/Wasm seed 默认不启用。
 nyar-vm-lane = []
-# Frozen CLR / JVM / native lowering (still on pre-ADR-0010 MIR shape; not required for nyar-vm).
-legacy-lanes-clr-jvm-native = []
 
 [dependencies]
 # Layering: language → emitter → std-data (wasm/pe/…) + nyar-bytecode (外码).

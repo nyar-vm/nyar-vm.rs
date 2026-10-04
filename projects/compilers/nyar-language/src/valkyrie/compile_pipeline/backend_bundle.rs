@@ -64,7 +64,6 @@ pub fn compile_source_groups_to_artifacts(
     wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
     output_dir: &Path,
     project_name: &str,
-    emit_msil_sidecar: bool,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<emitter::DriverCompileReport> {
@@ -80,7 +79,6 @@ pub fn compile_source_groups_to_artifacts(
         &bundle,
         output_dir,
         project_name,
-        emit_msil_sidecar,
         emit_wat_sidecar,
         generate_runtime_config,
     )

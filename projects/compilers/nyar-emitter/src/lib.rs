@@ -39,7 +39,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name},
     backend_plan_views::ExecutableFunction,
-    lowering::{lower_fragment_to_driver_input, write_clr_msil_sidecar, write_wasm_wat_sidecar},
+    lowering::{lower_fragment_to_driver_input, write_wasm_wat_sidecar},
 };
 
 pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
@@ -52,17 +52,9 @@ pub use nyar::ArtifactPartition;
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
 #[doc(hidden)]
 pub mod testing {
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use crate::backend_plan_views::ExecutableFunction;
     use miette::Result;
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use nyar::QualifiedName;
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use std_data::binary::{elf::NativeElfImageBuilder, pe::NativeImageBuilder};
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub use super::lowering::backends::jvm_mir::{JvmLocalKind, jvm_local_slot_conflicts};
 
     use super::{
         DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput,
@@ -70,14 +62,7 @@ pub mod testing {
         compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use super::{
-        nyar_backend_clr::{MsilMethodBody, MsilModule, MsilTypeDef},
-        nyar_backend_jvm::{JvmClassFile, JvmInstruction, JvmMethodSignature},
-    };
     use nyar_types::SingletonInstancePlan;
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    use nyar_types::{AggregateLayoutPlan, FlagsLayout, SumTypeLayout};
     #[cfg(feature = "nyar-vm-lane")]
     use nyar_bytecode::NyarModuleData;
 
@@ -119,31 +104,8 @@ pub mod testing {
         super::lowering::features::physical_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))
     }
 
-    /// Lower a fragment submission to a CLR MSIL module.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_fragment_to_clr_msil(submission: &FragmentSubmission) -> Result<super::nyar_backend_clr::MsilModule> {
-        super::lowering::testing_lower_fragment_to_clr_msil(submission)
-    }
 
-    /// Lower one MIR function to a CLR method body.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_mir_to_clr_method(
-        submission: &FragmentSubmission,
-        operation: &QualifiedName,
-        mir_function: &ExecutableFunction,
-    ) -> Result<MsilMethodBody> {
-        super::lowering::testing_lower_mir_to_clr_method(submission, operation, mir_function)
-    }
 
-    /// Lower one MIR function to a JVM method body.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_mir_to_jvm_method(
-        submission: &FragmentSubmission,
-        operation: &QualifiedName,
-        mir_function: &ExecutableFunction,
-    ) -> JvmMethodSignature {
-        super::lowering::testing_lower_mir_to_jvm_method(submission, operation, mir_function)
-    }
 
     /// Lower a fragment submission to a WASM module via MIR.
     /// GC is mandatory for wasm/wasi targets (language specification).
@@ -161,17 +123,7 @@ pub mod testing {
         serialize_suspend_runtime_payload(payload)
     }
 
-    /// Build CLR aggregate type definitions from planned layouts.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn build_clr_type_defs(plan: &AggregateLayoutPlan) -> Vec<MsilTypeDef> {
-        super::lowering::testing_build_clr_type_defs(plan)
-    }
 
-    /// Build CLR nominal type definitions for sum and flags layouts.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn build_clr_nominal_type_defs(sum_types: &[SumTypeLayout], flags_types: &[FlagsLayout]) -> Vec<MsilTypeDef> {
-        super::lowering::testing_build_clr_nominal_type_defs(sum_types, flags_types)
-    }
 
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "nyar-vm-lane")]
@@ -179,46 +131,16 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
 
-    /// Build JVM companion singleton classes for a fragment.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn build_jvm_singleton_classes(submission: &FragmentSubmission) -> Vec<JvmClassFile> {
-        super::lowering::testing_build_jvm_singleton_classes(submission)
-    }
 
-    /// Lower a fragment submission to a JVM class file.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmClassFile, miette::Report> {
-        super::lowering::testing_lower_fragment_to_jvm_class(submission).map_err(|error| miette::miette!("{error}"))
-    }
 
-    /// Append witness methods to an existing JVM class file.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn append_jvm_witness_methods(class_file: &mut JvmClassFile, submission: &FragmentSubmission) -> Option<Vec<JvmInstruction>> {
-        super::lowering::testing_append_jvm_witness_methods(class_file, submission)
-    }
 
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
     }
 
-    /// Apply singleton augmentation to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn augment_msil_with_singletons(submission: &FragmentSubmission, module: &mut MsilModule) -> Result<()> {
-        super::lowering::testing_augment_msil_with_singletons(submission, module)
-    }
 
-    /// Apply witness augmentation to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn augment_msil_with_witness(submission: &FragmentSubmission, module: &mut MsilModule) {
-        super::lowering::testing_augment_msil_with_witness(submission, module).expect("CLR witness metadata must resolve before emission")
-    }
 
-    /// Apply suspend augmentation (state-machine emission) to an existing MSIL module.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn augment_msil_with_suspend(submission: &FragmentSubmission, module: &mut MsilModule) {
-        super::lowering::testing_augment_msil_with_suspend(submission, module)
-    }
 
     /// Shared suspend dispatch-case expansion helper.
     pub fn dispatch_case_keys(artifact: &nyar::SuspendFunctionArtifact) -> Vec<u32> {
@@ -252,66 +174,17 @@ pub mod testing {
         )
     }
 
-    /// Lower a fragment submission to a native executable image.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_fragment_to_native_executable(
-        submission: &FragmentSubmission,
-        host_flavor: &str,
-    ) -> Result<(Vec<u8>, String), miette::Report> {
-        super::lowering::testing_lower_fragment_to_native_executable(submission, host_flavor).map_err(|error| miette::miette!("{error}"))
-    }
 
-    /// Emit native witness tables into PE/ELF image builders.
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn emit_native_witness_tables(
-        pe: Option<&mut NativeImageBuilder>,
-        elf: Option<&mut NativeElfImageBuilder>,
-        submission: &FragmentSubmission,
-    ) -> Result<(), miette::Report> {
-        super::lowering::testing_emit_native_witness_tables(pe, elf, submission).map_err(|error| miette::miette!("{error}"))
-    }
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_mir_functions_to_native_msvc(submission: &FragmentSubmission, function: &mut std_data::binary::x86_64::MsvcFunctionBuilder) {
-        super::lowering::testing_lower_mir_functions_to_native_msvc(submission, function)
-    }
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_mir_functions_to_native_sysv(submission: &FragmentSubmission, function: &mut std_data::binary::x86_64::SysvFunctionBuilder) {
-        super::lowering::testing_lower_mir_functions_to_native_sysv(submission, function)
-    }
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_suspend_witness_calls_windows(
-        submission: &FragmentSubmission,
-        function: &mut std_data::binary::x86_64::MsvcFunctionBuilder,
-        builder: &mut NativeImageBuilder,
-    ) {
-        super::lowering::testing_lower_suspend_witness_calls_windows(submission, function, builder)
-    }
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn lower_suspend_witness_calls_linux(
-        submission: &FragmentSubmission,
-        function: &mut std_data::binary::x86_64::SysvFunctionBuilder,
-        builder: &mut NativeElfImageBuilder,
-    ) {
-        super::lowering::testing_lower_suspend_witness_calls_linux(submission, function, builder)
-    }
 
     /// JVM/CLR shared helper: compute aggregate field local slot offset.
     pub fn field_slot_index(submission: &FragmentSubmission, layout_id: Option<u32>, type_name: &str, field: &str) -> u16 {
         super::lowering::testing_field_slot_index(submission, layout_id, type_name, field)
     }
 
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub const NATIVE_VALUE_AREA_BASE: i32 = super::lowering::TESTING_NATIVE_VALUE_AREA_BASE;
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub const SUSPEND_SPILL_RSP_OFFSET: i32 = super::lowering::TESTING_SUSPEND_SPILL_RSP_OFFSET;
-    #[cfg(feature = "legacy-lanes-clr-jvm-native")]
-    pub fn native_value_area_size(submission: &FragmentSubmission) -> u32 {
-        super::lowering::testing_native_value_area_size(submission)
-    }
 
     /// Append singleton metadata custom sections to an existing WASM module.
     pub fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
@@ -408,37 +281,15 @@ impl BundledBackendCapabilityDescriptor {
     }
 }
 
-const CLR_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Clr];
-const JVM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Jvm];
 const WASM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent];
 const NATIVE_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Native];
+#[cfg(feature = "nyar-vm-lane")]
 const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Vm];
 
 /// 返回 bundled backend family 对应的显式 capability 描述。
 pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily) -> Option<BundledBackendCapabilityDescriptor> {
     match backend_family {
-        TargetBackendFamily::Clr => Some(BundledBackendCapabilityDescriptor {
-            backend_family,
-            backend_name: "clr-binary",
-            interpreter: "clr.msil",
-            lane: TargetLane::Clr,
-            input_kind: Some(BackendInputKind::MsilText),
-            target_family: TargetFamily::Clr,
-            supported_host_boundaries: CLR_HOST_BOUNDARIES,
-            reference_management: ReferenceManagement::HostGc,
-            backend_route: BackendRoute::WitnessCapable,
-        }),
-        TargetBackendFamily::Jvm => Some(BundledBackendCapabilityDescriptor {
-            backend_family,
-            backend_name: "jvm-binary",
-            interpreter: "jvm.classfile",
-            lane: TargetLane::Jvm,
-            input_kind: Some(BackendInputKind::JvmClassFile),
-            target_family: TargetFamily::Jvm,
-            supported_host_boundaries: JVM_HOST_BOUNDARIES,
-            reference_management: ReferenceManagement::HostGc,
-            backend_route: BackendRoute::WitnessCapable,
-        }),
+        TargetBackendFamily::Clr | TargetBackendFamily::Jvm | TargetBackendFamily::Native => None,
         TargetBackendFamily::Wasm => Some(BundledBackendCapabilityDescriptor {
             backend_family,
             backend_name: "wasm-binary",
@@ -448,17 +299,6 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Wasm,
             supported_host_boundaries: WASM_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::HostGc,
-            backend_route: BackendRoute::WitnessCapable,
-        }),
-        TargetBackendFamily::Native => Some(BundledBackendCapabilityDescriptor {
-            backend_family,
-            backend_name: "native-binary",
-            interpreter: "native.object",
-            lane: TargetLane::Native,
-            input_kind: Some(BackendInputKind::CoffObject),
-            target_family: TargetFamily::Native,
-            supported_host_boundaries: NATIVE_HOST_BOUNDARIES,
-            reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::WitnessCapable,
         }),
         TargetBackendFamily::Gpu => Some(BundledBackendCapabilityDescriptor {
@@ -472,6 +312,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
+        #[cfg(feature = "nyar-vm-lane")]
         TargetBackendFamily::NyarVm => Some(BundledBackendCapabilityDescriptor {
             backend_family,
             backend_name: "nyar-vm",
@@ -483,6 +324,8 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::Full,
         }),
+        #[cfg(not(feature = "nyar-vm-lane"))]
+        TargetBackendFamily::NyarVm => None,
         TargetBackendFamily::Unknown => None,
     }
 }
@@ -964,7 +807,6 @@ struct DriverPartitionCompileRequest<'a> {
     planned_partitions: &'a dyn PlannedArtifactPartitionsView,
     output_dir: &'a Path,
     project_name: &'a str,
-    emit_msil_sidecar: bool,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 }
@@ -974,7 +816,6 @@ impl<'a> DriverPartitionCompileRequest<'a> {
         bundle: &'a dyn FrontendBuildBundle,
         output_dir: &'a Path,
         project_name: &'a str,
-        emit_msil_sidecar: bool,
         emit_wat_sidecar: bool,
         generate_runtime_config: bool,
     ) -> Self {
@@ -983,7 +824,6 @@ impl<'a> DriverPartitionCompileRequest<'a> {
             planned_partitions: bundle.planned_partitions(),
             output_dir,
             project_name,
-            emit_msil_sidecar,
             emit_wat_sidecar,
             generate_runtime_config,
         }
@@ -1000,7 +840,6 @@ pub fn compile_frontend_bundle_with_bundled_backends(
     bundle: &dyn FrontendBuildBundle,
     output_dir: &Path,
     project_name: &str,
-    emit_msil_sidecar: bool,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<DriverCompileReport> {
@@ -1008,7 +847,6 @@ pub fn compile_frontend_bundle_with_bundled_backends(
         bundle,
         output_dir,
         project_name,
-        emit_msil_sidecar,
         emit_wat_sidecar,
         generate_runtime_config,
     ))
@@ -1064,9 +902,6 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         let driver_input = lowered_input.into_driver_backend_input();
         eprintln!("[seed-debug] backend input ready {}/{} artifact={}", partition_index + 1, partition_count, artifact_name);
 
-        if request.emit_msil_sidecar {
-            let _ = write_clr_msil_sidecar(request.output_dir, &artifact_name, &driver_input);
-        }
         if request.emit_wat_sidecar {
             let _ = write_wasm_wat_sidecar(request.output_dir, &artifact_name, &driver_input);
         }
