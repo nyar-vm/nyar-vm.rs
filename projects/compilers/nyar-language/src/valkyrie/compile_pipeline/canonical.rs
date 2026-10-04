@@ -118,36 +118,22 @@ fn canonical_fragments(
 ) -> Result<BTreeMap<Identifier, CanonicalFragment>, StructuredDiagnosticSet> {
     let mut result = BTreeMap::new();
     for fragment in fragments {
-        let exported_operations = fragment.exported_operations.iter().map(|name| {
-            callable_instance(linked, name).ok_or_else(|| error(module, "CAN042", format!("片段 `{}` 的操作 `{name}` 缺少 callable identity", fragment.id)))
-        }).collect::<Result<Vec<_>, _>>()?;
-        let entry_operation = fragment.entry_operation.as_ref().map(|name| {
-            callable_instance(linked, name).ok_or_else(|| error(module, "CAN043", format!("片段 `{}` 的入口 `{name}` 缺少 callable identity", fragment.id)))
-        }).transpose()?;
-        let external_imports = fragment.external_import_links.keys().map(|name| {
-            let instance = callable_instance(linked, name).ok_or_else(|| error(module, "CAN044", format!("片段 `{}` 的导入 `{name}` 缺少 callable identity", fragment.id)))?;
-            let link = fragment.external_import_links.get(name)
-                .cloned()
-                .ok_or_else(|| error(module, "CAN052", format!("片段 `{}` 的导入 `{name}` 缺少链接合同", fragment.id)))?;
-            Ok((instance, link))
-        }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
-        let internal_call_edges = fragment.internal_call_edges.iter().map(|edge| {
-            Ok(CanonicalCallEdge {
-                caller: callable_instance(linked, &edge.caller).ok_or_else(|| error(module, "CAN045", format!("片段 `{}` 的调用方 `{}` 缺少 callable identity", fragment.id, edge.caller)))?,
-                callee: callable_instance(linked, &edge.callee_symbol).ok_or_else(|| error(module, "CAN046", format!("片段 `{}` 的被调用方 `{}` 缺少 callable identity", fragment.id, edge.callee_symbol)))?,
-            })
-        }).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
-        let external_call_edges = fragment.external_call_edges.iter().map(|edge| {
-            let caller = callable_instance(linked, &edge.caller).ok_or_else(|| error(module, "CAN047", format!("片段 `{}` 的外部调用方 `{}` 缺少 callable identity", fragment.id, edge.caller)))?;
-            let callee = callable_instance(linked, &edge.callee_symbol).ok_or_else(|| error(module, "CAN048", format!("片段 `{}` 的外部被调用方 `{}` 缺少 callable identity", fragment.id, edge.callee_symbol)))?;
-            let import = linked.imports.iter().find_map(|(index, record)| (record.callee == callee).then_some(*index))
-                .ok_or_else(|| error(module, "CAN049", format!("片段 `{}` 的外部调用 `{}` 缺少 ImportIndex", fragment.id, edge.callee_symbol)))?;
-            Ok(CanonicalExternalCallEdge { caller, import, arguments: edge.arguments.clone() })
-        }).collect::<Result<Vec<_>, StructuredDiagnosticSet>>()?;
-        let wasm_export_names = fragment.wasm_export_names.iter().map(|(name, export)| {
-            let instance = callable_instance(linked, name).ok_or_else(|| error(module, "CAN050", format!("片段 `{}` 的公开操作 `{name}` 缺少 callable identity", fragment.id)))?;
-            Ok((instance, export.clone()))
-        }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+        let exported_operations = fragment.exported_operations.clone();
+        for instance in &exported_operations {
+            if !linked.item_instances.contains_key(instance) {
+                return Err(error(module, "CAN042", format!("片段 {} 的操作缺少 callable 合同", fragment.id)));
+            }
+        }
+        let entry_operation = fragment.entry_operation;
+        if let Some(instance) = entry_operation {
+            if !linked.item_instances.contains_key(&instance) {
+                return Err(error(module, "CAN043", format!("片段 {} 的入口缺少 callable 合同", fragment.id)));
+            }
+        }
+        let wasm_export_names = fragment.wasm_export_names.clone();
+        let external_imports = BTreeMap::new();
+        let internal_call_edges = Vec::new();
+        let external_call_edges = Vec::new();
         if result.insert(fragment.id.clone(), CanonicalFragment {
             id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(), entry_operation,
             external_imports, external_call_edges, internal_call_edges, wasm_export_names,
@@ -156,10 +142,6 @@ fn canonical_fragments(
         }
     }
     Ok(result)
-}
-
-fn callable_instance(linked: &LinkedSemanticProgram, name: &QualifiedName) -> Option<ItemInstanceId> {
-    linked.callable_names.iter().find_map(|(instance, candidate)| (candidate == name).then_some(*instance))
 }
 
 type AggregateIdentity = (NominalInstanceId, TypeId, NominalValueSemantics);

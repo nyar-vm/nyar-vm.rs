@@ -20,7 +20,7 @@ use nyar_optimizer::{
     OptimizationResult, OptimizationSession, ProjectionPolicy, ReferenceManagement, RewriteTheory, TheoryBundle,
 };
 use nyar_types::{
-    CapabilityTag, ExternalCallEdge, ExternalImportLink, Identifier, InternalCallEdge, QualifiedName, WitnessCallEdge, WitnessSubmission,
+    CapabilityTag, Identifier, QualifiedName,
 };
 
 use crate::{
@@ -80,35 +80,24 @@ struct OptimizerInput {
     pub clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
 }
 
-/// 单个语义片段。
+/// Compiler 从 HIR 声明节点直接绑定的片段根合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticFragment {
     /// 片段标识。
     pub id: Identifier,
-    /// 该片段对外暴露的稳定操作。
-    pub exported_operations: Vec<QualifiedName>,
-    /// 激活该片段所需的能力标签。
+    /// 已实例化的片段根，不包含名称重建的调用闭包。
+    pub exported_operations: Vec<nyar_types::ItemInstanceId>,
+    /// 激活片段所需的能力。
     pub required_capabilities: Vec<CapabilityTag>,
-    /// 当前片段的引用对象管理提示。
+    /// 片段引用管理提示。
     pub reference_management_hint: Option<ReferenceManagement>,
-    /// 当前片段的可解释入口。
-    pub entry_operation: Option<QualifiedName>,
-    /// 当前片段内各稳定操作绑定到的外部导入链接。
-    pub external_import_links: BTreeMap<QualifiedName, ExternalImportLink>,
-    /// 当前片段内已经解析好的外部调用边。
-    pub external_call_edges: Vec<ExternalCallEdge>,
-    /// 当前片段内已经解析好的内部调用边。
-    pub internal_call_edges: Vec<InternalCallEdge>,
-    /// 具名 trait 见证表载荷。
-    pub witness_tables: Vec<WitnessSubmission>,
-    /// 入口 witness 动态调用边。
-    pub witness_calls: Vec<WitnessCallEdge>,
-    /// 仅属于该片段的等式理论。
+    /// 声明绑定的入口实例。
+    pub entry_operation: Option<nyar_types::ItemInstanceId>,
+    /// 片段等式理论。
     pub rewrite_theory: RewriteTheory,
-    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名（如 `two_sum` → `twoSum`）。
-    pub wasm_export_names: std::collections::BTreeMap<QualifiedName, String>,
+    /// 实例到公开 ABI 名称的映射。
+    pub wasm_export_names: BTreeMap<nyar_types::ItemInstanceId, String>,
 }
-
 
 /// 从 Canonical 闭包派生的优化器事实视图，不是前端成功合同。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

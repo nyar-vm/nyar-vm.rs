@@ -770,6 +770,13 @@ impl MirLowerer {
             .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
             .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
             .collect();
+        let semantic_fragments = match crate::frontend_contract::planning::hir_module_to_semantic_fragments(module) {
+            Ok(fragments) => fragments,
+            Err(symbol) => {
+                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol });
+                Vec::new()
+            }
+        };
         let result = MirModule {
             name: module.name.to_string(),
             functions,
@@ -784,7 +791,7 @@ impl MirLowerer {
             sum_types,
             flags_types,
             singleton_instances: crate::valkyrie::mir::collect_singleton_instance_plans(module),
-            semantic_fragments: crate::frontend_contract::planning::hir_module_to_semantic_fragments(module),
+            semantic_fragments,
             diagnostics,
         };
         result

@@ -288,74 +288,66 @@ fn reachable_internal_callee_closure(
     visited
 }
 
-/// 从已完成 HIR 语义分析的事实中生成 Compiler 内部 fragment 输入。
-///
-/// 该函数只返回 Compiler 继续闭合 Semantic MIR 所需的 fragment，不构造旧前端计划，
-/// 因此生产成功载荷不会再携带重复的中间语义模型。
-pub fn hir_module_to_semantic_fragments(module: &HirModule) -> Vec<SemanticFragment> {
-    let program_facts = hir_module_to_program_facts(module);
-    let object_algebraic_program = hir_module_to_object_algebraic_program(module);
-    hir_module_to_semantic_fragments_with_facts(module, &program_facts, &object_algebraic_program)
+/// 片段根只由声明注解及其实例身份产生，调用闭包由已降低的 MIR 决定。
+pub fn hir_module_to_semantic_fragments(module: &HirModule) -> Result<Vec<SemanticFragment>, String> {
+    if super::gpu_fragment_planning::module_has_graphic_fragment(module)
+        || super::gpu_fragment_planning::module_has_neural_fragment(module)
+    {
+        return Err("GPU 片段尚无正式实例合同，不能由名称维度生成可执行片段".into());
+    }
+    let entries = module.functions.iter().filter(|function| has_main_annotation(function)).collect::<Vec<_>>();
+    let mut fragments = BTreeMap::<Identifier, SemanticFragment>::new();
+    for function in &module.functions {
+        let export = parse_export_spec_from_annotations(&function.annotations);
+        let is_entry = has_main_annotation(function);
+        if export.is_none() && !is_entry {
+            continue;
+        }
+        let instance = function.instance.ok_or_else(|| format!("片段声明 `{}` 缺少实例身份", function.name))?;
+        let id = if let Some(spec) = &export {
+            Identifier::new(&format!("export__{}", spec.primary_partition().replace('.', "_")))
+        } else if entries.len() > 1 {
+            entry_fragment_name(function)
+        } else {
+            Identifier::new("functions")
+        };
+        let fragment = fragments.entry(id.clone()).or_insert_with(|| SemanticFragment {
+            id,
+            exported_operations: Vec::new(),
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+            entry_operation: None,
+            rewrite_theory: RewriteTheory::default(),
+            wasm_export_names: BTreeMap::new(),
+        });
+        if !fragment.exported_operations.contains(&instance) {
+            fragment.exported_operations.push(instance);
+        }
+        if is_entry && fragment.entry_operation.replace(instance).is_some() {
+            return Err(format!("片段 `{}` 存在多个入口", fragment.id));
+        }
+        if let Some(spec) = export {
+            fragment.wasm_export_names.insert(instance, spec.resolve_exported_name(&function.name));
+        }
+        if crate::valkyrie::hir::control_flow_validation::function_needs_suspend_fragment(&function.body)
+            && !fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend")
+        {
+            fragment.required_capabilities.push(CapabilityTag::new("suspend"));
+        }
+    }
+    if fragments.is_empty() {
+        fragments.insert(Identifier::new("functions"), SemanticFragment {
+            id: Identifier::new("functions"),
+            exported_operations: Vec::new(),
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+            entry_operation: None,
+            rewrite_theory: RewriteTheory::default(),
+            wasm_export_names: BTreeMap::new(),
+        });
+    }
+    Ok(fragments.into_values().collect())
 }
-
-fn hir_module_to_semantic_fragments_with_facts(
-    module: &HirModule,
-    program_facts: &ProgramFacts,
-    object_algebraic_program: &ObjectAlgebraicProgram,
-) -> Vec<SemanticFragment> {
-    let external_call_edges = external_call_edges(module, &program_facts.functions);
-    let internal_call_edges = internal_call_edges(module, &program_facts.functions);
-    let witness_tables = Vec::new();
-    let witness_calls = Vec::new();
-    let witness_capability = false;
-    let semantic_fragments = object_algebraic_program
-        .dimensions
-        .iter()
-        .map(|dimension| {
-            let fragment_external_call_edges = external_call_edges_for_operations(&external_call_edges, &dimension.exported_operations);
-            let fragment_internal_call_edges = internal_call_edges_for_operations(&internal_call_edges, &dimension.exported_operations);
-            let mut required_capabilities = dimension.required_capabilities.clone();
-            if witness_capability {
-                let tag = CapabilityTag::new("trait-witness");
-                if !required_capabilities.iter().any(|cap| cap.as_str() == "trait-witness") {
-                    required_capabilities.push(tag);
-                }
-            }
-            let (fragment_witness_tables, fragment_witness_calls) = if witness_capability {
-                (witness_tables.clone(), if dimension.name.as_str() == "functions" { witness_calls.clone() } else { Vec::new() })
-            }
-            else {
-                (Vec::new(), Vec::new())
-            };
-            SemanticFragment {
-                id: dimension.name.clone(),
-                exported_operations: dimension.exported_operations.clone(),
-                required_capabilities,
-                reference_management_hint: dimension.reference_management_hint,
-                wasm_export_names: wasm_export_names_for_operations(&program_facts, &dimension.exported_operations),
-                entry_operation: program_facts
-                    .entries
-                    .iter()
-                    .find_map(|entry| {
-                        dimension.exported_operations.iter().any(|operation| operation == &entry.symbol).then(|| entry.symbol.clone())
-                    }),
-                external_import_links: external_import_links_for_operations(
-                    &program_facts.functions,
-                    &dimension.exported_operations,
-                    &fragment_external_call_edges,
-                ),
-                external_call_edges: fragment_external_call_edges,
-                internal_call_edges: fragment_internal_call_edges,
-                witness_tables: fragment_witness_tables,
-                witness_calls: fragment_witness_calls,
-                rewrite_theory: rewrite_theory_for_fragment(dimension.name.as_str()),
-            }
-        })
-        .collect();
-
-    semantic_fragments
-}
-
 fn qualified_name(path: &NamePath) -> QualifiedName {
     QualifiedName::new(path.parts().to_vec())
 }
