@@ -16,13 +16,13 @@ pub fn witness_bindings_for_effect_with_diagnostics(
     let mut diagnostics: Vec<ProtocolDiagnostic> = Vec::new();
     let bindings = match effect {
         MirEffectKind::DelegateYield if generator_trait_name(payload_type).is_some() => {
-            collect_witness_binding(hir_module, "Iterator", "next", 0, payload_type, &mut diagnostics)
+            collect_witness_binding(hir_module, "Iterator", "next", payload_type, &mut diagnostics)
         }
         MirEffectKind::Await if future_trait_name(payload_type).is_some() => {
             collect_future_poll_and_output_bindings(hir_module, payload_type, &mut diagnostics)
         }
         MirEffectKind::AsyncSpawn if future_trait_name(payload_type).is_some() => {
-            collect_witness_binding(hir_module, "Future", "awake", 0, payload_type, &mut diagnostics)
+            collect_witness_binding(hir_module, "Future", "awake", payload_type, &mut diagnostics)
         }
         MirEffectKind::AsyncBlock if future_trait_name(payload_type).is_some() => {
             collect_future_poll_and_output_bindings(hir_module, payload_type, &mut diagnostics)
@@ -37,13 +37,13 @@ fn collect_future_poll_and_output_bindings(
     payload_type: Option<&ValkyrieType>,
     diagnostics: &mut Vec<ProtocolDiagnostic>,
 ) -> Vec<SuspendWitnessBinding> {
-    let mut bindings = collect_witness_binding(hir_module, "Future", "poll", 0, payload_type, diagnostics);
-    bindings.extend(collect_witness_binding(hir_module, "Future", "output", 1, payload_type, diagnostics));
+    let mut bindings = collect_witness_binding(hir_module, "Future", "poll", payload_type, diagnostics);
+    bindings.extend(collect_witness_binding(hir_module, "Future", "output", payload_type, diagnostics));
     let impl_declares_is_cancelled = find_trait_impl(hir_module, "Future")
         .map(|impl_block| impl_block.methods.iter().any(|method| method.name.as_str() == "is_cancelled"))
         .unwrap_or(false);
     if impl_declares_is_cancelled {
-        if let Some(cancel_binding) = resolved_witness_binding(hir_module, "Future", "is_cancelled", 2) {
+        if let Some(cancel_binding) = resolved_witness_binding(hir_module, "Future", "is_cancelled") {
             bindings.push(cancel_binding);
         }
     }
@@ -54,11 +54,10 @@ fn collect_witness_binding(
     hir_module: &HirModule,
     trait_name: &str,
     method_name: &str,
-    method_index: u32,
     payload_type: Option<&ValkyrieType>,
     diagnostics: &mut Vec<ProtocolDiagnostic>,
 ) -> Vec<SuspendWitnessBinding> {
-    if let Some(binding) = resolved_witness_binding(hir_module, trait_name, method_name, method_index) {
+    if let Some(binding) = resolved_witness_binding(hir_module, trait_name, method_name) {
         return vec![binding];
     }
     // 假闭环修复：witness 无法解析时不再合成假绑定（impl_symbol: None），
@@ -77,22 +76,16 @@ fn collect_witness_binding(
     Vec::new()
 }
 
-fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str, method_index: u32) -> Option<SuspendWitnessBinding> {
+fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
     let trait_impl = find_trait_impl(hir_module, trait_name)?;
     let type_name = impl_type_name(trait_impl)?;
-    let impl_symbol = trait_impl
+    let (index, method) = trait_impl
         .methods
         .iter()
         .enumerate()
-        .find(|(_, method)| method.name.as_str() == method_name)
-        .map(|(index, method)| format!("{}.{}", type_name, method.name))
-        .or_else(|| trait_impl.methods.first().map(|method| format!("{}.{}", type_name, method.name)))?;
-    let resolved_index = trait_impl
-        .methods
-        .iter()
-        .position(|method| method.name.as_str() == method_name)
-        .map(|index| u32::try_from(index).unwrap_or(method_index))
-        .unwrap_or(method_index);
+        .find(|(_, method)| method.name.as_str() == method_name)?;
+    let resolved_index = u32::try_from(index).ok()?;
+    let impl_symbol = format!("{}.{}", type_name, method.name);
     Some(SuspendWitnessBinding {
         trait_name: trait_name.to_string(),
         method_name: method_name.to_string(),
@@ -108,6 +101,42 @@ fn find_trait_impl<'a>(hir_module: &'a HirModule, trait_name: &str) -> Option<&'
         .iter()
         .filter(|item| item.trait_path.as_ref().is_some_and(|path| path.name().as_str() == trait_name))
         .find(|item| impl_type_name(item).is_some())
+}
+
+#[cfg(test)]
+mod witness_identity_tests {
+    use super::*;
+    use crate::{Identifier, NamePath, ValkyrieCompiler};
+
+    fn module() -> HirModule {
+        let mut hir = ValkyrieCompiler::default().compile_source(
+            "micro output() -> i64 { 1 } micro poll() -> bool { true }",
+        ).expect("夹具方法来自当前源码");
+        hir.impls.push(HirImpl {
+            target: ValkyrieType::Named(Identifier::new("Task")),
+            trait_path: Some(NamePath::new(vec![Identifier::new("Future")])),
+            methods: hir.functions.clone(),
+            ..HirImpl::default()
+        });
+        hir
+    }
+
+    #[test]
+    fn missing_witness_method_cannot_bind_the_first_impl_method() {
+        let hir = module();
+        assert!(resolved_witness_binding(&hir, "Future", "awake").is_none());
+        let mut diagnostics = Vec::new();
+        assert!(collect_witness_binding(&hir, "Future", "awake", None, &mut diagnostics).is_empty());
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn witness_slot_comes_from_the_matched_method_not_a_default_index() {
+        let hir = module();
+        let binding = resolved_witness_binding(&hir, "Future", "poll").unwrap();
+        assert_eq!(binding.method_index, 1);
+        assert_eq!(binding.impl_symbol.as_deref(), Some("Task.poll"));
+    }
 }
 
 fn impl_type_name(trait_impl: &HirImpl) -> Option<String> {

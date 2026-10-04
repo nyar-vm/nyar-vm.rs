@@ -657,7 +657,7 @@ fn resolve_internal_callee_symbol(
     module_symbols: &[QualifiedName],
     external_symbols: &[QualifiedName],
 ) -> Option<QualifiedName> {
-    let direct = qualified_name(resolved_symbol);
+    let direct = resolved_callable_name(resolved_symbol);
     if external_symbols.iter().any(|symbol| *symbol == direct) {
         return None;
     }
@@ -817,8 +817,12 @@ fn resolve_external_callee_symbol(
     resolved_symbol: &NamePath,
     external_symbols: &[QualifiedName],
 ) -> Option<QualifiedName> {
-    let direct = qualified_name(resolved_symbol);
+    let direct = resolved_callable_name(resolved_symbol);
     external_symbols.iter().any(|symbol| *symbol == direct).then_some(direct)
+}
+
+fn resolved_callable_name(path: &NamePath) -> QualifiedName {
+    QualifiedName::new(path.parts().iter().flat_map(|part| part.as_str().split("::").map(Identifier::new)).collect())
 }
 
 fn external_call_argument(expr: &HirExpr) -> Option<ExternalCallArgument> {
@@ -988,6 +992,17 @@ fn witness_submission_from_impl(trait_impl: &HirImpl) -> Option<WitnessSubmissio
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+
+    #[test]
+    fn current_source_call_graph_preserves_resolved_free_function_edges() {
+        let hir = crate::ValkyrieCompiler::default().compile_source(
+            "micro helper() -> i64 { 1 } [main] micro main() -> i64 { helper() }",
+        ).expect("源码调用应完成 HIR 解析");
+        let facts = hir_module_to_program_facts(&hir);
+        let edges = internal_call_edges(&hir, &facts.functions);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].callee_symbol.parts().last().unwrap().as_str(), "helper");
+    }
 
     fn path(parts: &[&str]) -> NamePath {
         NamePath::new(parts.iter().map(|part| Identifier::new(part)).collect())
