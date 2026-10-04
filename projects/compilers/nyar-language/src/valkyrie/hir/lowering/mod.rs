@@ -45,6 +45,62 @@ thread_local! {
 mod source_group_tests {
     use super::{CompilerSourceGroup, ValkyrieCompiler};
 
+    fn first_call(function: &super::HirFunction) -> &crate::types::hir::HirResolvedCall {
+        let super::HirStatementKind::Let { initializer: Some(expression), .. } = &function.body.statements[0].kind else {
+            panic!("缺少源码调用绑定");
+        };
+        let super::HirExprKind::Call { resolved: Some(call), .. } = &expression.kind else {
+            panic!("调用没有完成 HIR 解析");
+        };
+        call
+    }
+
+    #[test]
+    fn declaration_identity_survives_dependency_export_and_call_selection() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "library".into(), name: "library".into(),
+                source: "micro answer() -> i32 { return 23 }".into(), direct_dependencies: vec![],
+            },
+            CompilerSourceGroup {
+                dependency_key: "app".into(), name: "app".into(),
+                source: "micro run() -> i32 { let value: i32 = answer(); return value }".into(),
+                direct_dependencies: vec!["library".into()],
+            },
+        ];
+        let modules = ValkyrieCompiler::default().resolve_source_groups(&groups).expect("完整源码闭包的 HIR");
+        let declaration = modules[0].functions[0].declaration.expect("依赖声明身份");
+        assert_eq!(modules[1].imported_semantic_exports[0].functions[0].declaration, Some(declaration));
+        assert_eq!(first_call(&modules[1].functions[0]).declaration, Some(declaration));
+        assert_ne!(modules[1].functions[0].declaration, Some(declaration));
+    }
+
+    #[test]
+    fn declaration_identity_survives_generic_signature_instantiation() {
+        let hir = ValkyrieCompiler::default().compile_source(
+            "micro identity<T>(value: T) -> T { return value } micro run(value: i32) -> i32 { let result: i32 = identity(value); return result }",
+        ).expect("泛型源码调用");
+        let declaration = hir.functions[0].declaration.expect("泛型声明身份");
+        let call = first_call(&hir.functions[1]);
+        assert_eq!(call.declaration, Some(declaration));
+        assert_eq!(call.parameter_types, vec![super::ValkyrieType::Integer32 { signed: true }]);
+        assert_ne!(call.parameter_types[0], hir.functions[0].params[0].ty);
+    }
+
+    #[test]
+    fn declaration_identity_separates_same_named_static_methods() {
+        let hir = ValkyrieCompiler::default().compile_source(
+            "structure Alpha {} structure Beta {} imply Alpha { micro answer(value: i32) -> i32 { return value } } imply Beta { micro answer(value: i32) -> i32 { return value } } micro run(value: i32) -> i32 { let result: i32 = Alpha.answer(value); return result }",
+        ).expect("同名不同 owner 的静态调用");
+        let alpha = hir.impls[0].methods[0].declaration.expect("Alpha 声明身份");
+        let beta = hir.impls[1].methods[0].declaration.expect("Beta 声明身份");
+        assert_ne!(alpha, beta);
+        let call = first_call(&hir.functions[0]);
+        assert_eq!(call.declaration, Some(alpha));
+        assert!(!call.has_receiver);
+        assert_eq!(call.parameter_types.len(), 1);
+    }
+
     #[test]
     fn materialized_hir_requires_call_resolution_before_semantic_success() {
         let compiler = ValkyrieCompiler::default();
@@ -633,19 +689,35 @@ impl ValkyrieCompiler {
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
+        let mut hir_groups = self.resolve_source_groups(groups)?;
+        let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
+        let mir_groups = hir_groups
+            .iter()
+            .map(crate::valkyrie::mir::MirLowerer::lower_module_semantic)
+            .collect::<Vec<_>>();
+        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
+        if !mir_groups.is_empty() {
+            crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
+        }
+        crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir).map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
+    }
+
+    fn resolve_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<Vec<HirModule>, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
+        let mut next_declaration = 0u32;
         for group in groups {
             let dependency_exports = group
                 .direct_dependencies
                 .iter()
                 .map(|name| exports.get(name).cloned().ok_or_else(|| ParseError::invalid(format!("semantic dependency export `{name}` is unavailable for `{}`", group.name))))
                 .collect::<Result<Vec<_>, _>>()?;
-            let hir_module = self.parse_source_group_without_call_resolution(
+            let mut hir_module = self.parse_source_group_without_call_resolution(
                 &group.source,
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
             )?;
+            register_function_declarations(&mut hir_module, &mut next_declaration)?;
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
                 functions: hir_module.functions.clone(),
@@ -665,16 +737,7 @@ impl ValkyrieCompiler {
             validate_extractor_patterns(hir)?;
             self.validate_hir_semantic_contract(hir)?;
         }
-        let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
-        let mir_groups = hir_groups
-            .iter()
-            .map(crate::valkyrie::mir::MirLowerer::lower_module_semantic)
-            .collect::<Vec<_>>();
-        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
-        if !mir_groups.is_empty() {
-            crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
-        }
-        crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir).map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
+        Ok(hir_groups)
     }
 
     /// Lowers parser output into a HIR module.
@@ -700,6 +763,57 @@ impl ValkyrieCompiler {
     ) -> Result<HirModule, ParseError> {
         AstToHir::new(self.source_id).lower_root_with_semantic_exports_and_name(root, imported_semantic_exports, module_name)
     }
+}
+
+fn register_function_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), ParseError> {
+    fn register(function: &mut HirFunction, next: &mut u32) -> Result<(), ParseError> {
+        if function.declaration.is_some() {
+            return Err(ParseError::invalid("源码声明不能重复分配 ItemId"));
+        }
+        let following = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
+        function.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
+        *next = following;
+        Ok(())
+    }
+    for function in &mut module.functions {
+        register(function, next)?;
+    }
+    for structure in &mut module.structs {
+        for method in &mut structure.methods {
+            register(method, next)?;
+        }
+        for property in &mut structure.properties {
+            for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
+                register(accessor, next)?;
+            }
+        }
+    }
+    for singleton in &mut module.singletons {
+        for method in singleton.methods.iter_mut()
+            .chain(singleton.constructor.iter_mut().map(Box::as_mut))
+            .chain(singleton.finalizer.iter_mut().map(Box::as_mut)) {
+            register(method, next)?;
+        }
+    }
+    for trait_definition in &mut module.traits {
+        for method in trait_definition.methods.iter_mut().chain(trait_definition.default_methods.iter_mut()) {
+            register(method, next)?;
+        }
+    }
+    for implementation in &mut module.impls {
+        for method in &mut implementation.methods {
+            register(method, next)?;
+        }
+    }
+    for widget in &mut module.widgets {
+        for method in &mut widget.methods {
+            register(method, next)?;
+        }
+    }
+    for submodule in &mut module.submodules {
+        register_function_declarations(submodule, next)?;
+    }
+    Ok(())
 }
 
 fn lower_trait_method(mut method: HirFunction, associated_names: &std::collections::BTreeSet<Identifier>) -> HirFunction {
@@ -822,6 +936,10 @@ impl AstToHir {
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
         let mut hir = self.lower_root_without_call_resolution(root, imported_semantic_exports, module_name_override)?;
+        if !imported_semantic_exports.is_empty() {
+            return Err(ParseError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
+        }
+        register_function_declarations(&mut hir, &mut 0)?;
         resolve_hir_calls(&mut hir);
         validate_extractor_patterns(&hir)?;
         Ok(hir)
@@ -1007,6 +1125,7 @@ impl AstToHir {
 
     fn lower_function(&self, function: &FunctionDeclaration, declaring_namespace: &NamePath) -> HirFunction {
         HirFunction {
+            declaration: None,
             name: function.name.name.clone(),
             declaring_namespace: declaring_namespace.clone(),
             doc: lower_documentation(&function.annotations),
@@ -1261,6 +1380,7 @@ impl AstToHir {
 
     fn lower_object_method(&self, method: &ObjectMethodDeclaration) -> HirFunction {
         HirFunction {
+            declaration: None,
             name: method.name.name.clone(),
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),
@@ -1356,6 +1476,7 @@ impl AstToHir {
         };
 
         HirFunction {
+            declaration: None,
             name: accessor_name,
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),

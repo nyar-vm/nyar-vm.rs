@@ -105,6 +105,7 @@ pub fn lower_test_literal(literal: &HirLiteral, expected_type: Option<&ValkyrieT
 /// 构造一个最小函数并降低为 `MIR`。
 pub fn lower_test_function(expr: HirExpr) -> MirFunction {
     let function = HirFunction {
+        declaration: None,
         name: Identifier::new("main"),
         where_constraints: Vec::new(),
         declaring_namespace: NamePath::default(),

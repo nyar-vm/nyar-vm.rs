@@ -108,6 +108,8 @@ pub enum HirCallableDomain {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirResolvedCall {
+    /// 所选源码声明的原始身份；非声明调用不伪造 ItemId。
+    pub declaration: Option<nyar_types::ItemId>,
     /// The resolved symbol path.
     pub symbol: NamePath,
     /// The callable domain.

@@ -42,6 +42,7 @@ pub struct OverloadSignature {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverloadCandidate {
+    pub declaration: Option<nyar_types::ItemId>,
     pub symbol: NamePath,
     pub owner: Option<Identifier>,
     pub trait_owner: Option<Identifier>,
@@ -64,6 +65,7 @@ impl OverloadCandidate {
         match_kind: OverloadMatchKind,
     ) -> Self {
         Self {
+            declaration: None,
             symbol,
             owner: None,
             trait_owner: None,
@@ -100,6 +102,7 @@ impl OverloadCandidate {
         match_kind: OverloadMatchKind,
     ) -> Self {
         Self {
+            declaration: None,
             symbol,
             owner: Some(owner),
             trait_owner: None,
@@ -328,6 +331,7 @@ fn match_intrinsic_builtin_candidate(
                 return None;
             }
             Some(OverloadCandidate {
+                declaration: candidate.declaration,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -415,6 +419,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
         OverloadMatchKind::Row,
     )
     .with_param_specs(function.params.clone());
+    candidate.declaration = function.declaration;
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
@@ -520,6 +525,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
         )
     };
     let mut candidate = candidate.with_param_specs(function.params.clone());
+    candidate.declaration = function.declaration;
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
@@ -968,6 +974,7 @@ fn match_call_candidate(
     let actual_types = specialize_call_literals(args, &actual_types, &expected_params);
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_params)?;
     Some(OverloadCandidate {
+        declaration: candidate.declaration,
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
         trait_owner: candidate.trait_owner.clone(),
@@ -1083,6 +1090,7 @@ fn try_resolve_call(
     } {
         if let Some(ValkyrieType::Function(func)) = locals.get(local_name) {
             return Some(HirResolvedCall {
+                declaration: None,
                 symbol: NamePath::new(vec![Identifier::new(local_name)]),
                 domain: HirCallableDomain::Function,
                 return_type: func.return_type.clone(),
@@ -1100,6 +1108,7 @@ fn try_resolve_call(
     if let Some(name) = extract_callable_name(callee) {
         if name.as_str() == "panic" {
             return Some(HirResolvedCall {
+                declaration: None,
                 symbol: NamePath::new(vec![Identifier::new("builtin"), Identifier::new("panic")]),
                 domain: HirCallableDomain::Function,
                 return_type: ValkyrieType::Named(Identifier::new("Never")),
@@ -1110,6 +1119,7 @@ fn try_resolve_call(
         }
         if name.as_str() == "format" {
             return Some(HirResolvedCall {
+                declaration: None,
                 symbol: NamePath::new(vec![Identifier::new("format")]),
                 domain: HirCallableDomain::Function,
                 return_type: ValkyrieType::Utf8,
@@ -1229,6 +1239,7 @@ fn try_resolve_call(
             primitive_operation_contract(&receiver.value, &callee_name, args, locals, struct_fields, singleton_names)
         {
             return Some(HirResolvedCall {
+                declaration: None,
                 symbol: primitive_operation_symbol(&receiver.value, &callee_name, locals, struct_fields, singleton_names)?,
                 domain: HirCallableDomain::Function,
                 return_type,
@@ -1273,6 +1284,7 @@ fn try_resolve_call(
     let symbol = overload_symbol_path(&resolved);
     let return_type = if is_boolean_operator(&callee_name) { ValkyrieType::Boolean } else { resolved.signature.return_type };
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol,
         domain: match resolved.domain {
             OverloadDomain::Function => HirCallableDomain::Function,
@@ -1308,6 +1320,7 @@ fn primitive_operator_contract(
             return None;
         }
         return Some(HirResolvedCall {
+            declaration: None,
             symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
@@ -1322,6 +1335,7 @@ fn primitive_operator_contract(
             return None;
         }
         return Some(HirResolvedCall {
+            declaration: None,
             symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: operand.clone(),
@@ -1355,6 +1369,7 @@ fn primitive_operator_contract(
         }))
     {
         return Some(HirResolvedCall {
+            declaration: None,
             symbol: diagnostic_symbol,
             domain: HirCallableDomain::Operator,
             return_type: ValkyrieType::Boolean,
@@ -1377,6 +1392,7 @@ fn primitive_operator_contract(
         return None;
     };
     Some(HirResolvedCall {
+        declaration: None,
         symbol: diagnostic_symbol,
         domain: HirCallableDomain::Operator,
         return_type,
@@ -1452,6 +1468,7 @@ fn try_resolve_qualified_free_function(
         OverloadDomain::Extractor => HirCallableDomain::Extractor,
     };
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol: resolved.symbol,
         domain,
         return_type: resolved.signature.return_type,
@@ -1480,6 +1497,7 @@ fn try_resolve_instance_method(
         primitive_operation_contract(receiver, method_name, &full_args, locals, struct_fields, singleton_names)
     {
         return Some(HirResolvedCall {
+            declaration: None,
             symbol: primitive_operation_symbol(receiver, method_name, locals, struct_fields, singleton_names)?,
             domain: HirCallableDomain::Function,
             return_type,
@@ -1528,6 +1546,7 @@ fn try_resolve_instance_method(
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Function,
         return_type: resolved.signature.return_type,
@@ -1718,6 +1737,7 @@ fn try_resolve_type_static_method(
     }
     let resolved = resolve_overload(&filtered).ok()?;
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol: overload_symbol_path(&resolved),
         domain: match resolved.domain {
             OverloadDomain::Constructor => HirCallableDomain::Constructor,
@@ -1835,6 +1855,7 @@ fn try_resolve_singleton_method(
         _ => (resolved.signature.return_type, resolved.signature.params),
     };
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol,
         domain: HirCallableDomain::Function,
         return_type,
@@ -1959,6 +1980,7 @@ fn try_resolve_constructor(
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Constructor,
         return_type: resolved.signature.return_type,
@@ -2083,6 +2105,7 @@ fn try_resolve_pattern_extractor(
     let parameter_types =
         resolved.signature.params.iter().map(|param| substitute_type_parameters(param, &receiver_type, actual_type)).collect();
     Some(HirResolvedCall {
+        declaration: resolved.declaration,
         symbol: resolved.symbol,
         domain: HirCallableDomain::Extractor,
         return_type,
@@ -2676,6 +2699,7 @@ fn synthesize_builtin_result_extractor(canonical_callee: &NamePath, actual_type:
         _ => None,
     };
     Some(HirResolvedCall {
+        declaration: None,
         symbol: NamePath::new(vec![Identifier::new(head), Identifier::new("extractor")]),
         domain: HirCallableDomain::Extractor,
         return_type: actual_type.clone(),

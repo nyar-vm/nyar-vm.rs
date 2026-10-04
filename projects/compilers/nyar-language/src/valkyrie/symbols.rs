@@ -39,6 +39,7 @@ mod tests {
     fn stable_hir_function_name_path_does_not_recurse() {
         let module = NamePath::new(vec![Identifier::new("main")]);
         let function = HirFunction {
+            declaration: None,
             name: Identifier::new("answer"),
             where_constraints: Vec::new(),
             declaring_namespace: NamePath::default(),

@@ -10,6 +10,8 @@ use crate::{Identifier, NamePath, SourceSpan};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirFunction {
+    /// Compiler 在源码闭包内分配的声明身份；物化阶段尚未注册时为空。
+    pub declaration: Option<nyar_types::ItemId>,
     /// The name of the function.
     pub name: Identifier,
     /// Declaring namespace from `namespace foo;` / `namespace foo { ... }` at the definition site.

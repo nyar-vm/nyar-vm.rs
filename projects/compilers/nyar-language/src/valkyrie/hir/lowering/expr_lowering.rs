@@ -386,6 +386,7 @@ fn lower_anonymous_class(
 
 fn lower_inline_object_method(method: &std_data::text::valkyrie::ObjectMethodDeclaration, source_id: SourceID) -> HirFunction {
     HirFunction {
+        declaration: None,
         name: method.name.name.clone(),
         declaring_namespace: NamePath::default(),
         doc: lower_documentation(&method.annotations),
