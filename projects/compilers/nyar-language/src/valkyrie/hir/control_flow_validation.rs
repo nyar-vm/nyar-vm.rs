@@ -504,12 +504,7 @@ fn infer_static_expr_type(expr: &HirExpr, state: &HirValidationState) -> Option<
             let value_type = infer_static_expr_type(value, state)?;
             future_resume_type(&value_type)
         }
-        HirExprKind::Call { callee, resolved, .. } => {
-            if is_boolean_operator_call(callee) {
-                return Some(ValkyrieType::Boolean);
-            }
-            resolved.as_ref().map(|call| call.return_type.clone())
-        }
+        HirExprKind::Call { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::Construct { name, resolved, .. } => {
             resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| Some(ValkyrieType::Named(name.clone())))
         }
@@ -535,20 +530,6 @@ fn infer_static_expr_type(expr: &HirExpr, state: &HirValidationState) -> Option<
         HirExprKind::TryScope { is_optional, is_forced, result_type, body } => {
             infer_try_scope_type(*is_optional, *is_forced, result_type.as_ref(), body, state)
         }
-        _ => None,
-    }
-}
-
-fn is_boolean_operator_call(callee: &HirExpr) -> bool {
-    let name = callable_name_from_expr(callee);
-    matches!(name, Some("infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=" | "infix &&" | "infix ||"))
-}
-
-fn callable_name_from_expr(callee: &HirExpr) -> Option<&str> {
-    match &callee.kind {
-        HirExprKind::Variable(identifier) => Some(identifier.name.as_str()),
-        HirExprKind::Path(path) => path.parts().last().map(|part| part.as_str()),
-        HirExprKind::GenericApply { callee, .. } => callable_name_from_expr(callee),
         _ => None,
     }
 }

@@ -1,24 +1,13 @@
 use nyar_language::{
     type_checker::*,
     types::{
-        Identifier, NamePath, SourceID, SourceSpan,
-        hir::{FunctionType, HirBlock, HirCallArgument, HirExpr, HirExprKind, HirLiteral, ValkyrieType},
+        Identifier, SourceID, SourceSpan,
+        hir::{FunctionType, HirBlock, HirExpr, HirExprKind, HirLiteral, ValkyrieType},
     },
 };
 
 fn test_span() -> SourceSpan {
     SourceSpan::new(SourceID::default(), 0, 0)
-}
-
-fn operator_call(name: &str, args: Vec<HirExpr>) -> HirExpr {
-    HirExpr {
-        kind: HirExprKind::Call {
-            callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(name)])), span: test_span() }),
-            args: args.into_iter().map(HirCallArgument::positional).collect(),
-            resolved: None,
-        },
-        span: test_span(),
-    }
 }
 
 #[test]
@@ -98,54 +87,6 @@ fn test_unbound_variable() {
     };
     let result = inf.infer(&expr);
     assert!(matches!(result, Err(TypeError::UnboundVariable { .. })));
-}
-
-#[test]
-fn test_binary_add() {
-    let mut inf = TypeInference::new();
-    let left = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(1)), span: test_span() };
-    let right = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(2)), span: test_span() };
-    let expr = operator_call("infix +", vec![left, right]);
-    let t = inf.infer(&expr).unwrap();
-    assert_eq!(t, ValkyrieType::Integer64 { signed: true });
-}
-
-#[test]
-fn test_binary_comparison() {
-    let mut inf = TypeInference::new();
-    let left = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(1)), span: test_span() };
-    let right = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(2)), span: test_span() };
-    let expr = operator_call("infix <", vec![left, right]);
-    let t = inf.infer(&expr).unwrap();
-    assert_eq!(t, ValkyrieType::Boolean);
-}
-
-#[test]
-fn test_bool_equality_call() {
-    let mut inf = TypeInference::new();
-    let left = HirExpr { kind: HirExprKind::Literal(HirLiteral::Bool(true)), span: test_span() };
-    let right = HirExpr { kind: HirExprKind::Literal(HirLiteral::Bool(false)), span: test_span() };
-    let expr = operator_call("infix ==", vec![left, right]);
-    let t = inf.infer(&expr).unwrap();
-    assert_eq!(t, ValkyrieType::Boolean);
-}
-
-#[test]
-fn test_unary_neg() {
-    let mut inf = TypeInference::new();
-    let inner = HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(42)), span: test_span() };
-    let expr = operator_call("prefix -", vec![inner]);
-    let t = inf.infer(&expr).unwrap();
-    assert_eq!(t, ValkyrieType::Integer64 { signed: true });
-}
-
-#[test]
-fn test_unary_not() {
-    let mut inf = TypeInference::new();
-    let inner = HirExpr { kind: HirExprKind::Literal(HirLiteral::Bool(true)), span: test_span() };
-    let expr = operator_call("prefix !", vec![inner]);
-    let t = inf.infer(&expr).unwrap();
-    assert_eq!(t, ValkyrieType::Boolean);
 }
 
 #[test]

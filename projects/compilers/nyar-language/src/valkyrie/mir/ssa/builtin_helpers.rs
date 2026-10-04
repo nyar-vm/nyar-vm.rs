@@ -3,51 +3,12 @@
 //! IntrinsicOpcode 表已删除；不得恢复 operator→opcode 映射。
 //! 语义路径只消费 [`IntrinsicId`] / [`OperatorId`]，禁止按类型名末段猜。
 
-use std::collections::BTreeMap;
+use crate::types::NamePath;
+use nyar_types::IntrinsicId;
 
-use crate::types::{
-    NamePath,
-    hir::{HirAttribute, HirFunction, HirModule, ValkyrieType},
-};
-use nyar_types::{IntrinsicId, builtin_operator};
-
-use super::{MirOperand, MirValueRef, infer_builder_operand_type};
-
-/// 失败关闭桩：IntrinsicOpcode / plain-type 模式表已删除。
-pub(super) fn plain_type_pattern_matches(_ty: &ValkyrieType, _name: &NamePath) -> bool {
+/// 尚未支持的 primitive 类型模式不能宣称匹配。
+pub(super) fn plain_type_pattern_matches(_ty: &crate::types::hir::ValkyrieType, _name: &NamePath) -> bool {
     false
-}
-
-/// 已删除：不得向 MirModule 收集 IntrinsicOpcode。
-pub(super) fn collect_intrinsic_opcodes(_module: &HirModule) -> BTreeMap<String, ()> {
-    BTreeMap::new()
-}
-
-pub(crate) fn intrinsic_opcode_for_function(_function: &HirFunction) -> Option<()> {
-    None
-}
-
-pub(super) fn extract_intrinsic_opcode(_attribute: &HirAttribute) -> Option<()> {
-    None
-}
-
-pub(super) fn intrinsic_opcode_output_type(
-    _opcode: &(),
-    _arguments: &[MirOperand],
-    _value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-) -> Option<ValkyrieType> {
-    None
-}
-
-pub(super) fn intrinsic_opcode_for_operator(_name: &str) -> Option<()> {
-    None
-}
-
-pub(super) fn array_index_call_output_type(
-    _arguments: &[MirOperand],
-    _value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-) -> Option<ValkyrieType> {
-    None
 }
 
 /// 迁移期：由已进入 MIR 的符号路径映到 [`IntrinsicId`]。
@@ -56,26 +17,6 @@ pub(super) fn array_index_call_output_type(
 pub(crate) fn resolve_intrinsic_id(symbol: &NamePath) -> Option<IntrinsicId> {
     let parts = symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
     IntrinsicId::resolve_from_segments(&parts)
-}
-
-/// Language operators lower as `Call` to display names during migration — not registry-linked.
-/// When HIR omits `resolved.return_type`, infer via [`OperatorId`] 旁表。
-pub(super) fn language_operator_call_return_type(
-    symbol: &NamePath,
-    arguments: &[MirOperand],
-    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-) -> Option<ValkyrieType> {
-    let name = symbol.parts().last().map(|part| part.as_str()).unwrap_or("");
-    let operator_id = builtin_operator::lookup_display_name(name)?;
-    if builtin_operator::is_boolean_result(operator_id) {
-        Some(ValkyrieType::Boolean)
-    }
-    else if builtin_operator::is_numeric_result(operator_id) {
-        arguments.first().and_then(|arg| infer_builder_operand_type(arg, value_types))
-    }
-    else {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -96,11 +37,5 @@ mod tests {
         assert_eq!(resolve_intrinsic_id(&hashmap_get), None);
         let array_get_method = NamePath::new(vec![Identifier::new("Array"), Identifier::new("get")]);
         assert_eq!(resolve_intrinsic_id(&array_get_method), None);
-    }
-
-    #[test]
-    fn language_operator_return_type_uses_operator_id() {
-        let eq = NamePath::new(vec![Identifier::new("infix ==")]);
-        assert_eq!(language_operator_call_return_type(&eq, &[], &BTreeMap::new()), Some(ValkyrieType::Boolean));
     }
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::types::{
     Identifier,
-    hir::{HirCallArgument, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, HirStatementKind, ValkyrieType as HirType},
+    hir::{HirExpr, HirExprKind, HirLiteral, HirResolvedCall, HirStatementKind, ValkyrieType as HirType},
 };
 
 use crate::hir::nullable_payload_type;
@@ -60,7 +60,7 @@ impl TypeInference {
             HirExprKind::Variable(identifier) => {
                 self.variables.get(&identifier.name).cloned().ok_or_else(|| TypeError::UnboundVariable { name: identifier.name.clone() })
             }
-            HirExprKind::Call { callee, args, resolved } => self.infer_call(callee, args, resolved.as_ref()),
+            HirExprKind::Call { resolved, .. } => self.infer_call(resolved.as_ref()),
             HirExprKind::If { condition, then_branch, else_branch }
             | HirExprKind::IfLet { scrutinee: condition, then_branch, else_branch, .. } => {
                 let condition_ty = self.infer(condition)?;
@@ -85,42 +85,8 @@ impl TypeInference {
         }
     }
 
-    fn infer_call(&mut self, callee: &HirExpr, args: &[HirCallArgument], resolved: Option<&HirResolvedCall>) -> Result<HirType, TypeError> {
-        if let Some(resolved) = resolved {
-            return Ok(resolved.return_type.clone());
-        }
-        let arg_types: Vec<HirType> = args.iter().map(|arg| self.infer(&arg.value)).collect::<Result<_, _>>()?;
-        let HirExprKind::Path(path) = &callee.kind
-        else {
-            return Err(TypeError::UnsupportedExpression);
-        };
-        if path.parts().len() != 1 {
-            return Err(TypeError::UnsupportedExpression);
-        }
-
-        match (path.parts()[0].as_str(), arg_types.as_slice()) {
-            ("infix +" | "infix -" | "infix *" | "infix /" | "infix %", [lhs, rhs]) => {
-                self.unify(lhs, rhs)?;
-                Ok(lhs.clone())
-            }
-            ("infix ==" | "infix !=" | "infix <" | "infix <=" | "infix >" | "infix >=", [lhs, rhs]) => {
-                self.unify(lhs, rhs)?;
-                Ok(bool_type())
-            }
-            ("prefix -", [inner]) => {
-                if self.is_numeric(inner) {
-                    Ok(inner.clone())
-                }
-                else {
-                    Err(TypeError::Mismatch { expected: signed_int64_type(), found: inner.clone() })
-                }
-            }
-            ("prefix !", [inner]) => {
-                self.unify(inner, &bool_type())?;
-                Ok(bool_type())
-            }
-            _ => Err(TypeError::UnsupportedExpression),
-        }
+    fn infer_call(&mut self, resolved: Option<&HirResolvedCall>) -> Result<HirType, TypeError> {
+        resolved.map(|call| call.return_type.clone()).ok_or(TypeError::UnsupportedExpression)
     }
 
     pub fn unify(&mut self, left: &HirType, right: &HirType) -> Result<(), TypeError> {
@@ -182,5 +148,50 @@ fn infer_block_type(inference: &mut TypeInference, block: &crate::types::hir::Hi
     match &block.expr {
         Some(expr) => inference.infer(expr),
         None => Ok(HirType::Unit),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TypeError, TypeInference};
+    use crate::{types::{Identifier, NamePath, SourceID, SourceSpan, hir::{HirExpr, HirExprKind}}, valkyrie::hir::HirResolvedCall};
+
+    fn span() -> SourceSpan {
+        SourceSpan::new(SourceID::default(), 0, 0)
+    }
+
+    #[test]
+    fn unresolved_operator_name_cannot_supply_a_result_type() {
+        let expression = HirExpr {
+            kind: HirExprKind::Call {
+                callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix ==")])), span: span() }),
+                args: Vec::new(),
+                resolved: None,
+            },
+            span: span(),
+        };
+        assert_eq!(TypeInference::new().infer(&expression), Err(TypeError::UnsupportedExpression));
+    }
+
+    #[test]
+    fn resolved_call_result_comes_from_its_signature() {
+        let expression = HirExpr {
+            kind: HirExprKind::Call {
+                callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix +")])), span: span() }),
+                args: Vec::new(),
+                resolved: Some(HirResolvedCall {
+                    declaration: None,
+                    instance: None,
+                    symbol: NamePath::new(vec![Identifier::new("declared_callable")]),
+                    domain: crate::types::hir::HirCallableDomain::Operator,
+                    return_type: crate::types::hir::ValkyrieType::Boolean,
+                    parameter_types: Vec::new(),
+                    has_receiver: false,
+                    extractor_payload_type: None,
+                }),
+            },
+            span: span(),
+        };
+        assert_eq!(TypeInference::new().infer(&expression), Ok(crate::types::hir::ValkyrieType::Boolean));
     }
 }

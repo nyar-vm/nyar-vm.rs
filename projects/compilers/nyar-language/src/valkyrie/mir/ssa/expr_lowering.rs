@@ -11,10 +11,7 @@ use nyar_types::IntrinsicId;
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
-    builtin_helpers::{
-        array_index_call_output_type, intrinsic_opcode_for_operator, intrinsic_opcode_output_type, language_operator_call_return_type,
-        resolve_intrinsic_id,
-    },
+    builtin_helpers::resolve_intrinsic_id,
     callee_name_matches,
     expr_helpers::{
         is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
@@ -822,14 +819,9 @@ impl MirBuilder {
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
                 // `unit` 不得占用物理 value 槽（BPHYS001）——一律经 `push_call_returning`。
-                let Some(return_type) = array_index_call_output_type(&arguments, &self.value_types)
-                    .or_else(|| function_ty.map(|func| func.return_type))
+                let Some(return_type) = function_ty
+                    .map(|func| func.return_type)
                     .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
-                    .or_else(|| match &callee {
-                        MirOperand::Symbol(path) => language_operator_call_return_type(path, &arguments, &self.value_types),
-                        _ => None,
-                    })
-                    .or_else(|| expected_type.cloned())
                 else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: format!("调用结果 `{:?}`", callee) });
                     return MirOperand::Constant(MirConstant::Unit);
