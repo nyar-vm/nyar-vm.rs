@@ -12,6 +12,8 @@ use crate::{Identifier, NamePath, SourceSpan};
 pub struct HirFunction {
     /// Compiler 在源码闭包内分配的声明身份；物化阶段尚未注册时为空。
     pub declaration: Option<nyar_types::ItemId>,
+    /// Compiler 为已经完成类型代入的声明分配的实例身份。
+    pub instance: Option<nyar_types::ItemInstanceId>,
     /// The name of the function.
     pub name: Identifier,
     /// Declaring namespace from `namespace foo;` / `namespace foo { ... }` at the definition site.

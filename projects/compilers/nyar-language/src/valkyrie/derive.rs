@@ -423,6 +423,7 @@ fn make_impl(target: &HirStruct, trait_name: &str, methods: Vec<HirFunction>) ->
 fn make_method(name: &str) -> HirFunction {
     HirFunction {
         declaration: None,
+        instance: None,
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),
         doc: HirDocumentation::default(),

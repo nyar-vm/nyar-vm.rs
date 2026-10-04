@@ -1148,6 +1148,8 @@ mod semantic_contract_tests {
         let symbol = NamePath::new(vec![Identifier::new("dependency"), Identifier::new("run")]);
         let mut module = module_with_static_call(symbol.clone());
         module.external_calls.push(MirExternalCallContract {
+            declaration: None,
+            instance: None,
             symbol,
             link: nyar_types::ExternalImportLink::host(None, vec!["dependency".to_owned(), "run".to_owned()]),
             parameter_types: Vec::new(), return_type: ValkyrieType::Unit,

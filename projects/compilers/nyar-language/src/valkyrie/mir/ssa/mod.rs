@@ -145,6 +145,9 @@ pub struct MirModule {
 /// 声明签名属于模块级 callable 合同，不复制到单条 Call 上；不得挂分派旁路。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirExternalCallContract {
+    /// HIR 导出的原始声明身份；导入实例不得按导入顺序重新生成声明。
+    pub declaration: Option<nyar_types::ItemId>,
+    pub instance: Option<nyar_types::ItemInstanceId>,
     /// HIR 选择的精确源码身份。
     pub symbol: NamePath,
     /// 声明阶段形成的显式外部链接合同。
@@ -229,6 +232,8 @@ pub struct MirFunction {
     pub symbol: String,
     /// HIR 声明对应的 Compiler ItemId；MIR 不再按符号重新铸造实例身份。
     pub declaration: Option<nyar_types::ItemId>,
+    /// 由 Compiler 独立实例化阶段分配，不能由声明编号转换。
+    pub instance: Option<nyar_types::ItemInstanceId>,
     /// 函数返回类型，用于后端判断调用是否返回 `void`。
     pub return_type: ValkyrieType,
     /// 函数参数类型列表，用于后端生成调用约定与方法签名。
@@ -758,8 +763,8 @@ impl MirLowerer {
         // MirFunction 不再携带 per-function diagnostics。
         let type_identities = type_identity_table(&functions, &external_calls, &structs);
         let callable_identities = functions.iter()
-            .filter_map(|function| function.declaration.map(|declaration| (function.symbol.clone(), nyar_types::ItemInstanceId::from_index(declaration.index()))))
-            .filter_map(|(symbol, instance)| instance.map(|instance| (symbol, instance)))
+            .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
+            .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
             .collect();
         let result = MirModule {
             name: module.name.to_string(),
@@ -829,6 +834,8 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
         .filter_map(|function| {
             let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
             Some(MirExternalCallContract {
+                declaration: function.declaration,
+                instance: function.instance,
                 symbol: crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function),
                 link,
                 parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
@@ -849,6 +856,8 @@ fn collect_external_call_contracts(module: &HirModule) -> Vec<MirExternalCallCon
                 let link = crate::valkyrie::backend_contract::interop::function_interop_contract(function)?;
                 let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&export.module, function);
                 Some(MirExternalCallContract {
+                    declaration: function.declaration,
+                    instance: function.instance,
                     symbol,
                     link,
                     parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
@@ -1233,6 +1242,7 @@ fn lower_function_semantic(
     let mut mir_function = MirFunction {
         symbol: stable_hir_function_symbol(&module.name, function),
         declaration: function.declaration,
+        instance: function.instance,
         return_type: resolved_return_type,
         param_types,
         value_types: builder.value_types,

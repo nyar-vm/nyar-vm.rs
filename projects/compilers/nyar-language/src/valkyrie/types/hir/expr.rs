@@ -110,6 +110,8 @@ pub enum HirCallableDomain {
 pub struct HirResolvedCall {
     /// 所选源码声明的原始身份；非声明调用不伪造 ItemId。
     pub declaration: Option<nyar_types::ItemId>,
+    /// 所选声明的已实例化身份；未实例化的泛型调用不能进入成功 MIR。
+    pub instance: Option<nyar_types::ItemInstanceId>,
     /// The resolved symbol path.
     pub symbol: NamePath,
     /// The callable domain.

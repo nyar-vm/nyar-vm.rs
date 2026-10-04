@@ -706,6 +706,7 @@ impl ValkyrieCompiler {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
+        let mut next_instance = 0u32;
         for group in groups {
             let dependency_exports = group
                 .direct_dependencies
@@ -717,7 +718,7 @@ impl ValkyrieCompiler {
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
             )?;
-            register_function_declarations(&mut hir_module, &mut next_declaration)?;
+            register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
                 functions: hir_module.functions.clone(),
@@ -765,26 +766,31 @@ impl ValkyrieCompiler {
     }
 }
 
-fn register_function_declarations(module: &mut HirModule, next: &mut u32) -> Result<(), ParseError> {
-    fn register(function: &mut HirFunction, next: &mut u32) -> Result<(), ParseError> {
-        if function.declaration.is_some() {
+fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_instance: &mut u32) -> Result<(), ParseError> {
+    fn register(function: &mut HirFunction, next: &mut u32, next_instance: &mut u32, owner_monomorphic: bool) -> Result<(), ParseError> {
+        if function.declaration.is_some() || function.instance.is_some() {
             return Err(ParseError::invalid("源码声明不能重复分配 ItemId"));
         }
         let following = next.checked_add(1).ok_or_else(|| ParseError::invalid("ItemId 声明空间耗尽"))?;
         function.declaration = Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| ParseError::invalid("无效 ItemId"))?);
         *next = following;
+        if owner_monomorphic && function.generics.is_empty() {
+            let following = next_instance.checked_add(1).ok_or_else(|| ParseError::invalid("ItemInstanceId 实例空间耗尽"))?;
+            function.instance = Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| ParseError::invalid("无效 ItemInstanceId"))?);
+            *next_instance = following;
+        }
         Ok(())
     }
     for function in &mut module.functions {
-        register(function, next)?;
+        register(function, next, next_instance, true)?;
     }
     for structure in &mut module.structs {
         for method in &mut structure.methods {
-            register(method, next)?;
+            register(method, next, next_instance, structure.generics.is_empty())?;
         }
         for property in &mut structure.properties {
             for accessor in property.getter.iter_mut().chain(property.setter.iter_mut()) {
-                register(accessor, next)?;
+                register(accessor, next, next_instance, structure.generics.is_empty())?;
             }
         }
     }
@@ -792,26 +798,26 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32) -> Res
         for method in singleton.methods.iter_mut()
             .chain(singleton.constructor.iter_mut().map(Box::as_mut))
             .chain(singleton.finalizer.iter_mut().map(Box::as_mut)) {
-            register(method, next)?;
+            register(method, next, next_instance, true)?;
         }
     }
     for trait_definition in &mut module.traits {
         for method in trait_definition.methods.iter_mut().chain(trait_definition.default_methods.iter_mut()) {
-            register(method, next)?;
+            register(method, next, next_instance, false)?;
         }
     }
     for implementation in &mut module.impls {
         for method in &mut implementation.methods {
-            register(method, next)?;
+            register(method, next, next_instance, implementation.generics.is_empty())?;
         }
     }
     for widget in &mut module.widgets {
         for method in &mut widget.methods {
-            register(method, next)?;
+            register(method, next, next_instance, widget.generics.is_empty())?;
         }
     }
     for submodule in &mut module.submodules {
-        register_function_declarations(submodule, next)?;
+        register_function_declarations(submodule, next, next_instance)?;
     }
     Ok(())
 }
@@ -939,7 +945,7 @@ impl AstToHir {
         if !imported_semantic_exports.is_empty() {
             return Err(ParseError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
         }
-        register_function_declarations(&mut hir, &mut 0)?;
+        register_function_declarations(&mut hir, &mut 0, &mut 0)?;
         resolve_hir_calls(&mut hir);
         validate_extractor_patterns(&hir)?;
         Ok(hir)
@@ -1126,6 +1132,7 @@ impl AstToHir {
     fn lower_function(&self, function: &FunctionDeclaration, declaring_namespace: &NamePath) -> HirFunction {
         HirFunction {
             declaration: None,
+            instance: None,
             name: function.name.name.clone(),
             declaring_namespace: declaring_namespace.clone(),
             doc: lower_documentation(&function.annotations),
@@ -1381,6 +1388,7 @@ impl AstToHir {
     fn lower_object_method(&self, method: &ObjectMethodDeclaration) -> HirFunction {
         HirFunction {
             declaration: None,
+            instance: None,
             name: method.name.name.clone(),
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),
@@ -1477,6 +1485,7 @@ impl AstToHir {
 
         HirFunction {
             declaration: None,
+            instance: None,
             name: accessor_name,
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),

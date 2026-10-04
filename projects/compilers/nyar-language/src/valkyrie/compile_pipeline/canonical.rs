@@ -61,7 +61,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for function in &module.functions {
         let instance = *module.callable_identities.get(&function.symbol).ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: item_id(instance.index()),
+            declaration: function.declaration.ok_or_else(|| error(module, "CAN053", format!("函数 `{}` 缺少声明 identity", function.symbol)))?,
             substitution: monomorphic_substitution(function)?,
             parameter_types: function.param_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &function.return_type)?,
@@ -84,7 +84,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (offset, contract) in module.external_calls.iter().enumerate() {
         let instance = *module.callable_identities.get(&contract.symbol.to_string()).ok_or_else(|| error(module, "CAN034", format!("导入 `{}` 缺少 Compiler callable identity", contract.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: item_id(instance.index()),
+            declaration: contract.declaration.ok_or_else(|| error(module, "CAN053", format!("导入 `{}` 缺少声明 identity", contract.symbol)))?,
             substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
             parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,
             return_type: type_id(&type_values, &contract.return_type)?,
@@ -422,6 +422,7 @@ mod tests {
             functions: vec![MirFunction {
                 symbol: "demo::main".into(),
                 declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
                 return_type: return_value.map(|_| ValkyrieType::Boolean).unwrap_or(ValkyrieType::Unit),
                 param_types: Vec::new(),
                 value_types,
@@ -567,6 +568,8 @@ mod tests {
             BTreeMap::new(),
         );
         module.external_calls.push(MirExternalCallContract {
+            declaration: Some(ItemId::from_index(1).unwrap()),
+            instance: Some(ItemInstanceId::from_index(1).unwrap()),
             symbol: NamePath::new(vec![Identifier::new("std"), Identifier::new("console"), Identifier::new("write")]),
             link: nyar_types::ExternalImportLink::host(None, vec!["std".to_owned(), "console".to_owned(), "write".to_owned()]),
             parameter_types: vec![ValkyrieType::Boolean],

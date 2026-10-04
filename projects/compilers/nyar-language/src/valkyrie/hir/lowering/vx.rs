@@ -71,6 +71,7 @@ mod tests {
             fields: Vec::new(),
             methods: vec![HirFunction {
                 declaration: None,
+                instance: None,
                 name: Identifier::new("view"),
                 where_constraints: Vec::new(),
                 declaring_namespace: NamePath::default(),

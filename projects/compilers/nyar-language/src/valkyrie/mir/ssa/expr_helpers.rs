@@ -275,8 +275,7 @@ pub(super) fn lower_callee_operand(
     // Free-function / operator calls only. Instance/method callees must go through
     // `extract_method_call` so MIR keeps the receiver argument for virtual dispatch.
     if let Some(resolved) = resolved {
-        if let Some(declaration) = resolved.declaration {
-            let instance = nyar_types::ItemInstanceId::from_index(declaration.index())?;
+        if let Some(instance) = resolved.instance {
             return Some(MirOperand::Callable(instance));
         }
         return Some(MirOperand::Symbol(resolved.symbol.clone()));
