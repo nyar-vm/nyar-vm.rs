@@ -97,9 +97,10 @@ micro apply(left: Number, right: Number) -> bool { left + right }
     let operator = &hir.impls[0].methods[0];
     let instance = operator.instance.expect("operator 声明实例身份");
     let apply = hir.functions.iter().find(|function| function.name.as_str() == "apply").expect("apply");
-    let HirExprKind::Call { resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind else {
+    let HirExprKind::Call { call_kind, resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind else {
         panic!("运算符调用必须绑定声明");
     };
+    assert_eq!(*call_kind, crate::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()));
     assert_eq!(resolved.instance, Some(instance));
     assert!(resolved.has_receiver, "receiver 由声明中的 self 参数决定");
     assert_eq!(resolved.return_type, ValkyrieType::Boolean);

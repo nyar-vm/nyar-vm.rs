@@ -517,7 +517,7 @@ fn collect_internal_call_edges_from_expr(
     edges: &mut Vec<InternalCallEdge>,
 ) {
     match &expr.kind {
-        HirExprKind::Call { callee, args, resolved } => {
+        HirExprKind::Call { callee, args, resolved, .. } => {
             collect_internal_call_edges_from_expr(module_name, caller, callee, module_symbols, external_symbols, edges);
             for arg in args {
                 collect_internal_call_edges_from_expr(module_name, caller, &arg.value, module_symbols, external_symbols, edges);
@@ -687,7 +687,7 @@ fn collect_external_call_edges_from_expr(
     edges: &mut Vec<ExternalCallEdge>,
 ) {
     match &expr.kind {
-        HirExprKind::Call { callee, args, resolved } => {
+        HirExprKind::Call { callee, args, resolved, .. } => {
             collect_external_call_edges_from_expr(module_name, caller, callee, external_symbols, edges);
             for arg in args {
                 collect_external_call_edges_from_expr(module_name, caller, &arg.value, external_symbols, edges);

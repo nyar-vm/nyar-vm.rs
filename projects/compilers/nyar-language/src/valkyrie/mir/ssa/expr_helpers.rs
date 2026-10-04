@@ -22,8 +22,8 @@ impl MirBuilder {
             HirExprKind::Call { callee, args, .. } if callee_name_matches(&callee.kind, "array") => {
                 Some(args.iter().map(|arg| arg.value.clone()).collect())
             }
-            HirExprKind::Call { callee, args, resolved: call_resolved } if callee_name_matches(&callee.kind, "tuple") => {
-                Some(vec![HirExpr { kind: HirExprKind::Call { callee, args, resolved: call_resolved }, span: resolved.span }])
+            HirExprKind::Call { call_kind, callee, args, resolved: call_resolved } if callee_name_matches(&callee.kind, "tuple") => {
+                Some(vec![HirExpr { kind: HirExprKind::Call { call_kind, callee, args, resolved: call_resolved }, span: resolved.span }])
             }
             _ => None,
         }

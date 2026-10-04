@@ -11,8 +11,9 @@ use crate::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
             GenericType, HirArgument, HirAssociatedConst, HirAssociatedConstImpl, HirAssociatedType, HirAssociatedTypeImpl, HirAttribute,
-            HirBlock, HirCallArgument, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr, HirExprKind,
-            HirField, HirFlagMember, HirFlags, HirFunction, HirIdentifier, HirImpl, HirImport, HirImportBinding, HirKind, HirLiteral,
+            HirBlock, HirCallArgument, HirCallKind, HirCompileWarning, HirDependencySemanticExport, HirDocumentation, HirEnum, HirExpr,
+            HirExprKind, HirField, HirFlagMember, HirFlags, HirFunction, HirIdentifier, HirImpl, HirImport, HirImportBinding, HirKind,
+            HirLiteral,
             HirMatchArm, HirModule, HirParam, HirParameterBindingKind, HirParent, HirPattern, HirProperty, HirSingleton, HirStatement,
             HirStatementKind, HirStruct, HirTrait, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
             HirWhereConstraint, HirWidget, HirWidgetLifecycle, ValkyrieType,
@@ -365,7 +366,7 @@ fn validate_block_call_contracts(block: &HirBlock, function: &str) -> Result<(),
 
 fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), ParseError> {
     match &expr.kind {
-        HirExprKind::Call { callee, args, resolved } => {
+        HirExprKind::Call { callee, args, resolved, .. } => {
             if resolved.is_none() {
                 return Err(ParseError::invalid(format!("SMIR003 unresolved call contract in `{function}` at {:?}", expr.span)));
             }
@@ -1973,6 +1974,7 @@ mod sum_discriminator_tests {
     fn unresolved_call_contract_is_rejected_before_mir() {
         let expression = HirExpr {
             kind: HirExprKind::Call {
+                call_kind: super::HirCallKind::Function,
                 callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("missing")])), span: test_span() }),
                 args: Vec::new(),
                 resolved: None,

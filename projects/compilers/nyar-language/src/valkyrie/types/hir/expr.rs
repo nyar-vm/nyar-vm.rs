@@ -128,6 +128,16 @@ pub struct HirResolvedCall {
     pub extractor_payload_type: Option<ValkyrieType>,
 }
 
+/// AST 降低到 HIR 时固定的调用语法类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum HirCallKind {
+    /// 普通名称、成员或函数值调用。
+    Function,
+    /// 已绑定注册表身份的运算符语法调用。
+    Operator(nyar_types::OperatorId),
+}
+
 /// The kind of an expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -140,6 +150,8 @@ pub enum HirExprKind {
     Path(NamePath),
     /// A function call.
     Call {
+        /// 重载选择前固定的源调用形式。
+        call_kind: HirCallKind,
         /// The callee expression.
         callee: Box<HirExpr>,
         /// The arguments.

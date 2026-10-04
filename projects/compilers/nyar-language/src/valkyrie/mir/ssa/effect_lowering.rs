@@ -129,7 +129,7 @@ fn hir_block_contains_return(block: &HirBlock) -> bool {
 /// 不下钻 `Lambda` / `AnonymousClass` 内部。
 fn hir_expr_calls_name(expr: &HirExpr, name: &str) -> bool {
     match &expr.kind {
-        HirExprKind::Call { callee, args, resolved } => {
+        HirExprKind::Call { callee, args, resolved, .. } => {
             let callee_matches = resolved
                 .as_ref()
                 .map(|resolved| resolved.symbol.to_string() == name)

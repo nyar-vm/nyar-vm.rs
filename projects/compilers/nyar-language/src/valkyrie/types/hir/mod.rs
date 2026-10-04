@@ -26,7 +26,8 @@ pub use export_spec::{
 };
 pub use r#enum::{HirEnum, HirFlagMember, HirFlags, HirVariant};
 pub use expr::{
-    CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall, hir_call_arg_values,
+    CaptureMode, CaptureStorage, HirCallArgument, HirCallKind, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall,
+    hir_call_arg_values,
 };
 pub use function::HirFunction;
 pub use identifier::HirIdentifier;

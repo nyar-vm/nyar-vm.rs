@@ -164,6 +164,7 @@ mod tests {
     fn unresolved_operator_name_cannot_supply_a_result_type() {
         let expression = HirExpr {
             kind: HirExprKind::Call {
+                call_kind: crate::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_eq()),
                 callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix ==")])), span: span() }),
                 args: Vec::new(),
                 resolved: None,
@@ -177,6 +178,7 @@ mod tests {
     fn resolved_call_result_comes_from_its_signature() {
         let expression = HirExpr {
             kind: HirExprKind::Call {
+                call_kind: crate::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()),
                 callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("infix +")])), span: span() }),
                 args: Vec::new(),
                 resolved: Some(HirResolvedCall {

@@ -1,4 +1,5 @@
 use super::*;
+use nyar_types::{OperatorFixity, OperatorId, builtin_operator};
 
 pub(super) fn lower_block(body: Option<&DeclarationBody>, source_id: SourceID, fallback_span: Range<usize>) -> HirBlock {
     let Some(body) = body
@@ -126,8 +127,8 @@ fn lower_term_expression_with_context(
                 HirExprKind::Literal(HirLiteral::Integer64(value))
             }
             else {
-                lower_method_call_kind(
-                    unary_operator_method_name(&term_unary.operator),
+                lower_operator_call_kind(
+                    unary_operator_id(&term_unary.operator),
                     vec![HirCallArgument::positional(lower_term_expression_with_context(&term_unary.base, source_id, span_range.clone(), false))],
                     span.clone(),
                 )
@@ -168,7 +169,7 @@ fn lower_term_expression_with_context(
                 false,
             ))];
             args.extend(lower_subscript_arguments(term_subscript, source_id, span_range.clone()).into_iter().map(HirCallArgument::positional));
-            lower_method_call_kind(subscript_operator_method_name(&term_subscript.kind, false), args, span.clone())
+            lower_operator_call_kind(subscript_operator_id(&term_subscript.kind, false), args, span.clone())
         }
         TermExpression::Dereference(term_dereference) => lower_method_call_kind(
             match term_dereference.kind {
@@ -241,8 +242,8 @@ fn lower_term_expression_with_context(
                 .map(|expr| Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false))),
             condition: until_stmt.condition.as_ref().map(|expr| {
                 Box::new(HirExpr {
-                    kind: lower_method_call_kind(
-                        unary_operator_method_name(&UnaryOperator::Not),
+                    kind: lower_operator_call_kind(
+                        unary_operator_id(&UnaryOperator::Not),
                         vec![HirCallArgument::positional(lower_term_expression_with_context(expr, source_id, span_range.clone(), false))],
                         span.clone(),
                     ),
@@ -350,7 +351,7 @@ fn lower_term_expression_with_context(
                 .iter()
                 .map(|arg| HirCallArgument::positional(lower_term_expression_with_context(arg, source_id, span_range.clone(), false)))
                 .collect();
-            HirExprKind::Call { callee: Box::new(callee), args, resolved: None }
+            HirExprKind::Call { call_kind: HirCallKind::Function, callee: Box::new(callee), args, resolved: None }
         }
         TermExpression::AnonymousClass { is_value_type, parents, body, .. } => {
             lower_anonymous_class(*is_value_type, parents, body, source_id, span_range.clone())
@@ -654,7 +655,7 @@ fn lower_assignment_expression(
                 lower_subscript_arguments(term_subscript, source_id, fallback_span.clone()).into_iter().map(HirCallArgument::positional),
             );
             args.push(HirCallArgument::positional(value));
-            lower_method_call_kind(subscript_operator_method_name(&term_subscript.kind, true), args, span)
+            lower_operator_call_kind(subscript_operator_id(&term_subscript.kind, true), args, span)
         }
         TermExpression::Name { path, .. } if path.parts.len() == 1 => {
             HirExprKind::Assign { target: Identifier::new(&path.parts[0]), value: Box::new(value) }
@@ -765,6 +766,15 @@ fn lower_method_call_kind(member: &str, args: Vec<HirCallArgument>, span: Source
     lower_canonical_call_arguments(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(member)])), span: span.clone() }, args)
 }
 
+fn lower_operator_call_kind(operator: OperatorId, args: Vec<HirCallArgument>, span: SourceSpan) -> HirExprKind {
+    HirExprKind::Call {
+        call_kind: HirCallKind::Operator(operator),
+        callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("operator")])), span }),
+        args,
+        resolved: None,
+    }
+}
+
 fn lower_binary_expression(
     op: &BinaryOperator,
     lhs: &TermExpression,
@@ -777,8 +787,8 @@ fn lower_binary_expression(
         BinaryOperator::And => lower_short_circuit_and(lhs, rhs, source_id, fallback_span, span),
         BinaryOperator::Or => lower_short_circuit_or(lhs, rhs, source_id, fallback_span, span),
         BinaryOperator::Pipe => lower_pipe_expression(lhs, rhs, source_id, fallback_span, span),
-        _ => lower_method_call_kind(
-            binary_operator_method_name(op),
+        _ => lower_operator_call_kind(
+            binary_operator_id(op),
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(rhs, source_id, fallback_span, false)),
@@ -809,7 +819,7 @@ fn lower_pipe_expression(
 }
 
 fn lower_canonical_call_arguments(callee: HirExpr, args: Vec<HirCallArgument>) -> HirExprKind {
-    HirExprKind::Call { callee: Box::new(callee), args, resolved: None }
+    HirExprKind::Call { call_kind: HirCallKind::Function, callee: Box::new(callee), args, resolved: None }
 }
 
 fn lower_canonical_call_kind(callee: HirExpr, args: Vec<HirExpr>) -> HirExprKind {
@@ -914,46 +924,50 @@ fn lower_string_literal(literal: &AstStringLiteral, source_id: SourceID, fallbac
     }
 }
 
-fn binary_operator_method_name(op: &BinaryOperator) -> &'static str {
+fn registered_operator(fixity: OperatorFixity, lexeme: &str) -> OperatorId {
+    builtin_operator::lookup(fixity, lexeme).expect("parser operator must exist in the builtin registry")
+}
+
+fn binary_operator_id(op: &BinaryOperator) -> OperatorId {
     match op {
         BinaryOperator::And => unreachable!("&& 走短路控制流，不进入 operator method lowering"),
         BinaryOperator::Or => unreachable!("|| 走短路控制流，不进入 operator method lowering"),
-        BinaryOperator::Add => "infix +",
-        BinaryOperator::Sub => "infix -",
-        BinaryOperator::Mul => "infix *",
-        BinaryOperator::Div => "infix /",
-        BinaryOperator::Rem => "infix %",
-        BinaryOperator::Eq => "infix ==",
-        BinaryOperator::Ne => "infix !=",
-        BinaryOperator::Lt => "infix <",
-        BinaryOperator::Le => "infix <=",
-        BinaryOperator::Gt => "infix >",
-        BinaryOperator::Ge => "infix >=",
-        BinaryOperator::Shl => "infix <<",
-        BinaryOperator::Shr => "infix >>",
-        BinaryOperator::BitAnd => "infix &",
-        BinaryOperator::BitOr => "infix |",
-        BinaryOperator::Power => "infix ^",
-        BinaryOperator::Range => "infix ..",
-        BinaryOperator::RangeInclusive => "infix ..=",
-        BinaryOperator::RangeTo => "infix ..<",
+        BinaryOperator::Add => registered_operator(OperatorFixity::Infix, "+"),
+        BinaryOperator::Sub => registered_operator(OperatorFixity::Infix, "-"),
+        BinaryOperator::Mul => registered_operator(OperatorFixity::Infix, "*"),
+        BinaryOperator::Div => registered_operator(OperatorFixity::Infix, "/"),
+        BinaryOperator::Rem => registered_operator(OperatorFixity::Infix, "%"),
+        BinaryOperator::Eq => registered_operator(OperatorFixity::Infix, "=="),
+        BinaryOperator::Ne => registered_operator(OperatorFixity::Infix, "!="),
+        BinaryOperator::Lt => registered_operator(OperatorFixity::Infix, "<"),
+        BinaryOperator::Le => registered_operator(OperatorFixity::Infix, "<="),
+        BinaryOperator::Gt => registered_operator(OperatorFixity::Infix, ">"),
+        BinaryOperator::Ge => registered_operator(OperatorFixity::Infix, ">="),
+        BinaryOperator::Shl => registered_operator(OperatorFixity::Infix, "<<"),
+        BinaryOperator::Shr => registered_operator(OperatorFixity::Infix, ">>"),
+        BinaryOperator::BitAnd => registered_operator(OperatorFixity::Infix, "&"),
+        BinaryOperator::BitOr => registered_operator(OperatorFixity::Infix, "|"),
+        BinaryOperator::Power => registered_operator(OperatorFixity::Infix, "^"),
+        BinaryOperator::Range => registered_operator(OperatorFixity::Infix, ".."),
+        BinaryOperator::RangeInclusive => registered_operator(OperatorFixity::Infix, "..="),
+        BinaryOperator::RangeTo => registered_operator(OperatorFixity::Infix, "..<"),
         BinaryOperator::Pipe => unreachable!("|> 管道操作符走函数调用 lowering，不进入 operator method lowering"),
     }
 }
 
-fn unary_operator_method_name(op: &UnaryOperator) -> &'static str {
+fn unary_operator_id(op: &UnaryOperator) -> OperatorId {
     match op {
-        UnaryOperator::Neg => "prefix -",
-        UnaryOperator::Not => "prefix !",
+        UnaryOperator::Neg => registered_operator(OperatorFixity::Prefix, "-"),
+        UnaryOperator::Not => registered_operator(OperatorFixity::Prefix, "!"),
     }
 }
 
-fn subscript_operator_method_name(kind: &SubscriptKind, is_assignment: bool) -> &'static str {
+fn subscript_operator_id(kind: &SubscriptKind, is_assignment: bool) -> OperatorId {
     match (kind, is_assignment) {
-        (SubscriptKind::Ordinal, false) => "suffix []",
-        (SubscriptKind::Ordinal, true) => "suffix []=",
-        (SubscriptKind::Cardinal, false) => "suffix ⁅⁆",
-        (SubscriptKind::Cardinal, true) => "suffix ⁅⁆=",
+        (SubscriptKind::Ordinal, false) => registered_operator(OperatorFixity::Postfix, "[]"),
+        (SubscriptKind::Ordinal, true) => registered_operator(OperatorFixity::Postfix, "[]="),
+        (SubscriptKind::Cardinal, false) => registered_operator(OperatorFixity::Postfix, "⁅⁆"),
+        (SubscriptKind::Cardinal, true) => registered_operator(OperatorFixity::Postfix, "⁅⁆="),
     }
 }
 

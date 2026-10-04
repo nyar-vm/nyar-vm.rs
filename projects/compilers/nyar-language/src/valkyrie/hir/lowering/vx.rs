@@ -40,6 +40,7 @@ pub fn lower_xml_markup_to_element_expr(node_count: usize, span: crate::types::S
 
     HirExpr {
         kind: HirExprKind::Call {
+            call_kind: crate::types::hir::HirCallKind::Function,
             callee: Box::new(HirExpr {
                 kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("Element"), Identifier::new("from_markup")])),
                 span: span.clone(),

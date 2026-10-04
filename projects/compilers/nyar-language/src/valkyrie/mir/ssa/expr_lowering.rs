@@ -527,7 +527,7 @@ impl MirBuilder {
                 }
                 MirOperand::Value(value)
             }
-            HirExprKind::Call { callee, args, resolved } => {
+            HirExprKind::Call { callee, args, resolved, .. } => {
                 let (explicit_generic_arguments, callee) = peel_generic_apply(callee.as_ref());
                 // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
                 // 先要求 Option 形接收者，再按 Extractor 合同（或迁移显示名）进入结构操作。

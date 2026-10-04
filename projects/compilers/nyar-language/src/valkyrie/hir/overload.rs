@@ -18,13 +18,13 @@ use crate::{
         Identifier, NamePath, QualifiedName,
         hir::{
             GenericType, HirBlock, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
-            HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement, HirStatementKind,
-            HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
+            HirCallKind, HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement,
+            HirStatementKind, HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
     valkyrie::{hir::PatternRefutability, mir::collect_aggregate_field_map},
 };
-use nyar_types::IntrinsicId;
+use nyar_types::{IntrinsicId, OperatorId, builtin_operator, parse_operator_display_name};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadDomain {
@@ -44,6 +44,7 @@ pub struct OverloadSignature {
 pub struct OverloadCandidate {
     pub declaration: Option<nyar_types::ItemId>,
     pub instance: Option<nyar_types::ItemInstanceId>,
+    pub operator_id: Option<OperatorId>,
     pub symbol: NamePath,
     pub owner: Option<Identifier>,
     pub trait_owner: Option<Identifier>,
@@ -68,6 +69,7 @@ impl OverloadCandidate {
         Self {
             declaration: None,
             instance: None,
+            operator_id: None,
             symbol,
             owner: None,
             trait_owner: None,
@@ -106,6 +108,7 @@ impl OverloadCandidate {
         Self {
             declaration: None,
             instance: None,
+            operator_id: None,
             symbol,
             owner: Some(owner),
             trait_owner: None,
@@ -336,6 +339,7 @@ fn match_intrinsic_builtin_candidate(
             Some(OverloadCandidate {
                 declaration: candidate.declaration,
                 instance: candidate.instance,
+                operator_id: None,
                 symbol: candidate.symbol.clone(),
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
@@ -415,9 +419,10 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> OverloadCandidate {
     let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(module_name, function);
+    let operator_id = declared_operator_id(&function.name);
     let mut candidate = OverloadCandidate::new(
         symbol,
-        classify_callable_domain(&function.name),
+        callable_domain(operator_id),
         function.params.iter().map(|param| param.ty.clone()).collect(),
         function.return_type.clone(),
         OverloadMatchKind::Row,
@@ -425,6 +430,7 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> O
     .with_param_specs(function.params.clone());
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
+    candidate.operator_id = operator_id;
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
@@ -511,11 +517,12 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
 }
 
 fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, trait_owner: Option<Identifier>) -> OverloadCandidate {
+    let operator_id = declared_operator_id(&function.name);
     let candidate = if let Some(owner) = owner {
         OverloadCandidate::new_method(
             owner,
             NamePath::new(vec![function.name.clone()]),
-            classify_callable_domain(&function.name),
+            callable_domain(operator_id),
             function.params.iter().map(|param| param.ty.clone()).collect(),
             function.return_type.clone(),
             OverloadMatchKind::Row,
@@ -527,7 +534,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
                 .as_ref()
                 .map(|owner| NamePath::new(vec![owner.clone(), function.name.clone()]))
                 .unwrap_or_else(|| NamePath::new(vec![function.name.clone()])),
-            classify_callable_domain(&function.name),
+            callable_domain(operator_id),
             function.params.iter().map(|param| param.ty.clone()).collect(),
             function.return_type.clone(),
             OverloadMatchKind::Row,
@@ -536,6 +543,7 @@ fn build_method_candidate(function: &HirFunction, owner: Option<Identifier>, tra
     let mut candidate = candidate.with_param_specs(function.params.clone());
     candidate.declaration = function.declaration;
     candidate.instance = function.instance;
+    candidate.operator_id = operator_id;
     for generic in &function.generics {
         candidate = candidate.with_generic_binder(generic.name.clone());
     }
@@ -606,14 +614,13 @@ fn candidate_has_receiver_parameter(candidate: &OverloadCandidate) -> bool {
     candidate.param_specs.first().is_some_and(|parameter| parameter.name.name.as_str() == "self")
 }
 
-fn classify_callable_domain(name: &Identifier) -> OverloadDomain {
-    let text = name.as_str();
-    if text.starts_with("prefix ") || text.starts_with("infix ") || text.starts_with("suffix ") || text.starts_with("postfix ") {
-        OverloadDomain::Operator
-    }
-    else {
-        OverloadDomain::Function
-    }
+fn declared_operator_id(name: &Identifier) -> Option<OperatorId> {
+    let (fixity, lexeme) = parse_operator_display_name(name.as_str())?;
+    builtin_operator::lookup(fixity, lexeme)
+}
+
+fn callable_domain(operator_id: Option<OperatorId>) -> OverloadDomain {
+    if operator_id.is_some() { OverloadDomain::Operator } else { OverloadDomain::Function }
 }
 
 fn resolve_function_calls(
@@ -692,12 +699,12 @@ fn resolve_expr_calls(
     singleton_names: &BTreeSet<Identifier>,
 ) {
     match &mut expr.kind {
-        HirExprKind::Call { callee, args, resolved } => {
+        HirExprKind::Call { call_kind, callee, args, resolved } => {
             resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names);
             for arg in args.iter_mut() {
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names);
             }
-            *resolved = try_resolve_call(callee, args, candidates, type_relations, locals, struct_fields, singleton_names);
+            *resolved = try_resolve_call(*call_kind, callee, args, candidates, type_relations, locals, struct_fields, singleton_names);
         }
         HirExprKind::GenericApply { callee, .. }
         | HirExprKind::FieldInit { value: callee, .. }
@@ -986,6 +993,7 @@ fn match_call_candidate(
     Some(OverloadCandidate {
         declaration: candidate.declaration,
         instance: candidate.instance,
+        operator_id: candidate.operator_id,
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
         trait_owner: candidate.trait_owner.clone(),
@@ -1083,6 +1091,7 @@ fn substitute_self_type(ty: &ValkyrieType, owner: Option<&Identifier>) -> Valkyr
 }
 
 fn try_resolve_call(
+    call_kind: HirCallKind,
     callee: &HirExpr,
     args: &[HirCallArgument],
     candidates: &[OverloadCandidate],
@@ -1091,6 +1100,25 @@ fn try_resolve_call(
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
+    if let HirCallKind::Operator(operator_id) = call_kind {
+        let filtered = candidates
+            .iter()
+            .filter(|candidate| candidate.operator_id == Some(operator_id))
+            .filter_map(|candidate| match_call_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names))
+            .collect::<Vec<_>>();
+        let resolved = resolve_overload(&filtered).ok()?;
+        let has_receiver = candidate_has_receiver_parameter(&resolved);
+        return Some(HirResolvedCall {
+            declaration: resolved.declaration,
+            instance: resolved.instance,
+            symbol: overload_symbol_path(&resolved),
+            domain: HirCallableDomain::Operator,
+            return_type: resolved.signature.return_type,
+            parameter_types: resolved.signature.params,
+            has_receiver,
+            extractor_payload_type: None,
+        });
+    }
     // Function-typed locals/params are indirect calls. Attach the local signature as the
     // call contract so SMIR003 does not reject `f()` in `unwrap_or_else` / `map` / etc.
     // Callee may be `Variable(f)` or single-part `Path(f)` depending on expr lowering.
