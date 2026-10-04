@@ -1,6 +1,6 @@
 //! 将已完成语义解析的 MIR 生产为 CanonicalProgram。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalConstant, CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError,
@@ -100,12 +100,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             return_type: type_id(&type_values, &contract.return_type)?,
         });
     }
-    linked.fragments = canonical_fragments(module, &linked, &module.semantic_fragments)?;
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
         let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         Ok((instance, lower_function(function, instance, &type_values, &nominals, &fields, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
+    linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
     program.validate().map_err(|error| canonical_error(module, error))?;
     Ok(program)
@@ -114,11 +114,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
 fn canonical_fragments(
     module: &MirModule,
     linked: &LinkedSemanticProgram,
+    functions: &BTreeMap<ItemInstanceId, CanonicalFunction>,
     fragments: &[SemanticFragment],
 ) -> Result<BTreeMap<Identifier, CanonicalFragment>, StructuredDiagnosticSet> {
     let mut result = BTreeMap::new();
     for fragment in fragments {
-        let exported_operations = fragment.exported_operations.clone();
+        let mut exported_operations = fragment.exported_operations.clone();
         for instance in &exported_operations {
             if !linked.item_instances.contains_key(instance) {
                 return Err(error(module, "CAN042", format!("片段 {} 的操作缺少 callable 合同", fragment.id)));
@@ -131,9 +132,55 @@ fn canonical_fragments(
             }
         }
         let wasm_export_names = fragment.wasm_export_names.clone();
-        let external_imports = BTreeMap::new();
-        let internal_call_edges = Vec::new();
-        let external_call_edges = Vec::new();
+        let mut external_imports = BTreeMap::new();
+        let mut internal_call_edges = Vec::new();
+        let mut external_call_edges = Vec::new();
+        let mut imports_by_instance = BTreeMap::new();
+        for (index, record) in &linked.imports {
+            if imports_by_instance.insert(record.callee, (*index, record)).is_some() {
+                return Err(error(module, "CAN049", "导入实例绑定多个 ImportIndex"));
+            }
+        }
+        let mut pending = exported_operations.clone();
+        let mut visited = BTreeSet::new();
+        while let Some(caller) = pending.pop() {
+            if !visited.insert(caller) { continue; }
+            if let Some((_, record)) = imports_by_instance.get(&caller) {
+                if functions.contains_key(&caller) {
+                    return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
+                }
+                external_imports.insert(caller, record.link.clone());
+                continue;
+            }
+            let function = functions.get(&caller)
+                .ok_or_else(|| error(module, "CAN045", format!("片段 {} 的实例 {caller:?} 没有函数体或导入", fragment.id)))?;
+            let literals = function.blocks.values().flat_map(|block| &block.instructions).filter_map(|instruction| {
+                if let CanonicalOperation::LoadConstant { constant: CanonicalConstant::Utf8(text) } = &instruction.operation {
+                    instruction.results.first().map(|value| (*value, text.clone()))
+                } else { None }
+            }).collect::<BTreeMap<_, _>>();
+            for instruction in function.blocks.values().flat_map(|block| &block.instructions) {
+                let CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments } = &instruction.operation else { continue };
+                if let Some((import, record)) = imports_by_instance.get(callee) {
+                    if functions.contains_key(callee) {
+                        return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
+                    }
+                    external_imports.insert(*callee, record.link.clone());
+                    external_call_edges.push(CanonicalExternalCallEdge {
+                        caller,
+                        import: *import,
+                        arguments: arguments.iter().filter_map(|value| literals.get(value).cloned().map(nyar_types::ExternalCallArgument::StringLiteral)).collect(),
+                    });
+                } else {
+                    if !functions.contains_key(callee) {
+                        return Err(error(module, "CAN046", format!("调用实例 {callee:?} 没有函数体或显式导入")));
+                    }
+                    internal_call_edges.push(CanonicalCallEdge { caller, callee: *callee });
+                    pending.push(*callee);
+                    if !exported_operations.contains(callee) { exported_operations.push(*callee); }
+                }
+            }
+        }
         if result.insert(fragment.id.clone(), CanonicalFragment {
             id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(), entry_operation,
             external_imports, external_call_edges, internal_call_edges, wasm_export_names,
