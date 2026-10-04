@@ -11,12 +11,15 @@ use crate::{
 
 /// 只沿完整调用符号链接依赖函数及其支撑元数据，不推断泛型或改写调用语义。
 pub(crate) fn link_reachable_dependency_mir(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
-    let mut linked = consumer.clone();
-    link_dependency_closure(&mut linked, dependency_mirs)?;
-    *consumer = linked;
-    Ok(())
+    if dependency_mirs.is_empty() {
+        return Ok(());
+    }
+    Err(std_data::text::valkyrie::ParseError::invalid(
+        "依赖链接要求上游提供统一 ItemInstanceId；旧的名称闭包路径已删除",
+    ))
 }
 
+#[cfg(test)]
 fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModule]) -> Result<(), std_data::text::valkyrie::ParseError> {
     let external_symbols = consumer
         .external_calls
@@ -148,7 +151,6 @@ fn link_dependency_closure(consumer: &mut MirModule, dependency_mirs: &[MirModul
             }
         }
     }
-    crate::valkyrie::mir::ssa::rebuild_callable_identities(consumer);
     Ok(())
 }
 
@@ -274,7 +276,6 @@ mod tests {
             semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
-        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
         module
     }
 

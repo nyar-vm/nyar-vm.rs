@@ -396,8 +396,7 @@ pub struct CompilerSourceGroup {
 /// 单元测试中从 HIR 构造阶段夹具，不作为生产源码闭包入口。
 #[cfg(test)]
 pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, ParseError> {
-    let mut semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-    crate::valkyrie::mir::ssa::resolve_callable_operands(&mut semantic_mir);
+    let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
     let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
         .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
     Ok(compiled_program)
@@ -675,7 +674,6 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        crate::valkyrie::mir::ssa::resolve_callable_operands(&mut final_mir);
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir).map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }
 

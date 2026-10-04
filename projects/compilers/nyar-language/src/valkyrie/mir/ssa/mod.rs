@@ -754,7 +754,6 @@ impl MirLowerer {
             &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
-        let callable_identities = callable_identity_table(&functions, &external_calls);
         let type_identities = type_identity_table(&functions, &external_calls, &structs);
         let result = MirModule {
             name: module.name.to_string(),
@@ -764,7 +763,7 @@ impl MirLowerer {
             external_calls,
             exports,
             entries,
-            callable_identities,
+            callable_identities: BTreeMap::new(),
             type_identities,
             aggregate_layouts,
             sum_types,
@@ -776,54 +775,6 @@ impl MirLowerer {
         result
     }
 
-}
-
-fn callable_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract]) -> BTreeMap<String, ItemInstanceId> {
-    let mut symbols = functions.iter().map(|function| function.symbol.clone()).collect::<Vec<_>>();
-    symbols.extend(external_calls.iter().map(|contract| contract.symbol.to_string()));
-    symbols.sort();
-    symbols.dedup();
-    symbols
-        .into_iter()
-        .enumerate()
-        .map(|(index, symbol)| (symbol, ItemInstanceId::from_index(index as u32).expect("callable identity overflow")))
-        .collect()
-}
-
-/// 在依赖函数进入最终 Semantic MIR 闭包后，由 Compiler linker 重新冻结 callable 表。
-pub fn rebuild_callable_identities(module: &mut MirModule) {
-    module.callable_identities = callable_identity_table(&module.functions, &module.external_calls);
-    module.type_identities = type_identity_table(&module.functions, &module.external_calls, &module.structs);
-}
-
-/// 在完整依赖闭包冻结后，将所有静态调用从名称改写为稳定 callable identity。
-///
-/// 该边界是名称进入身份的唯一位置。Canonical producer 不得再次从名称反查，
-/// 未解析名称保留为诊断并在 Semantic MIR 校验边界失败。
-pub fn resolve_callable_operands(module: &mut MirModule) {
-    let identities = module.callable_identities.clone();
-    let mut unresolved = Vec::new();
-    for function in &mut module.functions {
-        for block in &mut function.blocks {
-            for instruction in &mut block.instructions {
-                let operation = std::mem::replace(&mut instruction.kind, MirOperation::Copy { source: MirOperand::Value(MirValueRef(u32::MAX)) });
-                instruction.kind = match operation {
-                    MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments } => {
-                        let name = symbol.to_string();
-                        if let Some(identity) = identities.get(&name).copied() {
-                            MirOperation::Call { callee: MirOperand::Callable(identity), arguments }
-                        }
-                        else {
-                            unresolved.push(name);
-                            MirOperation::Call { callee: MirOperand::Symbol(symbol), arguments }
-                        }
-                    }
-                    operation => operation,
-                };
-            }
-        }
-    }
-    module.diagnostics.extend(unresolved.into_iter().map(|symbol| MirDiagnostic::UnresolvedCallableIdentity { symbol }));
 }
 
 fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {

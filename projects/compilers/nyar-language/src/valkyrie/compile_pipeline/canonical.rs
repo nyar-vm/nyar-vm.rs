@@ -437,7 +437,6 @@ mod tests {
             singleton_instances: Vec::new(),
             semantic_fragments: Vec::new(), diagnostics: Vec::new(),
         };
-        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
         module
     }
 
@@ -572,7 +571,6 @@ mod tests {
             parameter_types: vec![ValkyrieType::Boolean],
             return_type: ValkyrieType::Unit,
         });
-        crate::valkyrie::mir::ssa::rebuild_callable_identities(&mut module);
 
         let program = canonical_program_from_semantic_mir(&module).expect("external declaration has a complete import contract");
         let import = ImportIndex::from_index(0).unwrap();
