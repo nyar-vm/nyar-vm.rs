@@ -272,8 +272,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     let main_body = jvm_suspend::lower_suspend_main_entry(submission)
         .or(witness_main)
         .or_else(|| lower_sync_entry_call(submission))
-        .or_else(|| lower_fallback_entry_call(submission))
-        .unwrap_or_else(|| vec![JvmInstruction::IConst(0), JvmInstruction::IReturn]);
+        .ok_or_else(|| miette!("JVM backend 缺少已验证入口函数体，拒绝生成空入口或 fallback 包装调用"))?;
     let main_body = convert_main_body_to_void(main_body);
     ensure_jvm_runtime_stubs(&mut class_file);
     ensure_jvm_self_invokes_resolved(&mut class_file)?;
@@ -342,8 +341,8 @@ fn validate_jvm_call_contracts(submission: &FragmentSubmission) -> Result<()> {
 
 /// 将 `main` 方法体从 `int` 返回（`IReturn`）转换为 `void` 返回（`Return`）。
 ///
-/// 所有 main body 生产者（`lower_sync_entry_call`、`lower_witness_main_instructions`、
-/// `jvm_entry_wrapper_instructions`、默认 fallback）均以 `IReturn` 结尾并在栈上留一个
+/// 所有 main body 生产者（`lower_sync_entry_call`、`lower_witness_main_instructions` 与
+/// `jvm_entry_wrapper_instructions`）均以 `IReturn` 结尾并在栈上留一个
 /// `int` 值。由于 `main` 方法签名改为 `([Ljava/lang/String;)V`（void 返回），需移除
 /// 尾部 `IReturn`，插入 `Pop` 消费栈上残留的 `int`，再追加 `Return`。
 fn convert_main_body_to_void(mut instructions: Vec<JvmInstruction>) -> Vec<JvmInstruction> {
@@ -513,30 +512,6 @@ fn lower_sync_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstr
     }
     instructions.push(JvmInstruction::IReturn);
     Some(instructions)
-}
-
-/// 无 MIR 时的入口回退：调用已为 `entry_operation` 生成的 `entry_*` 包装方法。
-///
-/// 纯 external-call fragment（无 `executable`）仍会生成 `demo__main` 与 `entry_demo__main`，
-/// 但 [`lower_sync_entry_call`] 依赖 MIR，此时需把 `main` 接到 `entry_*`，否则 JAR 启动空跑。
-fn lower_fallback_entry_call(submission: &FragmentSubmission) -> Option<Vec<JvmInstruction>> {
-    let entry = submission.entry_operation.as_ref()?;
-    if submission.backend_plan.as_ref().and_then(|exec| exec.get_function(entry)).is_some() {
-        return None;
-    }
-    if submission.control_flow.as_ref().is_some_and(|payload| payload.functions.iter().any(|function| &function.symbol == entry)) {
-        return None;
-    }
-    let entry_name = sanitize_jvm_method_symbol(entry);
-    let owner = format!("{}/{}", sanitize_symbol(&submission.module_name), sanitize_symbol(submission.fragment_id.as_str()));
-    Some(vec![
-        JvmInstruction::InvokeStatic(JvmMethodRef {
-            owner,
-            name: format!("entry_{}", entry_name),
-            descriptor: JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Int),
-        }),
-        JvmInstruction::IReturn,
-    ])
 }
 
 fn lower_operation_instructions(
