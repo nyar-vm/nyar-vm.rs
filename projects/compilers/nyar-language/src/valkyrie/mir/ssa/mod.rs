@@ -798,7 +798,7 @@ impl MirLowerer {
             &mut diagnostics,
         ));
         // MirFunction 不再携带 per-function diagnostics。
-        let type_identities = type_identity_table(&functions, &external_calls, &structs);
+        let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
         let callable_identities = functions.iter()
             .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
             .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
@@ -826,7 +826,7 @@ impl MirLowerer {
 
 }
 
-pub(crate) fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
+pub(crate) fn type_identity_table(functions: &[MirFunction], external_calls: &[MirExternalCallContract], structs: &[MirStruct], sums: &[MirSumDeclaration]) -> BTreeMap<ValkyrieType, nyar_types::TypeId> {
     fn collect(set: &mut BTreeSet<ValkyrieType>, ty: &ValkyrieType) {
         match ty {
             ValkyrieType::Apply(base, args) => { collect(set, base); for arg in args { collect(set, arg); } }
@@ -857,6 +857,14 @@ pub(crate) fn type_identity_table(functions: &[MirFunction], external_calls: &[M
     for structure in structs {
         collect(&mut types, &ValkyrieType::Named(Identifier::new(&structure.qualified_name())));
         for field in &structure.fields { collect(&mut types, &field.ty); }
+    }
+    for sum in sums {
+        collect(&mut types, &ValkyrieType::Named(Identifier::new(&sum.name)));
+        for variant in &sum.variants {
+            for field in &variant.fields { collect(&mut types, &field.ty); }
+            if let Some(result) = &variant.result_type { collect(&mut types, result); }
+        }
+        for generic in &sum.generics { collect(&mut types, &ValkyrieType::Named(generic.name.clone())); }
     }
     types.into_iter().enumerate().map(|(index, ty)| (ty, nyar_types::TypeId::from_index(index as u32).expect("type identity overflow"))).collect()
 }

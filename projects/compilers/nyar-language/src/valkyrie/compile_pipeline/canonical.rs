@@ -82,6 +82,20 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
         linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, ty: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
     }
+    for sum in &module.sum_types {
+        let declaration = type_id(&type_values, &ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&sum.name)))?;
+        linked.nominal_instances.entry(sum.nominal).or_insert(NominalInstanceRecord {
+            declaration,
+            ty: declaration,
+            substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"),
+            semantics: NominalValueSemantics::Reference,
+            fields: Vec::new(),
+        });
+        for variant in &sum.variants {
+            let payload_type = variant.payload_type().map(|ty| type_id(&type_values, &ty)).transpose()?;
+            linked.variants.insert((sum.nominal, variant.id), nyar_types::VariantRecord { payload_type });
+        }
+    }
     linked.fields = field_records.clone();
     for function in &module.functions {
         let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;

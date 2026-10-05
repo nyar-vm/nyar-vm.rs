@@ -777,7 +777,7 @@ impl ValkyrieCompiler {
         let functions = modules.iter().flat_map(|module| module.functions.iter().cloned()).collect::<Vec<_>>();
         let imports = modules.iter().flat_map(|module| module.external_calls.iter().cloned()).collect::<Vec<_>>();
         let structures = modules.iter().flat_map(|module| module.structs.iter().cloned()).collect::<Vec<_>>();
-        let type_identities = crate::valkyrie::mir::ssa::type_identity_table(&functions, &imports, &structures);
+        let type_identities = crate::valkyrie::mir::ssa::type_identity_table(&functions, &imports, &structures, &final_mir.sum_types);
         final_mir.type_identities = type_identities.clone();
         for module in &mut mir_groups {
             module.type_identities = type_identities.clone();
