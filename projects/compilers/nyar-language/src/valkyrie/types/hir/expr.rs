@@ -112,6 +112,12 @@ pub struct HirResolvedCall {
     pub declaration: Option<nyar_types::ItemId>,
     /// 所选声明的已实例化身份；未实例化的泛型调用不能进入成功 MIR。
     pub instance: Option<nyar_types::ItemInstanceId>,
+    /// Constructor owner declaration identity, when this is a sum variant.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sum_owner: Option<nyar_types::ItemId>,
+    /// Constructor variant declaration identity, when this is a sum variant.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sum_variant: Option<nyar_types::ItemId>,
     /// The resolved symbol path.
     pub symbol: NamePath,
     /// The callable domain.

@@ -1459,6 +1459,22 @@ impl MirBuilder {
         None
     }
 
+    pub(super) fn sum_identity_by_declarations(
+        &mut self,
+        owner: nyar_types::ItemId,
+        variant: nyar_types::ItemId,
+    ) -> Option<(nyar_types::NominalInstanceId, VariantId)> {
+        for sum in &self.sum_types {
+            if sum.declaration == Some(owner) {
+                if let Some(candidate) = sum.variants.iter().find(|item| item.declaration == Some(variant)) {
+                    return Some((sum.nominal, candidate.id));
+                }
+            }
+        }
+        self.diagnostics.push(MirDiagnostic::UnresolvedVariantIdentity { sum_type: owner.to_string(), variant: variant.to_string() });
+        None
+    }
+
     pub(super) fn variant_id(&mut self, sum_type: &str, variant: &str) -> Option<VariantId> {
         self.sum_identity(sum_type, variant).map(|(_, variant)| variant)
     }

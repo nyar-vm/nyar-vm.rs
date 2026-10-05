@@ -10,6 +10,8 @@ use crate::types::{
 pub struct MirSumDeclaration {
     /// Semantic MIR 冻结的名义声明身份。
     pub nominal: nyar_types::NominalInstanceId,
+    /// HIR 冻结的 sum 声明身份。
+    pub declaration: Option<nyar_types::ItemId>,
     /// 声明 owner；身份迁移不得由布局反推。
     pub name: String,
     /// 语言声明是否允许 variant 子类型。
@@ -164,6 +166,8 @@ micro wrap(value: utf8) -> Envelope<utf8> {
 pub struct MirSumVariant {
     /// Semantic MIR 冻结的 variant 身份。
     pub id: nyar_types::VariantId,
+    /// HIR 冻结的 variant 构造声明身份。
+    pub declaration: Option<nyar_types::ItemId>,
     /// 声明名称。
     pub name: String,
     /// 源码判别值。

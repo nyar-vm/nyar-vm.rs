@@ -706,7 +706,11 @@ impl MirBuilder {
                             sum_new_parts_from_constructor(call, &arguments, &self.sum_types)
                         {
                             let value = self.next_value(MirValueOrigin::CallResult);
-                            let Some((nominal, variant_id)) = self.sum_identity(&sum_type, &variant) else {
+                            let Some((owner, variant_declaration)) = call.sum_owner.zip(call.sum_variant) else {
+                                self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
+                                return MirOperand::Constant(MirConstant::Unit);
+                            };
+                            let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration) else {
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
                             let (return_type, payload_type) = concretize_variant_constructor_types(
@@ -876,7 +880,11 @@ impl MirBuilder {
                         _ => field_values.first().cloned(),
                     };
                     let variant = name.to_string();
-                    let Some((nominal, variant_id)) = self.sum_identity(&sum_type, &variant) else {
+                    let Some((owner, variant_declaration)) = resolved.as_ref().and_then(|call| call.sum_owner.zip(call.sum_variant)) else {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
+                    let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration) else {
                         return MirOperand::Constant(MirConstant::Unit);
                     };
                     let (return_type, payload_type) = concretize_variant_constructor_types(

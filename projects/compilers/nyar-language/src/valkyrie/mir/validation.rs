@@ -1061,6 +1061,7 @@ mod semantic_contract_tests {
         let mut module = empty_module();
         module.sum_types.push(MirSumDeclaration {
             nominal: nyar_types::NominalInstanceId::from_index(0).expect("测试 nominal identity"),
+            declaration: None,
             name: "Choice".to_string(),
             is_unite: true,
             generics: Vec::new(),
@@ -1075,12 +1076,13 @@ mod semantic_contract_tests {
         let mut module = empty_module();
         module.sum_types.push(MirSumDeclaration {
             nominal: nyar_types::NominalInstanceId::from_index(0).expect("测试 nominal identity"),
+            declaration: None,
             name: "Choice".to_string(),
             is_unite: false,
             generics: Vec::new(),
             variants: vec![
-                MirSumVariant { id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"), name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
-                MirSumVariant { id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"), name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant { id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"), declaration: None, name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant { id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"), declaration: None, name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
             ],
         });
 

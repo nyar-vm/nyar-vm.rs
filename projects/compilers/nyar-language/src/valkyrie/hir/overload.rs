@@ -44,6 +44,8 @@ pub struct OverloadSignature {
 pub struct OverloadCandidate {
     pub declaration: Option<nyar_types::ItemId>,
     pub instance: Option<nyar_types::ItemInstanceId>,
+    pub sum_owner: Option<nyar_types::ItemId>,
+    pub sum_variant: Option<nyar_types::ItemId>,
     pub operator_id: Option<OperatorId>,
     pub symbol: NamePath,
     pub owner: Option<Identifier>,
@@ -69,6 +71,8 @@ impl OverloadCandidate {
         Self {
             declaration: None,
             instance: None,
+            sum_owner: None,
+            sum_variant: None,
             operator_id: None,
             symbol,
             owner: None,
@@ -108,6 +112,8 @@ impl OverloadCandidate {
         Self {
             declaration: None,
             instance: None,
+            sum_owner: None,
+            sum_variant: None,
             operator_id: None,
             symbol,
             owner: Some(owner),
@@ -339,6 +345,8 @@ fn match_intrinsic_builtin_candidate(
             Some(OverloadCandidate {
                 declaration: candidate.declaration,
                 instance: candidate.instance,
+                sum_owner: None,
+                sum_variant: None,
                 operator_id: None,
                 symbol: candidate.symbol.clone(),
                 owner: None,
@@ -513,6 +521,8 @@ fn build_variant_constructor_candidate(variant: &HirVariant, enum_def: &HirEnum)
     }
     candidate.declaration = variant.declaration;
     candidate.instance = variant.instance;
+    candidate.sum_owner = enum_def.declaration;
+    candidate.sum_variant = variant.declaration;
     candidate
 }
 
@@ -993,6 +1003,8 @@ fn match_call_candidate(
     Some(OverloadCandidate {
         declaration: candidate.declaration,
         instance: candidate.instance,
+        sum_owner: None,
+        sum_variant: None,
         operator_id: candidate.operator_id,
         symbol: candidate.symbol.clone(),
         owner: candidate.owner.clone(),
@@ -1111,6 +1123,8 @@ fn try_resolve_call(
         return Some(HirResolvedCall {
             declaration: resolved.declaration,
             instance: resolved.instance,
+            sum_owner: resolved.sum_owner,
+            sum_variant: resolved.sum_variant,
             symbol: overload_symbol_path(&resolved),
             domain: HirCallableDomain::Operator,
             return_type: resolved.signature.return_type,
@@ -1131,6 +1145,8 @@ fn try_resolve_call(
             return Some(HirResolvedCall {
                 declaration: None,
                 instance: None,
+                sum_owner: None,
+                sum_variant: None,
                 symbol: NamePath::new(vec![Identifier::new(local_name)]),
                 domain: HirCallableDomain::Function,
                 return_type: func.return_type.clone(),
@@ -1279,6 +1295,8 @@ fn try_resolve_call(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol,
         domain: match resolved.domain {
             OverloadDomain::Function => HirCallableDomain::Function,
@@ -1356,6 +1374,8 @@ fn try_resolve_qualified_free_function(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol: resolved.symbol,
         domain,
         return_type: resolved.signature.return_type,
@@ -1421,6 +1441,8 @@ fn try_resolve_instance_method(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Function,
         return_type: resolved.signature.return_type,
@@ -1581,6 +1603,8 @@ fn try_resolve_type_static_method(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol: overload_symbol_path(&resolved),
         domain: match resolved.domain {
             OverloadDomain::Constructor => HirCallableDomain::Constructor,
@@ -1700,6 +1724,8 @@ fn try_resolve_singleton_method(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol,
         domain: HirCallableDomain::Function,
         return_type,
@@ -1822,6 +1848,8 @@ fn try_resolve_constructor(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol: overload_symbol_path(&resolved),
         domain: HirCallableDomain::Constructor,
         return_type: resolved.signature.return_type,
@@ -1948,6 +1976,8 @@ fn try_resolve_pattern_extractor(
     Some(HirResolvedCall {
         declaration: resolved.declaration,
         instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
         symbol: resolved.symbol,
         domain: HirCallableDomain::Extractor,
         return_type,
@@ -2543,6 +2573,8 @@ fn synthesize_builtin_result_extractor(canonical_callee: &NamePath, actual_type:
     Some(HirResolvedCall {
         declaration: None,
         instance: None,
+        sum_owner: None,
+        sum_variant: None,
         symbol: NamePath::new(vec![Identifier::new(head), Identifier::new("extractor")]),
         domain: HirCallableDomain::Extractor,
         return_type: actual_type.clone(),

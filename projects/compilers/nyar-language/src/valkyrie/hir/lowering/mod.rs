@@ -544,6 +544,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     next_variant += 1;
                     MirSumVariant {
                         id,
+                        declaration: variant.declaration,
                         name: variant.name.to_string(),
                         tag,
                         fields: variant.fields.iter().map(|field| {
@@ -557,7 +558,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                 .collect();
             let nominal = nyar_types::NominalInstanceId::from_index(next_nominal).expect("nominal identity overflow");
             next_nominal += 1;
-            MirSumDeclaration { nominal, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants }
+            MirSumDeclaration { nominal, declaration: enum_def.declaration, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants }
         })
         .collect::<Vec<_>>();
     // Dependency packages may define `Result` / `Option` without copying the
@@ -576,6 +577,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     next_variant += 1;
                     MirSumVariant {
                         id,
+                        declaration: variant.declaration,
                         name: variant.name.to_string(),
                         tag,
                         fields: variant.fields.iter().map(|field| {
@@ -589,7 +591,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                 .collect();
             let nominal = nyar_types::NominalInstanceId::from_index(next_nominal).expect("nominal identity overflow");
             next_nominal += 1;
-            let declaration = MirSumDeclaration { nominal, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants };
+            let declaration = MirSumDeclaration { nominal, declaration: enum_def.declaration, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants };
             if !layouts.contains(&declaration) {
                 layouts.push(declaration);
             }
