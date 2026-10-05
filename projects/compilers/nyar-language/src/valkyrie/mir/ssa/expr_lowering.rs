@@ -15,7 +15,7 @@ use super::{
     callee_name_matches,
     expr_helpers::{
         is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
-        lower_resolved_callee, qualify_instance_method_symbol, receiver_method_owner_name,
+        lower_resolved_callee, receiver_method_owner_name,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -579,22 +579,14 @@ impl MirBuilder {
                             return operand;
                         }
                     }
-                    // Call 不得携带 dispatch / witness / evidence / intrinsic / parameter_types。
-                    let (callee_symbol, return_type) = qualify_instance_method_symbol(resolved.as_ref());
-                    let callee = MirOperand::Symbol(callee_symbol);
-                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
-                    return self.push_call_returning(callee, arguments, return_type.expect("resolved instance call return type"));
+                    let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
+                    let Some(callee) = lower_resolved_callee(resolved_call) else {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                            symbol: resolved_call.symbol.to_string(),
+                        });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
+                    return self.push_call_returning(callee, arguments, resolved_call.return_type.clone());
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -656,18 +648,6 @@ impl MirBuilder {
                         });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
-                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
                     let return_type = resolved
                         .as_ref()
                         .expect("字段调用必须有已解析调用合同")
@@ -743,9 +723,6 @@ impl MirBuilder {
                     }
                 }
                 let function_ty = self.function_type_of_callee(&callee);
-                if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                    return operand;
-                }
                 if arguments.len() == 1 {
                     if let MirOperand::Symbol(path) = &callee {
                         let surface = path.parts().last().map(|part| part.as_str());
@@ -757,15 +734,6 @@ impl MirBuilder {
                             }
                         }
                     }
-                }
-                if let Some(operand) = self.try_lower_array_len_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_array_get_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_array_push_intrinsic(resolved.as_ref(), &callee, &arguments, expected_type) {
-                    return operand;
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
                 // `unit` 不得占用物理 value 槽（BPHYS001）——一律经 `push_call_returning`。
