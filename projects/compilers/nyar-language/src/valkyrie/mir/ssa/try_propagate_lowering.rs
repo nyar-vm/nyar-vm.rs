@@ -5,7 +5,7 @@ use crate::types::{
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
-    infer_builder_operand_type, value_semantics::storage_kind_for_named_type,
+    infer_builder_operand_type,
 };
 use crate::hir::{is_nullable_type, nullable_payload_type};
 
@@ -182,8 +182,6 @@ impl MirBuilder {
             struct_fields.push((name.to_string(), self.lower_expr_to_operand(init)));
         }
         let value = self.next_value(MirValueOrigin::Temporary);
-        let storage = storage_kind_for_named_type(&class_name.to_string(), &self.struct_is_value_type);
-        let layout_id = self.aggregate_layouts.type_name_to_layout.get(class_name.as_str()).copied();
         let Some(nominal) = self.nominal_identity_for_name(class_name.as_str()) else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
