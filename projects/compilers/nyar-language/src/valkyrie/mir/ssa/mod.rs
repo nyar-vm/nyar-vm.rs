@@ -204,6 +204,8 @@ pub struct MirEntryContract {
 pub struct MirStruct {
     /// Semantic MIR 中冻结的名义声明身份。
     pub nominal: nyar_types::NominalInstanceId,
+    /// HIR 冻结的结构声明身份。
+    pub declaration: Option<nyar_types::ItemId>,
     /// 结构体名称。
     pub name: String,
     /// 结构体命名空间（点分路径，例如 `core.text`），用于稳定符号与布局查找。
@@ -1135,6 +1137,7 @@ fn lower_struct(hir_struct: &crate::types::hir::HirStruct, nominal: usize, field
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
     MirStruct {
         nominal: nyar_types::NominalInstanceId::from_index(nominal as u32).expect("nominal identity overflow"),
+        declaration: hir_struct.constructor_declaration,
         name: hir_struct.name.to_string(),
         namespace,
         generics: hir_struct.generics.clone(),
@@ -1168,6 +1171,7 @@ fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
                 namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
                 generics: singleton.generics.clone(),
                 nominal: nyar_types::NominalInstanceId::from_index(*next_nominal as u32).expect("nominal identity overflow"),
+                declaration: None,
                 fields,
                 is_value_type: false,
             });
@@ -1184,7 +1188,7 @@ fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
     collect(module, &mut declarations, &mut next_nominal, &mut next_field);
     let mut unique = Vec::new();
     for declaration in declarations {
-        if !unique.iter().any(|existing: &MirStruct| existing.qualified_name() == declaration.qualified_name()) {
+        if !declaration.declaration.is_some_and(|identity| unique.iter().any(|existing: &MirStruct| existing.declaration == Some(identity))) {
             unique.push(declaration);
         }
     }

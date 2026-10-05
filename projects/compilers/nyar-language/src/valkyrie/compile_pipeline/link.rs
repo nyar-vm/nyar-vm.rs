@@ -134,7 +134,9 @@ struct AggregateRemap {
 }
 
 fn same_struct_contract(left: &MirStruct, right: &MirStruct) -> bool {
-    left.qualified_name() == right.qualified_name()
+    left.declaration.is_some()
+        && left.declaration == right.declaration
+        && left.qualified_name() == right.qualified_name()
         && left.generics == right.generics
         && left.is_value_type == right.is_value_type
         && left.fields.iter().map(|field| (&field.name, &field.ty)).eq(right.fields.iter().map(|field| (&field.name, &field.ty)))
@@ -161,7 +163,9 @@ fn freeze_aggregate_identities(
     for module in modules {
         let mut remap = AggregateRemap::default();
         for declaration in &module.structs {
-            if let Some(existing) = global_structs.iter().find(|existing| existing.qualified_name() == declaration.qualified_name()) {
+            if let Some(existing) = global_structs.iter().find(|existing| {
+                existing.declaration.is_some() && existing.declaration == declaration.declaration
+            }) {
                 if !same_struct_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("聚合声明 `{}` 合同冲突", declaration.qualified_name())));
                 }
