@@ -1238,6 +1238,12 @@ pub enum CompiledProgramError {
     MissingAdtRepresentation { nominal: NominalInstanceId },
     /// 表示计划引用了程序之外的名义实例。
     ExtraAdtRepresentation { nominal: NominalInstanceId },
+    /// 已链接的 sum nominal 缺少完整表示合同。
+    MissingSumRepresentation { nominal: NominalInstanceId },
+    /// 表示计划包含不属于该程序的 sum nominal。
+    ExtraSumRepresentation { nominal: NominalInstanceId },
+    /// sum 表示合同缺少或多出 variant。
+    SumVariantRepresentationMismatch { nominal: NominalInstanceId },
     /// Canonical Semantic MIR 尚未通过 M2 验证。
     Canonical(CanonicalMirError),
     /// 某个 Semantic MIR 值没有对应表示选择。
@@ -1261,6 +1267,19 @@ impl CompiledProgram {
         }
         if let Some(nominal) = representation.adt_reps.keys().find(|nominal| !canonical.linked.nominal_instances.contains_key(nominal)) {
             return Err(CompiledProgramError::ExtraAdtRepresentation { nominal: *nominal });
+        }
+        let expected_sum_nominals = canonical.linked.sum_types.iter().map(|sum| sum.nominal).collect::<std::collections::BTreeSet<_>>();
+        for nominal in &expected_sum_nominals {
+            let Some(sum) = representation.sum_reps.get(nominal) else {
+                return Err(CompiledProgramError::MissingSumRepresentation { nominal: *nominal });
+            };
+            let expected_variants = canonical.linked.variants.keys().filter_map(|(owner, variant)| (*owner == *nominal).then_some(*variant)).collect::<std::collections::BTreeSet<_>>();
+            if sum.variants.keys().copied().collect::<std::collections::BTreeSet<_>>() != expected_variants {
+                return Err(CompiledProgramError::SumVariantRepresentationMismatch { nominal: *nominal });
+            }
+        }
+        if let Some(nominal) = representation.sum_reps.keys().find(|nominal| !expected_sum_nominals.contains(nominal)) {
+            return Err(CompiledProgramError::ExtraSumRepresentation { nominal: *nominal });
         }
         let mut expected_values = std::collections::BTreeSet::new();
         let mut expected_invokes = std::collections::BTreeSet::new();
