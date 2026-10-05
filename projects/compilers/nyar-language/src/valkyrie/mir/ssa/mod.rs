@@ -1448,13 +1448,7 @@ struct MirBuilder {
 
 impl MirBuilder {
     pub(super) fn sum_identity(&mut self, sum_type: &str, variant: &str) -> Option<(nyar_types::NominalInstanceId, VariantId)> {
-        for sum in &self.sum_types {
-            for candidate in &sum.variants {
-                if sum.name == sum_type && candidate.name == variant {
-                    return Some((sum.nominal, candidate.id));
-                }
-            }
-        }
+        let _ = (sum_type, variant);
         self.diagnostics.push(MirDiagnostic::UnresolvedVariantIdentity { sum_type: sum_type.to_owned(), variant: variant.to_owned() });
         None
     }
