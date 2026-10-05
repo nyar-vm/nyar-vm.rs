@@ -125,6 +125,14 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     }
     for block in function.blocks.values() {
         for instruction in &block.instructions {
+            for (nominal, variant) in canonical_sum_operations(instruction) {
+                let Some(sum) = program.representation().sum_reps.get(&nominal) else {
+                    return Err(miette!("sum `{nominal:?}` 缺少 RepresentationPlan 布局合同"));
+                };
+                if !sum.variants.contains_key(&variant) {
+                    return Err(miette!("sum variant `{nominal:?}/{variant:?}` 缺少 RepresentationPlan 布局合同"));
+                }
+            }
             if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
                 match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
                     (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
@@ -177,6 +185,15 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
         entry: BlockRef(function.entry.0), values, suspend_points: Vec::new(), frame_layouts: Vec::new(), continuations: Vec::new(),
         case_chains: Vec::new(), #[allow(deprecated)] state_machine: None, suspend_plan: None, blocks, diagnostics: Vec::new(),
     }, callees))
+}
+
+fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> Vec<(nyar_types::NominalInstanceId, nyar_types::VariantId)> {
+    match instruction.operation {
+        CanonicalOperation::SumNew { nominal, variant, .. }
+        | CanonicalOperation::SumPayloadGet { nominal, variant, .. }
+        | CanonicalOperation::SumVariantIs { nominal, variant, .. } => vec![(nominal, variant)],
+        _ => Vec::new(),
+    }
 }
 
 fn lower_operation(

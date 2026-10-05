@@ -551,6 +551,8 @@ pub mod layout_choice {
     use super::{EffectSiteId, EvidenceId, InstructionId, NominalInstanceId, ValueIdentity};
     use std::collections::BTreeMap;
 
+    use crate::VariantId;
+
     /// 可调用 / apply 位点的布局选择（不是语言范畴）。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum InvokeLowering {
@@ -603,6 +605,28 @@ pub mod layout_choice {
         Boxed,
     }
 
+    /// 一个已解析 sum 实例的目标无关布局合同。
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct SumRepresentation {
+        /// 完整的 sum 名义实例身份。
+        pub nominal: NominalInstanceId,
+        /// tag 的物理宽度，由 Compiler 布局事实提供。
+        pub tag_width: u32,
+        /// variant 身份到 payload/tag 合同的稀疏表。
+        pub variants: BTreeMap<VariantId, SumVariantRepresentation>,
+    }
+
+    /// 一个已解析 variant 的目标无关布局合同。
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct SumVariantRepresentation {
+        /// 语言稳定 variant 身份。
+        pub id: VariantId,
+        /// 物理 discriminant；不是语义身份。
+        pub tag: u32,
+        /// 已代入 payload 类型，没有 payload 时为空。
+        pub payload_type: Option<crate::TypeId>,
+    }
+
     /// 效应延续布局选择。
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum EffectRepresentation {
@@ -625,6 +649,8 @@ pub mod layout_choice {
         pub evidence_layouts: BTreeMap<EvidenceId, EvidenceLayout>,
         /// 按名义实例的 ADT 布局。
         pub adt_reps: BTreeMap<NominalInstanceId, AdtRepresentation>,
+        /// 按完整 nominal/variant identity 编排的 sum 布局合同。
+        pub sum_reps: BTreeMap<NominalInstanceId, SumRepresentation>,
         /// 按效应位点的延续布局。
         pub effect_reps: BTreeMap<EffectSiteId, EffectRepresentation>,
     }
