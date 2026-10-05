@@ -137,8 +137,8 @@ pub(super) fn register_gc_array_types(
                     NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
                         ensure(element.as_ref(), type_indices, &mut map);
                     }
-                    option_ty if is_option_shaped(option_ty) => {
-                        ensure(option_ty, type_indices, &mut map);
+                    option_ty if is_option_shaped(&option_ty) => {
+                        ensure(&option_ty, type_indices, &mut map);
                     }
                     _ => {}
                 }

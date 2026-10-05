@@ -47,12 +47,6 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
         witness_calls: Vec::new(),
         control_flow: None,
         suspend_runtime: None,
-        aggregate_layouts: linked.aggregate_layouts.clone(),
-        aggregate_layout_by_nominal: linked.aggregate_layout_by_nominal.clone(),
-        aggregate_layout_by_field: linked.aggregate_layout_by_field.clone(),
-        aggregate_layout_by_type: linked.aggregate_layout_by_type.clone(),
-        flags_types: linked.flags_types.clone(),
         backend_plan: std::sync::Arc::new(backend_plan),
-        singleton_instances: linked.singleton_instances.clone(),
     })
 }

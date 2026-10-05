@@ -35,7 +35,7 @@ pub(crate) fn nyar_singleton_accessor_export_name(plan: &SingletonInstancePlan) 
 
 
 fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
-    submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
+    submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
 }
 
 
@@ -52,7 +52,7 @@ fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInst
 
 /// Append legion singleton metadata sections for backends without dedicated singleton slots.
 pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    for plan in &submission.singleton_instances {
+    for plan in submission.backend_plan.singleton_instances() {
         let payload = singleton_metadata_line(plan);
         module.sections.insert(
             0,
@@ -69,7 +69,7 @@ pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, 
 ///   - eager 模式：直接 `global.get` 返回全局。
 ///   - lazy 模式：判空后经 `cabi_realloc(0,0,align,size)` 真实 bump 分配，写回全局。
 pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    if submission.singleton_instances.is_empty() {
+    if submission.backend_plan.singleton_instances().is_empty() {
         return;
     }
 
@@ -83,14 +83,14 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
     let accessor_type = wasm::wasm_function_type(&[], &[0x7F]);
     wasm::append_wasm_types(module, &[accessor_type]);
 
-    let singleton_count = submission.singleton_instances.len() as u32;
+    let singleton_count = submission.backend_plan.singleton_instances().len() as u32;
     let global_base = wasm::append_wasm_i32_globals(module, &vec![0; singleton_count as usize]);
 
     let type_indices: Vec<u32> = vec![accessor_type_index; singleton_count as usize];
     wasm::append_wasm_function_decls(module, &type_indices);
 
     let exports: Vec<(String, u8, u32)> = submission
-        .singleton_instances
+        .backend_plan.singleton_instances()
         .iter()
         .enumerate()
         .map(|(index, plan)| (nyar_singleton_export_name(plan), 0x00, first_new_function_index + index as u32))
@@ -98,7 +98,7 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
     wasm::append_wasm_exports(module, &exports);
 
     let bodies: Vec<Vec<u8>> = submission
-        .singleton_instances
+        .backend_plan.singleton_instances()
         .iter()
         .enumerate()
         .map(|(index, plan)| {

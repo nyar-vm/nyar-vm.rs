@@ -591,7 +591,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn nyar_field_slot(&self, field: nyar_types::FieldId) -> i32 {
-        self.ctx.submission.aggregate_layout_by_field.get(&field).map(|(_, slot)| *slot as i32).unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
+        self.ctx.submission.backend_plan.aggregate_layout_by_field().get(&field).map(|(_, slot)| *slot as i32).unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
     }
 
     fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {

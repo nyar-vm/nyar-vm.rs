@@ -74,7 +74,7 @@ pub(crate) fn validate_submission(submission: &FragmentSubmission) -> Result<(),
 }
 
 fn validate_aggregate_layouts(submission: &FragmentSubmission) -> Result<(), SemanticMirContractError> {
-    for layout in &submission.aggregate_layouts.layouts {
+    for layout in &submission.backend_plan.aggregate_layouts().layouts {
         if layout.name.is_empty() || layout.align == 0 || layout.size == 0 {
             return Err(SemanticMirContractError {
                 code: "SMIR010",
@@ -104,11 +104,11 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
         for (index, instruction) in block.instructions.iter().enumerate() {
             if let ExecutableInstructionKind::StructNew { nominal, fields } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(layout_id) = submission.aggregate_layout_by_nominal.get(nominal).copied()
+                let Some(layout_id) = submission.backend_plan.aggregate_layout_by_nominal().get(nominal).copied()
                 else {
                     return Err(SemanticMirContractError { code: "SMIR010", function: function.symbol.clone(), location, detail: "aggregate construction references an unknown nominal identity".to_string() });
                 };
-                let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
+                let Some(layout) = submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.id == layout_id)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
@@ -124,7 +124,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 // 禁止依赖 Named("Self") / 类型名单字母特判放行。
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(field_id, value)| {
-                        submission.aggregate_layout_by_field.get(field_id).is_some_and(|(owner_layout, slot)| {
+                        submission.backend_plan.aggregate_layout_by_field().get(field_id).is_some_and(|(owner_layout, slot)| {
                             *owner_layout == layout_id && layout.fields.get(*slot as usize).is_some_and(|field| {
                             let declared = &field.ty;
                             matches!(
@@ -178,7 +178,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 _ => continue,
             };
             let location = format!("block {} instruction {index}", block.id.0);
-            let Some((layout_id, slot)) = submission.aggregate_layout_by_field.get(field).copied()
+            let Some((layout_id, slot)) = submission.backend_plan.aggregate_layout_by_field().get(field).copied()
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
@@ -187,7 +187,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     detail: "aggregate field access references an unknown field identity".to_string(),
                 });
             };
-            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
+            let Some(layout) = submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.id == layout_id)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",

@@ -568,23 +568,8 @@ pub struct FragmentSubmission {
     /// 值/引用聚合体的内存布局计划。
     ///
     /// `singleton` 也在这里以普通引用聚合体的形态出现，负责提供字段偏移、字段类型、
-    /// 方法签名和接收者布局等结构事实；后端不得为 `singleton` 单独拼接这些规则。
-    pub aggregate_layouts: AggregateLayoutPlan,
-    /// Compiler 已绑定的名义身份到物理布局身份映射。
-    pub aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
-    /// Compiler 已绑定的字段身份到布局槽位映射。
-    pub aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
-    /// Compiler 已绑定的完整类型身份到物理布局身份映射。
-    pub aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
-    /// Flags bitmask layouts。
-    pub flags_types: Vec<FlagsLayout>,
     /// 已完成语义闭包与表示合同的目标私有计划。
     pub(crate) backend_plan: Arc<BackendPrivatePlan>,
-    /// Singleton 全局实例初始化计划。
-    ///
-    /// 这里只回答唯一实例的固定符号名、访问器名与 eager/lazy 初始化模式；
-    /// 具体字段/方法形状仍必须回到 `aggregate_layouts` 查询。
-    pub singleton_instances: Vec<SingletonInstancePlan>,
 }
 
 impl std::fmt::Debug for FragmentSubmission {
@@ -617,13 +602,7 @@ impl Default for FragmentSubmission {
             witness_calls: Vec::new(),
             control_flow: None,
             suspend_runtime: None,
-            aggregate_layouts: AggregateLayoutPlan::default(),
-            aggregate_layout_by_nominal: BTreeMap::new(),
-            aggregate_layout_by_field: BTreeMap::new(),
-            aggregate_layout_by_type: BTreeMap::new(),
-            flags_types: Vec::new(),
             backend_plan: Arc::new(BackendPrivatePlan::default()),
-            singleton_instances: Vec::new(),
         }
     }
 }

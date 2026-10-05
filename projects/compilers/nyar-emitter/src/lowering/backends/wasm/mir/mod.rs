@@ -1073,8 +1073,8 @@ pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinary
     if mir_functions_len == 0 {
         return;
     }
-    let value_layout_count = submission.aggregate_layouts.layouts.iter().filter(|layout| layout.storage == StorageKind::Value).count();
-    let reference_layout_count = submission.aggregate_layouts.layouts.iter().filter(|layout| layout.storage == StorageKind::Reference).count();
+    let value_layout_count = submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Value).count();
+    let reference_layout_count = submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Reference).count();
     let payload =
         format!("mir_functions={};value_layouts={};reference_layouts={}", mir_functions_len, value_layout_count, reference_layout_count);
     module.sections.push(WasmSection { id: 0, name: Some("nyar.value_aggregate".to_string()), bytes: payload.into_bytes() });

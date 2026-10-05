@@ -24,7 +24,7 @@ pub struct ExecutableLoweringContext<'a> {
 
 impl<'a> ExecutableLoweringContext<'a> {
     pub fn new(submission: &'a FragmentSubmission) -> Self {
-        Self { submission, layouts: &submission.aggregate_layouts }
+        Self { submission, layouts: submission.backend_plan.aggregate_layouts() }
     }
 
     pub fn require_layout_id(layout_id: Option<LayoutId>, context: &str) -> LayoutId {
@@ -36,15 +36,15 @@ impl<'a> ExecutableLoweringContext<'a> {
     }
 
     pub fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Option<&AggregateLayout> {
-        self.submission.aggregate_layout_by_nominal.get(&nominal).and_then(|id| self.layout_by_id(*id))
+        self.submission.backend_plan.aggregate_layout_by_nominal().get(&nominal).and_then(|id| self.layout_by_id(*id))
     }
 
     pub fn layout_by_type_id(&self, ty: TypeId) -> Option<&AggregateLayout> {
-        self.submission.aggregate_layout_by_type.get(&ty).and_then(|id| self.layout_by_id(*id))
+        self.submission.backend_plan.aggregate_layout_by_type().get(&ty).and_then(|id| self.layout_by_id(*id))
     }
 
     pub fn field_layout_by_id(&self, field: FieldId) -> Option<(&AggregateLayout, &FieldLayout, u32)> {
-        let (layout_id, slot) = self.submission.aggregate_layout_by_field.get(&field)?;
+        let (layout_id, slot) = self.submission.backend_plan.aggregate_layout_by_field().get(&field)?;
         let layout = self.layout_by_id(*layout_id)?;
         let field_layout = layout.fields.get(*slot as usize)?;
         Some((layout, field_layout, *slot))

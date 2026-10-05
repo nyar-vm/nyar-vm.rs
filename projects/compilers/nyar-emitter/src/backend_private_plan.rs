@@ -19,6 +19,12 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Default))]
 pub struct BackendPrivatePlan {
+    aggregate_layouts: nyar_types::AggregateLayoutPlan,
+    aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
+    aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
+    aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
+    flags_types: Vec<nyar_types::FlagsLayout>,
+    singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
@@ -88,8 +94,23 @@ impl BackendPrivatePlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
-        Ok(Self { functions, abi_names, imports, sum_reps: program.representation().sum_reps.clone() })
+        Ok(Self {
+            aggregate_layouts: canonical.linked.aggregate_layouts.clone(),
+            aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
+            aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
+            aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
+            flags_types: canonical.linked.flags_types.clone(),
+            singleton_instances: canonical.linked.singleton_instances.clone(),
+            functions, abi_names, imports, sum_reps: program.representation().sum_reps.clone(),
+        })
     }
+
+    pub fn aggregate_layouts(&self) -> &nyar_types::AggregateLayoutPlan { &self.aggregate_layouts }
+    pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> { &self.aggregate_layout_by_nominal }
+    pub fn aggregate_layout_by_field(&self) -> &BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)> { &self.aggregate_layout_by_field }
+    pub fn aggregate_layout_by_type(&self) -> &BTreeMap<nyar_types::TypeId, nyar_types::LayoutId> { &self.aggregate_layout_by_type }
+    pub fn flags_types(&self) -> &[nyar_types::FlagsLayout] { &self.flags_types }
+    pub fn singleton_instances(&self) -> &[nyar_types::SingletonInstancePlan] { &self.singleton_instances }
 
     pub fn imports(&self) -> &BTreeMap<ItemInstanceId, BackendImport> {
         &self.imports
