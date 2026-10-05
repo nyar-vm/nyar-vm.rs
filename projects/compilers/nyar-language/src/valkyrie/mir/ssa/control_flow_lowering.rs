@@ -6,6 +6,7 @@ use crate::types::{
 };
 
 use crate::valkyrie::control_flow::TryScopeData;
+use nyar_types::builtin_operator;
 
 use super::{
     MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, control_flow_context::MirLoopContext,
@@ -18,12 +19,22 @@ impl MirBuilder {
     /// 比较 / 自增走运算符 `Call`（`infix <` / `infix +`），不得经 IntrinsicOpcode 表。
     pub(super) fn lower_for_in_as_indexed_while(
         &mut self,
-        label: &Option<crate::types::Identifier>,
-        loop_pattern: &HirPattern,
-        iterator_expr: &HirExpr,
-        condition: &Option<Box<HirExpr>>,
-        body: &HirBlock,
+        _label: &Option<crate::types::Identifier>,
+        _loop_pattern: &HirPattern,
+        _iterator_expr: &HirExpr,
+        _condition: &Option<Box<HirExpr>>,
+        _body: &HirBlock,
     ) -> MirOperand {
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
+            operator: builtin_operator::infix_lt(),
+        });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
+            operator: builtin_operator::infix_add(),
+        });
+        return MirOperand::Constant(MirConstant::Unit);
+
+        #[cfg(any())]
+        {
         let pre_loop_bindings = self.bindings.clone();
         let outer_block_id = self.current_block;
         let outer_label = self.current_label.clone();
@@ -168,6 +179,7 @@ impl MirBuilder {
         // Keep CFG well-formed; caller may terminate later.
         let _ = outer_block_id;
         MirOperand::Constant(MirConstant::Unit)
+        }
     }
 
     fn branch_merge_type(

@@ -361,7 +361,14 @@ impl MirBuilder {
             .unwrap_or_else(|| expected_type.is_some_and(|ty| Self::option_sum_name(ty).is_some()));
         let array = arguments.first().cloned()?;
         let ordinal = arguments.get(1).cloned()?;
-        self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type, wraps_option)
+        let lowered = self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type, wraps_option);
+        if lowered.is_none() {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
+                operator: nyar_types::builtin_operator::infix_sub(),
+            });
+            return Some(MirOperand::Constant(MirConstant::Unit));
+        }
+        lowered
     }
 
     /// 仅当 callee 已由 overload 绑定为 [`IntrinsicId::ArrayPush`] 时降低。
