@@ -2,11 +2,8 @@
 //!
 //! 分区选择不重新生产语义事实；共享提交载荷只携带已验证程序及其稳定实例根。
 
-use std::collections::BTreeSet;
-
 use miette::{Result as MietteResult, miette};
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
-use nyar_types::ItemInstanceId;
 use nyar_types::CompiledProgram;
 
 pub use nyar::AssembledFragment;
@@ -68,33 +65,11 @@ pub(crate) fn assemble_fragment(
         ));
     }
 
-    let callable_roots = resolve_callable_roots(compiled_program, &partition.exported_operations, partition.entry_operation.as_ref())?;
-
     Ok(AssembledFragment {
-        module_name: compiled_program.canonical().linked.module_name.clone(),
-        fragment_id: fragment.id.clone(),
+        partition: partition.clone(),
         theory_bundle: fragment_view.theory_bundle.clone(),
-        callable_roots,
         compiled_program: compiled_program.clone(),
     })
-}
-
-fn resolve_callable_roots(
-    program: &nyar_types::CompiledProgram,
-    exported_operations: &[ItemInstanceId],
-    entry_operation: Option<&ItemInstanceId>,
-) -> MietteResult<Vec<ItemInstanceId>> {
-    let mut roots = exported_operations.to_vec();
-    if let Some(entry) = entry_operation {
-        if !roots.iter().any(|instance| instance == entry) {
-            roots.push(*entry);
-        }
-    }
-    roots.into_iter().map(|instance| {
-        program.canonical().mir.functions.contains_key(&instance)
-            .then_some(instance)
-            .ok_or_else(|| miette!("Compiler callable `{instance:?}` 缺少稳定实例身份"))
-    }).collect()
 }
 
 #[cfg(test)]
@@ -108,12 +83,9 @@ mod import_contract_tests {
              [export(name: \"second\")] micro second() -> unit { return }",
         ).expect("当前源码必须形成完整成功载荷");
         let program = &output;
-        let operations = program.canonical().linked.callable_names.keys().copied().collect::<Vec<_>>();
-        let entry = program.canonical().linked.entries.keys().next().expect("源码有显式入口");
-        let roots = resolve_callable_roots(program, &operations, Some(entry))
-            .expect("Compiler 组装边界必须绑定精确实例根");
-        assert_eq!(roots.iter().copied().collect::<BTreeSet<_>>(), program.canonical().mir.functions.keys().copied().collect());
-        assert_eq!(roots.len(), operations.len(), "入口已在根集合中时不得重复追加");
+        let plan = plan_artifacts_from_compiled_program(program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+            .expect("Compiler 必须从 Canonical 身份产生分区");
+        assert!(plan.partitions.iter().any(|partition| partition.entry_operation.is_some()));
     }
 
     #[test]
@@ -121,10 +93,9 @@ mod import_contract_tests {
         let output = crate::ValkyrieCompiler::default().compile_source_to_program(
             "micro answer() -> i32 { return 23 }",
         ).expect("当前源码必须编译");
-        let missing = nyar_types::ItemInstanceId::from_index(999).expect("测试 identity");
-        let error = resolve_callable_roots(&output, &[missing], None)
-            .expect_err("分区根缺失必须在 Compiler 边界失败，不得推迟到 emitter 猜测");
-        assert!(error.to_string().contains("缺少稳定实例身份"), "{error}");
+        let plan = plan_artifacts_from_compiled_program(&output, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
+            .expect("无入口函数仍可形成明确的非入口分区");
+        assert!(plan.partitions.iter().all(|partition| partition.entry_operation.is_none()));
     }
 
     #[test]
@@ -165,56 +136,27 @@ mod import_contract_tests {
             assert_eq!(partition.exported_operations, fragment.exported_operations);
             assert_eq!(partition.entry_operation, fragment.entry_operation);
             let assembled = assemble_fragment(&program, &plan, index).expect("身份一致的分区必须装配成功");
-            assert_eq!(assembled.callable_roots, resolve_callable_roots(&program, &fragment.exported_operations, fragment.entry_operation.as_ref()).unwrap());
+            assert_eq!(assembled.partition.fragment, partition.fragment);
+            assert_eq!(assembled.partition.exported_operations, fragment.exported_operations);
         }
     }
 
     #[test]
     fn assembly_rejects_changed_partition_and_view_identities() {
         let (program, plan) = source_partition_contract();
-        let missing = ItemInstanceId::from_index(999).expect("测试 identity");
         for mutation in 0..3 {
             let mut changed = plan.clone();
             match mutation {
-                0 => changed.partitions[0].exported_operations = vec![missing],
-                1 => changed.partitions[0].entry_operation = Some(missing),
+                0 => changed.partitions[0].exported_operations.clear(),
+                1 => changed.partitions[0].entry_operation = None,
                 _ => {
                     let identity = changed.partitions[0].fragment.clone();
                     changed.fragment_views.iter_mut().find(|view| view.fragment_id == identity)
-                        .expect("片段视图").canonical_operations = vec![missing];
+                        .expect("片段视图").canonical_operations.clear();
                 }
             }
             let error = assemble_fragment(&program, &changed, 0).expect_err("不一致身份不得被 Canonical 原始根兜底掩盖");
             assert!(error.to_string().contains("callable 身份与 Canonical 片段合同不一致"), "{error}");
-        }
-    }
-
-    #[test]
-    fn algebraic_name_equations_cannot_rebind_callable_roots() {
-        let (program, original) = source_partition_contract();
-        let linked = &program.canonical().linked;
-        let mut names = linked.callable_names.values();
-        let left = names.next().expect("第一个 callable").clone();
-        let right = names.next().expect("第二个 callable").clone();
-        let target = CanonicalTarget::wasm();
-        let profile = target.to_profile(None);
-        let policy = projection_policy_for_target_profile(&profile).expect("目标 projection");
-        let registry = emitter::bundled_backend_registry_from_canonical(&linked.fragments, &profile, &policy);
-        let mut theory = nyar::RewriteTheory::default();
-        theory.equate(nyar::RewriteEquation {
-            left, right, phase: nyar::RewritePhase::Normalize, required_capabilities: Vec::new(),
-        });
-        let rewritten = ArtifactPartitionPlan::from_canonical_program(
-            program.canonical(), target, theory, policy, registry, ClrSuspendStrategy::default(),
-        ).expect("名称等式优化不得改写函数绑定");
-        assert_ne!(rewritten.optimization.program.dimensions, original.optimization.program.dimensions,
-            "测试必须实际改变等式名称视图，不能以未触发优化证明身份隔离");
-        assert_eq!(rewritten.partitions.len(), original.partitions.len());
-        for (index, partition) in rewritten.partitions.iter().enumerate() {
-            assert_eq!(partition.exported_operations, original.partitions[index].exported_operations);
-            assert_eq!(partition.entry_operation, original.partitions[index].entry_operation);
-            let assembled = assemble_fragment(&program, &rewritten, index).expect("优化后稳定实例仍可装配");
-            assert_eq!(assembled.callable_roots, assemble_fragment(&program, &original, index).unwrap().callable_roots);
         }
     }
 

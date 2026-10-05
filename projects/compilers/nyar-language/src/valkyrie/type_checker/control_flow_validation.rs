@@ -184,6 +184,8 @@ mod tests {
                 resolved: Some(HirResolvedCall {
                     declaration: None,
                     instance: None,
+                    sum_owner: None,
+                    sum_variant: None,
                     symbol: NamePath::new(vec![Identifier::new("declared_callable")]),
                     domain: crate::types::hir::HirCallableDomain::Operator,
                     return_type: crate::types::hir::ValkyrieType::Boolean,

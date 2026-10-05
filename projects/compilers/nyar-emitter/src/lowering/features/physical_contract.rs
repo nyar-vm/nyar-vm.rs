@@ -338,6 +338,8 @@ mod tests {
     fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
         let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
         ExecutableFunction {
+            return_layout: None,
+            value_layouts: BTreeMap::new(),
             symbol: symbol.to_string(),
             return_type,
             param_types: parameters,

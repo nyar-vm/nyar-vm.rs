@@ -205,6 +205,8 @@ mod text_encoding_tests {
     fn utf16_submission() -> FragmentSubmission {
         let operation = QualifiedName::new(vec![Identifier::new("entry")]);
         let function = ExecutableFunction {
+            return_layout: None,
+            value_layouts: BTreeMap::new(),
             symbol: "entry".to_string(),
             return_type: NyarType::Unit,
             param_types: vec![NyarType::Utf16],

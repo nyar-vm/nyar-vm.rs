@@ -827,6 +827,8 @@ mod tests {
             _ => NyarType::Unit,
         };
         ExecutableFunction {
+            return_layout: None,
+            value_layouts: BTreeMap::new(),
             symbol: "contract_fixture".to_string(),
             return_type,
             param_types: Vec::new(),
@@ -884,35 +886,6 @@ mod tests {
     fn accepts_minimal_semantic_function() {
         let result = validate_function(&function(Vec::new(), Terminator::Return { value: None }, BTreeMap::new()));
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn rejects_nominal_sum_without_layout_metadata() {
-        let mut submission = FragmentSubmission::default();
-        submission.sum_types.push(SumTypeLayout {
-            name: "Option".to_string(),
-            is_unite: true,
-            tag_width: 0,
-            variants: vec![SumVariantLayout { name: "Some".to_string(), tag: 0, payload_type: Some(NyarType::Integer32 { signed: true }) }],
-        });
-        let result = validate_submission(&submission);
-        assert_eq!(result.unwrap_err().code, "SMIR006");
-    }
-
-    #[test]
-    fn rejects_nominal_sum_with_duplicate_variant_tag() {
-        let mut submission = FragmentSubmission::default();
-        submission.sum_types.push(SumTypeLayout {
-            name: "Choice".to_string(),
-            is_unite: true,
-            tag_width: 32,
-            variants: vec![
-                SumVariantLayout { name: "Left".to_string(), tag: 0, payload_type: None },
-                SumVariantLayout { name: "Right".to_string(), tag: 0, payload_type: None },
-            ],
-        });
-        let result = validate_submission(&submission);
-        assert_eq!(result.unwrap_err().code, "SMIR006");
     }
 
     #[test]

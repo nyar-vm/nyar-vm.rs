@@ -2482,11 +2482,13 @@ mod cfg_dispatch_tests {
         contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
     };
     use nyar::{NyarType, QualifiedName};
-    use std::{process::Command, sync::Arc};
+    use std::{collections::BTreeMap, process::Command, sync::Arc};
     use std_data::binary::wasm::{WasmBinaryModule, WasmOpcode};
 
     fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         ExecutableFunction {
+            return_layout: None,
+            value_layouts: BTreeMap::new(),
             symbol: symbol.to_string(),
             return_type: NyarType::Integer32 { signed: true },
             param_types: Vec::new(),
