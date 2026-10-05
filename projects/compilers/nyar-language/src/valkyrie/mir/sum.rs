@@ -244,8 +244,8 @@ impl MirSumDeclaration {
     }
 
     /// 向下投影目标布局；该结果不得作为语义 lowering 的输入。
-    pub(crate) fn physical_layout(&self) -> nyar_types::SumTypeLayout {
-        nyar_types::SumTypeLayout {
+    pub(crate) fn physical_layout(&self) -> Result<nyar_types::SumTypeLayout, crate::frontend_contract::ConcretizeError> {
+        Ok(nyar_types::SumTypeLayout {
             nominal: self.nominal,
             name: self.name.clone(),
             is_unite: self.is_unite,
@@ -253,16 +253,13 @@ impl MirSumDeclaration {
             variants: self
                 .variants
                 .iter()
-                .map(|variant| nyar_types::SumVariantLayout {
+                .map(|variant| Ok(nyar_types::SumVariantLayout {
                     id: variant.id,
                     name: variant.name.clone(),
                     tag: variant.tag,
-                    payload_type: variant
-                        .payload_type()
-                        .as_ref()
-                        .map(crate::frontend_contract::concretize_type_lossy),
-                })
-                .collect(),
-        }
+                    payload_type: variant.payload_type().as_ref().map(crate::frontend_contract::concretize_type).transpose()?,
+                }))
+                .collect::<Result<_, crate::frontend_contract::ConcretizeError>>()?,
+        })
     }
 }

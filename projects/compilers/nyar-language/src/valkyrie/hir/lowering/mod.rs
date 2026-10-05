@@ -515,8 +515,8 @@ pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<
 }
 
 /// Collect sum-type and flags layouts from a lowered HIR module.
-pub fn compute_nominal_layouts(module: &HirModule) -> (Vec<SumTypeLayout>, Vec<FlagsLayout>) {
-    (collect_sum_declarations(module).iter().map(MirSumDeclaration::physical_layout).collect(), collect_flags_layouts(module))
+pub fn compute_nominal_layouts(module: &HirModule) -> Result<(Vec<SumTypeLayout>, Vec<FlagsLayout>), crate::frontend_contract::ConcretizeError> {
+    Ok((collect_sum_declarations(module).iter().map(MirSumDeclaration::physical_layout).collect::<Result<_, _>>()?, collect_flags_layouts(module)))
 }
 
 pub(crate) fn compute_nominal_declarations(module: &HirModule) -> (Vec<MirSumDeclaration>, Vec<FlagsLayout>) {

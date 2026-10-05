@@ -55,7 +55,12 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             linked.aggregate_layout_by_field.insert(field.id, (layout_id, index as u32));
         }
     }
-    linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
+    linked.sum_types = module
+        .sum_types
+        .iter()
+        .map(crate::valkyrie::mir::MirSumDeclaration::physical_layout)
+        .collect::<Result<_, _>>()
+        .map_err(|failure| error(module, "CAN054", format!("sum 物理 payload 类型未完成实例化: {failure}")))?;
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();
     for (symbol, instance) in module.functions.iter().filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
