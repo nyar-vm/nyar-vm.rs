@@ -83,6 +83,8 @@ pub struct AggregateLayoutPlan {
 /// Sum type variant layout for nominal lowering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SumVariantLayout {
+    /// Semantic MIR 冻结的 variant 身份。
+    pub id: crate::VariantId,
     /// Variant name.
     pub name: String,
     /// Discriminant tag.
@@ -94,6 +96,8 @@ pub struct SumVariantLayout {
 /// Sum / enum discriminant layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SumTypeLayout {
+    /// Semantic MIR 冻结的 sum nominal 身份。
+    pub nominal: crate::NominalInstanceId,
     /// Sum type name.
     pub name: String,
     /// Whether this is a unite-style sum.

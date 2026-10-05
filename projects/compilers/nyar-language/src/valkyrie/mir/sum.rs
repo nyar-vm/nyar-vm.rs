@@ -242,6 +242,7 @@ impl MirSumDeclaration {
     /// 向下投影目标布局；该结果不得作为语义 lowering 的输入。
     pub(crate) fn physical_layout(&self) -> nyar_types::SumTypeLayout {
         nyar_types::SumTypeLayout {
+            nominal: self.nominal,
             name: self.name.clone(),
             is_unite: self.is_unite,
             tag_width: 4,
@@ -249,6 +250,7 @@ impl MirSumDeclaration {
                 .variants
                 .iter()
                 .map(|variant| nyar_types::SumVariantLayout {
+                    id: variant.id,
                     name: variant.name.clone(),
                     tag: variant.tag,
                     payload_type: variant
