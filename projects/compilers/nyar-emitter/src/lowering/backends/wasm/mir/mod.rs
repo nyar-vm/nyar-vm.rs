@@ -690,7 +690,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
 
             let get_arguments_import = host_imports.iter().position(|(_, field)| field == "get-arguments").map(|index| index as u32);
-            let argv_array_ty = prefer_utf8_argv_array_type(&gc_array_type_indices);
+            let argv_array_ty = gc_array_type_indices.get("Utf8").copied();
             let entry_needs_argv = entry_mir_params.iter().any(
                 |ty| matches!(ty, NyarType::Array(element) | NyarType::FixedArray { element, .. } if is_js_glue_host_string_type(element.as_ref())),
             ) || (entry_mir_params.is_empty()
@@ -870,13 +870,6 @@ fn is_generic_array_element_type(element_type: &NyarType) -> bool {
     matches!(element_type, NyarType::Named(name) if name.as_str().len() == 1 && name.as_str().chars().next().is_some_and(|ch| ch.is_ascii_uppercase()))
 }
 
-/// Prefer the `[utf8]` / i32-handle arraytype used for WASI/Node argv.
-fn prefer_utf8_argv_array_type(gc_array_type_indices: &BTreeMap<String, u32>) -> Option<u32> {
-    // argv is an array of the explicit language-level UTF-8 handles.  A GC
-    // type key or a nominal name must not be used to recover this contract.
-    gc_array_type_indices.get("Utf8").copied().or_else(|| gc_array_type_indices.values().next().copied())
-}
-
 /// Push a typed default for a nullary WASI wrapper calling a still-parameterized entry.
 ///
 /// `[T]` →?empty `array.new_default` (never `ref.null`: entry does `ref.cast`/`array.len`).
@@ -885,17 +878,13 @@ fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<S
     match ty {
         NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
             let key = wasm_array_element_type_key(element);
-            let type_index = gc_array_type_indices
-                .get(&key)
-                .copied()
-                .or_else(|| if is_js_glue_host_string_type(element) { prefer_utf8_argv_array_type(gc_array_type_indices) } else { None })
-                .or_else(|| prefer_utf8_argv_array_type(gc_array_type_indices));
+            let type_index = gc_array_type_indices.get(&key).copied();
             if let Some(type_index) = type_index {
                 encode_i32_const(0, body);
                 encode_array_new_default(type_index, body);
             }
             else {
-                encode_ref_null_anyref(body);
+                panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
             }
         }
         NyarType::Float64 | NyarType::Float32 => encode_f64_const(0.0, body),
@@ -903,7 +892,7 @@ fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<S
         NyarType::Unit => encode_ref_null_anyref(body),
         NyarType::Bottom => encode_i32_const(0, body),
         other if is_js_glue_host_string_type(other) => encode_i32_const(0, body),
-        other if type_is_wasm_gc_heap_reference(other) => encode_ref_null_anyref(body),
+        other if type_is_wasm_gc_heap_reference(other) => panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同"),
         _ => encode_i32_const(0, body),
     }
 }
@@ -1059,27 +1048,17 @@ fn append_wasm_spy_metadata_sections(
                                 }
                             }
                         }
-                        MirInstructionKind::FieldGet { object, .. } | MirInstructionKind::FieldSet { object, .. } => {
-                            if let MirOperand::Value(vref) = object {
-                                if let Some(ty) = view.function.value_types.get(vref) {
-                                    if let Some(layout) = ctx.layout_for_value_type(ty) {
-                                        if layout.storage == StorageKind::Reference {
-                                            record_missing(layout.id, &layout.name, "FieldAccess");
-                                        }
-                                    }
+                        MirInstructionKind::FieldGet { field, .. } | MirInstructionKind::FieldSet { field, .. } => {
+                            if let Some((layout, _, _)) = ctx.field_layout_by_id(*field) {
+                                if layout.storage == StorageKind::Reference {
+                                    record_missing(layout.id, &layout.name, "FieldAccess");
                                 }
                             }
                         }
-                        MirInstructionKind::AggregateCopy { source, dest, .. } => {
-                            for operand in [source, dest] {
-                                if let MirOperand::Value(vref) = operand {
-                                    if let Some(ty) = view.function.value_types.get(vref) {
-                                        if let Some(layout) = ctx.layout_for_value_type(ty) {
-                                            if layout.storage == StorageKind::Reference {
-                                                record_missing(layout.id, &layout.name, "AggregateCopy");
-                                            }
-                                        }
-                                    }
+                        MirInstructionKind::AggregateCopy { layout_id, .. } => {
+                            if let Some(layout) = ctx.layout_by_id(*layout_id) {
+                                if layout.storage == StorageKind::Reference {
+                                    record_missing(layout.id, &layout.name, "AggregateCopy");
                                 }
                             }
                         }
@@ -1295,7 +1274,7 @@ impl<'a> WasmMirLowerer<'a> {
         for block in &mir_fn.blocks {
             for (param_slot, param) in block.parameters.iter().enumerate() {
                 let ty = mir_fn.value_types.get(param).expect("WASM 块参数缺少已确定类型");
-                let stack_type = wasm_param_value_type_for(ctx, ty, gc_struct_type_indices, js_glue_utf8_as_anyref);
+                let stack_type = wasm_param_value_type_for(ctx, ty, mir_fn.value_layouts.get(param).copied(), gc_struct_type_indices, js_glue_utf8_as_anyref);
                 let local = if block.id == mir_fn.entry {
                     assert_eq!(ty, &mir_fn.param_types[param_slot], "WASM 入口 SSA 类型与函数参数不一致");
                     u32::try_from(param_slot).expect("WASM 参数索引溢出")
@@ -1396,7 +1375,9 @@ impl<'a> WasmMirLowerer<'a> {
     fn wasm_local_value_type(&self, local_index: u32) -> u8 {
         if local_index < self.stack_ptr_local {
             let ty = &self.mir_fn.param_types[local_index as usize];
-            return wasm_param_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
+            let entry = self.mir_fn.blocks.iter().find(|block| block.id == self.mir_fn.entry).expect("Wasm 函数缺少入口合同");
+            let parameter = entry.parameters.get(local_index as usize).expect("Wasm 参数 local 缺少 SSA 身份");
+            return wasm_param_value_type_for(self.ctx, ty, self.mir_fn.value_layouts.get(parameter).copied(), self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
         }
         let declared = usize::try_from(local_index - self.stack_ptr_local).expect("WASM local 索引溢出");
         let valtype = self.local_valtypes.get(declared).expect("WASM local 未预规划");
@@ -1408,7 +1389,7 @@ impl<'a> WasmMirLowerer<'a> {
         assert!(!matches!(instruction.kind, MirInstructionKind::StoreVar { .. }), "WASM 输入必须完成 SSA 降低");
         for output in &instruction.results {
             let ty = self.mir_fn.value_types.get(output).expect("WASM SSA 结果缺少已确定类型");
-            let stack_type = wasm_param_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
+            let stack_type = wasm_param_value_type_for(self.ctx, ty, self.mir_fn.value_layouts.get(output).copied(), self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
             assert!(!self.value_locals.contains_key(output) && !self.reference_locals.contains_key(output), "WASM SSA 结果重复定义");
             let local = self.alloc_value_local(stack_type);
             if matches!(stack_type, WASM_GC_ANYREF | WASM_GC_EXTERNREF) {
@@ -1719,7 +1700,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::FieldGet { object, field } => {
                 let output = instruction_primary_result(instruction);
-                let Some(layout) = self.infer_aggregate_layout_for_operand(object).cloned()
+                let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
                     eprintln!("[wasm::mir] FieldGet missing layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
@@ -1805,7 +1786,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
-                let Some(layout) = self.infer_aggregate_layout_for_operand(object).cloned()
+                let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
                     eprintln!("[wasm::mir] FieldSet missing layout in `{}`: field=`{field}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);

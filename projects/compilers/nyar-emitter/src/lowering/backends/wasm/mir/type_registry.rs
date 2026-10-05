@@ -42,24 +42,14 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                             }
                         }
                     }
-                    MirInstructionKind::FieldGet { object, .. } | MirInstructionKind::FieldSet { object, .. } => {
-                        if let MirOperand::Value(vref) = object {
-                            if let Some(ty) = view.function.value_types.get(vref) {
-                                if let Some(layout) = ctx.layout_for_value_type(ty) {
-                                    ids.insert(layout.id);
-                                }
-                            }
+                    MirInstructionKind::FieldGet { field, .. } | MirInstructionKind::FieldSet { field, .. } => {
+                        if let Some((layout, _, _)) = ctx.field_layout_by_id(*field) {
+                            ids.insert(layout.id);
                         }
                     }
-                    MirInstructionKind::AggregateCopy { source, dest, .. } => {
-                        for operand in [source, dest] {
-                            if let MirOperand::Value(vref) = operand {
-                                if let Some(ty) = view.function.value_types.get(vref) {
-                                    if let Some(layout) = ctx.layout_for_value_type(ty) {
-                                        ids.insert(layout.id);
-                                    }
-                                }
-                            }
+                    MirInstructionKind::AggregateCopy { layout_id, .. } => {
+                        if let Some(layout) = ctx.layout_by_id(*layout_id) {
+                            ids.insert(layout.id);
                         }
                     }
                     _ => {}

@@ -38,17 +38,17 @@ pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &NyarTyp
 pub(super) fn type_uses_gc_struct_param(
     ctx: &ExecutableLoweringContext,
     ty: &NyarType,
+    layout_id: Option<LayoutId>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
 ) -> bool {
     // 宿主 utf8/utf16 始终走 i32 句柄，即使同名 layout 被登记为 GC struct。
     if is_js_glue_host_string_type(ty) {
         return false;
     }
-    let NyarType::Named(name) = ty
-    else {
+    let Some(layout_id) = layout_id else {
         return false;
     };
-    let Some(layout) = ctx.layout_by_type_name(&name.to_string())
+    let Some(layout) = ctx.layout_by_id(layout_id)
     else {
         return false;
     };
@@ -61,6 +61,7 @@ pub(super) fn type_uses_gc_struct_param(
 pub(super) fn wasm_param_value_type_for(
     ctx: &ExecutableLoweringContext,
     ty: &NyarType,
+    layout_id: Option<LayoutId>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> u8 {
@@ -70,7 +71,7 @@ pub(super) fn wasm_param_value_type_for(
     if is_js_glue_host_string_type(ty) {
         return VALTYPE_I32;
     }
-    if type_uses_gc_struct_param(ctx, ty, gc_struct_type_indices) {
+    if type_uses_gc_struct_param(ctx, ty, layout_id, gc_struct_type_indices) {
         return WASM_GC_ANYREF;
     }
     wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
@@ -82,7 +83,16 @@ pub(super) fn wasm_param_types(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> Vec<u8> {
-    mir_fn.param_types.iter().map(|ty| wasm_param_value_type_for(ctx, ty, gc_struct_type_indices, js_glue_utf8_as_anyref)).collect()
+    mir_fn.param_types.iter().enumerate().map(|(index, ty)| {
+        let layout_id = mir_fn
+            .blocks
+            .iter()
+            .find(|block| block.id == mir_fn.entry)
+            .and_then(|block| block.parameters.get(index))
+            .and_then(|value| mir_fn.value_layouts.get(value))
+            .copied();
+        wasm_param_value_type_for(ctx, ty, layout_id, gc_struct_type_indices, js_glue_utf8_as_anyref)
+    }).collect()
 }
 
 pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_anyref: bool) -> u8 {
@@ -118,14 +128,6 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
     if matches!(ty, NyarType::Union(_)) {
         return WASM_GC_ANYREF;
     }
-    if let NyarType::Named(name) = ty {
-        if let Some(layout) = ctx.layout_by_type_name(&name.to_string()) {
-            let has_ref_fields = layout.fields.iter().any(|field| ctx.storage_for_type(&field.ty) == StorageKind::Reference);
-            if layout.storage == StorageKind::Reference || has_ref_fields {
-                return WASM_GC_ANYREF;
-            }
-        }
-    }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
     if ctx.storage_for_type(ty) == StorageKind::Reference {
         return WASM_GC_ANYREF;
@@ -146,7 +148,7 @@ pub(super) fn wasm_return_value_type(
 ) -> Option<u8> {
     match &mir_fn.return_type {
         NyarType::Unit | NyarType::Bottom => None,
-        other => Some(wasm_param_value_type_for(ctx, other, gc_struct_type_indices, js_glue_utf8_as_anyref)),
+        other => Some(wasm_param_value_type_for(ctx, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)),
     }
 }
 

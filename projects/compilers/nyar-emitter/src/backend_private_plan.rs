@@ -161,11 +161,19 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     }
     let symbol = canonical.linked.callable_names.get(&function.instance).ok_or_else(|| miette!("函数实例缺少 ABI 名称"))?.to_string();
     let type_of = |id| lower_type(canonical, id);
+    let value_layouts = function
+        .value_types
+        .iter()
+        .filter_map(|(value, type_id)| canonical.linked.aggregate_layout_by_type.get(type_id).copied().map(|layout| (ValueRef(value.index()), layout)))
+        .collect();
+    let return_layout = canonical.linked.aggregate_layout_by_type.get(&function.return_type).copied();
     Ok((ExecutableFunction {
         symbol,
         return_type: type_of(function.return_type)?,
         param_types: function.parameters.iter().map(|(_, id)| type_of(*id)).collect::<Result<_>>()?,
         value_types: function.value_types.iter().map(|(value, id)| Ok((ValueRef(value.index()), type_of(*id)?))).collect::<Result<_>>()?,
+        value_layouts,
+        return_layout,
         entry: BlockRef(function.entry.0), values, suspend_points: Vec::new(), frame_layouts: Vec::new(), continuations: Vec::new(),
         case_chains: Vec::new(), #[allow(deprecated)] state_machine: None, suspend_plan: None, blocks, diagnostics: Vec::new(),
     }, callees))

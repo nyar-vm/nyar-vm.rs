@@ -255,8 +255,7 @@ impl<'a> WasmMirLowerer<'a> {
             return false;
         }
         // 所?sum 共享 `[i32, anyref]`；解析失败时仍可用任一已登?type_index?
-        let type_index =
-            self.resolve_unite_sum_type_index_for_object(object, layout_id).or_else(|| self.gc_sum_type_indices.values().next().copied());
+        let type_index = self.resolve_unite_sum_type_index_for_object(object, layout_id);
         let Some(type_index) = type_index
         else {
             return false;
@@ -585,29 +584,6 @@ impl<'a> WasmMirLowerer<'a> {
         let ty = self.mir_fn.value_types.get(&vref)?;
         let sum_name = Self::sum_type_name_from_nyar(ty)?;
         self.resolve_gc_sum_type_index(&sum_name)
-    }
-
-    fn infer_tuple_layout(&self, operand: &MirOperand) -> Option<&AggregateLayout> {
-        let vref = match operand {
-            MirOperand::Value(vref) => *vref,
-            _ => return None,
-        };
-        let ty = self.mir_fn.value_types.get(&vref)?;
-        self.ctx.layout_for_value_type(ty)
-    }
-
-    /// FieldGet ?layout_id 时：?object ?MIR 值类型恢复聚合布局（对?CLR）?
-    pub(super) fn infer_aggregate_layout_for_operand(&self, operand: &MirOperand) -> Option<&AggregateLayout> {
-        let vref = match operand {
-            MirOperand::Value(vref) => *vref,
-            _ => return None,
-        };
-        let ty = self.mir_fn.value_types.get(&vref)?;
-        self.ctx.layout_for_value_type(ty).or_else(|| {
-            // Named 可能?sum；sum ?AggregateLayout，但 FieldGet tag/payload 已由 unite 路径处理?
-            // 此处仅覆?VonToken / VonParsedValue 等真实聚合?
-            Self::sum_type_name_from_nyar(ty).and_then(|name| self.ctx.layout_by_type_name(&name))
-        })
     }
 
 }

@@ -162,7 +162,7 @@ impl<'a> WasmMirLowerer<'a> {
                     // 与函数签?`wasm_param_value_type_for` 对齐：GC struct / Reference →?anyref?
                     // 若只?`storage_for_type` 而签名因 gc_struct 登记?anyref，会?param
                     // 误写?value_locals，随?`local.get` ?anyref、`local.set` 却按 i32?
-                    let param_vt = wasm_param_value_type_for(ctx, param_ty, gc_struct_type_indices, js_glue_utf8_as_anyref);
+                    let param_vt = wasm_param_value_type_for(ctx, param_ty, mir_fn.value_layouts.get(param).copied(), gc_struct_type_indices, js_glue_utf8_as_anyref);
                     let is_reference = param_vt == WASM_GC_ANYREF || param_vt == WASM_GC_EXTERNREF;
                     if is_reference {
                         lowerer.reference_locals.insert(*param, local);
@@ -178,7 +178,7 @@ impl<'a> WasmMirLowerer<'a> {
                 let param_vt = mir_fn
                     .value_types
                     .get(param)
-                    .map(|ty| wasm_param_value_type_for(ctx, ty, gc_struct_type_indices, js_glue_utf8_as_anyref))
+                    .map(|ty| wasm_param_value_type_for(ctx, ty, mir_fn.value_layouts.get(param).copied(), gc_struct_type_indices, js_glue_utf8_as_anyref))
                     .unwrap_or(VALTYPE_I32);
                 if param_vt == WASM_GC_ANYREF || param_vt == WASM_GC_EXTERNREF {
                     let local = lowerer.alloc_anyref_local();
@@ -288,7 +288,8 @@ impl<'a> WasmMirLowerer<'a> {
         if local_index < param_count {
             return match self.mir_fn.param_types.get(local_index as usize) {
                 Some(ty) => {
-                    let vt = wasm_param_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
+                    let layout_id = self.mir_fn.blocks.iter().find(|block| block.id == self.mir_fn.entry).and_then(|block| block.parameters.get(local_index as usize)).and_then(|value| self.mir_fn.value_layouts.get(value)).copied();
+                    let vt = wasm_param_value_type_for(self.ctx, ty, layout_id, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
                     if vt == WASM_GC_ANYREF || vt == WASM_GC_EXTERNREF { WASM_GC_ANYREF } else { vt }
                 }
                 None => panic!(

@@ -573,6 +573,10 @@ pub struct ExecutableFunction {
     pub param_types: Vec<NyarType>,
     /// SSA value static types.
     pub value_types: BTreeMap<ValueRef, NyarType>,
+    /// Semantic MIR 已绑定的 SSA 值到聚合布局身份映射。
+    pub value_layouts: BTreeMap<ValueRef, crate::LayoutId>,
+    /// Semantic MIR 已绑定的返回值布局身份（标量/无返回值为 `None`）。
+    pub return_layout: Option<crate::LayoutId>,
     /// Entry block.
     pub entry: BlockRef,
     /// SSA values.
