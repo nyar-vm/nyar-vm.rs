@@ -238,21 +238,6 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
     Ok(())
 }
 
-fn struct_new_layout_name(type_name: &str, function_symbol: &str) -> String {
-    // 迁移期：StructNew.type_name 仍可能是 `Self`；布局名从函数符号 owner 恢复。
-    // 输出值类型不得再是 Named("Self")——那必须在 MIR 侧代入。
-    if type_name == "Self" {
-        function_owner_from_symbol(function_symbol).map(str::to_string).unwrap_or_else(|| type_name.to_string())
-    }
-    else {
-        type_name.to_string()
-    }
-}
-
-fn function_owner_from_symbol(symbol: &str) -> Option<&str> {
-    symbol.rsplit_once('.').map(|(owner, _)| owner.rsplit([':', '.']).next().unwrap_or(owner))
-}
-
 /// 由 `Apply(Owner, [A, B, …])` 与 layout 字段中出现的类型形参名建立 substitution。
 fn type_args_substitution(output_type: &NyarType, layout: &AggregateLayout) -> BTreeMap<String, NyarType> {
     let mut formals = Vec::new();
@@ -321,41 +306,6 @@ fn substitute_nyar_type(ty: &NyarType, substitution: &BTreeMap<String, NyarType>
         })),
         other => other.clone(),
     }
-}
-
-fn is_self_parameter_operand(operand: &ExecutableOperand, function: &ExecutableFunction) -> bool {
-    let ExecutableOperand::Value(value_ref) = operand
-    else {
-        return false;
-    };
-    function
-        .values
-        .iter()
-        .find(|value| value.id == *value_ref)
-        .is_some_and(|value| matches!(value.origin, ValueOrigin::Parameter { index: 0, .. }))
-}
-
-fn aggregate_field_layout_name(
-    object: &ExecutableOperand,
-    object_ty: Option<&NyarType>,
-    function: &ExecutableFunction,
-) -> Option<String> {
-    if let Some(ty) = object_ty {
-        // 对象类型必须已代入；Named("Self") 不得在此按函数符号猜 owner。
-        if matches!(ty, NyarType::Named(name) if name.as_str() == "Self") {
-            return None;
-        }
-        if let Some(owner) = aggregate_owner_name(ty) {
-            if !matches!(ty, NyarType::TraitObject(_)) {
-                return Some(owner.to_string());
-            }
-        }
-    }
-    // 无 SSA 类型时：仅允许从 `self` 形参槽恢复 layout 名（不是 Named("Self") 字符串特判）。
-    if object_ty.is_none() && is_self_parameter_operand(object, function) {
-        return function_owner_from_symbol(&function.symbol).map(str::to_string);
-    }
-    None
 }
 
 /// Align emitter StructNew / FieldGet / FieldSet checks with language MIR validation:
