@@ -97,6 +97,13 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
     for module in dependencies {
         for layout in &module.aggregate_layouts.layouts {
             if let Some(existing) = merged.layouts.iter().find(|candidate| candidate.name == layout.name && candidate.namespace == layout.namespace) {
+                let owner = layout_owner(module, layout);
+                let existing_owner = layout_owner(consumer, existing).or_else(|| {
+                    dependencies.iter().find_map(|dependency| layout_owner(dependency, existing))
+                });
+                if owner.is_none() || existing_owner.is_none() || owner != existing_owner {
+                    return Err(ParseError::invalid(format!("布局 `{}` 缺少一致的声明 identity", qualified_layout_name(layout))));
+                }
                 if existing.storage != layout.storage
                     || existing.size != layout.size
                     || existing.align != layout.align
@@ -120,6 +127,15 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
         }
     }
     Ok(merged)
+}
+
+fn layout_owner(module: &MirModule, layout: &AggregateLayout) -> Option<nyar_types::ItemId> {
+    let qualified = qualified_layout_name(layout);
+    module
+        .structs
+        .iter()
+        .find(|declaration| declaration.qualified_name() == qualified)
+        .and_then(|declaration| declaration.declaration)
 }
 
 fn qualified_layout_name(layout: &AggregateLayout) -> String {
