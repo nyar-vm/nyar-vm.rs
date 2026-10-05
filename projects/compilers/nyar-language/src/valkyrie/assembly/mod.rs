@@ -1,6 +1,6 @@
 //! 从唯一 `CompiledProgram` 选择分区并交给目标 preparation。
 //!
-//! 分区选择不重新生产语义事实；共享提交载荷只携带已验证程序及其稳定实例根。
+//! 分区选择不重新生产语义事实；共享载荷携带已验证程序与明确的目标分区。
 
 use miette::{Result as MietteResult, miette};
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
@@ -77,7 +77,7 @@ mod import_contract_tests {
     use super::*;
 
     #[test]
-    fn source_callable_roots_bind_to_compiler_instances() {
+    fn source_entry_survives_canonical_partition_planning() {
         let output = crate::ValkyrieCompiler::default().compile_source_to_program(
             "[export(name: \"first\")] [main] micro first() -> unit { return } \
              [export(name: \"second\")] micro second() -> unit { return }",
@@ -89,7 +89,7 @@ mod import_contract_tests {
     }
 
     #[test]
-    fn unresolved_partition_root_fails_at_compiler_assembly() {
+    fn function_without_entry_remains_a_non_entry_partition() {
         let output = crate::ValkyrieCompiler::default().compile_source_to_program(
             "micro answer() -> i32 { return 23 }",
         ).expect("当前源码必须编译");

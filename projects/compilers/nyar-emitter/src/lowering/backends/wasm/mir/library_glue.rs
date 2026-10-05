@@ -23,7 +23,7 @@ pub(super) fn append_library_mode_glue(
         return Ok(());
     }
     let mut invoke_exports = serde_json::Map::new();
-    for (instance, public_name) in &submission.wasm_export_names {
+    for (instance, public_name) in submission.backend_plan.wasm_export_names() {
         let function = submission.backend_plan.get_function(instance)
             .ok_or_else(|| miette!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
         let parameters = function.param_types.iter().map(abi_kind_for_type)

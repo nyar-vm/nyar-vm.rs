@@ -5,7 +5,7 @@ use crate::FragmentSubmission;
 
 /// 只发射 Compiler 实例键控的目标私有计划，不重放调用边。
 pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> miette::Result<NyarModuleData> {
-    if submission.suspend_runtime.is_some() && submission.exported_operations.is_empty() {
+    if submission.suspend_runtime.is_some() && submission.backend_plan.exported_operations().is_empty() {
         return Ok(empty_module(submission));
     }
 
@@ -17,7 +17,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
 fn empty_module(submission: &FragmentSubmission) -> NyarModuleData {
     NyarModuleData {
         version: NYAR_VERSION,
-        name: format!("{}__{}", sanitize_symbol(&submission.module_name), sanitize_symbol(submission.fragment_id.as_str())),
+        name: format!("{}__{}", sanitize_symbol(submission.backend_plan.module_name()), sanitize_symbol(submission.backend_plan.fragment_id().as_str())),
         constants: Vec::new(),
         functions: Vec::new(),
         imports: Vec::new(),

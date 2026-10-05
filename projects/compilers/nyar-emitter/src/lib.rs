@@ -435,11 +435,11 @@ pub fn validate_dispatch_for_route(route: BackendRoute, dispatch: BackendDispatc
 
 /// 从片段能力标签推断 backend 分发形态。
 pub fn infer_dispatch_kind(submission: &FragmentSubmission) -> BackendDispatchKind {
-    if submission.required_capabilities.iter().any(|cap| cap.as_str().contains("effect-handler")) {
+    if submission.backend_plan.required_capabilities().iter().any(|cap| cap.as_str().contains("effect-handler")) {
         return BackendDispatchKind::EffectHandler;
     }
     if !submission.witness_calls.is_empty()
-        || submission.required_capabilities.iter().any(|cap| matches!(cap.as_str(), "trait-witness" | "open-witness" | "witness-dispatch"))
+        || submission.backend_plan.required_capabilities().iter().any(|cap| matches!(cap.as_str(), "trait-witness" | "open-witness" | "witness-dispatch"))
     {
         return BackendDispatchKind::Witness;
     }
@@ -462,7 +462,7 @@ fn validate_suspend_submission(
     clr_strategy: ClrSuspendStrategy,
     vm_strategy: VmSuspendStrategy,
 ) -> Result<()> {
-    for capability in &submission.required_capabilities {
+    for capability in submission.backend_plan.required_capabilities() {
         let tag = capability.as_str();
         if tag.contains("open-witness") || tag.contains("effect-handler") {
             return Err(miette!("CLR lane 拒绝未静态化的开放 witness/effect 能力 `{tag}`；请在 MIR 阶段完成静态化"));
@@ -482,7 +482,7 @@ fn validate_suspend_submission(
             if submission.control_flow.is_some() {
                 return Err(miette!(
                     "first-class suspend lane `{lane:?}` 拒绝 state-machine `control_flow` 载荷（片段 `{fragment}`）；请提交 `suspend_runtime`",
-                    fragment = submission.fragment_id,
+                    fragment = submission.backend_plan.fragment_id(),
                     lane = lane
                 ));
             }
@@ -491,7 +491,7 @@ fn validate_suspend_submission(
             if submission.suspend_runtime.is_some() {
                 return Err(miette!(
                     "state-machine lane `{lane:?}` 拒绝 first-class `suspend_runtime` 载荷（片段 `{fragment}`）；请提交 `control_flow`",
-                    fragment = submission.fragment_id,
+                    fragment = submission.backend_plan.fragment_id(),
                     lane = lane
                 ));
             }
@@ -537,26 +537,6 @@ pub trait FrontendBuildBundle {
 /// 前端提交给驱动层的语义片段。
 #[derive(Clone)]
 pub struct FragmentSubmission {
-    /// 逻辑模块名。
-    pub module_name: String,
-    /// 当前语义片段标识。
-    pub fragment_id: Identifier,
-    /// 当前片段导出的稳定操作。
-    pub exported_operations: Vec<nyar_types::ItemInstanceId>,
-    /// 当前片段要求的能力约束。
-    pub required_capabilities: Vec<CapabilityTag>,
-    /// 当前片段携带的理论 bundle。
-    pub theory_bundle: TheoryBundle,
-    /// 当前片段的可解释入口。
-    pub entry_operation: Option<nyar_types::ItemInstanceId>,
-    /// 显式 `[export]` 的稳定操作 → wasm 公开导出名。
-    pub wasm_export_names: std::collections::BTreeMap<nyar_types::ItemInstanceId, String>,
-    /// 当前片段内稳定操作到外部导入链接的映射。
-    pub external_import_links: BTreeMap<nyar_types::ItemInstanceId, ExternalImportLink>,
-    /// 当前片段内已经解析好的外部调用边。
-    pub external_call_edges: Vec<nyar_types::CanonicalExternalCallEdge>,
-    /// 当前片段内已经解析好的内部调用边。
-    pub internal_call_edges: Vec<nyar_types::CanonicalCallEdge>,
     /// 具名 trait 见证表载荷。
     pub witness_tables: Vec<WitnessSubmission>,
     /// 入口 witness 动态调用边。
@@ -565,9 +545,6 @@ pub struct FragmentSubmission {
     pub control_flow: Option<nyar::ControlFlowPayload>,
     /// suspend 分区携带的 first-class runtime 载荷（nyar-vm / 原生 continuation 后端）。
     pub suspend_runtime: Option<SuspendRuntimePayload>,
-    /// 值/引用聚合体的内存布局计划。
-    ///
-    /// `singleton` 也在这里以普通引用聚合体的形态出现，负责提供字段偏移、字段类型、
     /// 已完成语义闭包与表示合同的目标私有计划。
     pub(crate) backend_plan: Arc<BackendPrivatePlan>,
 }
@@ -575,11 +552,6 @@ pub struct FragmentSubmission {
 impl std::fmt::Debug for FragmentSubmission {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FragmentSubmission")
-            .field("module_name", &self.module_name)
-            .field("fragment_id", &self.fragment_id)
-            .field("exported_operations", &self.exported_operations)
-            .field("required_capabilities", &self.required_capabilities)
-            .field("entry_operation", &self.entry_operation)
             .finish()
     }
 }
@@ -588,16 +560,6 @@ impl std::fmt::Debug for FragmentSubmission {
 impl Default for FragmentSubmission {
     fn default() -> Self {
         Self {
-            module_name: String::new(),
-            fragment_id: Identifier::new("functions"),
-            exported_operations: Vec::new(),
-            required_capabilities: Vec::new(),
-            theory_bundle: TheoryBundle::default(),
-            entry_operation: None,
-            wasm_export_names: BTreeMap::new(),
-            external_import_links: BTreeMap::new(),
-            external_call_edges: Vec::new(),
-            internal_call_edges: Vec::new(),
             witness_tables: Vec::new(),
             witness_calls: Vec::new(),
             control_flow: None,
@@ -704,7 +666,7 @@ impl LoweredBackendInput {
                 host_flavor,
                 wasm_package_kind,
             )?,
-            entry_artifact_name: submission.entry_operation.and_then(|instance| submission.backend_plan.abi_name_for_instance(instance)).as_ref().and_then(entry_artifact_name),
+            entry_artifact_name: submission.backend_plan.entry_operation().and_then(|instance| submission.backend_plan.abi_name_for_instance(instance)).as_ref().and_then(entry_artifact_name),
         })
     }
 

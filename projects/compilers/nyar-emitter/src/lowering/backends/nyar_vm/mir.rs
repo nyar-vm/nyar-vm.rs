@@ -129,7 +129,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     }
     let mut module = NyarModuleData {
         version: NYAR_VERSION,
-        name: format!("{}__{}", super::sanitize_symbol(&submission.module_name), super::sanitize_symbol(submission.fragment_id.as_str())),
+        name: format!("{}__{}", super::sanitize_symbol(submission.backend_plan.module_name()), super::sanitize_symbol(submission.backend_plan.fragment_id().as_str())),
         constants: Vec::new(),
         functions: Vec::new(),
         imports: Vec::new(),
@@ -227,14 +227,14 @@ fn build_nyar_function_entry_arities(
 
 /// 库模式只导出用户 `[export]` / `exported_operations`；闭包内 std 辅助函数保持内部 `Call` 可见性。
 fn nyar_should_export_operation(submission: &FragmentSubmission, operation: ItemInstanceId) -> bool {
-    if submission.wasm_export_names.contains_key(&operation) {
+    if submission.backend_plan.wasm_export_names().contains_key(&operation) {
         return true;
     }
-    submission.exported_operations.iter().any(|exported| *exported == operation)
+    submission.backend_plan.exported_operations().iter().any(|exported| *exported == operation)
 }
 
 fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstanceId) -> String {
-    if let Some(public_name) = submission.wasm_export_names.get(&operation) {
+    if let Some(public_name) = submission.backend_plan.wasm_export_names().get(&operation) {
         return public_name.clone();
     }
     submission.backend_plan.abi_name_for_instance(operation)

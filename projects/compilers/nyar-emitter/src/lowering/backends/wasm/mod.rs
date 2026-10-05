@@ -75,21 +75,21 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
         return Err(miette!("WASM witness calls require Compiler-resolved executable dispatch; witness summaries cannot supply method bodies"));
     }
     let executable = &submission.backend_plan;
-    for operation in submission.wasm_export_names.keys().chain(submission.entry_operation.iter()) {
+    for operation in submission.backend_plan.wasm_export_names().keys().chain(submission.backend_plan.entry_operation().iter()) {
         if executable.get_function(operation).is_none() {
             return Err(miette!("WASM callable `{operation}` has no Compiler-owned executable body"));
         }
     }
     if wasm_package_kind == WasmPackageKind::Library {
-        if submission.wasm_export_names.is_empty() {
+        if submission.backend_plan.wasm_export_names().is_empty() {
             return Err(miette::miette!("library wasm package requires at least one `[export]` symbol"));
         }
     }
-    let export_name = if let Some(name) = submission.wasm_export_names.values().next() {
+    let export_name = if let Some(name) = submission.backend_plan.wasm_export_names().values().next() {
         name.as_str()
     }
     else {
-        if submission.entry_operation.is_none() {
+        if submission.backend_plan.entry_operation().is_none() {
             return Err(miette!("WASM binary package requires a Compiler-resolved entry"));
         }
         boundary_entry_name
@@ -165,18 +165,18 @@ fn boundary_name(host_boundary: HostProjectionBoundary) -> &'static str {
 }
 
 fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    let merged_theory = submission.theory_bundle.merged();
+    let merged_theory = submission.backend_plan.theory_bundle().merged();
     let mut customs = vec![
-        ("nyar.module".to_string(), submission.module_name.as_bytes().to_vec()),
-        ("nyar.fragment".to_string(), submission.fragment_id.as_str().as_bytes().to_vec()),
+        ("nyar.module".to_string(), submission.backend_plan.module_name().as_bytes().to_vec()),
+        ("nyar.fragment".to_string(), submission.backend_plan.fragment_id().as_str().as_bytes().to_vec()),
     ];
-    for operation in &submission.exported_operations {
+    for operation in submission.backend_plan.exported_operations() {
         customs.push(("nyar.export".to_string(), operation.to_string().into_bytes()));
     }
-    for capability in &submission.required_capabilities {
+    for capability in submission.backend_plan.required_capabilities() {
         customs.push(("nyar.capability".to_string(), capability.as_str().to_string().into_bytes()));
     }
-    if let Some(entry) = &submission.entry_operation {
+    if let Some(entry) = submission.backend_plan.entry_operation() {
         customs.push(("nyar.entry".to_string(), entry.to_string().into_bytes()));
     }
     if let Some(payload) = &submission.control_flow {

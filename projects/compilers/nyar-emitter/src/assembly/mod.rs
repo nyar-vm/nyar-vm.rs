@@ -14,35 +14,27 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
     let partition = &payload.partition;
     let fragment = linked.fragments.get(&partition.fragment)
         .ok_or_else(|| miette!("Canonical 片段 `{}` 不存在", partition.fragment))?;
+    if partition.exported_operations != fragment.exported_operations || partition.entry_operation != fragment.entry_operation {
+        return Err(miette!("分区 `{}` 的根与 Canonical 片段不一致", partition.name));
+    }
     if fragment.required_capabilities.iter().any(|capability| matches!(capability.as_str(), "suspend" | "trait-witness" | "open-witness" | "witness-dispatch")) {
         return Err(miette!("片段 `{}` 缺少已验证的 Canonical 控制流或 witness 合同", partition.fragment));
     }
 
-    let exported_operations = fragment.exported_operations.clone();
-    let entry_operation = fragment.entry_operation;
-    let wasm_export_names = fragment.wasm_export_names.clone();
-    let external_import_links = fragment.external_imports.clone();
-    let external_call_edges = fragment.external_call_edges.clone();
-    let internal_call_edges = fragment.internal_call_edges.clone();
     let mut roots = partition.exported_operations.clone();
     if let Some(entry) = partition.entry_operation {
         if !roots.contains(&entry) {
             roots.push(entry);
         }
     }
-    let backend_plan = BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &roots)?;
+    let backend_plan = BackendPrivatePlan::from_compiled_program(
+        &payload.compiled_program,
+        &partition.fragment,
+        payload.theory_bundle,
+        &roots,
+    )?;
 
     Ok(FragmentSubmission {
-        module_name: payload.compiled_program.canonical().linked.module_name.clone(),
-        fragment_id: partition.fragment.clone(),
-        exported_operations,
-        required_capabilities: fragment.required_capabilities.clone(),
-        theory_bundle: payload.theory_bundle,
-        entry_operation: partition.entry_operation,
-        wasm_export_names,
-        external_import_links,
-        external_call_edges,
-        internal_call_edges,
         witness_tables: Vec::new(),
         witness_calls: Vec::new(),
         control_flow: None,

@@ -19,6 +19,16 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Default))]
 pub struct BackendPrivatePlan {
+    module_name: String,
+    fragment_id: nyar::Identifier,
+    exported_operations: Vec<ItemInstanceId>,
+    required_capabilities: Vec<nyar::CapabilityTag>,
+    theory_bundle: nyar::TheoryBundle,
+    entry_operation: Option<ItemInstanceId>,
+    wasm_export_names: BTreeMap<ItemInstanceId, String>,
+    external_import_links: BTreeMap<ItemInstanceId, nyar::ExternalImportLink>,
+    external_call_edges: Vec<nyar_types::CanonicalExternalCallEdge>,
+    internal_call_edges: Vec<nyar_types::CanonicalCallEdge>,
     aggregate_layouts: nyar_types::AggregateLayoutPlan,
     aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
@@ -42,6 +52,18 @@ pub struct BackendImport {
 
 impl BackendPrivatePlan {
     #[cfg(test)]
+    pub(crate) fn from_entry_function(function: ExecutableFunction) -> Self {
+        let entry = ItemInstanceId::from_index(0).expect("测试入口身份");
+        let name = QualifiedName::new(vec![nyar::Identifier::new("main")]);
+        Self {
+            entry_operation: Some(entry),
+            functions: BTreeMap::from([(entry, function)]),
+            abi_names: BTreeMap::from([(entry, name)]),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
         let mut plan = Self::default();
         for (index, (name, function)) in functions.into_iter().enumerate() {
@@ -53,8 +75,15 @@ impl BackendPrivatePlan {
     }
 
     /// 从完整 `CompiledProgram` 生成闭包；任何无法无损投影的语义都失败。
-    pub fn from_compiled_program(program: &CompiledProgram, roots: &[ItemInstanceId]) -> Result<Self> {
+    pub fn from_compiled_program(
+        program: &CompiledProgram,
+        fragment_id: &nyar::Identifier,
+        theory_bundle: nyar::TheoryBundle,
+        roots: &[ItemInstanceId],
+    ) -> Result<Self> {
         let canonical = program.canonical();
+        let fragment = canonical.linked.fragments.get(fragment_id)
+            .ok_or_else(|| miette!("Canonical 片段 `{fragment_id}` 不存在"))?;
         let mut declared_imports = BTreeMap::new();
         for (index, import) in &canonical.linked.imports {
             if canonical.mir.functions.contains_key(&import.callee) {
@@ -95,6 +124,16 @@ impl BackendPrivatePlan {
             functions.insert(instance, lowered);
         }
         Ok(Self {
+            module_name: canonical.linked.module_name.clone(),
+            fragment_id: fragment.id.clone(),
+            exported_operations: fragment.exported_operations.clone(),
+            required_capabilities: fragment.required_capabilities.clone(),
+            theory_bundle,
+            entry_operation: fragment.entry_operation,
+            wasm_export_names: fragment.wasm_export_names.clone(),
+            external_import_links: fragment.external_imports.clone(),
+            external_call_edges: fragment.external_call_edges.clone(),
+            internal_call_edges: fragment.internal_call_edges.clone(),
             aggregate_layouts: canonical.linked.aggregate_layouts.clone(),
             aggregate_layout_by_nominal: canonical.linked.aggregate_layout_by_nominal.clone(),
             aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
@@ -104,6 +143,17 @@ impl BackendPrivatePlan {
             functions, abi_names, imports, sum_reps: program.representation().sum_reps.clone(),
         })
     }
+
+    pub fn module_name(&self) -> &str { &self.module_name }
+    pub fn fragment_id(&self) -> &nyar::Identifier { &self.fragment_id }
+    pub fn exported_operations(&self) -> &[ItemInstanceId] { &self.exported_operations }
+    pub fn required_capabilities(&self) -> &[nyar::CapabilityTag] { &self.required_capabilities }
+    pub fn theory_bundle(&self) -> &nyar::TheoryBundle { &self.theory_bundle }
+    pub fn entry_operation(&self) -> Option<ItemInstanceId> { self.entry_operation }
+    pub fn wasm_export_names(&self) -> &BTreeMap<ItemInstanceId, String> { &self.wasm_export_names }
+    pub fn external_import_links(&self) -> &BTreeMap<ItemInstanceId, nyar::ExternalImportLink> { &self.external_import_links }
+    pub fn external_call_edges(&self) -> &[nyar_types::CanonicalExternalCallEdge] { &self.external_call_edges }
+    pub fn internal_call_edges(&self) -> &[nyar_types::CanonicalCallEdge] { &self.internal_call_edges }
 
     pub fn aggregate_layouts(&self) -> &nyar_types::AggregateLayoutPlan { &self.aggregate_layouts }
     pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> { &self.aggregate_layout_by_nominal }
@@ -378,7 +428,8 @@ mod representation_contract_tests {
 
     fn prepare(program: &CompiledProgram) -> Result<BackendPrivatePlan> {
         let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
-        BackendPrivatePlan::from_compiled_program(program, &roots)
+        let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
+        BackendPrivatePlan::from_compiled_program(program, fragment, nyar::TheoryBundle::default(), &roots)
     }
 
     #[test]
@@ -389,11 +440,22 @@ mod representation_contract_tests {
     }
 
     #[test]
+    fn unknown_fragment_identity_fails_before_backend_preparation() {
+        let program = source_program();
+        let missing = nyar::Identifier::new("missing_fragment");
+        let error = BackendPrivatePlan::from_compiled_program(
+            &program, &missing, nyar::TheoryBundle::default(), &[],
+        ).expect_err("片段必须来自同一 Canonical 程序，不能按根或顺序猜测");
+        assert!(error.to_string().contains("不存在"), "{error}");
+    }
+
+    #[test]
     fn unknown_root_identity_fails_before_function_projection() {
         let program = source_program();
         let unknown = ItemInstanceId::from_index(1000).expect("构造闭包外身份");
         assert!(!program.canonical().mir.functions.contains_key(&unknown));
-        let error = BackendPrivatePlan::from_compiled_program(&program, &[unknown])
+        let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
+        let error = BackendPrivatePlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[unknown])
             .expect_err("闭包外根身份必须失败，不能改按名称寻找其他函数");
         assert!(error.to_string().contains("缺少 canonical 函数体"), "{error}");
     }
@@ -406,7 +468,8 @@ mod representation_contract_tests {
         canonical.linked.callable_names.insert(root, QualifiedName::new(vec![nyar::Identifier::new("renamed_boundary")]));
         let program = CompiledProgram::new(canonical, source.representation().clone())
             .expect("ABI 名不改变已经验证的调用与表示身份");
-        let plan = BackendPrivatePlan::from_compiled_program(&program, &[root])
+        let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
+        let plan = BackendPrivatePlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[root])
             .expect("目标准备必须消费同一根身份");
         assert!(plan.functions.contains_key(&root));
         assert_eq!(plan.functions[&root].symbol, "renamed_boundary");
@@ -442,9 +505,10 @@ mod representation_contract_tests {
             *name = QualifiedName::new(vec![nyar::Identifier::new("same_label")]);
         }
         let program = CompiledProgram::new(canonical, source.representation().clone()).expect("标签不改变语义合同");
+        let mut plan = prepare(&program).expect("独立实例必须可准备");
+        plan.wasm_export_names = exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
         let submission = crate::FragmentSubmission {
-            wasm_export_names: exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect(),
-            backend_plan: std::sync::Arc::new(prepare(&program).expect("独立实例必须可准备")),
+            backend_plan: std::sync::Arc::new(plan),
             ..Default::default()
         };
         let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module(
@@ -463,9 +527,10 @@ mod representation_contract_tests {
     fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
         let program = source_program_from("micro identity(value: i64) -> i64 { return value }");
         let exports = program.canonical().linked.callable_names.clone();
+        let mut plan = prepare(&program).expect("标量导出有完整实例合同");
+        plan.wasm_export_names = exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
         let submission = crate::FragmentSubmission {
-            wasm_export_names: exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect(),
-            backend_plan: std::sync::Arc::new(prepare(&program).expect("标量导出有完整实例合同")),
+            backend_plan: std::sync::Arc::new(plan),
             ..Default::default()
         };
         let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module_for(
@@ -491,10 +556,10 @@ mod representation_contract_tests {
             canonical.linked.callable_names.insert(*instance, QualifiedName::new(vec![nyar::Identifier::new("same_label")]));
         }
         let program = CompiledProgram::new(canonical, source.representation().clone()).expect("诊断名不能改变实例身份");
-        let plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
+        let mut plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
+        plan.exported_operations = instances.clone();
+        plan.wasm_export_names = instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect();
         let submission = crate::FragmentSubmission {
-            exported_operations: instances.clone(),
-            wasm_export_names: instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect(),
             backend_plan: std::sync::Arc::new(plan),
             ..Default::default()
         };

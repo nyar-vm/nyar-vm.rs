@@ -118,13 +118,13 @@ pub(crate) fn lower_fragment_to_driver_input(
                 control_flow: submission.control_flow.clone(),
                 package_as_wasi_command,
                 wasi_preview,
-                library_wasm_exports: submission.wasm_export_names.values().cloned().collect(),
+                library_wasm_exports: submission.backend_plan.wasm_export_names().values().cloned().collect(),
                 wasm_package_kind,
             }))
         }
         #[cfg(feature = "nyar-vm-lane")]
         TargetBackendFamily::NyarVm => {
-            let nyar_module = if submission.suspend_runtime.is_some() && submission.exported_operations.is_empty() {
+            let nyar_module = if submission.suspend_runtime.is_some() && submission.backend_plan.exported_operations().is_empty() {
                 None
             }
             else {
@@ -135,9 +135,9 @@ pub(crate) fn lower_fragment_to_driver_input(
                 control_flow: submission.control_flow.clone(),
                 nyar_module,
                 library_public_exports: submission
-                    .exported_operations
+                    .backend_plan.exported_operations()
                     .iter()
-                    .filter_map(|operation| submission.wasm_export_names.get(operation).cloned())
+                    .filter_map(|operation| submission.backend_plan.wasm_export_names().get(operation).cloned())
                     .collect(),
                 output_dir,
             }))

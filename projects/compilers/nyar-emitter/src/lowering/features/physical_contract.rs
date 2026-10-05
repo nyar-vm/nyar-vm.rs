@@ -134,9 +134,9 @@ pub(crate) fn build_physical_plan(
 /// legacy submissions fail closed at the common boundary.
 pub(crate) fn validate_physical_submission(submission: &FragmentSubmission, backend: PhysicalBackend) -> Result<(), PhysicalPlanError> {
     let plans = build_physical_plan(submission, backend)?;
-    if let Some(entry) = &submission.entry_operation {
+    if let Some(entry) = submission.backend_plan.entry_operation() {
         let executable = &submission.backend_plan;
-        if executable.get_function(entry).is_none() {
+        if executable.get_function(&entry).is_none() {
             return Err(PhysicalPlanError {
                 code: "BPHYS008",
                 function: entry.to_string(),
@@ -592,12 +592,4 @@ mod tests {
         assert_eq!(error.code, "BPHYS001");
     }
 
-    #[test]
-    fn entry_requires_an_exact_semantic_function() {
-        let mut submission = submission(Vec::new());
-        submission.entry_operation = Some(nyar_types::ItemInstanceId::from_index(0).expect("缺失的入口实例"));
-        let error = validate_physical_submission(&submission, PhysicalBackend::WasiComponent)
-            .expect_err("entry cannot be synthesized without Semantic MIR");
-        assert_eq!(error.code, "BPHYS008");
-    }
 }

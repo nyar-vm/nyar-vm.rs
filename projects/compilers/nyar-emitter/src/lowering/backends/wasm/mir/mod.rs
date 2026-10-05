@@ -96,7 +96,7 @@ const WASM_GC_EXTERNREF: u8 = VALTYPE_EXTERNREF;
 fn collect_wasm_host_imports(submission: &FragmentSubmission, synthesize_const_utf8: bool) -> Vec<(String, String)> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
-    for link in submission.external_import_links.values() {
+    for link in submission.backend_plan.external_import_links().values() {
         let Some(target) = wasm_host_import_target(link)
         else {
             continue;
@@ -154,7 +154,7 @@ const NODE_UTF8_HOST_IMPORT_FIELDS: &[&str] = &[
 fn collect_wasi_host_imports(submission: &FragmentSubmission, preview: crate::nyar_backend_wasi::WasiPreview) -> Vec<(String, String)> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
-    for link in submission.external_import_links.values() {
+    for link in submission.backend_plan.external_import_links().values() {
         let Some(target) = wasi_host_import_target(link)
         else {
             continue;
@@ -649,10 +649,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         )));
         eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, full.clone()));
-        if let Some(public_name) = submission.wasm_export_names.get(instance) {
+        if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
             exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));
         }
-        else if submission.entry_operation.as_ref() == Some(instance) {
+        else if submission.backend_plan.entry_operation() == Some(*instance) {
             exports.push((export_name, WasmExternalKind::Func.as_u8(), wasm_index));
         }
     }
@@ -675,11 +675,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // `ref.cast`/`array.len`), call entry, drop any return, then Ok(0) for CLI run.
             // (Nonzero guest status belongs on `wasi:cli/exit`, not this empty `result`.)
             // Full argv via `get-arguments` cabi is follow-up; empty argv still exercises help.
-            let entry_instance = submission.entry_operation.as_ref()
+            let entry_instance = submission.backend_plan.entry_operation()
                 .expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
             let entry_mir_params: Vec<NyarType> = submission
-                .entry_operation
+                .backend_plan.entry_operation()
                 .as_ref()
                 .and_then(|instance| submission.backend_plan.get_function(instance))
                 .map(|view| view.function.param_types.clone())
@@ -2509,11 +2509,7 @@ mod cfg_dispatch_tests {
 
     fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
         let mut submission = FragmentSubmission::default();
-        submission.module_name = "cfg_exec".to_string();
-        submission.entry_operation = Some(nyar_types::ItemInstanceId::from_index(0).expect("测试实例身份"));
-        let mut mir_map = std::collections::BTreeMap::new();
-        mir_map.insert(QualifiedName::new(vec![nyar::Identifier::new("main")]), leaf_i32_fn("main", blocks));
-        submission.backend_plan = Arc::new(crate::BackendPrivatePlan::from_functions(mir_map));
+        submission.backend_plan = Arc::new(crate::BackendPrivatePlan::from_entry_function(leaf_i32_fn("main", blocks)));
         lower_fragment_mir_to_wasm_module(&submission, "main").0
     }
 
