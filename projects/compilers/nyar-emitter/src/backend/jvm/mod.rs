@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar::{
-    ControlFlowPayload,
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
@@ -35,8 +34,6 @@ pub struct JvmBinaryBackendInput {
     pub output_dir: PathBuf,
     /// 是否同时落地裸 `class` 文件。
     pub emit_class_file: bool,
-    /// Optional state-machine suspend payload (driver wire; binary backend ignores).
-    pub control_flow: Option<ControlFlowPayload>,
     /// Singleton holder classes emitted alongside the fragment class.
     pub companion_classes: Vec<JvmClassFile>,
 }
