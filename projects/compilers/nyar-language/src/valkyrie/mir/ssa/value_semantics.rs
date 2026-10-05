@@ -120,7 +120,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     for hir_struct in structs {
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
         let layout = layout_for_struct(hir_struct, &mut plan, storage);
-        register_layout(&mut plan, layout);
+        register_declared_layout(&mut plan, hir_struct, layout);
     }
     // Semantic-group builds keep only consumer HIR; imported structures (e.g.
     // VonDiagnostic) live on imported_semantic_exports and must still provide
@@ -138,13 +138,13 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
             let layout = layout_for_struct(hir_struct, &mut plan, storage);
-            register_layout(&mut plan, layout);
+            register_declared_layout(&mut plan, hir_struct, layout);
         }
     }
     for singleton in &module.singletons {
         let hir_struct = crate::valkyrie::mir::singleton::singleton_as_struct(singleton);
         let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference);
-        register_layout(&mut plan, layout);
+        register_declared_layout(&mut plan, &hir_struct, layout);
     }
     plan
 }
@@ -251,6 +251,23 @@ fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage
 
 fn layout_qualified_key(layout: &AggregateLayout) -> String {
     if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
+}
+
+fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStruct, layout: AggregateLayout) {
+    if let Some(item) = declaration.constructor_declaration {
+        if plan.declaration_to_layout.contains_key(&item) {
+            return;
+        }
+        plan.declaration_to_layout.insert(item, layout.id);
+        let qualified = layout_qualified_key(&layout);
+        if layout.storage == MirStorageKind::Value {
+            plan.value_type_names.insert(qualified.clone());
+        }
+        plan.type_name_to_layout.insert(qualified, layout.id);
+        plan.layouts.push(layout);
+    } else {
+        register_layout(plan, layout);
+    }
 }
 
 fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
