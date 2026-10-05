@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use nyar_types::builtin_attribute;
-use nyar::SemanticFragment;
+use nyar::{CapabilityTag, RewriteTheory, SemanticFragment};
 
 use crate::{
     symbols::stable_hir_function_symbol,
@@ -174,6 +174,8 @@ pub struct MirExportContract {
     pub symbol: NamePath,
     /// 公开 ABI 名称。
     pub exported_name: String,
+    /// 由声明合同确定的目标分区。
+    pub partition: String,
 }
 
 /// 已解析 callable 的程序入口合同。
@@ -777,13 +779,7 @@ impl MirLowerer {
             .filter_map(|function| function.instance.map(|instance| (function.symbol.clone(), instance)))
             .chain(external_calls.iter().filter_map(|contract| contract.instance.map(|instance| (contract.symbol.to_string(), instance))))
             .collect();
-        let semantic_fragments = match crate::frontend_contract::planning::hir_module_to_semantic_fragments(module) {
-            Ok(fragments) => fragments,
-            Err(symbol) => {
-                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol });
-                Vec::new()
-            }
-        };
+        let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
         let result = MirModule {
             name: module.name.to_string(),
             functions,
@@ -892,7 +888,12 @@ fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec
         for function in &module.functions {
             let symbol = crate::valkyrie::symbols::stable_hir_function_name_path(&module.name, function);
             if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
-                exports.push(MirExportContract { instance: function.instance, symbol: symbol.clone(), exported_name: spec.resolve_exported_name(&function.name) });
+                exports.push(MirExportContract {
+                    instance: function.instance,
+                    symbol: symbol.clone(),
+                    exported_name: spec.resolve_exported_name(&function.name),
+                    partition: spec.primary_partition(),
+                });
             }
             if function.annotations.iter().any(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::main())) {
                 entries.push(MirEntryContract { instance: function.instance, symbol });
@@ -907,6 +908,53 @@ fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportContract>, Vec
     let mut entries = Vec::new();
     visit(module, &mut exports, &mut entries);
     (exports, entries)
+}
+
+fn collect_semantic_fragments(module: &HirModule, exports: &[MirExportContract], entries: &[MirEntryContract]) -> Vec<SemanticFragment> {
+    let mut fragments = BTreeMap::<Identifier, SemanticFragment>::new();
+    for function in &module.functions {
+        let Some(instance) = function.instance else { continue };
+        let export = exports.iter().find(|export| export.instance == Some(instance));
+        let is_entry = entries.iter().any(|entry| entry.instance == Some(instance));
+        if export.is_none() && !is_entry { continue; }
+        let id = if let Some(export) = export {
+            Identifier::new(&format!("export__{}", export.partition.replace('.', "_")))
+        } else if entries.len() > 1 {
+            let name = function.name.as_str().chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' { ch } else { '_' }).collect::<String>();
+            Identifier::new(&format!("main_{name}"))
+        } else {
+            Identifier::new("functions")
+        };
+        let fragment = fragments.entry(id.clone()).or_insert_with(|| SemanticFragment {
+            id,
+            exported_operations: Vec::new(),
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+            entry_operation: None,
+            rewrite_theory: RewriteTheory::default(),
+            wasm_export_names: BTreeMap::new(),
+        });
+        if !fragment.exported_operations.contains(&instance) { fragment.exported_operations.push(instance); }
+        if is_entry { fragment.entry_operation = Some(instance); }
+        if let Some(export) = export { fragment.wasm_export_names.insert(instance, export.exported_name.clone()); }
+        if crate::valkyrie::hir::control_flow_validation::function_needs_suspend_fragment(&function.body)
+            && !fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend")
+        {
+            fragment.required_capabilities.push(CapabilityTag::new("suspend"));
+        }
+    }
+    if fragments.is_empty() {
+        fragments.insert(Identifier::new("functions"), SemanticFragment {
+            id: Identifier::new("functions"),
+            exported_operations: Vec::new(),
+            required_capabilities: Vec::new(),
+            reference_management_hint: None,
+            entry_operation: None,
+            rewrite_theory: RewriteTheory::default(),
+            wasm_export_names: BTreeMap::new(),
+        });
+    }
+    fragments.into_values().collect()
 }
 
 fn lower_singleton_method_functions(

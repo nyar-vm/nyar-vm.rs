@@ -39,8 +39,7 @@ pub use valkyrie::{
     derive,
     frontend_contract::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
-        concretize_type, concretize_type_lossy, hir_module_to_analysis_artifact,
-        hir_module_to_object_algebraic_program, hir_module_to_program_facts,
+        concretize_type, concretize_type_lossy,
     },
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, ValkyrieCompiler, compute_nominal_layouts},
     mir,
