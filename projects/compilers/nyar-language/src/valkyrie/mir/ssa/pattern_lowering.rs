@@ -752,40 +752,8 @@ impl MirBuilder {
                     }
                 }
             }
-            // Unite/enum extractor: MIR FieldGet of the shared `payload` slot (not a MethodDef Call).
-            let output = self.next_value(MirValueOrigin::Temporary);
-            let storage = match object_ty.as_ref() {
-                Some(ValkyrieType::Named(name)) => storage_kind_for_named_type(name.as_str(), &self.struct_is_value_type),
-                Some(ValkyrieType::Apply(base, _)) => match base.as_ref() {
-                    ValkyrieType::Named(name) => storage_kind_for_named_type(name.as_str(), &self.struct_is_value_type),
-                    _ => MirStorageKind::Reference,
-                },
-                _ => MirStorageKind::Reference,
-            };
-            let layout_id = object_ty.as_ref().and_then(|ty| {
-                let sum_name = named_type_name(ty)
-                    .and_then(|name| self.sum_types.iter().find(|sum| sum_type_name_matches(&sum.name, name)).map(|sum| sum.name.clone()));
-                let candidate = match sum_name.as_deref() {
-                    Some(sum_name) => self.layout_id_for_sum_field_access(ty, sum_name),
-                    None => layout_id_for_type(ty, &self.aggregate_layouts),
-                };
-                candidate.and_then(|id| {
-                    let has_payload = self
-                        .aggregate_layouts
-                        .layouts
-                        .iter()
-                        .find(|layout| layout.id == id)
-                        .is_some_and(|layout| layout.fields.iter().any(|field| field.name == "payload"));
-                    has_payload.then_some(id)
-                })
-            });
-            let storage = layout_id
-                .and_then(|id| self.aggregate_layouts.layouts.iter().find(|layout| layout.id == id).map(|layout| layout.storage))
-                .unwrap_or(storage);
-            self.push_instruction(MirOperation::FieldGet { object: value, field: Identifier::new("payload") }, vec![output]);
-            let payload_ty = resolved.extractor_payload_type.clone().unwrap_or_else(|| resolved.return_type.clone());
-            self.value_types.insert(output, payload_ty);
-            return MirOperand::Value(output);
+            self.diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: "sum extractor payload".to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
         }
         let Some(callee) = lower_resolved_callee(resolved) else {
             self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
@@ -855,8 +823,12 @@ impl MirBuilder {
 
     pub(super) fn lower_object_field_operand(&mut self, object: MirOperand, field_name: &Identifier) -> MirOperand {
         let field_type = self.field_type_for_object_operand(&object, field_name);
+        let Some(field) = self.field_identity_for_object(&object, field_name) else {
+            self.diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field_name.to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
         let output = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::FieldGet { object, field: field_name.clone() }, vec![output]);
+        self.push_instruction(MirOperation::FieldGet { object, field }, vec![output]);
         if let Some(field_type) = field_type {
             self.value_types.insert(output, field_type);
         }

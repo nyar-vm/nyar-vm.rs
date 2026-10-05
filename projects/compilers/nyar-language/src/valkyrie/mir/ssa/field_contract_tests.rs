@@ -19,6 +19,10 @@ fn applied(name: &str, arguments: Vec<ValkyrieType>) -> ValkyrieType {
     ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(name))), arguments)
 }
 
+fn field_id(module: &MirModule, name: &str) -> nyar_types::FieldId {
+    module.structs.iter().flat_map(|structure| &structure.fields).find(|field| field.name == name).map(|field| field.id).expect("field identity")
+}
+
 #[test]
 fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
     let module = source_module();
@@ -27,12 +31,13 @@ fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
         ("tail", ValkyrieType::Utf8),
         ("items", ValkyrieType::Array(Box::new(ValkyrieType::Utf8))),
     ];
+    let field_ids = expected.iter().map(|(name, _)| (*name, field_id(&module, name))).collect::<std::collections::BTreeMap<_, _>>();
     for (name, ty) in expected {
         let mut matches = 0;
         for function in &module.functions {
             for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
                 match &instruction.kind {
-                    MirOperation::FieldGet { object, field } if field.as_str() == name => {
+                    MirOperation::FieldGet { object, field } if *field == field_ids[name] => {
                         matches += 1;
                         assert_eq!(instruction.results.len(), 1);
                         assert_eq!(function.value_types[&instruction.results[0]], ty);

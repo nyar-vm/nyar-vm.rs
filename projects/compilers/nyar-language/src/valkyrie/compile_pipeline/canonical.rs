@@ -31,7 +31,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     let type_values = collect_types(module)?;
     validate_callable_identities(module)?;
-    let (nominals, fields, field_records) = collect_aggregate_identities(module, &type_values)?;
+    let (nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
@@ -57,12 +57,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
     }
-    for (name, (nominal, declaration, semantics)) in &nominals {
+    for (nominal, (declaration, semantics)) in &nominals {
         let nominal_fields = field_records.iter().filter_map(|(field, record)| (record.owner == *nominal).then_some(*field)).collect();
         linked.nominal_instances.insert(*nominal, NominalInstanceRecord { declaration: *declaration, ty: *declaration, substitution: SubstitutionId::from_index(0).expect("monomorphic substitution"), semantics: *semantics, fields: nominal_fields });
-        let _ = name;
     }
-    linked.fields = field_records;
+    linked.fields = field_records.clone();
     for function in &module.functions {
         let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
         linked.item_instances.insert(instance, ItemInstanceRecord {
@@ -107,7 +106,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let mut next_instruction = 0u32;
     let functions = module.functions.iter().map(|function| {
         let instance = function.instance.ok_or_else(|| error(module, "CAN034", format!("函数 `{}` 缺少 Compiler callable identity", function.symbol)))?;
-        Ok((instance, lower_function(function, instance, &type_values, &nominals, &fields, &mut next_instruction)?))
+        Ok((instance, lower_function(function, instance, &type_values, &nominals, &field_records, &mut next_instruction)?))
     }).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
     let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: module.name.clone(), functions } };
@@ -195,32 +194,27 @@ fn canonical_fragments(
     Ok(result)
 }
 
-type AggregateIdentity = (NominalInstanceId, TypeId, NominalValueSemantics);
+type AggregateIdentity = (TypeId, NominalValueSemantics);
 
-fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<String, AggregateIdentity>, BTreeMap<(String, String), FieldId>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
+fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieType, TypeId>) -> Result<(BTreeMap<NominalInstanceId, AggregateIdentity>, BTreeMap<FieldId, FieldRecord>), StructuredDiagnosticSet> {
     let mut nominals = BTreeMap::new();
-    let mut fields = BTreeMap::new();
     let mut field_records = BTreeMap::new();
-    let mut next_field = 0u32;
-    for (index, aggregate) in module.structs.iter().enumerate() {
+    for aggregate in &module.structs {
         let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
         let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&qualified));
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
-        let nominal = NominalInstanceId::from_index(index as u32).ok_or_else(|| error_without_module("CAN019", "nominal identity 溢出"))?;
+        let nominal = aggregate.nominal;
         let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
-        if nominals.insert(qualified.clone(), (nominal, declaration, semantics)).is_some() {
+        if nominals.insert(nominal, (declaration, semantics)).is_some() {
             return Err(error_without_module("CAN020", format!("聚合 identity 重复: {qualified}")));
         }
         for field in &aggregate.fields {
-            let id = FieldId::from_index(next_field).ok_or_else(|| error_without_module("CAN021", "field identity 溢出"))?;
-            next_field += 1;
-            if fields.insert((qualified.clone(), field.name.clone()), id).is_some() {
+            if field_records.insert(field.id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? }).is_some() {
                 return Err(error_without_module("CAN022", format!("字段 identity 重复: {qualified}.{}", field.name)));
             }
-            field_records.insert(id, FieldRecord { owner: nominal, ty: type_id(types, &field.ty)? });
         }
     }
-    Ok((nominals, fields, field_records))
+    Ok((nominals, field_records))
 }
 
 fn validate_callable_identities(module: &MirModule) -> Result<(), StructuredDiagnosticSet> {
@@ -284,7 +278,7 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
     })
 }
 
-fn lower_function(function: &MirFunction, instance: ItemInstanceId, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
+fn lower_function(function: &MirFunction, instance: ItemInstanceId, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>, fields: &BTreeMap<FieldId, FieldRecord>, next_instruction: &mut u32) -> Result<CanonicalFunction, StructuredDiagnosticSet> {
     let value_types = function.value_types.iter().map(|(value, ty)| Ok((MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?, type_id(ids, ty)?))).collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     let parameters = canonical_entry_parameters(function, ids)?;
     let blocks = function.blocks.iter().map(|block| {
@@ -326,7 +320,7 @@ fn canonical_entry_parameters(function: &MirFunction, ids: &BTreeMap<ValkyrieTyp
     }).collect()
 }
 
-fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<String, AggregateIdentity>, fields: &BTreeMap<(String, String), FieldId>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
+fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::MirValueRef], value_types: &BTreeMap<crate::valkyrie::mir::MirValueRef, ValkyrieType>, ids: &BTreeMap<ValkyrieType, TypeId>, nominals: &BTreeMap<NominalInstanceId, AggregateIdentity>, fields: &BTreeMap<FieldId, FieldRecord>) -> Result<CanonicalOperation, StructuredDiagnosticSet> {
     let value = |operand: &MirOperand| match operand { MirOperand::Value(value) => MirValueId::from_index(value.0).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出")), _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")) };
     match operation {
         MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke { callee: CanonicalCallee::Item(*identity), arguments: arguments.iter().map(value).collect::<Result<_, _>>()? }),
@@ -360,27 +354,25 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
             },
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::StructNew { type_name, fields: values } => {
-            let (nominal, _, _) = nominals.get(&type_name.to_string()).copied().ok_or_else(|| error_without_module("CAN023", format!("未解析聚合 owner: {type_name}")))?;
+        MirOperation::StructNew { nominal, fields: values } => {
+            if !nominals.contains_key(nominal) {
+                return Err(error_without_module("CAN023", format!("未解析聚合 identity: {nominal:?}")));
+            }
             let fields = values.iter().map(|(field, operand)| {
-                let field_id = fields.get(&(type_name.to_string(), field.to_string())).copied().ok_or_else(|| error_without_module("CAN024", format!("未解析字段 owner: {type_name}.{field}")))?;
-                Ok((field_id, value(operand)?))
+                if !fields.contains_key(field) {
+                    return Err(error_without_module("CAN024", format!("未解析字段 identity: {field:?}")));
+                }
+                Ok((*field, value(operand)?))
             }).collect::<Result<_, StructuredDiagnosticSet>>()?;
-            Ok(CanonicalOperation::StructNew { nominal, fields })
+            Ok(CanonicalOperation::StructNew { nominal: *nominal, fields })
         }
         MirOperation::FieldGet { object, field } => {
-            let object_value = match object { MirOperand::Value(value) => value, _ => return Err(error_without_module("CAN025", "字段对象不是 SSA 值")) };
-            let owner = aggregate_owner(value_types.get(object_value).ok_or_else(|| error_without_module("CAN026", "字段对象缺少类型事实"))?)
-                .ok_or_else(|| error_without_module("CAN026", "字段对象不是已知聚合类型"))?;
-            let field_id = fields.get(&(owner, field.to_string())).copied().ok_or_else(|| error_without_module("CAN027", format!("未解析字段 owner: {field}")))?;
-            Ok(CanonicalOperation::FieldGet { object: value(object)?, field: field_id })
+            if !fields.contains_key(field) { return Err(error_without_module("CAN027", format!("未解析字段 identity: {field:?}"))); }
+            Ok(CanonicalOperation::FieldGet { object: value(object)?, field: *field })
         }
         MirOperation::FieldSet { object, field, value: stored } => {
-            let object_value = match object { MirOperand::Value(value) => value, _ => return Err(error_without_module("CAN028", "字段对象不是 SSA 值")) };
-            let owner = aggregate_owner(value_types.get(object_value).ok_or_else(|| error_without_module("CAN029", "字段对象缺少类型事实"))?)
-                .ok_or_else(|| error_without_module("CAN029", "字段对象不是已知聚合类型"))?;
-            let field_id = fields.get(&(owner, field.to_string())).copied().ok_or_else(|| error_without_module("CAN030", format!("未解析字段 owner: {field}")))?;
-            Ok(CanonicalOperation::FieldSet { object: value(object)?, field: field_id, value: value(stored)? })
+            if !fields.contains_key(field) { return Err(error_without_module("CAN030", format!("未解析字段 identity: {field:?}"))); }
+            Ok(CanonicalOperation::FieldSet { object: value(object)?, field: *field, value: value(stored)? })
         }
         _ => Err(error_without_module("CAN009", "操作没有无损 canonical 形状")),
     }

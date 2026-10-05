@@ -99,7 +99,9 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 let ValkyrieType::Named(name) = base else { return Err(failure("字段对象不是已解析名义实例")); };
                 let declaration = module.structs.iter().find(|declaration| declaration.qualified_name() == name.as_str())
                     .ok_or_else(|| failure("字段对象没有声明合同"))?;
-                let expected = declaration.instantiate_field(&owner, field.as_str())
+                let declared_field = declaration.fields.iter().find(|candidate| candidate.id == *field)
+                    .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
+                let expected = declaration.instantiate_field(&owner, declared_field.name.as_str())
                     .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?;
                 if let Some(stored) = stored {
                     if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
@@ -556,6 +558,12 @@ pub fn validate_module(module: &MirModule) -> Result<(), ParseError> {
             }
             MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
                 return Err(ParseError::invalid(format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")));
+            }
+            MirDiagnostic::UnresolvedNominalIdentity { type_name } => {
+                return Err(ParseError::invalid(format!("MIR lowering unresolved nominal identity `{type_name}`")));
+            }
+            MirDiagnostic::UnresolvedFieldIdentity { field } => {
+                return Err(ParseError::invalid(format!("MIR lowering unresolved field identity `{field}`")));
             }
             MirDiagnostic::UnresolvedCallableIdentity { symbol } => {
                 return Err(ParseError::invalid(format!("MIR lowering unresolved callable identity `{symbol}`")));

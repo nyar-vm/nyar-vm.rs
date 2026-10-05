@@ -540,7 +540,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        fields: variant.fields.iter().map(|field| crate::mir::MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        fields: variant.fields.iter().map(|field| crate::mir::MirField { id: nyar_types::FieldId::from_index(0).expect("temporary field identity"), name: field.name.to_string(), ty: field.ty.clone() }).collect(),
                         result_type: variant.result_type.clone(),
                     }
                 })
@@ -563,7 +563,7 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        fields: variant.fields.iter().map(|field| crate::mir::MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        fields: variant.fields.iter().map(|field| crate::mir::MirField { id: nyar_types::FieldId::from_index(0).expect("temporary field identity"), name: field.name.to_string(), ty: field.ty.clone() }).collect(),
                         result_type: variant.result_type.clone(),
                     }
                 })

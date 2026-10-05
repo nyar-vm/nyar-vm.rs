@@ -94,6 +94,16 @@ pub enum MirDiagnostic {
         /// 请求的 variant 名称。
         variant: String,
     },
+    /// 聚合操作缺少已冻结的名义实例身份。
+    UnresolvedNominalIdentity {
+        /// 仅用于诊断的表面类型名。
+        type_name: String,
+    },
+    /// 字段操作缺少已冻结的字段身份。
+    UnresolvedFieldIdentity {
+        /// 仅用于诊断的字段名。
+        field: String,
+    },
     /// 完整依赖闭包冻结后仍无法绑定的 callable identity。
     UnresolvedCallableIdentity {
         /// 上游解析保留的限定名称，仅用于诊断。
@@ -192,6 +202,8 @@ pub struct MirEntryContract {
 /// `is_value_type` 区分值类型聚合与引用类型聚合。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirStruct {
+    /// Semantic MIR 中冻结的名义声明身份。
+    pub nominal: nyar_types::NominalInstanceId,
     /// 结构体名称。
     pub name: String,
     /// 结构体命名空间（点分路径，例如 `core.text`），用于稳定符号与布局查找。
@@ -233,6 +245,8 @@ impl MirStruct {
 /// `MIR` 结构体字段定义。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirField {
+    /// Semantic MIR 中冻结的字段身份。
+    pub id: nyar_types::FieldId,
     /// 字段名。
     pub name: String,
     /// 字段静态类型。
@@ -540,8 +554,8 @@ pub enum MirOperation {
     },
     /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {
-        type_name: NamePath,
-        fields: Vec<(Identifier, MirOperand)>,
+        nominal: nyar_types::NominalInstanceId,
+        fields: Vec<(nyar_types::FieldId, MirOperand)>,
     },
     TupleNew {
         fields: Vec<MirOperand>,
@@ -552,11 +566,11 @@ pub enum MirOperation {
     },
     FieldGet {
         object: MirOperand,
-        field: Identifier,
+        field: nyar_types::FieldId,
     },
     FieldSet {
         object: MirOperand,
-        field: Identifier,
+        field: nyar_types::FieldId,
         value: MirOperand,
     },
     /// Construct a value of an explicitly declared nominal sum variant.
@@ -1095,9 +1109,20 @@ fn lower_impl_method_functions(
 
 /// 将 `HirStruct` 降级为 `MirStruct`，保留字段类型供后端生成 `TypeDef` / `Field`。
 fn lower_struct(hir_struct: &crate::types::hir::HirStruct) -> MirStruct {
-    let fields = hir_struct.fields.iter().map(|field| MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect();
+    let fields = hir_struct.fields.iter().map(|field| MirField {
+        id: nyar_types::FieldId::from_index(0).expect("temporary field identity"),
+        name: field.name.to_string(),
+        ty: field.ty.clone(),
+    }).collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
-    MirStruct { name: hir_struct.name.to_string(), namespace, generics: hir_struct.generics.clone(), fields, is_value_type: hir_struct.is_value_type }
+    MirStruct {
+        nominal: nyar_types::NominalInstanceId::from_index(0).expect("temporary nominal identity"),
+        name: hir_struct.name.to_string(),
+        namespace,
+        generics: hir_struct.generics.clone(),
+        fields,
+        is_value_type: hir_struct.is_value_type,
+    }
 }
 
 fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
@@ -1107,7 +1132,12 @@ fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
             name: singleton.name.to_string(),
             namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
             generics: singleton.generics.clone(),
-            fields: singleton.fields.iter().map(|field| MirField { name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+            nominal: nyar_types::NominalInstanceId::from_index(0).expect("temporary nominal identity"),
+            fields: singleton.fields.iter().map(|field| MirField {
+                id: nyar_types::FieldId::from_index(0).expect("temporary field identity"),
+                name: field.name.to_string(),
+                ty: field.ty.clone(),
+            }).collect(),
             is_value_type: false,
         });
     }
@@ -1119,7 +1149,21 @@ fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
     }
     let mut unique = Vec::new();
     for declaration in declarations {
-        if !unique.contains(&declaration) { unique.push(declaration); }
+        if !unique.iter().any(|existing: &MirStruct| existing.qualified_name() == declaration.qualified_name()) {
+            unique.push(declaration);
+        }
+    }
+    let field_offsets = unique.iter().scan(0usize, |offset, declaration| {
+        let current = *offset;
+        *offset += declaration.fields.len();
+        Some(current)
+    }).collect::<Vec<_>>();
+    for (nominal_index, declaration) in unique.iter_mut().enumerate() {
+        declaration.nominal = nyar_types::NominalInstanceId::from_index(nominal_index as u32).expect("nominal identity overflow");
+        for (field_index, field) in declaration.fields.iter_mut().enumerate() {
+            let index = field_offsets[nominal_index] + field_index;
+            field.id = nyar_types::FieldId::from_index(index as u32).expect("field identity overflow");
+        }
     }
     unique
 }

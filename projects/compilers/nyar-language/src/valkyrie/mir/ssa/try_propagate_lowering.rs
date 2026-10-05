@@ -184,10 +184,21 @@ impl MirBuilder {
         let value = self.next_value(MirValueOrigin::Temporary);
         let storage = storage_kind_for_named_type(&class_name.to_string(), &self.struct_is_value_type);
         let layout_id = self.aggregate_layouts.type_name_to_layout.get(class_name.as_str()).copied();
+        let Some(nominal) = self.nominal_identity_for_name(class_name.as_str()) else {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
+        let fields = struct_fields.into_iter().map(|(name, value)| {
+            self.field_identity_for_nominal(nominal, &name).map(|field| (field, value))
+        }).collect::<Option<Vec<_>>>();
+        let Some(fields) = fields else {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "try propagation aggregate".to_string() });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
         self.instructions
             .push(MirInstruction::from_operation(MirOperation::StructNew {
-                type_name: NamePath::new(vec![class_name.clone()]),
-                fields: struct_fields.into_iter().map(|(name, value)| (Identifier::new(&name), value)).collect(),
+                nominal,
+                fields,
             }));
         self.value_types.insert(value, ValkyrieType::Named(class_name.clone()));
         MirOperand::Value(value)

@@ -597,11 +597,15 @@ impl MirBuilder {
                     let receiver_operand = self.lower_expr_to_operand(object);
                     let field_ty = self.field_type_for_object_operand(&receiver_operand, field);
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
+                        let Some(field_id) = self.field_identity_for_object(&receiver_operand, field) else {
+                            self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                            return MirOperand::Constant(MirConstant::Unit);
+                        };
                         let callee_value = self.next_value(MirValueOrigin::Temporary);
                         self.push_instruction(
                             MirOperation::FieldGet {
                                 object: receiver_operand,
-                                field: field.clone(),
+                                field: field_id,
                             },
                             vec![callee_value],
                         );
@@ -891,7 +895,18 @@ impl MirBuilder {
                     return MirOperand::Value(value);
                 }
                 let value = self.next_value(MirValueOrigin::Temporary);
-                self.push_instruction(MirOperation::StructNew { type_name: NamePath::new(vec![Identifier::new(&struct_type_name)]), fields: fields.into_iter().map(|(name, value)| (Identifier::new(&name), value)).collect() }, vec![value]);
+                let Some(nominal) = self.nominal_identity_for_name(&struct_type_name) else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: struct_type_name });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                let fields = fields.into_iter().map(|(name, value)| {
+                    self.field_identity_for_nominal(nominal, &name).map(|field| (field, value))
+                }).collect::<Option<Vec<_>>>();
+                let Some(fields) = fields else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "struct initializer".to_string() });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
+                self.push_instruction(MirOperation::StructNew { nominal, fields }, vec![value]);
                 self.value_types.insert(value, self.struct_construct_result_type(name, resolved.as_ref()));
                 MirOperand::Value(value)
             }
@@ -913,9 +928,13 @@ impl MirBuilder {
                 let layout_id = self.layout_id_for_object_operand(&object_operand);
                 let field_type = self.field_type_for_object_operand(&object_operand, field);
                 let value_operand = self.lower_expr_to_operand_with_hint(value, field_type.as_ref());
+                let Some(field_id) = self.field_identity_for_object(&object_operand, field) else {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
+                    return MirOperand::Constant(MirConstant::Unit);
+                };
                 self.instructions.push(MirInstruction::from_operation(MirOperation::FieldSet {
                     object: object_operand,
-                    field: field.clone(),
+                    field: field_id,
                     value: value_operand,
                 }));
                 MirOperand::Constant(MirConstant::Unit)

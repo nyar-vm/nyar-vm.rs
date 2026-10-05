@@ -8,6 +8,28 @@ use crate::types::{
 use super::{MirBuilder, MirConstant, MirOperand, MirValueRef, ValkyrieType};
 
 impl MirBuilder {
+    pub(super) fn nominal_identity_for_name(&mut self, type_name: &str) -> Option<nyar_types::NominalInstanceId> {
+        self.field_declarations.iter().find(|declaration| declaration.qualified_name() == type_name).map(|declaration| declaration.nominal)
+    }
+
+    pub(super) fn field_identity_for_object(&mut self, object: &MirOperand, field_name: &Identifier) -> Option<nyar_types::FieldId> {
+        let object_type = infer_builder_operand_type(object, &self.value_types)?;
+        let owner = super::nominal_type_name(&object_type)?;
+        self.field_declarations
+            .iter()
+            .find(|declaration| declaration.qualified_name() == owner)
+            .and_then(|declaration| declaration.fields.iter().find(|field| field.name == field_name.as_str()))
+            .map(|field| field.id)
+    }
+
+    pub(super) fn field_identity_for_nominal(&mut self, nominal: nyar_types::NominalInstanceId, field_name: &str) -> Option<nyar_types::FieldId> {
+        self.field_declarations
+            .iter()
+            .find(|declaration| declaration.nominal == nominal)
+            .and_then(|declaration| declaration.fields.iter().find(|field| field.name == field_name))
+            .map(|field| field.id)
+    }
+
     pub(super) fn resolve_static_expr(&self, expr: &HirExpr) -> Option<HirExpr> {
         match &expr.kind {
             HirExprKind::Variable(identifier) => self.static_bindings.get(identifier.name.as_str()).cloned().or_else(|| Some(expr.clone())),

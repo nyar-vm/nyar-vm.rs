@@ -35,6 +35,10 @@ fn all_instructions<'a>(function: &'a MirFunction) -> impl Iterator<Item = &'a M
     function.blocks.iter().flat_map(|block| block.instructions.iter())
 }
 
+fn field_id(mir: &MirModule, name: &str) -> nyar_types::FieldId {
+    mir.structs.iter().flat_map(|structure| &structure.fields).find(|field| field.name == name).map(|field| field.id).expect("field identity")
+}
+
 /// Returns the callee symbol path string if the instruction is a call.
 fn call_callee_path(instruction: &MirInstruction) -> Option<String> {
     match &instruction.kind {
@@ -106,6 +110,7 @@ micro main() -> i64 {
 "#,
     );
     let main = find_function(&mir, "main");
+    let total = field_id(&mir, "total");
 
     assert!(has_call_with_suffix(main, "Counter.instance"), "expected accessor call Counter.instance before field read");
 
@@ -113,7 +118,7 @@ micro main() -> i64 {
     let accessor_pos =
         all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_get_pos =
-        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldGet { field, .. } if field.as_str() == "total")).expect("FieldGet for 'total'");
+        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldGet { field, .. } if *field == total)).expect("FieldGet for 'total'");
     assert!(
         accessor_pos < field_get_pos,
         "accessor call must precede FieldGet, got accessor at {accessor_pos} and FieldGet at {field_get_pos}"
@@ -135,6 +140,7 @@ micro main() {
 "#,
     );
     let main = find_function(&mir, "main");
+    let total = field_id(&mir, "total");
 
     assert!(has_call_with_suffix(main, "Counter.instance"), "expected accessor call Counter.instance before field write");
 
@@ -142,7 +148,7 @@ micro main() {
     let accessor_pos =
         all.iter().position(|ins| call_callee_path(ins).is_some_and(|p| p.ends_with("Counter.instance"))).expect("accessor call");
     let field_set_pos =
-        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldSet { field, .. } if field.as_str() == "total")).expect("FieldSet for 'total'");
+        all.iter().position(|ins| matches!(&ins.kind, MirOperation::FieldSet { field, .. } if *field == total)).expect("FieldSet for 'total'");
     assert!(
         accessor_pos < field_set_pos,
         "accessor call must precede FieldSet, got accessor at {accessor_pos} and FieldSet at {field_set_pos}"
@@ -164,6 +170,7 @@ singleton Counter {
 "#,
     );
     let increment = find_function(&mir, "Counter.increment");
+    let total = field_id(&mir, "total");
 
     assert!(
         !has_call_with_suffix(increment, "Counter.instance") && !has_call_with_suffix(increment, "Counter.get_instance"),
@@ -182,7 +189,7 @@ singleton Counter {
             matches!(
                 &ins.kind,
                 MirOperation::FieldGet { object: MirOperand::Value(v), field, .. }
-                if *v == self_value && field.as_str() == "total"
+                if *v == self_value && *field == total
             )
         })
         .count();
@@ -191,7 +198,7 @@ singleton Counter {
             matches!(
                 &ins.kind,
                 MirOperation::FieldSet { object: MirOperand::Value(v), field, .. }
-                if *v == self_value && field.as_str() == "total"
+                if *v == self_value && *field == total
             )
         })
         .count();
