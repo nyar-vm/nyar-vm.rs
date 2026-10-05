@@ -214,21 +214,10 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
 
-    /// Lookup unite sum wasm-gc type_index by its resolved owner name.
-    fn resolve_gc_sum_type_index(&self, sum_name: &str) -> Option<u32> {
-        self.gc_sum_type_indices.get(sum_name).copied()
-    }
-
-
-    fn sum_type_name_from_nyar(ty: &NyarType) -> Option<String> {
-        match ty {
-            NyarType::Named(name) => Some(name.to_string()),
-            NyarType::Apply(base, _) => match base.as_ref() {
-                NyarType::Named(name) => Some(name.to_string()),
-                _ => None,
-            },
-            _ => None,
-        }
+    /// 只接受前序绑定的布局身份查询 sum 的 Wasm GC 表项。
+    fn resolve_gc_sum_type_index(&self, layout_id: LayoutId) -> Option<u32> {
+        let layout = self.ctx.layout_by_id(layout_id)?;
+        self.gc_sum_type_indices.get(&layout.name).copied()
     }
 
 
@@ -568,22 +557,8 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// ?object 操作数的值类型或 layout_id 推断 unite sum 对应?wasm-gc type_index?
     fn resolve_unite_sum_type_index_for_object(&self, object: &MirOperand, layout_id: Option<LayoutId>) -> Option<u32> {
-        // 优先：layout_id 对应?layout name 直接?gc_sum_type_indices?
-        if let Some(lid) = layout_id {
-            if let Some(layout) = self.ctx.layout_by_id(lid) {
-                if let Some(idx) = self.resolve_gc_sum_type_index(&layout.name) {
-                    return Some(idx);
-                }
-            }
-        }
-        // 退路：?object 操作数的 MIR 值类型推?sum_name?
-        let vref = match object {
-            MirOperand::Value(v) => *v,
-            _ => return None,
-        };
-        let ty = self.mir_fn.value_types.get(&vref)?;
-        let sum_name = Self::sum_type_name_from_nyar(ty)?;
-        self.resolve_gc_sum_type_index(&sum_name)
+        let _ = object;
+        self.resolve_gc_sum_type_index(layout_id?)
     }
 
 }
