@@ -55,7 +55,9 @@ pub use value_semantics::{
 use builtin_helpers::plain_type_pattern_matches;
 use nyar_types::{ItemInstanceId, OperatorId, VariantId};
 use control_flow_context::{MirBuilderControlFlow, MirHandlerDispatchContext, MirResumeContinuationContext};
-use expr_helpers::{callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, named_type_name};
+use expr_helpers::{
+    callee_name_matches, future_resume_type, infer_builder_operand_type, lower_callee_operand, lower_resolved_callee, named_type_name,
+};
 use expr_lowering::lower_literal;
 use super::MirSumDeclaration;
 

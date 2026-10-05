@@ -15,7 +15,7 @@ use super::{
     callee_name_matches,
     expr_helpers::{
         is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
-        qualify_instance_method_symbol, receiver_method_owner_name,
+        lower_resolved_callee, qualify_instance_method_symbol, receiver_method_owner_name,
     },
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{
@@ -702,9 +702,13 @@ impl MirBuilder {
                     if has_receiver {
                         arguments.insert(0, receiver_operand.clone());
                     }
-                    let callee = MirOperand::Symbol(
-                        resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract").symbol.clone(),
-                    );
+                    let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract");
+                    let Some(callee) = lower_resolved_callee(resolved_call) else {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                            symbol: resolved_call.symbol.to_string(),
+                        });
+                        return MirOperand::Constant(MirConstant::Unit);
+                    };
                     if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
                         return operand;
                     }

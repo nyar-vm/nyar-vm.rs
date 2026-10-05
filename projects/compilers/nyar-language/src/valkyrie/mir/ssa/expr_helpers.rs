@@ -278,6 +278,20 @@ pub(super) fn lower_callee_operand(
     }
 }
 
+/// 将已解析调用合同投影到 Semantic MIR 的唯一 callee 形式。
+///
+/// 源码声明已有实例身份时只能使用 `Callable`；声明存在但实例缺失是合同错误，
+/// 不能退回名称。只有明确没有源码声明的外部合同才保留 ABI 符号。
+pub(super) fn lower_resolved_callee(resolved: &crate::types::hir::HirResolvedCall) -> Option<MirOperand> {
+    if let Some(instance) = resolved.instance {
+        return Some(MirOperand::Callable(instance));
+    }
+    if resolved.declaration.is_some() {
+        return None;
+    }
+    Some(MirOperand::Symbol(resolved.symbol.clone()))
+}
+
 /// 尝试将表达式解析为 `NamePath`。
 ///
 /// 递归处理 `Variable` 与 `FieldAccess` 链，将其组合为完整路径。

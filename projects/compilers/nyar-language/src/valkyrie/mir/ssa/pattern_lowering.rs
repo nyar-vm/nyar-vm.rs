@@ -7,7 +7,8 @@ use crate::types::{
 
 use super::{
     MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
-    MirValueRef, callee_name_matches, infer_builder_operand_type, lower_literal, named_type_name, plain_type_pattern_matches,
+    MirValueRef, callee_name_matches, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name,
+    plain_type_pattern_matches,
     value_semantics::{
         LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type,
         storage_kind_for_named_type, storage_kind_for_type,
@@ -786,9 +787,18 @@ impl MirBuilder {
             self.value_types.insert(output, payload_ty);
             return MirOperand::Value(output);
         }
+        let Some(callee) = lower_resolved_callee(resolved) else {
+            self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
+                symbol: resolved.symbol.to_string(),
+            });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
-            MirOperation::Call { callee: MirOperand::Symbol(resolved.symbol.clone()), arguments: vec![value.clone()] },
+            MirOperation::Call {
+                callee,
+                arguments: vec![value.clone()],
+            },
             vec![output],
         );
         self.value_types.insert(output, resolved.return_type.clone());
