@@ -47,8 +47,6 @@ pub(crate) struct WasmMirLowerer<'a> {
     pub(crate) import_return_types: &'a [Option<u8>],
     /// 引用类型 layout_id -> wasm-gc structtype ?type_index?
     pub(crate) gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
-    /// unite sum_name -> wasm-gc structtype [i32,anyref] ?type_index?
-    pub(crate) gc_sum_type_indices: &'a BTreeMap<String, u32>,
     /// Fine/Fail ?unite 标量 payload（utf8/bool/i32）装箱用 structtype [i32]?
     pub(crate) gc_i32_box_type_index: u32,
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
@@ -90,7 +88,6 @@ impl<'a> WasmMirLowerer<'a> {
         import_return_types: &'a [Option<u8>],
         gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
         gc_array_type_indices: &'a BTreeMap<String, u32>,
-        gc_sum_type_indices: &'a BTreeMap<String, u32>,
         gc_i32_box_type_index: u32,
         callee_import_index: &'a BTreeMap<String, u32>,
         host_imports: &'a [(String, String)],
@@ -134,7 +131,6 @@ impl<'a> WasmMirLowerer<'a> {
             import_return_types,
             gc_struct_type_indices,
             gc_array_type_indices,
-            gc_sum_type_indices,
             gc_i32_box_type_index,
             callee_import_index,
             host_imports,

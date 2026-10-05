@@ -214,13 +214,6 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
 
-    /// 只接受前序绑定的布局身份查询 sum 的 Wasm GC 表项。
-    fn resolve_gc_sum_type_index(&self, layout_id: LayoutId) -> Option<u32> {
-        let layout = self.ctx.layout_by_id(layout_id)?;
-        self.gc_sum_type_indices.get(&layout.name).copied()
-    }
-
-
     /// Unite sum `FieldGet` 快捷路径，与 CLR `try_emit_unite_tagged_payload_get` 同构?
     ///
     /// unite sum ?wasm-gc structtype 固定?`[i32 tag, anyref payload]`?
@@ -231,169 +224,8 @@ impl<'a> WasmMirLowerer<'a> {
     /// - `"tag"` →?struct.get field 0 →?i32（discriminant?
     /// - `"payload"` / `"value"` / `"error"` →?struct.get field 1 →?anyref?
     ///   ?MIR 输出类型为标量（utf8/bool/i32），再从 `[i32]` box 解箱?
-    pub(super) fn try_emit_unite_field_get(
-        &mut self,
-        object: &MirOperand,
-        field: &str,
-        layout_id: Option<LayoutId>,
-        output: Option<MirValueRef>,
-    ) -> bool {
-        let is_payload = matches!(field, "payload" | "value" | "error");
-        let is_tag = field == "tag";
-        if !is_payload && !is_tag {
-            return false;
-        }
-        // 所?sum 共享 `[i32, anyref]`；解析失败时仍可用任一已登?type_index?
-        let type_index = self.resolve_unite_sum_type_index_for_object(object, layout_id);
-        let Some(type_index) = type_index
-        else {
-            return false;
-        };
-        let Some(object_local) = self.operand_reference_local(object).or_else(|| {
-            // value_types 缺失时：若栈类型已是 anyref，仍允许?tag/payload?
-            match object {
-                MirOperand::Value(v) => {
-                    let local = self.value_locals.get(v).copied()?;
-                    let ty = self.wasm_local_value_type(local);
-                    if ty == WASM_GC_ANYREF || ty == WASM_GC_EXTERNREF { Some(local) } else { None }
-                }
-                _ => None,
-            }
-        })
-        else {
-            // JVM/CLR 有时?payload-less enums 直接?i32 tag 用?
-            // MIR 仍可能发 FieldGet(tag)；若 object 已是 i32，则 tag 即自身?
-            if is_tag {
-                if let Some(local) = self.operand_address_local(object).or_else(|| match object {
-                    MirOperand::Value(v) => self.value_locals.get(v).copied(),
-                    _ => None,
-                }) {
-                    if self.wasm_local_value_type(local) == VALTYPE_I32 {
-                        self.emit_local_get(local);
-                        if let Some(out) = output {
-                            self.validate_output_slot_type(out, VALTYPE_I32);
-                            self.assign_output_local(out);
-                        }
-                        else {
-                            WasmOpcode::Drop.encode(&mut self.code);
-                        }
-                        return true;
-                    }
-                }
-            }
-            return false;
-        };
-        // 防御：reference_locals 偶发挂到 i32 槽时禁止 ref.cast?
-        if self.wasm_local_value_type(object_local) == VALTYPE_I32 {
-            return false;
-        }
-        self.emit_local_get(object_local);
-        self.emit_ref_cast_struct(type_index);
-        if is_tag {
-            self.emit_struct_get(type_index, 0);
-            if let Some(out) = output {
-                self.validate_output_slot_type(out, VALTYPE_I32);
-                self.assign_output_local(out);
-            }
-            else {
-                WasmOpcode::Drop.encode(&mut self.code);
-            }
-            return true;
-        }
-        // payload / value / error
-        self.emit_struct_get(type_index, 1);
-        if let Some(out) = output {
-            let wants_i32 = self.mir_fn.value_types.get(&out).is_some_and(|ty| self.unite_payload_wants_i32_unbox(ty));
-            if wants_i32 {
-                self.emit_unbox_i32_payload();
-                self.validate_output_slot_type(out, VALTYPE_I32);
-            }
-            else {
-                self.validate_output_slot_type(out, VALTYPE_ANYREF);
-            }
-            self.assign_output_local(out);
-        }
-        else {
-            WasmOpcode::Drop.encode(&mut self.code);
-        }
-        true
-    }
-
-    /// Unite payload 是否应从 `[i32]` box 解箱为标?i32?
-    fn unite_payload_wants_i32_unbox(&self, ty: &NyarType) -> bool {
-        match ty {
-            NyarType::Tuple(_)
-            | NyarType::FixedArray { .. }
-            | NyarType::Array(_)
-            | NyarType::Named(_)
-            | NyarType::Union(_)
-            | NyarType::TraitObject(_)
-            | NyarType::Float32
-            | NyarType::Float64
-            | NyarType::Integer64 { .. }
-            | NyarType::Integer128 { .. }
-            | NyarType::Unit
-            | NyarType::Bottom => false,
-            _ => wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref) == VALTYPE_I32,
-        }
-    }
-
-    /// 将操作数压成 unite payload（anyref）：引用原样；i32 装箱?`[i32]`?
-    fn emit_operand_as_unite_payload(&mut self, operand: &MirOperand) {
-        let actual = self.operand_wasm_stack_type(operand);
-        // Aggregate/array references may be classified as the linear-memory
-        // i32 fallback by semantic type lowering, while MIR has already
-        // allocated a reference local. Preserve that object as the sum payload
-        // instead of boxing the fallback integer.
-        if self.operand_reference_local(operand).is_some() {
-            self.emit_operand(operand);
-            return;
-        }
-        if actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF {
-            self.emit_operand_coerced(operand, VALTYPE_ANYREF);
-            return;
-        }
-        if actual == VALTYPE_I32 {
-            self.emit_box_i32_payload(operand);
-            return;
-        }
-        if actual == VALTYPE_I64 {
-            self.emit_box_i64_payload(operand);
-            return;
-        }
-        self.emit_ref_null_anyref();
-    }
-
-    /// `i32` →?wasm-gc struct `[i32]`（anyref），?unite payload 槽使用?
-    /// 栈效果：`[] →?[anyref]`。与 StructNew 同构：local.set + cast + struct.set + local.get?
-    fn emit_box_i32_payload(&mut self, operand: &MirOperand) {
-        let box_ty = self.gc_i32_box_type_index;
-        self.emit_struct_new_default(box_ty);
-        let tmp = self.alloc_anyref_local();
-        self.emit_local_set(tmp);
-        self.emit_local_get(tmp);
-        self.emit_ref_cast_struct(box_ty);
-        self.emit_operand(operand);
-        self.emit_struct_set(box_ty, 0);
-        self.emit_local_get(tmp);
-    }
-
-    /// 栈顶 anyref（i32 box）→ i32；null →?0?
-    fn emit_unbox_i32_payload(&mut self) {
-        let box_ty = self.gc_i32_box_type_index;
-        let tmp = self.alloc_anyref_local();
-        self.emit_local_tee(tmp);
-        WasmOpcode::RefIsNull.encode(&mut self.code);
-        // `if (result i32) i32.const 0 else local.get; ref.cast; struct.get end`
-        self.code.push(0x04); // if
-        self.code.push(VALTYPE_I32);
-        self.emit_i32_const(0);
-        self.code.push(0x05); // else
-        self.emit_local_get(tmp);
-        self.emit_ref_cast_struct(box_ty);
-        self.emit_struct_get(box_ty, 0);
-        self.code.push(0x0B); // end
-    }
+    // Sum 的字段快捷路径已删除。Semantic MIR 尚未携带完整 sum identity，
+    // 后端不得把字段名解释成 tag 或 payload。
 
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
     fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
@@ -553,12 +385,6 @@ impl<'a> WasmMirLowerer<'a> {
         };
         let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
         simple.contains("write_line") || simple.contains("error_line")
-    }
-
-    /// ?object 操作数的值类型或 layout_id 推断 unite sum 对应?wasm-gc type_index?
-    fn resolve_unite_sum_type_index_for_object(&self, object: &MirOperand, layout_id: Option<LayoutId>) -> Option<u32> {
-        let _ = object;
-        self.resolve_gc_sum_type_index(layout_id?)
     }
 
 }

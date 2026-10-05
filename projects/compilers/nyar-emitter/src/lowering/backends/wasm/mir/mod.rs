@@ -535,8 +535,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
     let gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref);
     eprintln!("[wasm::module-stage] arrays={} types={}", gc_array_type_indices.len(), type_indices.len());
-    let gc_sum_type_indices = register_gc_sum_types(&ctx, &mut type_indices);
-    eprintln!("[wasm::module-stage] sums={} types={}", gc_sum_type_indices.len(), type_indices.len());
     // Scalar unite payloads such as utf8/bool/i32 handles need boxing into an
     // `[i32]` struct before entering the anyref payload slot.
     let gc_i32_box_type_index = {
@@ -641,7 +639,6 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &import_return_types,
             &gc_struct_type_indices,
             &gc_array_type_indices,
-            &gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             &callee_import_index,
@@ -1099,7 +1096,6 @@ fn lower_mir_function_to_wasm_bytes(
     import_return_types: &[Option<u8>],
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
-    gc_sum_type_indices: &BTreeMap<String, u32>,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
@@ -1128,7 +1124,6 @@ fn lower_mir_function_to_wasm_bytes(
         import_return_types,
         gc_struct_type_indices,
         gc_array_type_indices,
-        gc_sum_type_indices,
         gc_i32_box_type_index,
         gc_i64_box_type_index,
         callee_import_index,
@@ -1179,7 +1174,6 @@ struct WasmMirLowerer<'a> {
     /// 引用类型 layout_id -> wasm-gc structtype ?type_index?
     gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
     /// unite sum_name -> wasm-gc structtype [i32,anyref] ?type_index?
-    gc_sum_type_indices: &'a BTreeMap<String, u32>,
     /// Fine/Fail ?unite 标量 payload（utf8/bool/i32）装箱用 structtype [i32]?
     gc_i32_box_type_index: u32,
     /// 泛型 `T` 数组槽中的 i64 装箱用 structtype `[i64]`。
@@ -1215,7 +1209,6 @@ impl<'a> WasmMirLowerer<'a> {
         import_return_types: &'a [Option<u8>],
         gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
         gc_array_type_indices: &'a BTreeMap<String, u32>,
-        gc_sum_type_indices: &'a BTreeMap<String, u32>,
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
@@ -1258,7 +1251,6 @@ impl<'a> WasmMirLowerer<'a> {
             import_return_types,
             gc_struct_type_indices,
             gc_array_type_indices,
-            gc_sum_type_indices,
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             callee_import_index,

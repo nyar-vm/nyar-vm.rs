@@ -95,24 +95,6 @@ pub(super) fn register_gc_struct_types(
     map
 }
 
-/// 为 sum type（`unite` 与 payload-less `enums`）注册 wasm-gc structtype。
-///
-/// 所有 sum 共享同一结构 `[i32 tag, anyref payload]`（与 CLR tag(+payload) 同构）。
-/// 只向 type section 追加 **一条** structtype，所有 sum_name 映射到同一 type_index，
-/// 避免上千个同构副本撑爆模块；nullary enums 的 payload 为 `ref.null`。
-pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indices: &mut Vec<Vec<u8>>) -> BTreeMap<String, u32> {
-    let mut map = BTreeMap::new();
-    if ctx.submission.sum_types.is_empty() {
-        return map;
-    }
-    let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-    type_indices.push(wasm_gc_struct_type(&[VALTYPE_I32, VALTYPE_ANYREF]));
-    for sum in &ctx.submission.sum_types {
-        map.insert(sum.name.clone(), type_index);
-    }
-    map
-}
-
 /// 为 heap `[T]` 的 element_type 注册 wasm-gc `arraytype` 条目,返回 element_type 字符串键 -> type_index 映射。
 ///
 /// 收集来源（与 V 侧 `wasm_module_ensure_array_type` 在 NewArr/ArrayGet/ArraySet 上登记同构）：
