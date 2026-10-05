@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::valkyrie::mir::{MirModule, MirOperand, MirOperation};
+use crate::valkyrie::mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration};
+use nyar_types::{FieldId, NominalInstanceId};
 use std_data::text::valkyrie::ParseError;
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
@@ -15,6 +16,7 @@ pub(crate) fn link_reachable_dependency_mir(
     if dependency_mirs.is_empty() {
         return Ok(());
     }
+    let (structs, sum_types, remaps) = freeze_aggregate_identities(consumer, dependency_mirs)?;
     let mut definitions = BTreeMap::new();
     let mut imports = BTreeMap::new();
     for module in std::iter::once(&*consumer).chain(dependency_mirs) {
@@ -40,6 +42,11 @@ pub(crate) fn link_reachable_dependency_mir(
         }
     }
     let mut linked = consumer.clone();
+    linked.structs = structs;
+    linked.sum_types = sum_types;
+    for function in &mut linked.functions {
+        remap_function_aggregates(function, &remaps[0])?;
+    }
     let mut visited = BTreeSet::new();
     let mut pending = consumer.functions.iter().filter_map(|function| function.instance).collect::<Vec<_>>();
     while let Some(instance) = pending.pop() {
@@ -58,17 +65,13 @@ pub(crate) fn link_reachable_dependency_mir(
                 if linked.callable_identities.insert(function.symbol.clone(), instance).is_some() {
                     return Err(ParseError::invalid(format!("实例 `{instance}` 的 ABI 标签重复")));
                 }
-                linked.functions.push((*function).clone());
-                for declaration in &module.structs {
-                    if !linked.structs.contains(declaration) {
-                        linked.structs.push(declaration.clone());
-                    }
-                }
-                for declaration in &module.sum_types {
-                    if !linked.sum_types.contains(declaration) {
-                        linked.sum_types.push(declaration.clone());
-                    }
-                }
+                let module_index = std::iter::once(&*consumer)
+                    .chain(dependency_mirs)
+                    .position(|candidate| std::ptr::eq(candidate, *module))
+                    .ok_or_else(|| ParseError::invalid("依赖模块身份不在当前源码闭包中"))?;
+                let mut function = (*function).clone();
+                remap_function_aggregates(&mut function, &remaps[module_index])?;
+                linked.functions.push(function);
             }
         } else if let Some(contract) = imports.get(&instance) {
             if !linked.external_calls.contains(contract) {
@@ -83,6 +86,118 @@ pub(crate) fn link_reachable_dependency_mir(
         }
     }
     *consumer = linked;
+    Ok(())
+}
+
+#[derive(Default)]
+struct AggregateRemap {
+    nominals: BTreeMap<NominalInstanceId, NominalInstanceId>,
+    fields: BTreeMap<FieldId, FieldId>,
+}
+
+fn same_struct_contract(left: &MirStruct, right: &MirStruct) -> bool {
+    left.qualified_name() == right.qualified_name()
+        && left.generics == right.generics
+        && left.is_value_type == right.is_value_type
+        && left.fields.iter().map(|field| (&field.name, &field.ty)).eq(right.fields.iter().map(|field| (&field.name, &field.ty)))
+}
+
+fn same_sum_contract(left: &MirSumDeclaration, right: &MirSumDeclaration) -> bool {
+    left.name == right.name
+        && left.is_unite == right.is_unite
+        && left.generics == right.generics
+        && left.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>()))
+            .eq(right.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>())))
+}
+
+fn freeze_aggregate_identities(
+    consumer: &MirModule,
+    dependencies: &[MirModule],
+) -> Result<(Vec<MirStruct>, Vec<MirSumDeclaration>, Vec<AggregateRemap>), ParseError> {
+    let modules = std::iter::once(consumer).chain(dependencies).collect::<Vec<_>>();
+    let mut global_structs: Vec<MirStruct> = Vec::new();
+    let mut global_sums: Vec<MirSumDeclaration> = Vec::new();
+    let mut remaps = Vec::with_capacity(modules.len());
+    for module in modules {
+        let mut remap = AggregateRemap::default();
+        for declaration in &module.structs {
+            if let Some(existing) = global_structs.iter().find(|existing| existing.qualified_name() == declaration.qualified_name()) {
+                if !same_struct_contract(existing, declaration) {
+                    return Err(ParseError::invalid(format!("聚合声明 `{}` 合同冲突", declaration.qualified_name())));
+                }
+                remap.nominals.insert(declaration.nominal, existing.nominal);
+                for (local, global) in declaration.fields.iter().zip(&existing.fields) {
+                    if remap.fields.insert(local.id, global.id).is_some() {
+                        return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
+                    }
+                }
+            } else {
+                let nominal = NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+                let mut frozen = declaration.clone();
+                frozen.nominal = nominal;
+                remap.nominals.insert(declaration.nominal, nominal);
+                let field_start = total_field_count(&global_structs, &global_sums);
+                for (index, field) in frozen.fields.iter_mut().enumerate() {
+                    let id = FieldId::from_index((field_start + index) as u32).ok_or_else(|| ParseError::invalid("FieldId 溢出"))?;
+                    remap.fields.insert(field.id, id);
+                    field.id = id;
+                }
+                global_structs.push(frozen);
+            }
+        }
+        for declaration in &module.sum_types {
+            if let Some(existing) = global_sums.iter().find(|existing| existing.name == declaration.name) {
+                if !same_sum_contract(existing, declaration) {
+                    return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
+                }
+                for (local_variant, global_variant) in declaration.variants.iter().zip(&existing.variants) {
+                    for (local, global) in local_variant.fields.iter().zip(&global_variant.fields) {
+                        if remap.fields.insert(local.id, global.id).is_some() {
+                            return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
+                        }
+                    }
+                }
+            } else {
+                let mut frozen = declaration.clone();
+                let mut next_field = total_field_count(&global_structs, &global_sums);
+                for variant in &mut frozen.variants {
+                    for field in &mut variant.fields {
+                        let id = FieldId::from_index(next_field as u32).ok_or_else(|| ParseError::invalid("FieldId 溢出"))?;
+                        next_field += 1;
+                        remap.fields.insert(field.id, id);
+                        field.id = id;
+                    }
+                }
+                global_sums.push(frozen);
+            }
+        }
+        remaps.push(remap);
+    }
+    Ok((global_structs, global_sums, remaps))
+}
+
+fn total_field_count(structs: &[MirStruct], sums: &[MirSumDeclaration]) -> usize {
+    structs.iter().map(|declaration| declaration.fields.len()).sum::<usize>()
+        + sums.iter().flat_map(|declaration| &declaration.variants).map(|variant| variant.fields.len()).sum::<usize>()
+}
+
+fn remap_function_aggregates(function: &mut MirFunction, remap: &AggregateRemap) -> Result<(), ParseError> {
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            match &mut instruction.kind {
+                MirOperation::StructNew { nominal, fields } => {
+                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::invalid("StructNew 引用了未冻结的名义身份"))?;
+                    for (field, _) in fields {
+                        *field = *remap.fields.get(field).ok_or_else(|| ParseError::invalid("StructNew 引用了未冻结的字段身份"))?;
+                    }
+                }
+                MirOperation::FieldGet { field, .. } | MirOperation::FieldSet { field, .. } => {
+                    *field = *remap.fields.get(field).ok_or_else(|| ParseError::invalid("字段操作引用了未冻结的字段身份"))?;
+                }
+                _ => {}
+            }
+        }
+    }
     Ok(())
 }
 

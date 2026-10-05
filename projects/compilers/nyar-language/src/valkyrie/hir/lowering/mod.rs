@@ -524,6 +524,7 @@ pub(crate) fn compute_nominal_declarations(module: &HirModule) -> (Vec<MirSumDec
 }
 
 fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
+    let mut next_field = 0usize;
     let mut layouts = module
         .enums
         .iter()
@@ -540,7 +541,11 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        fields: variant.fields.iter().map(|field| crate::mir::MirField { id: nyar_types::FieldId::from_index(0).expect("temporary field identity"), name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        fields: variant.fields.iter().map(|field| {
+                            let id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
+                            next_field += 1;
+                            crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() }
+                        }).collect(),
                         result_type: variant.result_type.clone(),
                     }
                 })
@@ -563,7 +568,11 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     MirSumVariant {
                         name: variant.name.to_string(),
                         tag,
-                        fields: variant.fields.iter().map(|field| crate::mir::MirField { id: nyar_types::FieldId::from_index(0).expect("temporary field identity"), name: field.name.to_string(), ty: field.ty.clone() }).collect(),
+                        fields: variant.fields.iter().map(|field| {
+                            let id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
+                            next_field += 1;
+                            crate::mir::MirField { id, name: field.name.to_string(), ty: field.ty.clone() }
+                        }).collect(),
                         result_type: variant.result_type.clone(),
                     }
                 })

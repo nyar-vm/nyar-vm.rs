@@ -744,10 +744,19 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
-        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
+        let (mut sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
         let structs = collect_field_declarations(module);
+        let mut next_field = structs.iter().map(|declaration| declaration.fields.len()).sum::<usize>();
+        for sum in &mut sum_types {
+            for variant in &mut sum.variants {
+                for field in &mut variant.fields {
+                    field.id = nyar_types::FieldId::from_index(next_field as u32).expect("field identity overflow");
+                    next_field += 1;
+                }
+            }
+        }
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let external_calls = collect_external_call_contracts(module);
         let (exports, entries) = collect_surface_contracts(module);
@@ -1108,15 +1117,15 @@ fn lower_impl_method_functions(
 }
 
 /// 将 `HirStruct` 降级为 `MirStruct`，保留字段类型供后端生成 `TypeDef` / `Field`。
-fn lower_struct(hir_struct: &crate::types::hir::HirStruct) -> MirStruct {
-    let fields = hir_struct.fields.iter().map(|field| MirField {
-        id: nyar_types::FieldId::from_index(0).expect("temporary field identity"),
+fn lower_struct(hir_struct: &crate::types::hir::HirStruct, nominal: usize, field_start: usize) -> MirStruct {
+    let fields = hir_struct.fields.iter().enumerate().map(|(index, field)| MirField {
+        id: nyar_types::FieldId::from_index((field_start + index) as u32).expect("field identity overflow"),
         name: field.name.to_string(),
         ty: field.ty.clone(),
     }).collect();
     let namespace = hir_struct.namespace.iter().map(|part| part.as_str().to_string()).collect::<Vec<_>>().join(".");
     MirStruct {
-        nominal: nyar_types::NominalInstanceId::from_index(0).expect("temporary nominal identity"),
+        nominal: nyar_types::NominalInstanceId::from_index(nominal as u32).expect("nominal identity overflow"),
         name: hir_struct.name.to_string(),
         namespace,
         generics: hir_struct.generics.clone(),
@@ -1126,43 +1135,48 @@ fn lower_struct(hir_struct: &crate::types::hir::HirStruct) -> MirStruct {
 }
 
 fn collect_field_declarations(module: &HirModule) -> Vec<MirStruct> {
-    let mut declarations = module.structs.iter().map(lower_struct).collect::<Vec<_>>();
-    for singleton in &module.singletons {
-        declarations.push(MirStruct {
-            name: singleton.name.to_string(),
-            namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
-            generics: singleton.generics.clone(),
-            nominal: nyar_types::NominalInstanceId::from_index(0).expect("temporary nominal identity"),
-            fields: singleton.fields.iter().map(|field| MirField {
-                id: nyar_types::FieldId::from_index(0).expect("temporary field identity"),
+    fn collect(module: &HirModule, declarations: &mut Vec<MirStruct>, next_nominal: &mut usize, next_field: &mut usize) {
+        for hir_struct in &module.structs {
+            declarations.push(lower_struct(hir_struct, *next_nominal, *next_field));
+            *next_nominal += 1;
+            *next_field += hir_struct.fields.len();
+        }
+        for export in &module.imported_semantic_exports {
+            for hir_struct in &export.structs {
+                declarations.push(lower_struct(hir_struct, *next_nominal, *next_field));
+                *next_nominal += 1;
+                *next_field += hir_struct.fields.len();
+            }
+        }
+        for singleton in &module.singletons {
+            let fields = singleton.fields.iter().enumerate().map(|(index, field)| MirField {
+                id: nyar_types::FieldId::from_index((*next_field + index) as u32).expect("field identity overflow"),
                 name: field.name.to_string(),
                 ty: field.ty.clone(),
-            }).collect(),
-            is_value_type: false,
-        });
+            }).collect();
+            declarations.push(MirStruct {
+                name: singleton.name.to_string(),
+                namespace: singleton.namespace.iter().map(|part| part.as_str()).collect::<Vec<_>>().join("."),
+                generics: singleton.generics.clone(),
+                nominal: nyar_types::NominalInstanceId::from_index(*next_nominal as u32).expect("nominal identity overflow"),
+                fields,
+                is_value_type: false,
+            });
+            *next_nominal += 1;
+            *next_field += singleton.fields.len();
+        }
+        for submodule in &module.submodules {
+            collect(submodule, declarations, next_nominal, next_field);
+        }
     }
-    for export in &module.imported_semantic_exports {
-        declarations.extend(export.structs.iter().map(lower_struct));
-    }
-    for submodule in &module.submodules {
-        declarations.extend(collect_field_declarations(submodule));
-    }
+    let mut declarations = Vec::new();
+    let mut next_nominal = 0usize;
+    let mut next_field = 0usize;
+    collect(module, &mut declarations, &mut next_nominal, &mut next_field);
     let mut unique = Vec::new();
     for declaration in declarations {
         if !unique.iter().any(|existing: &MirStruct| existing.qualified_name() == declaration.qualified_name()) {
             unique.push(declaration);
-        }
-    }
-    let field_offsets = unique.iter().scan(0usize, |offset, declaration| {
-        let current = *offset;
-        *offset += declaration.fields.len();
-        Some(current)
-    }).collect::<Vec<_>>();
-    for (nominal_index, declaration) in unique.iter_mut().enumerate() {
-        declaration.nominal = nyar_types::NominalInstanceId::from_index(nominal_index as u32).expect("nominal identity overflow");
-        for (field_index, field) in declaration.fields.iter_mut().enumerate() {
-            let index = field_offsets[nominal_index] + field_index;
-            field.id = nyar_types::FieldId::from_index(index as u32).expect("field identity overflow");
         }
     }
     unique
