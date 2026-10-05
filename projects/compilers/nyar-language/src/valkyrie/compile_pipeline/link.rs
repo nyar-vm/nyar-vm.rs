@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::valkyrie::mir::{MirFunction, MirModule, MirOperand, MirOperation, MirStruct, MirSumDeclaration};
+use nyar_types::layout::{AggregateLayout, AggregateLayoutPlan};
 use nyar_types::{FieldId, NominalInstanceId};
 use std_data::text::valkyrie::ParseError;
 
@@ -17,6 +18,7 @@ pub(crate) fn link_reachable_dependency_mir(
         return Ok(());
     }
     let (structs, sum_types, remaps) = freeze_aggregate_identities(consumer, dependency_mirs)?;
+    let aggregate_layouts = merge_aggregate_layouts(consumer, dependency_mirs)?;
     let mut definitions = BTreeMap::new();
     let mut imports = BTreeMap::new();
     for module in std::iter::once(&*consumer).chain(dependency_mirs) {
@@ -44,6 +46,7 @@ pub(crate) fn link_reachable_dependency_mir(
     let mut linked = consumer.clone();
     linked.structs = structs;
     linked.sum_types = sum_types;
+    linked.aggregate_layouts = aggregate_layouts;
     for function in &mut linked.functions {
         remap_function_aggregates(function, &remaps[0])?;
     }
@@ -87,6 +90,40 @@ pub(crate) fn link_reachable_dependency_mir(
     }
     *consumer = linked;
     Ok(())
+}
+
+fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {
+    let mut merged = consumer.aggregate_layouts.clone();
+    for module in dependencies {
+        for layout in &module.aggregate_layouts.layouts {
+            if let Some(existing) = merged.layouts.iter().find(|candidate| candidate.name == layout.name && candidate.namespace == layout.namespace) {
+                if existing.storage != layout.storage
+                    || existing.size != layout.size
+                    || existing.align != layout.align
+                    || existing.fields != layout.fields
+                {
+                    return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", qualified_layout_name(layout))));
+                }
+                continue;
+            }
+            let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
+            let mut copied = layout.clone();
+            copied.id = new_id;
+            let qualified = qualified_layout_name(&copied);
+            if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
+                return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
+            }
+            if copied.storage == nyar_types::layout::StorageKind::Value {
+                merged.value_type_names.insert(qualified);
+            }
+            merged.layouts.push(copied);
+        }
+    }
+    Ok(merged)
+}
+
+fn qualified_layout_name(layout: &AggregateLayout) -> String {
+    if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}.{}", layout.namespace, layout.name) }
 }
 
 #[derive(Default)]
