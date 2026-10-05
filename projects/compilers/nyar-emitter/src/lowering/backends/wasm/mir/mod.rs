@@ -27,7 +27,6 @@ use crate::{
 };
 use nyar::{NamePath, QualifiedName};
 
-use crate::lowering::shared::witness_abi::is_tuple_get_stub_name;
 use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId, builtin_operator};
 
 use super::{

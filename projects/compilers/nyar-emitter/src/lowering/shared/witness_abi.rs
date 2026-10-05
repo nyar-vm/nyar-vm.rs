@@ -37,34 +37,3 @@ pub(crate) fn witness_slot_msil_signature(table: &WitnessSubmission, method: &Wi
     }
     (MsilType::Object, vec![MsilType::Object])
 }
-
-/// Runtime stubs that backends explicitly inject. Call sites may only use these when the
-/// callee path is a **bare** symbol exactly equal to the stub name (not `Foo.print`).
-///
-/// `tuple_get_0` 是 unite sum type payload 提取器：JVM 后端用 int 句柄表示
-/// `VonParseResult`/`Option`/`Result` 等 sum type，无法用 `getfield` 访问
-/// `payload` 字段，必须改走本 stub 取出堆上的 payload 对象引用。
-pub(crate) const INJECTED_RUNTIME_STUBS: &[&str] = &[
-    "panic",
-    "unimplemented",
-    "is_null",
-    "unwrap_null",
-    "print",
-    "format",
-    "von_parse_take_fail",
-    "von_parse_take_fine",
-    "tuple_get_0",
-    "tuple_get_1",
-];
-
-pub(crate) fn is_injected_runtime_stub_symbol(path_parts: &[&str]) -> bool {
-    match path_parts {
-        [name] => INJECTED_RUNTIME_STUBS.contains(name) || is_tuple_get_stub_name(name),
-        _ => false,
-    }
-}
-
-/// MIR pattern extractors emit `tuple_get_N` for N-ary payloads; allow any index.
-pub(crate) fn is_tuple_get_stub_name(name: &str) -> bool {
-    name.strip_prefix("tuple_get_").is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()))
-}
