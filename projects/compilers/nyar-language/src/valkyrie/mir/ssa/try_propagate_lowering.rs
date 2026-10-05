@@ -31,7 +31,7 @@ impl MirBuilder {
     }
 
     fn lower_nullable_try_propagate(&mut self, value: MirOperand) -> MirOperand {
-        let is_null = self.lower_static_call("is_null", vec![value.clone()], MirValueOrigin::Temporary);
+        let is_null = self.reject_unmodeled_static_operation("nullable check", MirValueOrigin::Temporary);
         self.value_types.insert(is_null, ValkyrieType::Boolean);
         let branch_block = self.current_block;
         let branch_label = self.current_label.clone();
@@ -117,7 +117,7 @@ impl MirBuilder {
     }
 
     fn lower_nullable_payload_operand(&mut self, nullable: MirOperand, payload_type: &ValkyrieType) -> MirOperand {
-        let output = self.lower_static_call("unwrap_null", vec![nullable.clone()], MirValueOrigin::Temporary);
+        let output = self.reject_unmodeled_static_operation("nullable unwrap", MirValueOrigin::Temporary);
         self.value_types.insert(output, payload_type.clone());
         MirOperand::Value(output)
     }

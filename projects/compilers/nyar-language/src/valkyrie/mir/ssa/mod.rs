@@ -1603,15 +1603,8 @@ impl MirBuilder {
         }
     }
 
-    fn lower_static_call(&mut self, name: &str, arguments: Vec<MirOperand>, origin: MirValueOrigin) -> MirValueRef {
-        if name == "__ref_deref" {
-            if let Some(MirOperand::Value(value)) = arguments.first() {
-                return *value;
-            }
-        }
-        let parameter_types =
-            arguments.iter().map(|argument| infer_builder_operand_type(argument, &self.value_types)).collect::<Option<Vec<_>>>();
-        let value = self.push_call(MirOperand::Symbol(NamePath::new(vec![Identifier::new(name)])), arguments);
-        value
+    fn reject_unmodeled_static_operation(&mut self, operation: &'static str, origin: MirValueOrigin) -> MirValueRef {
+        self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: operation.to_string() });
+        self.next_value(origin)
     }
 }

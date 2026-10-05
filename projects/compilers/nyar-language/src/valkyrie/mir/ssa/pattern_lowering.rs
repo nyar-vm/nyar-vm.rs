@@ -806,7 +806,7 @@ impl MirBuilder {
     }
 
     fn lower_nullable_some_operand(&mut self, nullable: MirOperand) -> MirOperand {
-        let is_null = self.lower_static_call("is_null", vec![nullable], MirValueOrigin::Temporary);
+        let is_null = self.reject_unmodeled_static_operation("nullable check", MirValueOrigin::Temporary);
         self.value_types.insert(is_null, ValkyrieType::Boolean);
         self.lower_logical_not_operand(MirOperand::Value(is_null))
     }
@@ -819,7 +819,7 @@ impl MirBuilder {
         let payload_type = infer_builder_operand_type(&payload, &self.value_types);
         match payload_type.as_ref() {
             Some(ValkyrieType::Tuple(_)) => {
-                let extracted = self.lower_static_call(&format!("tuple_get_{slot}"), vec![payload], MirValueOrigin::Temporary);
+                let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
                 if let Some(expected_type) = expected_type {
                     self.value_types.insert(extracted, expected_type);
                 }
@@ -835,7 +835,7 @@ impl MirBuilder {
                 payload
             }
             _ => {
-                let extracted = self.lower_static_call(&format!("tuple_get_{slot}"), vec![payload], MirValueOrigin::Temporary);
+                let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
                 if let Some(expected_type) = expected_type {
                     self.value_types.insert(extracted, expected_type);
                 }
@@ -1222,7 +1222,7 @@ impl MirBuilder {
             self.value_types.insert(*value, tuple_ty.clone());
             let _ = ensure_layout_for_type(&mut self.aggregate_layouts, tuple_ty);
         }
-        let extracted = self.lower_static_call(&format!("tuple_get_{index}"), vec![operand.clone()], MirValueOrigin::Temporary);
+        let extracted = self.reject_unmodeled_static_operation("tuple projection", MirValueOrigin::Temporary);
         if let Some(ValkyrieType::Tuple(types)) = tuple_ty {
             if let Some(elem_ty) = types.get(index) {
                 self.value_types.insert(extracted, elem_ty.clone());
