@@ -570,6 +570,10 @@ pub struct FragmentSubmission {
     /// `singleton` 也在这里以普通引用聚合体的形态出现，负责提供字段偏移、字段类型、
     /// 方法签名和接收者布局等结构事实；后端不得为 `singleton` 单独拼接这些规则。
     pub aggregate_layouts: AggregateLayoutPlan,
+    /// Compiler 已绑定的名义身份到物理布局身份映射。
+    pub aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
+    /// Compiler 已绑定的字段身份到布局槽位映射。
+    pub aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
     /// Sum type discriminant layouts。
     pub sum_types: Vec<SumTypeLayout>,
     /// Flags bitmask layouts。
@@ -614,6 +618,8 @@ impl Default for FragmentSubmission {
             control_flow: None,
             suspend_runtime: None,
             aggregate_layouts: AggregateLayoutPlan::default(),
+            aggregate_layout_by_nominal: BTreeMap::new(),
+            aggregate_layout_by_field: BTreeMap::new(),
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             backend_plan: Arc::new(BackendPrivatePlan::default()),

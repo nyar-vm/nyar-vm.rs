@@ -34,6 +34,22 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let (nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
+    for aggregate in &module.structs {
+        let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
+        let Some(layout_id) = linked.aggregate_layouts.type_name_to_layout.get(&qualified).copied() else {
+            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 缺少布局绑定")));
+        };
+        linked.aggregate_layout_by_nominal.insert(aggregate.nominal, layout_id);
+        let Some(layout) = linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id) else {
+            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 的布局记录缺失")));
+        };
+        if layout.fields.len() != aggregate.fields.len() {
+            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 的字段布局数量不一致")));
+        }
+        for (index, field) in aggregate.fields.iter().enumerate() {
+            linked.aggregate_layout_by_field.insert(field.id, (layout_id, index as u32));
+        }
+    }
     linked.sum_types = module.sum_types.iter().map(crate::valkyrie::mir::MirSumDeclaration::physical_layout).collect();
     linked.flags_types = module.flags_types.clone();
     linked.singleton_instances = module.singleton_instances.clone();

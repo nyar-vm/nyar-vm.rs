@@ -9,7 +9,7 @@ use nyar::NyarType;
 pub fn platform_type(ty: &NyarType) -> NyarType {
     ty.clone()
 }
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId};
 
 use crate::{
     FragmentSubmission,
@@ -33,6 +33,17 @@ impl<'a> ExecutableLoweringContext<'a> {
 
     pub fn layout_by_id(&self, id: LayoutId) -> Option<&AggregateLayout> {
         self.layouts.layouts.iter().find(|layout| layout.id == id)
+    }
+
+    pub fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Option<&AggregateLayout> {
+        self.submission.aggregate_layout_by_nominal.get(&nominal).and_then(|id| self.layout_by_id(*id))
+    }
+
+    pub fn field_layout_by_id(&self, field: FieldId) -> Option<(&AggregateLayout, &FieldLayout, u32)> {
+        let (layout_id, slot) = self.submission.aggregate_layout_by_field.get(&field)?;
+        let layout = self.layout_by_id(*layout_id)?;
+        let field_layout = layout.fields.get(*slot as usize)?;
+        Some((layout, field_layout, *slot))
     }
 
     pub fn layout_by_type_name(&self, name: &str) -> Option<&AggregateLayout> {
