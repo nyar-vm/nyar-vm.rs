@@ -311,12 +311,12 @@ impl MirBuilder {
         let variant = sum.variants.iter().find(|variant| variant.name == variant_name)?;
         let _ = variant.tag;
         let sum_name = sum.name.clone();
-        let variant_id = self.variant_id(&sum_name, variant_name)?;
+        let (nominal, variant_id) = self.sum_identity(&sum_name, variant_name)?;
         let type_args = super::expr_lowering::type_args_from_sum_shaped(actual_type);
         let condition = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumVariantIs {
-                sum_type: sum_name,
+                nominal,
                 type_args,
                 variant: variant_id,
                 object: value,
@@ -433,12 +433,12 @@ impl MirBuilder {
             let payload_ty = sum.instantiate_payload(variant, &super::expr_lowering::type_args_from_sum_shaped(actual_type))??;
             Some((sum.name.clone(), payload_ty))
         })?;
-        let variant_id = self.variant_id(&canonical_sum_name, variant_simple)?;
+        let (nominal, variant_id) = self.sum_identity(&canonical_sum_name, variant_simple)?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {
             // Alias scrutinees (`VonParseResult`) must still name the declared unite (`Result`).
-            sum_type: canonical_sum_name.clone(),
+            nominal,
             type_args: super::expr_lowering::type_args_from_sum_shaped(actual_type),
             variant: variant_id,
             payload_type: payload_ty.clone(),
@@ -488,11 +488,11 @@ impl MirBuilder {
             (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
             _ => resolved.extractor_payload_type.clone(),
         }?;
-        let variant_id = self.variant_id(&sum_type, variant)?;
+        let (nominal, variant_id) = self.sum_identity(&sum_type, variant)?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {
-                sum_type: sum_type.clone(),
+                nominal,
                 type_args: super::expr_lowering::type_args_from_sum_shaped(&object_ty),
                 variant: variant_id,
                 payload_type: payload_ty.clone(),

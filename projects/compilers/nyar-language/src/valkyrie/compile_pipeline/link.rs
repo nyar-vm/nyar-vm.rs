@@ -129,6 +129,7 @@ fn qualified_layout_name(layout: &AggregateLayout) -> String {
 #[derive(Default)]
 struct AggregateRemap {
     nominals: BTreeMap<NominalInstanceId, NominalInstanceId>,
+    variants: BTreeMap<nyar_types::VariantId, nyar_types::VariantId>,
     fields: BTreeMap<FieldId, FieldId>,
 }
 
@@ -187,7 +188,9 @@ fn freeze_aggregate_identities(
                 if !same_sum_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
                 }
+                remap.nominals.insert(declaration.nominal, existing.nominal);
                 for (local_variant, global_variant) in declaration.variants.iter().zip(&existing.variants) {
+                    remap.variants.insert(local_variant.id, global_variant.id);
                     for (local, global) in local_variant.fields.iter().zip(&global_variant.fields) {
                         if remap.fields.insert(local.id, global.id).is_some() {
                             return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
@@ -196,8 +199,17 @@ fn freeze_aggregate_identities(
                 }
             } else {
                 let mut frozen = declaration.clone();
+                let global_nominal = NominalInstanceId::from_index((global_structs.len() + global_sums.len()) as u32)
+                    .ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+                remap.nominals.insert(declaration.nominal, global_nominal);
+                frozen.nominal = global_nominal;
                 let mut next_field = total_field_count(&global_structs, &global_sums);
-                for variant in &mut frozen.variants {
+                for (variant_index, variant) in frozen.variants.iter_mut().enumerate() {
+                    let global_variant = nyar_types::VariantId::from_index(
+                        global_sums.iter().flat_map(|sum| sum.variants.iter()).count() as u32 + variant_index as u32,
+                    ).ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
+                    remap.variants.insert(variant.id, global_variant);
+                    variant.id = global_variant;
                     for field in &mut variant.fields {
                         let id = FieldId::from_index(next_field as u32).ok_or_else(|| ParseError::invalid("FieldId 溢出"))?;
                         next_field += 1;
@@ -230,6 +242,12 @@ fn remap_function_aggregates(function: &mut MirFunction, remap: &AggregateRemap)
                 }
                 MirOperation::FieldGet { field, .. } | MirOperation::FieldSet { field, .. } => {
                     *field = *remap.fields.get(field).ok_or_else(|| ParseError::invalid("字段操作引用了未冻结的字段身份"))?;
+                }
+                MirOperation::SumNew { nominal, variant, .. }
+                | MirOperation::SumPayloadGet { nominal, variant, .. }
+                | MirOperation::SumVariantIs { nominal, variant, .. } => {
+                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::invalid("sum 操作引用了未冻结的名义身份"))?;
+                    *variant = *remap.variants.get(variant).ok_or_else(|| ParseError::invalid("sum 操作引用了未冻结的 variant 身份"))?;
                 }
                 _ => {}
             }

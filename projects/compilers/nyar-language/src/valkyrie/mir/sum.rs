@@ -8,6 +8,8 @@ use crate::types::{
 /// 保留声明的泛型参数与 variant 类型；实例化必须先于物理表示。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirSumDeclaration {
+    /// Semantic MIR 冻结的名义声明身份。
+    pub nominal: nyar_types::NominalInstanceId,
     /// 声明 owner；身份迁移不得由布局反推。
     pub name: String,
     /// 语言声明是否允许 variant 子类型。
@@ -160,6 +162,8 @@ micro wrap(value: utf8) -> Envelope<utf8> {
 /// variant 的 payload 与 GADT 结果类型属于声明事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirSumVariant {
+    /// Semantic MIR 冻结的 variant 身份。
+    pub id: nyar_types::VariantId,
     /// 声明名称。
     pub name: String,
     /// 源码判别值。

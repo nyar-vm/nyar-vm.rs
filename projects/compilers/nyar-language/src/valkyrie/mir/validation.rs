@@ -112,9 +112,9 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 }
                 continue;
             }
-            if let MirOperation::SumNew { sum_type, type_args, variant, payload_type, payload } = &instruction.kind {
+            if let MirOperation::SumNew { nominal, type_args, variant, payload_type, payload } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
+                let Some(sum) = module.sum_types.iter().find(|sum| sum.nominal == *nominal)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -123,7 +123,7 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: "sum construction references an undeclared sum".to_string(),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant)
+                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
@@ -160,24 +160,24 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 }
                 continue;
             }
-            if let MirOperation::SumPayloadGet { sum_type, type_args, variant, payload_type, object } = &instruction.kind {
+            if let MirOperation::SumPayloadGet { nominal, type_args, variant, payload_type, object } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
+                let Some(sum) = module.sum_types.iter().find(|sum| sum.nominal == *nominal)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("sum payload extraction references undeclared sum `{sum_type}`"),
+                        detail: "sum payload extraction references undeclared nominal identity".to_string(),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant)
+                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("sum `{sum_type}` has no payload-bearing variant `{variant}`"),
+                        detail: "sum has no payload-bearing variant with this identity".to_string(),
                     });
                 };
                 let receiver_type = match object {
@@ -200,23 +200,23 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 }
                 continue;
             }
-            if let MirOperation::SumVariantIs { sum_type, type_args, variant, object } = &instruction.kind {
+            if let MirOperation::SumVariantIs { nominal, type_args, variant, object } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(sum) = module.sum_types.iter().find(|sum| sum.name == *sum_type)
+                let Some(sum) = module.sum_types.iter().find(|sum| sum.nominal == *nominal)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("SumVariantIs references undeclared sum `{sum_type}`"),
+                        detail: "SumVariantIs references undeclared nominal identity".to_string(),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, sum_type, *variant) else {
+                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant) else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("SumVariantIs unknown variant `{sum_type}::{variant}`"),
+                        detail: "SumVariantIs references an unknown variant identity".to_string(),
                     });
                 };
                 let receiver_type = match object {
@@ -259,17 +259,8 @@ fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContrac
     Ok(())
 }
 
-fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], sum_type: &str, variant: nyar_types::VariantId) -> Option<&'a crate::mir::MirSumVariant> {
-    let mut next = 0u32;
-    for sum in sum_types {
-        for declared in &sum.variants {
-            if next == variant.index() {
-                return (sum.name == sum_type).then_some(declared);
-            }
-            next = next.checked_add(1)?;
-        }
-    }
-    None
+fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], nominal: nyar_types::NominalInstanceId, variant: nyar_types::VariantId) -> Option<&'a crate::mir::MirSumVariant> {
+    sum_types.iter().find(|sum| sum.nominal == nominal)?.variants.iter().find(|declared| declared.id == variant)
 }
 
 fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractError> {
@@ -1069,6 +1060,7 @@ mod semantic_contract_tests {
     fn semantic_contract_rejects_nominal_sum_without_variants() {
         let mut module = empty_module();
         module.sum_types.push(MirSumDeclaration {
+            nominal: nyar_types::NominalInstanceId::from_index(0).expect("测试 nominal identity"),
             name: "Choice".to_string(),
             is_unite: true,
             generics: Vec::new(),
@@ -1082,12 +1074,13 @@ mod semantic_contract_tests {
     fn semantic_contract_rejects_duplicate_nominal_sum_variant_tag() {
         let mut module = empty_module();
         module.sum_types.push(MirSumDeclaration {
+            nominal: nyar_types::NominalInstanceId::from_index(0).expect("测试 nominal identity"),
             name: "Choice".to_string(),
             is_unite: false,
             generics: Vec::new(),
             variants: vec![
-                MirSumVariant { name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
-                MirSumVariant { name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant { id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"), name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant { id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"), name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
             ],
         });
 

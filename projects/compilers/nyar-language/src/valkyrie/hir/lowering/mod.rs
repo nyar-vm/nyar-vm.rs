@@ -525,6 +525,8 @@ pub(crate) fn compute_nominal_declarations(module: &HirModule) -> (Vec<MirSumDec
 
 fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
     let mut next_field = 0usize;
+    let mut next_nominal = 0u32;
+    let mut next_variant = 0u32;
     let mut layouts = module
         .enums
         .iter()
@@ -538,7 +540,10 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     // `enums`: `= N` or auto-increment after the last explicit / implicit tag.
                     let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
+                    let id = nyar_types::VariantId::from_index(next_variant).expect("variant identity overflow");
+                    next_variant += 1;
                     MirSumVariant {
+                        id,
                         name: variant.name.to_string(),
                         tag,
                         fields: variant.fields.iter().map(|field| {
@@ -550,7 +555,9 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     }
                 })
                 .collect();
-            MirSumDeclaration { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants }
+            let nominal = nyar_types::NominalInstanceId::from_index(next_nominal).expect("nominal identity overflow");
+            next_nominal += 1;
+            MirSumDeclaration { nominal, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants }
         })
         .collect::<Vec<_>>();
     // Dependency packages may define `Result` / `Option` without copying the
@@ -565,7 +572,10 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                 .map(|variant| {
                     let tag = resolve_sum_variant_tag(&enum_def.name, variant, &mut next_implicit)
                         .expect("enum discriminators must be validated before sum layout collection");
+                    let id = nyar_types::VariantId::from_index(next_variant).expect("variant identity overflow");
+                    next_variant += 1;
                     MirSumVariant {
+                        id,
                         name: variant.name.to_string(),
                         tag,
                         fields: variant.fields.iter().map(|field| {
@@ -577,7 +587,9 @@ fn collect_sum_declarations(module: &HirModule) -> Vec<MirSumDeclaration> {
                     }
                 })
                 .collect();
-            let declaration = MirSumDeclaration { name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants };
+            let nominal = nyar_types::NominalInstanceId::from_index(next_nominal).expect("nominal identity overflow");
+            next_nominal += 1;
+            let declaration = MirSumDeclaration { nominal, name: enum_def.name.to_string(), is_unite: enum_def.is_unity, generics: enum_def.generics.clone(), variants };
             if !layouts.contains(&declaration) {
                 layouts.push(declaration);
             }

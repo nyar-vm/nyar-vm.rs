@@ -150,12 +150,12 @@ impl MirBuilder {
             panic!("try-propagate sum payload has no resolved payload type");
         };
         let type_args = object_ty.as_ref().map(super::expr_lowering::type_args_from_sum_shaped).unwrap_or_default();
-        let Some(variant_id) = self.variant_id(sum_type, variant) else {
+        let Some((nominal, variant_id)) = self.sum_identity(sum_type, variant) else {
             return MirOperand::Constant(MirConstant::Unit);
         };
         let output = self.next_value(MirValueOrigin::Temporary);
         self.instructions.push(MirInstruction::from_operation(MirOperation::SumPayloadGet {
-            sum_type: sum_type.to_string(),
+            nominal,
             type_args,
             variant: variant_id,
             payload_type: payload_type.clone(),

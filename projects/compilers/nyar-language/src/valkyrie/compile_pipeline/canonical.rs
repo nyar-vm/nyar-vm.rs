@@ -235,6 +235,13 @@ fn collect_aggregate_identities(module: &MirModule, types: &BTreeMap<ValkyrieTyp
             }
         }
     }
+    for sum in &module.sum_types {
+        let ty = ValkyrieType::Named(crate::valkyrie::types::Identifier::new(&sum.name));
+        let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
+        if nominals.insert(sum.nominal, (declaration, NominalValueSemantics::Reference)).is_some() {
+            return Err(error_without_module("CAN020", format!("sum identity 重复: {}", sum.name)));
+        }
+    }
     Ok((nominals, field_records))
 }
 
@@ -375,6 +382,21 @@ fn lower_operation(operation: &MirOperation, results: &[crate::valkyrie::mir::Mi
             },
             fields: fields.iter().map(value).collect::<Result<_, _>>()?,
         }),
+        MirOperation::SumNew { nominal, variant, payload_type, payload, .. } => {
+            let Some(sum) = nominals.get(nominal) else {
+                return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}")));
+            };
+            let _ = (sum, payload_type);
+            Ok(CanonicalOperation::SumNew { nominal: *nominal, variant: *variant, payload: payload.as_ref().map(value).transpose()? })
+        }
+        MirOperation::SumPayloadGet { nominal, variant, object, .. } => {
+            if !nominals.contains_key(nominal) { return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}"))); }
+            Ok(CanonicalOperation::SumPayloadGet { nominal: *nominal, variant: *variant, object: value(object)? })
+        }
+        MirOperation::SumVariantIs { nominal, variant, object, .. } => {
+            if !nominals.contains_key(nominal) { return Err(error_without_module("CAN031", format!("未解析 sum nominal identity: {nominal:?}"))); }
+            Ok(CanonicalOperation::SumVariantIs { nominal: *nominal, variant: *variant, object: value(object)? })
+        }
         MirOperation::StructNew { nominal, fields: values } => {
             if !nominals.contains_key(nominal) {
                 return Err(error_without_module("CAN023", format!("未解析聚合 identity: {nominal:?}")));

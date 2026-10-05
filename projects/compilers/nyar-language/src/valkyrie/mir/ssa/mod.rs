@@ -575,8 +575,8 @@ pub enum MirOperation {
     },
     /// Construct a value of an explicitly declared nominal sum variant.
     SumNew {
-        sum_type: String,
-        /// Type arguments with `sum_type` form NominalInstanceKey (empty ⇒ monomorphic).
+        nominal: nyar_types::NominalInstanceId,
+        /// 完成代入后的实参，供 Semantic MIR 校验 payload 合同。
         type_args: Vec<ValkyrieType>,
         variant: VariantId,
         payload_type: Option<ValkyrieType>,
@@ -586,8 +586,8 @@ pub enum MirOperation {
     /// This must not be represented as a field named `value`, `error`, or
     /// `payload`: those spellings carry no language semantics by themselves.
     SumPayloadGet {
-        sum_type: String,
-        /// Type arguments with `sum_type` form NominalInstanceKey (empty ⇒ monomorphic).
+        nominal: nyar_types::NominalInstanceId,
+        /// 完成代入后的实参，供 Semantic MIR 校验 payload 合同。
         type_args: Vec<ValkyrieType>,
         variant: VariantId,
         payload_type: ValkyrieType,
@@ -596,7 +596,8 @@ pub enum MirOperation {
     /// Test whether a sum value is the given declared variant (`case Variant:`).
     /// Carries the same NominalInstanceKey as [`Self::SumNew`] / [`Self::SumPayloadGet`].
     SumVariantIs {
-        sum_type: String,
+        nominal: nyar_types::NominalInstanceId,
+        /// 完成代入后的实参，供 Semantic MIR 校验实例类型。
         type_args: Vec<ValkyrieType>,
         variant: VariantId,
         object: MirOperand,
@@ -1438,18 +1439,20 @@ struct MirBuilder {
 }
 
 impl MirBuilder {
-    pub(super) fn variant_id(&mut self, sum_type: &str, variant: &str) -> Option<VariantId> {
-        let mut index = 0u32;
+    pub(super) fn sum_identity(&mut self, sum_type: &str, variant: &str) -> Option<(nyar_types::NominalInstanceId, VariantId)> {
         for sum in &self.sum_types {
             for candidate in &sum.variants {
                 if sum.name == sum_type && candidate.name == variant {
-                    return VariantId::from_index(index);
+                    return Some((sum.nominal, candidate.id));
                 }
-                index = index.checked_add(1)?;
             }
         }
         self.diagnostics.push(MirDiagnostic::UnresolvedVariantIdentity { sum_type: sum_type.to_owned(), variant: variant.to_owned() });
         None
+    }
+
+    pub(super) fn variant_id(&mut self, sum_type: &str, variant: &str) -> Option<VariantId> {
+        self.sum_identity(sum_type, variant).map(|(_, variant)| variant)
     }
 
     fn new(
