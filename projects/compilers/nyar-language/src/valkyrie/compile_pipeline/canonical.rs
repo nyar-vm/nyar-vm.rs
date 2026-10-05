@@ -34,6 +34,11 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     let (nominals, field_records) = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
     linked.aggregate_layouts = module.aggregate_layouts.clone();
+    for (ty, type_id) in &type_values {
+        if let Some(layout_id) = crate::valkyrie::mir::layout_id_for_type(ty, &module.aggregate_layouts) {
+            linked.aggregate_layout_by_type.insert(*type_id, layout_id);
+        }
+    }
     for aggregate in &module.structs {
         let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
         let Some(layout_id) = linked.aggregate_layouts.type_name_to_layout.get(&qualified).copied() else {

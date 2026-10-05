@@ -101,6 +101,8 @@ pub struct LinkedSemanticProgram {
     pub aggregate_layout_by_nominal: BTreeMap<NominalInstanceId, crate::layout::LayoutId>,
     /// 已由 Compiler 绑定的字段身份到布局字段槽位映射。
     pub aggregate_layout_by_field: BTreeMap<FieldId, (crate::layout::LayoutId, u32)>,
+    /// 已由 Compiler 绑定的完整类型身份到物理布局身份映射。
+    pub aggregate_layout_by_type: BTreeMap<TypeId, crate::layout::LayoutId>,
     /// Compiler 解析出的 sum 布局；装配与 backend 不得从名称猜测。
     pub sum_types: Vec<SumTypeLayout>,
     /// Compiler 解析出的 flags 布局。
