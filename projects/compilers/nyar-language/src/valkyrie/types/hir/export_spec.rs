@@ -63,8 +63,7 @@ pub fn resolve_attribute_id(attribute: &HirAttribute) -> Option<AttributeId> {
 ///
 /// 空名或缺失字符串字面量时返回 `None`（失败闭合，不发明默认阶段）。
 pub fn parse_workload_phase_from_annotations(annotations: &[HirAttribute]) -> Option<String> {
-    let attribute =
-        annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::workload_phase()))?;
+    let attribute = annotations.iter().find(|attribute| resolve_attribute_id(attribute) == Some(builtin_attribute::workload_phase()))?;
 
     if attribute.arguments.is_empty() {
         return None;
@@ -86,12 +85,7 @@ pub fn parse_workload_phase_from_annotations(annotations: &[HirAttribute]) -> Op
 }
 
 fn non_empty_phase_name(name: String) -> Option<String> {
-    if name.is_empty() {
-        None
-    }
-    else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 /// 解析 `[export]` / `[export(unity.runtime)]` / `[export(name: "twoSum")]` / `[export(case: "camelCase")]`。
@@ -113,7 +107,8 @@ pub fn parse_export_spec_from_annotations(annotations: &[HirAttribute]) -> Optio
                 export_name = argument_string_literal(argument);
             }
             else if key == "case" {
-                let Some(value) = argument_string_literal(argument) else {
+                let Some(value) = argument_string_literal(argument)
+                else {
                     return None;
                 };
                 match value.as_str() {
@@ -148,7 +143,8 @@ fn argument_string_literal(argument: &HirArgument) -> Option<String> {
 
     let mut rendered = String::new();
     for segment in &literal.segments {
-        let HirStringSegment::Text(text) = segment else {
+        let HirStringSegment::Text(text) = segment
+        else {
             return None;
         };
         rendered.push_str(text);
@@ -161,7 +157,8 @@ fn export_arg_to_partition(expr: &HirExpr) -> Option<String> {
         HirExprKind::Literal(HirLiteral::String(literal)) => {
             let mut rendered = String::new();
             for segment in &literal.segments {
-                let HirStringSegment::Text(text) = segment else {
+                let HirStringSegment::Text(text) = segment
+                else {
                     return None;
                 };
                 rendered.push_str(text);
@@ -233,10 +230,7 @@ mod tests {
                 span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
             }),
         };
-        let annotations = vec![HirAttribute::with_arguments(
-            NamePath::new(vec![Identifier::new("workload_phase")]),
-            vec![positional],
-        )];
+        let annotations = vec![HirAttribute::with_arguments(NamePath::new(vec![Identifier::new("workload_phase")]), vec![positional])];
         assert_eq!(parse_workload_phase_from_annotations(&annotations).as_deref(), Some("request"));
 
         let named = HirArgument {
@@ -250,10 +244,7 @@ mod tests {
                 span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
             }),
         };
-        let annotations = vec![HirAttribute::with_arguments(
-            NamePath::new(vec![Identifier::new("workload_phase")]),
-            vec![named],
-        )];
+        let annotations = vec![HirAttribute::with_arguments(NamePath::new(vec![Identifier::new("workload_phase")]), vec![named])];
         assert_eq!(parse_workload_phase_from_annotations(&annotations).as_deref(), Some("batch"));
     }
 
@@ -270,10 +261,7 @@ mod tests {
                 span: SourceSpan { source: crate::types::SourceID { version_id: 0 }, span: (0..0).into() },
             }),
         };
-        let annotations = vec![HirAttribute::with_arguments(
-            NamePath::new(vec![Identifier::new("workload_phase")]),
-            vec![empty],
-        )];
+        let annotations = vec![HirAttribute::with_arguments(NamePath::new(vec![Identifier::new("workload_phase")]), vec![empty])];
         assert!(parse_workload_phase_from_annotations(&annotations).is_none());
     }
 

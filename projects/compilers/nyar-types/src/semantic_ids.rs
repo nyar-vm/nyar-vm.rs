@@ -733,10 +733,7 @@ mod tests {
         assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);
         assert_eq!(IntrinsicId::from_bytecode_index(2), Some(IntrinsicId::ArrayGet));
         assert_eq!(IntrinsicId::from_bytecode_index(99), None);
-        assert_eq!(
-            IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]),
-            Some(IntrinsicId::ArrayPush)
-        );
+        assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]), Some(IntrinsicId::ArrayPush));
         assert_eq!(IntrinsicId::resolve_from_segments(&["__array_len"]), Some(IntrinsicId::ArrayLen));
         assert_eq!(IntrinsicId::resolve_from_segments(&["marker", "__ref_deref"]), Some(IntrinsicId::RefDeref));
         // 禁止按类型名末段猜
@@ -744,10 +741,7 @@ mod tests {
         assert_eq!(IntrinsicId::resolve_from_segments(&["HashMap", "get"]), None);
         assert_eq!(IntrinsicId::resolve_from_segments(&["is_null"]), Some(IntrinsicId::IsNull));
         assert_eq!(IntrinsicId::resolve_from_segments(&["unwrap_null"]), Some(IntrinsicId::UnwrapNull));
-        assert_eq!(
-            IntrinsicId::resolve_from_segments(&["builtin", "null", "is_null"]),
-            Some(IntrinsicId::IsNull)
-        );
+        assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "null", "is_null"]), Some(IntrinsicId::IsNull));
         assert_eq!(builtin_attribute::export().index(), 0);
         assert_eq!(builtin_attribute::main().index(), 1);
         let seeds = builtin_attribute::seed_registrations();

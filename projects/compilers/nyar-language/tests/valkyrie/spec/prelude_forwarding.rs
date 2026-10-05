@@ -45,7 +45,10 @@ fn compile_path(path: &PathBuf) -> HirModule {
 
 #[test]
 fn prelude_option_file_compiles_as_pure_forwarding() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let module = compile_path(&prelude_option_path(&projects));
 
     assert!(module.enums.is_empty(), "prelude Option.v must not define any unite/enum — it should be pure forwarding");
@@ -56,7 +59,10 @@ fn prelude_option_file_compiles_as_pure_forwarding() {
 
 #[test]
 fn prelude_result_file_compiles_as_pure_forwarding() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let module = compile_path(&prelude_result_path(&projects));
 
     assert!(module.enums.is_empty(), "prelude Result.v must not define any unite/enum — it should be pure forwarding");
@@ -89,7 +95,10 @@ fn call_callee_symbols(function: &MirFunction) -> Vec<String> {
 
 #[test]
 fn combined_option_source_resolves_unqualified_option_none() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let core_option = read_file(&core_option_path(&projects));
     let prelude_option = read_file(&prelude_option_path(&projects));
     let caller = r#"
@@ -112,7 +121,10 @@ micro caller() -> Option<i32> {
 
 #[test]
 fn combined_result_source_resolves_unqualified_fine() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let core_result = read_file(&core_result_path(&projects));
     let prelude_result = read_file(&prelude_result_path(&projects));
     let caller = r#"
@@ -135,7 +147,10 @@ micro caller() -> Result<i32, i32> {
 
 #[test]
 fn prelude_option_imports_reference_core_types() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let module = compile_path(&prelude_option_path(&projects));
 
     let has_core_types_import =
@@ -149,7 +164,10 @@ fn prelude_option_imports_reference_core_types() {
 
 #[test]
 fn prelude_result_imports_reference_core_types() {
-    let Some(projects) = valkyrie_v::projects() else { return };
+    let Some(projects) = valkyrie_v::projects()
+    else {
+        return;
+    };
     let module = compile_path(&prelude_result_path(&projects));
 
     let has_core_types_import =

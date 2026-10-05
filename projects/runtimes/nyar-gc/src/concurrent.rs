@@ -97,12 +97,7 @@ impl ConcurrentMarkController {
     /// mutator 写路径是否必须记录 SATB（仅在已启用且处于并发标记可见阶段）。
     pub fn requires_satb(&self) -> bool {
         self.enabled
-            && matches!(
-                self.state,
-                ConcurrentMarkState::ConcurrentTrace
-                    | ConcurrentMarkState::TerminationCheck
-                    | ConcurrentMarkState::Remark
-            )
+            && matches!(self.state, ConcurrentMarkState::ConcurrentTrace | ConcurrentMarkState::TerminationCheck | ConcurrentMarkState::Remark)
     }
 
     /// 已启动周期计数（含中止）。

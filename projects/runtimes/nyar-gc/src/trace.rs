@@ -1,5 +1,7 @@
-use crate::heap::{ObjectHeap, ObjectPayload};
-use crate::value::{ObjectId, Value};
+use crate::{
+    heap::{ObjectHeap, ObjectPayload},
+    value::{ObjectId, Value},
+};
 
 /// Marks `value` and all transitively referenced heap objects（同步全闭包）。
 pub(crate) fn trace_value(value: &Value, heap: &ObjectHeap, marked: &mut [bool]) {
@@ -55,7 +57,8 @@ pub(crate) fn enqueue_object_gray(id: ObjectId, marked: &mut [bool], gray: &mut 
 
 /// 扫描一个灰对象：子引用入灰队列（对象本身已在入队时标为已标记）。
 pub(crate) fn scan_gray_object(id: ObjectId, heap: &ObjectHeap, marked: &mut [bool], gray: &mut Vec<ObjectId>) {
-    let Some(payload) = heap.get(id) else {
+    let Some(payload) = heap.get(id)
+    else {
         return;
     };
     match payload {

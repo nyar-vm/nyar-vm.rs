@@ -1,6 +1,6 @@
-use nyar_vm::{jit::JitError, NyarVm};
+use nyar_vm::{NyarVm, jit::JitError};
 
-use nyar_bytecode::{NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module};
+use nyar_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
 
 fn empty_module() -> nyar_vm::module::LoadedModule {
     let mut code = Vec::new();
@@ -11,13 +11,7 @@ fn empty_module() -> nyar_vm::module::LoadedModule {
         version: NYAR_VERSION,
         name: "jit-hook".to_string(),
         constants: vec![NyarConstant::Integer32(0)],
-        functions: vec![NyarFunction {
-            name: "main".to_string(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
@@ -50,13 +44,7 @@ fn stack_maps_available_without_jit_backend() {
         version: NYAR_VERSION,
         name: "stack-map".to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction {
-            name: "main".to_string(),
-            arity: 0,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
@@ -90,8 +78,7 @@ fn stack_map_jit_backend_returns_artifact_maps() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_adds_i32_args() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::LoadArg as u8);
@@ -104,13 +91,7 @@ fn baseline_scalar_jit_fast_path_adds_i32_args() {
         version: NYAR_VERSION,
         name: "nj1-add".to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction {
-            name: "add".to_string(),
-            arity: 2,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: "add".to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "add".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
@@ -145,19 +126,9 @@ fn load_i32_binop_module(name: &str, export: &str, op: NyarHeadCode) -> nyar_vm:
         version: NYAR_VERSION,
         name: name.to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction {
-            name: export.to_string(),
-            arity: 2,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: export.to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport {
-            kind: NyarExportKind::Function,
-            symbol_name: export.to_string(),
-            function_index: 0,
-        }],
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -169,8 +140,7 @@ fn load_i32_binop_module(name: &str, export: &str, op: NyarHeadCode) -> nyar_vm:
 
 #[test]
 fn baseline_scalar_jit_fast_path_cmp_and_select() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut vm = NyarVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
@@ -184,10 +154,7 @@ fn baseline_scalar_jit_fast_path_cmp_and_select() {
     cmp_code.push(NyarHeadCode::I32LtS as u8);
     cmp_code.push(NyarHeadCode::Return as u8);
     let cmp = load_named_module("nj1-lt", "lt", 2, cmp_code);
-    assert_eq!(
-        vm.run(&cmp, "lt", vec![Value::I32(1), Value::I32(2)]).expect("lt"),
-        Value::I32(1)
-    );
+    assert_eq!(vm.run(&cmp, "lt", vec![Value::I32(1), Value::I32(2)]).expect("lt"), Value::I32(1));
 
     // select: a==b ? c : d
     let mut sel = Vec::new();
@@ -210,24 +177,8 @@ fn baseline_scalar_jit_fast_path_cmp_and_select() {
     sel.extend_from_slice(&3i32.to_le_bytes());
     sel.push(NyarHeadCode::Return as u8);
     let select = load_named_module("nj1-sel", "sel", 4, sel);
-    assert_eq!(
-        vm.run(
-            &select,
-            "sel",
-            vec![Value::I32(1), Value::I32(1), Value::I32(7), Value::I32(9)]
-        )
-        .expect("sel true"),
-        Value::I32(7)
-    );
-    assert_eq!(
-        vm.run(
-            &select,
-            "sel",
-            vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]
-        )
-        .expect("sel false"),
-        Value::I32(9)
-    );
+    assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(1), Value::I32(7), Value::I32(9)]).expect("sel true"), Value::I32(7));
+    assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]).expect("sel false"), Value::I32(9));
 }
 
 fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nyar_vm::module::LoadedModule {
@@ -235,19 +186,9 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
         version: NYAR_VERSION,
         name: name.to_string(),
         constants: Vec::new(),
-        functions: vec![NyarFunction {
-            name: export.to_string(),
-            arity,
-            local_count: arity,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: export.to_string(), arity, local_count: arity, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport {
-            kind: NyarExportKind::Function,
-            symbol_name: export.to_string(),
-            function_index: 0,
-        }],
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -259,8 +200,7 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> nya
 
 #[test]
 fn baseline_scalar_jit_fast_path_load_dup_mul() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::LoadArg as u8);
@@ -276,8 +216,7 @@ fn baseline_scalar_jit_fast_path_load_dup_mul() {
 
 #[test]
 fn baseline_scalar_jit_folds_const_const_binop() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::Const as u8);
@@ -298,11 +237,7 @@ fn baseline_scalar_jit_folds_const_const_binop() {
             code_length: code.len() as i32,
         }],
         imports: Vec::new(),
-        exports: vec![NyarExport {
-            kind: NyarExportKind::Function,
-            symbol_name: "forty_two".to_string(),
-            function_index: 0,
-        }],
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "forty_two".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -322,10 +257,7 @@ fn workload_hints_tighten_gray_budget_on_vm() {
     let mut vm = NyarVm::new();
     assert_eq!(vm.gray_budget_per_slice(), 64);
     assert_eq!(vm.max_trace_slices_per_poll(), 8);
-    vm.apply_workload_hints(WorkloadHints {
-        pause_budget_ms: Some(1),
-        ..WorkloadHints::default()
-    });
+    vm.apply_workload_hints(WorkloadHints { pause_budget_ms: Some(1), ..WorkloadHints::default() });
     assert_eq!(vm.gray_budget_per_slice(), 8);
     assert_eq!(vm.max_trace_slices_per_poll(), 2);
 }
@@ -440,10 +372,7 @@ fn nested_workload_phase_overrides_scenario_then_restores() {
     let restored = vm.end_workload_phase(Some("request")).expect("end request");
     assert_eq!(restored.mode, GcMode::ThroughputBatch);
     assert_eq!(restored.scenario_id.as_deref(), Some("offline-batch"));
-    assert_eq!(
-        vm.last_strategy_decision().map(|d| d.scenario_id.as_deref()),
-        Some(Some("offline-batch"))
-    );
+    assert_eq!(vm.last_strategy_decision().map(|d| d.scenario_id.as_deref()), Some(Some("offline-batch")));
 }
 
 #[test]
@@ -453,16 +382,8 @@ fn install_inline_deopt_chain_orders_outer_then_inner() {
     let map = build_inline_deopt_map(
         1,
         &[
-            InlineFrameSpec {
-                function_index: 1,
-                local_count: 1,
-                resume_instruction: None,
-            },
-            InlineFrameSpec {
-                function_index: 0,
-                local_count: 2,
-                resume_instruction: Some(40),
-            },
+            InlineFrameSpec { function_index: 1, local_count: 1, resume_instruction: None },
+            InlineFrameSpec { function_index: 0, local_count: 2, resume_instruction: Some(40) },
         ],
         &[7],
     );
@@ -475,8 +396,10 @@ fn install_inline_deopt_chain_orders_outer_then_inner() {
 
 #[test]
 fn install_deopt_frames_invalidates_nj1_and_restores_locals() {
-    use nyar_vm::jit::{BaselineScalarJit, build_baseline_deopt_map, materialize_interpreter_frames};
-    use nyar_vm::Value;
+    use nyar_vm::{
+        Value,
+        jit::{BaselineScalarJit, build_baseline_deopt_map, materialize_interpreter_frames},
+    };
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::LoadArg as u8);
@@ -498,8 +421,10 @@ fn install_deopt_frames_invalidates_nj1_and_restores_locals() {
 
 #[test]
 fn invalidate_assumption_drops_scalar_leaf_cache() {
-    use nyar_vm::jit::{BaselineScalarJit, JitAssumption};
-    use nyar_vm::Value;
+    use nyar_vm::{
+        Value,
+        jit::{BaselineScalarJit, JitAssumption},
+    };
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::LoadArg as u8);
@@ -516,8 +441,7 @@ fn invalidate_assumption_drops_scalar_leaf_cache() {
 
 #[test]
 fn invalidate_nj1_cache_clears_compiled_blobs() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::LoadArg as u8);
@@ -538,8 +462,7 @@ fn invalidate_nj1_cache_clears_compiled_blobs() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_const_local_binop() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
     code.push(NyarHeadCode::Const as u8);
@@ -552,19 +475,9 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
         version: NYAR_VERSION,
         name: "nj1-imm-add".to_string(),
         constants: vec![NyarConstant::Integer32(10)],
-        functions: vec![NyarFunction {
-            name: "add10".to_string(),
-            arity: 1,
-            local_count: 1,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: "add10".to_string(), arity: 1, local_count: 1, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
-        exports: vec![NyarExport {
-            kind: NyarExportKind::Function,
-            symbol_name: "add10".to_string(),
-            function_index: 0,
-        }],
+        exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "add10".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: code,
         globals: Vec::new(),
@@ -580,22 +493,15 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_sub_and_mul() {
-    use nyar_vm::jit::BaselineScalarJit;
-    use nyar_vm::Value;
+    use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut vm = NyarVm::new();
     vm.set_jit(Box::new(BaselineScalarJit));
 
     let sub = load_i32_binop_module("nj1-sub", "sub", NyarHeadCode::I32Sub);
-    assert_eq!(
-        vm.run(&sub, "sub", vec![Value::I32(40), Value::I32(2)]).expect("sub"),
-        Value::I32(38)
-    );
+    assert_eq!(vm.run(&sub, "sub", vec![Value::I32(40), Value::I32(2)]).expect("sub"), Value::I32(38));
 
     let mul = load_i32_binop_module("nj1-mul", "mul", NyarHeadCode::I32Mul);
-    assert_eq!(
-        vm.run(&mul, "mul", vec![Value::I32(40), Value::I32(2)]).expect("mul"),
-        Value::I32(80)
-    );
+    assert_eq!(vm.run(&mul, "mul", vec![Value::I32(40), Value::I32(2)]).expect("mul"), Value::I32(80));
     assert_eq!(vm.nj1_cache_len(), 2);
 }

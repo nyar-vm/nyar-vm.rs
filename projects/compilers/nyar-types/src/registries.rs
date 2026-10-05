@@ -4,9 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::semantic_ids::{
-    AttributeId, AttributeRegistration, OperatorFixity, OperatorId, OperatorRegistration, builtin_attribute,
-};
+use crate::semantic_ids::{AttributeId, AttributeRegistration, OperatorFixity, OperatorId, OperatorRegistration, builtin_attribute};
 
 /// 属性注册表错误（失败关闭，禁止静默覆盖）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,10 +199,7 @@ impl OperatorRegistry {
         let id = OperatorId::from_index(self.next_index).expect("operator id space");
         self.next_index = self.next_index.saturating_add(1);
         self.by_key.insert(key, id);
-        self.by_id.insert(
-            id,
-            OperatorRegistration { id, lexeme, fixity, precedence, callee },
-        );
+        self.by_id.insert(id, OperatorRegistration { id, lexeme, fixity, precedence, callee });
         Ok(id)
     }
 
@@ -347,8 +342,7 @@ pub mod builtin_operator {
     pub fn is_boolean_result(id: OperatorId) -> bool {
         matches!(
             builtins().registration(id).map(|row| (row.fixity, row.lexeme.as_str())),
-            Some((OperatorFixity::Prefix, "!"))
-                | Some((OperatorFixity::Infix, "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||"))
+            Some((OperatorFixity::Prefix, "!")) | Some((OperatorFixity::Infix, "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||"))
         )
     }
 
@@ -388,10 +382,7 @@ mod tests {
         let custom = registry.intern("my_attr");
         assert_eq!(registry.lookup("my_attr"), Some(custom));
         assert_eq!(registry.intern("my_attr"), custom);
-        assert!(matches!(
-            registry.intern_unique("export"),
-            Err(AttributeRegistryError::DuplicateName { .. })
-        ));
+        assert!(matches!(registry.intern_unique("export"), Err(AttributeRegistryError::DuplicateName { .. })));
     }
 
     #[test]
@@ -399,10 +390,7 @@ mod tests {
         let mut registry = OperatorRegistry::with_builtins();
         assert_eq!(registry.lookup_display_name("infix =="), Some(builtin_operator::infix_eq()));
         assert_eq!(registry.lookup_display_name("prefix !"), Some(builtin_operator::prefix_not()));
-        assert!(matches!(
-            registry.intern_unique(OperatorFixity::Infix, "==", 4, None),
-            Err(OperatorRegistryError::DuplicateKey { .. })
-        ));
+        assert!(matches!(registry.intern_unique(OperatorFixity::Infix, "==", 4, None), Err(OperatorRegistryError::DuplicateKey { .. })));
         let custom = registry.intern_unique(OperatorFixity::Infix, "+*", 7, None).expect("user op");
         assert_eq!(registry.lookup(OperatorFixity::Infix, "+*"), Some(custom));
     }

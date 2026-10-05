@@ -14,14 +14,11 @@ pub use control_flow::{
 
 use std::collections::BTreeMap;
 
-use nyar_types::RuntimeRequirement;
 use nyar_optimizer::{
     AlgebraicTerm, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest,
     OptimizationResult, OptimizationSession, ProjectionPolicy, ReferenceManagement, RewriteTheory, TheoryBundle,
 };
-use nyar_types::{
-    CapabilityTag, Identifier, QualifiedName,
-};
+use nyar_types::{CapabilityTag, Identifier, QualifiedName, RuntimeRequirement};
 
 use crate::{
     abstractions::{BackendInputKind, BinaryTarget, CanonicalTarget},
@@ -224,17 +221,20 @@ impl ArtifactPartitionPlan {
         let linked = &program.linked;
         let module_name = qualified_module_name(&linked.module_name);
         let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(linked)?;
-        Self::plan_from_optimizer_input(OptimizerInput {
-            module_name,
-            target,
-            program_facts,
-            semantic_fragments,
-            object_algebraic_program,
-            rewrite_theory,
-            projection_policy,
-            backend_registry,
-            clr_suspend_strategy,
-        }, &linked.fragments)
+        Self::plan_from_optimizer_input(
+            OptimizerInput {
+                module_name,
+                target,
+                program_facts,
+                semantic_fragments,
+                object_algebraic_program,
+                rewrite_theory,
+                projection_policy,
+                backend_registry,
+                clr_suspend_strategy,
+            },
+            &linked.fragments,
+        )
     }
 
     /// 基于程序事实生成最小分区计划。
@@ -313,27 +313,49 @@ fn canonical_optimizer_input(
     let mut fragments = Vec::new();
     for fragment in linked.fragments.values() {
         for capability in &fragment.required_capabilities {
-            if !capabilities.contains(capability) { capabilities.push(capability.clone()); }
+            if !capabilities.contains(capability) {
+                capabilities.push(capability.clone());
+            }
         }
         let exported_operations = fragment.exported_operations.iter().copied().map(&callable_name).collect::<Result<Vec<_>, _>>()?;
         fragments.push(OptimizerFragment {
-            id: fragment.id.clone(), exported_operations, required_capabilities: fragment.required_capabilities.clone(),
-            reference_management_hint: None, rewrite_theory: RewriteTheory::default(),
+            id: fragment.id.clone(),
+            exported_operations,
+            required_capabilities: fragment.required_capabilities.clone(),
+            reference_management_hint: None,
+            rewrite_theory: RewriteTheory::default(),
         });
     }
-    let exports = linked.exports.iter().map(|(instance, record)| Ok(nyar_analyzer::ExportContract {
-        exported_name: Identifier::new(&record.exported_name), local_name: callable_name(*instance)?, partition: None,
-    })).collect::<Result<Vec<_>, PlanningError>>()?;
+    let exports = linked
+        .exports
+        .iter()
+        .map(|(instance, record)| {
+            Ok(nyar_analyzer::ExportContract {
+                exported_name: Identifier::new(&record.exported_name),
+                local_name: callable_name(*instance)?,
+                partition: None,
+            })
+        })
+        .collect::<Result<Vec<_>, PlanningError>>()?;
     let program_facts = PlannerFacts {
-        module_name: module_name.clone(), exports, capabilities, reference_management: linked.reference_management, runtime_requirements: linked.runtime_requirements.clone(),
+        module_name: module_name.clone(),
+        exports,
+        capabilities,
+        reference_management: linked.reference_management,
+        runtime_requirements: linked.runtime_requirements.clone(),
     };
     let object_algebraic_program = ObjectAlgebraicProgram {
         module_name: module_name.clone(),
         exports: program_facts.exports.iter().map(|export| export.local_name.clone()).collect(),
-        dimensions: fragments.iter().map(|fragment| ObjectAlgebraicDimension {
-            name: fragment.id.clone(), exported_operations: fragment.exported_operations.clone(),
-            required_capabilities: fragment.required_capabilities.clone(), reference_management_hint: None,
-        }).collect(),
+        dimensions: fragments
+            .iter()
+            .map(|fragment| ObjectAlgebraicDimension {
+                name: fragment.id.clone(),
+                exported_operations: fragment.exported_operations.clone(),
+                required_capabilities: fragment.required_capabilities.clone(),
+                reference_management_hint: None,
+            })
+            .collect(),
         structured_terms: Vec::new(),
     };
     Ok((program_facts, fragments, object_algebraic_program))
@@ -352,7 +374,12 @@ fn build_effective_program(
         }
     }
     ObjectAlgebraicProgram {
-        module_name: if object_algebraic_program.module_name.parts().is_empty() { module_name.clone() } else { object_algebraic_program.module_name },
+        module_name: if object_algebraic_program.module_name.parts().is_empty() {
+            module_name.clone()
+        }
+        else {
+            object_algebraic_program.module_name
+        },
         exports,
         dimensions: semantic_fragments
             .iter()

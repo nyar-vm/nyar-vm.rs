@@ -36,11 +36,7 @@ impl FunctionStackMaps {
 }
 
 /// 由 safepoint 下标与 local 数量构造保守 stack map（全部 local 为根，整栈为根）。
-pub fn build_conservative_stack_maps(
-    function_index: usize,
-    local_count: i32,
-    safepoint_indices: &[u32],
-) -> FunctionStackMaps {
+pub fn build_conservative_stack_maps(function_index: usize, local_count: i32, safepoint_indices: &[u32]) -> FunctionStackMaps {
     let local_count = local_count.max(0) as u16;
     let local_root_slots: Vec<u16> = (0..local_count).collect();
     let mut indices = safepoint_indices.to_vec();
@@ -48,11 +44,7 @@ pub fn build_conservative_stack_maps(
     indices.dedup();
     let entries = indices
         .into_iter()
-        .map(|instruction_index| StackMapEntry {
-            instruction_index,
-            local_root_slots: local_root_slots.clone(),
-            operand_root_depth: None,
-        })
+        .map(|instruction_index| StackMapEntry { instruction_index, local_root_slots: local_root_slots.clone(), operand_root_depth: None })
         .collect();
     FunctionStackMaps { function_index, entries }
 }

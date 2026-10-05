@@ -148,7 +148,7 @@ impl NyarHeadCode {
             | Self::LoadLocal
             | Self::StoreLocal
             | Self::LoadArg
-            |             Self::LoadGlobal
+            | Self::LoadGlobal
             | Self::StoreGlobal
             | Self::ObjectNew
             | Self::FieldGet

@@ -6,10 +6,9 @@ use crate::{
     JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, baseline_scalar_assumptions, build_baseline_deopt_map,
     build_conservative_stack_maps,
     machine_code::{
-        I32Binop, I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local,
-        encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals,
-        encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed,
-        encode_ret_local, encode_ret_void,
+        I32Binop, I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
+        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals,
+        encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
     },
 };
 
@@ -25,16 +24,8 @@ impl JitCompiler for BaselineScalarJit {
     fn compile_function(&mut self, request: &JitCompileRequest) -> Result<JitCompiledArtifact, JitError> {
         let code = request.function_code()?;
         let machine_code = match_scalar_program(code, &request.constant_i32).ok_or(JitError::Unsupported)?;
-        let maps = build_conservative_stack_maps(
-            request.function_index,
-            request.function.local_count,
-            &request.function.safepoint_indices,
-        );
-        let deopt = build_baseline_deopt_map(
-            request.function_index,
-            request.function.local_count,
-            &request.function.safepoint_indices,
-        );
+        let maps = build_conservative_stack_maps(request.function_index, request.function.local_count, &request.function.safepoint_indices);
+        let deopt = build_baseline_deopt_map(request.function_index, request.function.local_count, &request.function.safepoint_indices);
         Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code)
             .with_assumptions(baseline_scalar_assumptions(request.module_version)))
     }
@@ -240,14 +231,16 @@ fn eval_i32_binop(binop: I32Binop, lhs: i32, rhs: i32) -> i32 {
         I32Binop::DivS => {
             if rhs == 0 {
                 0
-            } else {
+            }
+            else {
                 lhs.wrapping_div(rhs)
             }
         }
         I32Binop::RemS => {
             if rhs == 0 {
                 0
-            } else {
+            }
+            else {
                 lhs.wrapping_rem(rhs)
             }
         }
@@ -548,11 +541,7 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
     let b = load_slot(&b_ins)?;
 
     if let (Some(then_slot), Some(else_slot)) = (load_slot(&then_ins), load_slot(&else_ins)) {
-        let (then_slot, else_slot) = if invert {
-            (else_slot, then_slot)
-        } else {
-            (then_slot, else_slot)
-        };
+        let (then_slot, else_slot) = if invert { (else_slot, then_slot) } else { (then_slot, else_slot) };
         return Some(encode_ret_i32_select_cmp_locals(cmp, a, b, then_slot, else_slot));
     }
 
@@ -563,17 +552,14 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
 
     match (then_imm, else_imm, then_slot, else_slot) {
         (Some(then_imm), Some(else_imm), _, _) => {
-            let (then_imm, else_imm) = if invert {
-                (else_imm, then_imm)
-            } else {
-                (then_imm, else_imm)
-            };
+            let (then_imm, else_imm) = if invert { (else_imm, then_imm) } else { (then_imm, else_imm) };
             Some(encode_ret_i32_select_cmp_consts(cmp, a, b, then_imm, else_imm))
         }
         (Some(then_imm), None, _, Some(else_slot)) => {
             let (then_arm, else_arm) = if invert {
                 (SelectArm::Local(else_slot), SelectArm::Imm(then_imm))
-            } else {
+            }
+            else {
                 (SelectArm::Imm(then_imm), SelectArm::Local(else_slot))
             };
             Some(encode_ret_i32_select_cmp_mixed(cmp, a, b, then_arm, else_arm))
@@ -581,7 +567,8 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
         (None, Some(else_imm), Some(then_slot), _) => {
             let (then_arm, else_arm) = if invert {
                 (SelectArm::Imm(else_imm), SelectArm::Local(then_slot))
-            } else {
+            }
+            else {
                 (SelectArm::Local(then_slot), SelectArm::Imm(else_imm))
             };
             Some(encode_ret_i32_select_cmp_mixed(cmp, a, b, then_arm, else_arm))
@@ -630,8 +617,10 @@ fn head_to_cmp(code: NyarHeadCode) -> Option<I32Cmp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::machine_code::{ScalarProgram, decode_scalar_program};
-    use crate::request::JitFunctionSpec;
+    use crate::{
+        machine_code::{ScalarProgram, decode_scalar_program},
+        request::JitFunctionSpec,
+    };
 
     fn request(code: Vec<u8>) -> JitCompileRequest {
         request_with_constants(code, Vec::new())
@@ -661,9 +650,7 @@ mod tests {
         code.extend_from_slice(&0i32.to_le_bytes());
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(123)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(123)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 123 });
     }
@@ -679,10 +666,7 @@ mod tests {
             code.push(NyarHeadCode::Return as u8);
             let artifact = jit.compile_function(&request(code)).expect("compile");
             let blob = artifact.machine_code.as_ref().expect("machine code");
-            assert_eq!(
-                decode_scalar_program(blob).unwrap(),
-                ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
-            );
+            assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 });
         }
     }
 
@@ -701,14 +685,7 @@ mod tests {
         let mut jit = BaselineScalarJit;
         let artifact = jit.compile_function(&request(code)).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
-        assert_eq!(
-            decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32CmpLocals {
-                cmp: I32Cmp::LtS,
-                a: 0,
-                b: 1
-            }
-        );
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32CmpLocals { cmp: I32Cmp::LtS, a: 0, b: 1 });
     }
 
     #[test]
@@ -721,14 +698,7 @@ mod tests {
         let mut jit = BaselineScalarJit;
         let artifact = jit.compile_function(&request(code)).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
-        assert_eq!(
-            decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32BinopLocals {
-                binop: I32Binop::Mul,
-                a: 0,
-                b: 0
-            }
-        );
+        assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop: I32Binop::Mul, a: 0, b: 0 });
     }
 
     #[test]
@@ -741,9 +711,7 @@ mod tests {
         code.push(NyarHeadCode::I32Mul as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(6), Some(7)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(6), Some(7)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 42 });
     }
@@ -759,9 +727,7 @@ mod tests {
         code.push(NyarHeadCode::Pop as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(6), Some(7)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(6), Some(7)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
@@ -789,18 +755,11 @@ mod tests {
         code.push(NyarHeadCode::I32Add as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(10)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(10)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32BinopImmLocal {
-                binop: I32Binop::Add,
-                imm: 10,
-                local: 0,
-                imm_on_left: true
-            }
+            ScalarProgram::RetI32BinopImmLocal { binop: I32Binop::Add, imm: 10, local: 0, imm_on_left: true }
         );
 
         let mut code = Vec::new();
@@ -809,18 +768,11 @@ mod tests {
         code.extend_from_slice(&0i32.to_le_bytes());
         code.push(NyarHeadCode::I32LtS as u8);
         code.push(NyarHeadCode::Return as u8);
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(5)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(5)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32CmpImmLocal {
-                cmp: I32Cmp::LtS,
-                imm: 5,
-                local: 1,
-                imm_on_left: false
-            }
+            ScalarProgram::RetI32CmpImmLocal { cmp: I32Cmp::LtS, imm: 5, local: 1, imm_on_left: false }
         );
     }
 
@@ -834,9 +786,7 @@ mod tests {
         code.push(NyarHeadCode::Pop as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(3)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(3)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
@@ -862,19 +812,11 @@ mod tests {
         code.push(NyarHeadCode::Return as u8);
 
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(7), Some(9)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(7), Some(9)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpConsts {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_imm: 7,
-                else_imm: 9
-            }
+            ScalarProgram::RetI32SelectCmpConsts { cmp: I32Cmp::Eq, a: 0, b: 1, then_imm: 7, else_imm: 9 }
         );
     }
 
@@ -902,13 +844,7 @@ mod tests {
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpLocals {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_slot: 2,
-                else_slot: 3
-            }
+            ScalarProgram::RetI32SelectCmpLocals { cmp: I32Cmp::Eq, a: 0, b: 1, then_slot: 2, else_slot: 3 }
         );
     }
 
@@ -932,19 +868,11 @@ mod tests {
         code.push(NyarHeadCode::Return as u8);
 
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(7)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(7)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpMixed {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_arm: SelectArm::Imm(7),
-                else_arm: SelectArm::Local(2),
-            }
+            ScalarProgram::RetI32SelectCmpMixed { cmp: I32Cmp::Eq, a: 0, b: 1, then_arm: SelectArm::Imm(7), else_arm: SelectArm::Local(2) }
         );
     }
 
@@ -1000,9 +928,7 @@ mod tests {
         code.push(NyarHeadCode::Pop as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(1)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(1)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
     }
@@ -1017,18 +943,11 @@ mod tests {
         code.push(NyarHeadCode::I32Sub as u8);
         code.push(NyarHeadCode::Return as u8);
         let mut jit = BaselineScalarJit;
-        let artifact = jit
-            .compile_function(&request_with_constants(code, vec![Some(0)]))
-            .expect("compile");
+        let artifact = jit.compile_function(&request_with_constants(code, vec![Some(0)])).expect("compile");
         let blob = artifact.machine_code.as_ref().expect("machine code");
         assert_eq!(
             decode_scalar_program(blob).unwrap(),
-            ScalarProgram::RetI32BinopImmLocal {
-                binop: I32Binop::Sub,
-                imm: 0,
-                local: 0,
-                imm_on_left: true,
-            }
+            ScalarProgram::RetI32BinopImmLocal { binop: I32Binop::Sub, imm: 0, local: 0, imm_on_left: true }
         );
     }
 }

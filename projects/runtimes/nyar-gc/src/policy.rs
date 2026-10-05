@@ -83,21 +83,14 @@ impl Default for GcPolicy {
 impl GcPolicy {
     /// 默认低延迟意图下的标记清扫基线。
     pub fn mark_sweep_baseline() -> Self {
-        Self {
-            mode: GcMode::MarkSweep,
-            hints: WorkloadHints::default(),
-            full_collect_every_n_nursery: 8,
-        }
+        Self { mode: GcMode::MarkSweep, hints: WorkloadHints::default(), full_collect_every_n_nursery: 8 }
     }
 
     /// 分代低延迟策略（nursery + 周期性全堆）。
     pub fn generational_low_latency() -> Self {
         Self {
             mode: GcMode::GenerationalLowLatency,
-            hints: WorkloadHints {
-                pause_budget_ms: Some(5),
-                ..WorkloadHints::default()
-            },
+            hints: WorkloadHints { pause_budget_ms: Some(5), ..WorkloadHints::default() },
             full_collect_every_n_nursery: 8,
         }
     }
@@ -106,10 +99,7 @@ impl GcPolicy {
     pub fn concurrent_mark_reserved() -> Self {
         Self {
             mode: GcMode::ConcurrentMarkReserved,
-            hints: WorkloadHints {
-                pause_budget_ms: Some(5),
-                ..WorkloadHints::default()
-            },
+            hints: WorkloadHints { pause_budget_ms: Some(5), ..WorkloadHints::default() },
             full_collect_every_n_nursery: 8,
         }
     }
@@ -138,10 +128,7 @@ mod tests {
 
     #[test]
     fn derived_budgets_tighten_with_pause_hint() {
-        let tight = WorkloadHints {
-            pause_budget_ms: Some(1),
-            ..WorkloadHints::default()
-        };
+        let tight = WorkloadHints { pause_budget_ms: Some(1), ..WorkloadHints::default() };
         assert_eq!(tight.derived_gray_budget(), Some(8));
         assert_eq!(tight.derived_trace_slices_per_poll(), Some(2));
 

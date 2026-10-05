@@ -25,7 +25,7 @@ pub(crate) use sections::{
 use crate::{
     FragmentSubmission,
     backend_plan_views::ExecutableConstant,
-    nyar_backend_wasi::{WasmPackageKind, WasiPreview, WasmBinaryModule, WasmSection},
+    nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 use miette::{Result, miette};
 use nyar::{HostProjectionBoundary, NyarType};
@@ -66,7 +66,9 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     validate_text_encoding_projection(submission, host_boundary)?;
     let has_executable = !submission.backend_plan.instances().is_empty();
     if !has_executable {
-        return Err(miette!("WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"));
+        return Err(miette!(
+            "WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"
+        ));
     }
     let executable = &submission.backend_plan;
     for operation in submission.backend_plan.wasm_export_names().keys().chain(submission.backend_plan.entry_operation().iter()) {

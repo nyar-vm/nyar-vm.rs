@@ -1,8 +1,4 @@
-use nyar_language::{
-    MirOperand, MirOperation, SourceID, ValkyrieCompiler,
-    mir::validation::validate_module,
-    valkyrie::mir::ssa::MirLowerer,
-};
+use nyar_language::{MirOperand, MirOperation, SourceID, ValkyrieCompiler, mir::validation::validate_module, valkyrie::mir::ssa::MirLowerer};
 
 fn has_bare_unwrap_call(function: &nyar_language::MirFunction) -> bool {
     function.blocks.iter().any(|block| {
@@ -42,29 +38,18 @@ imply ArrayList<T> {
         .expect("compile ArrayList probe");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let probe = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("probe"))
-        .expect("ArrayList.probe should lower");
+    let probe = mir.functions.iter().find(|function| function.symbol.ends_with("probe")).expect("ArrayList.probe should lower");
 
     assert!(
         !has_bare_unwrap_call(probe),
         "probe must not emit bare `unwrap` Call: {:?}",
+        probe.blocks.iter().flat_map(|block| block.instructions.iter()).map(|ins| format!("{ins:?}")).collect::<Vec<_>>()
+    );
+    assert!(
         probe
             .blocks
             .iter()
-            .flat_map(|block| block.instructions.iter())
-            .map(|ins| format!("{ins:?}"))
-            .collect::<Vec<_>>()
-    );
-    assert!(
-        probe.blocks.iter().any(|block| {
-            block
-                .instructions
-                .iter()
-                .any(|instruction| matches!(&instruction.kind, MirOperation::SumPayloadGet { .. }))
-        }),
+            .any(|block| { block.instructions.iter().any(|instruction| matches!(&instruction.kind, MirOperation::SumPayloadGet { .. })) }),
         "probe should emit SumPayloadGet for unwrap"
     );
 }
@@ -95,21 +80,12 @@ imply ArrayList<T> {
         .expect("compile chained unwrap");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let nested = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("nested"))
-        .expect("ArrayList.nested should lower");
+    let nested = mir.functions.iter().find(|function| function.symbol.ends_with("nested")).expect("ArrayList.nested should lower");
 
     assert!(
         !has_bare_unwrap_call(nested),
         "nested must not emit bare `unwrap` Call: {:?}",
-        nested
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .map(|ins| format!("{ins:?}"))
-            .collect::<Vec<_>>()
+        nested.blocks.iter().flat_map(|block| block.instructions.iter()).map(|ins| format!("{ins:?}")).collect::<Vec<_>>()
     );
 }
 
@@ -137,11 +113,7 @@ imply SwissTable<K, V> {
         .expect("compile SwissTable cmp");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let cmp = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("cmp"))
-        .expect("SwissTable.cmp should lower");
+    let cmp = mir.functions.iter().find(|function| function.symbol.ends_with("cmp")).expect("SwissTable.cmp should lower");
 
     assert!(!has_bare_unwrap_call(cmp), "cmp must not emit bare `unwrap` Call");
 }
@@ -216,21 +188,12 @@ imply SwissTable<K, V> {
         .expect("compile SwissTable.find_slot shape");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let find_slot = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("find_slot"))
-        .expect("SwissTable.find_slot should lower");
+    let find_slot = mir.functions.iter().find(|function| function.symbol.ends_with("find_slot")).expect("SwissTable.find_slot should lower");
 
     assert!(
         !has_bare_unwrap_call(find_slot),
         "find_slot must not emit bare `unwrap` Call: {:?}",
-        find_slot
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .map(|ins| format!("{ins:?}"))
-            .collect::<Vec<_>>()
+        find_slot.blocks.iter().flat_map(|block| block.instructions.iter()).map(|ins| format!("{ins:?}")).collect::<Vec<_>>()
     );
 }
 
@@ -271,21 +234,12 @@ imply Utf8Text {
         .expect("compile Utf8Text.char_at shape");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let char_at = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("char_at"))
-        .expect("Utf8Text.char_at should lower");
+    let char_at = mir.functions.iter().find(|function| function.symbol.ends_with("char_at")).expect("Utf8Text.char_at should lower");
 
     assert!(
         !has_bare_option_none_call(char_at),
         "char_at must not emit bare `option_none` Call: {:?}",
-        char_at
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .map(|ins| format!("{ins:?}"))
-            .collect::<Vec<_>>()
+        char_at.blocks.iter().flat_map(|block| block.instructions.iter()).map(|ins| format!("{ins:?}")).collect::<Vec<_>>()
     );
     assert!(
         char_at.blocks.iter().any(|block| {
@@ -334,11 +288,7 @@ micro ch(s: utf8) -> char {
         .expect("compile utf8 char_at unwrap shape");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let ch = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("ch"))
-        .expect("ch should lower");
+    let ch = mir.functions.iter().find(|function| function.symbol.ends_with("ch")).expect("ch should lower");
 
     assert!(
         ch.blocks.iter().any(|block| {
@@ -368,11 +318,7 @@ micro len_of(s: utf8) -> i32 {
         .expect("compile utf8.length shape");
 
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let len_of = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("len_of"))
-        .expect("len_of should lower");
+    let len_of = mir.functions.iter().find(|function| function.symbol.ends_with("len_of")).expect("len_of should lower");
 
     assert!(
         len_of.blocks.iter().any(|block| {
@@ -387,11 +333,6 @@ micro len_of(s: utf8) -> i32 {
             })
         }),
         "utf8.length must lower as Utf8Text.length, got {:?}",
-        len_of
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .map(|ins| format!("{ins:?}"))
-            .collect::<Vec<_>>()
+        len_of.blocks.iter().flat_map(|block| block.instructions.iter()).map(|ins| format!("{ins:?}")).collect::<Vec<_>>()
     );
 }

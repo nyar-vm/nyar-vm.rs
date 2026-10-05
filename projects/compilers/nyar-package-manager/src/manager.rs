@@ -675,7 +675,9 @@ impl PackageManager {
                     else {
                         let mut chars = part.chars();
                         match chars.next() {
-                            Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                            Some(first) => {
+                                format!("{}{}", first.to_uppercase(), chars.as_str())
+                            }
                             None => String::new(),
                         }
                     }

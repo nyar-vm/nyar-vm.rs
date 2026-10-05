@@ -244,7 +244,9 @@ pub fn verify_sri(data: &[u8], integrity: Option<&str>) -> Result<(), RegistryEr
     let digest = match algo {
         "sha256" => Sha256::digest(data).to_vec(),
         "sha512" => Sha512::digest(data).to_vec(),
-        other => return Err(RegistryError::message(format!("unsupported integrity algorithm: {other}"))),
+        other => {
+            return Err(RegistryError::message(format!("unsupported integrity algorithm: {other}")));
+        }
     };
     let actual = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, digest);
     if actual != expected_b64 {

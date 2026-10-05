@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use nyar_types::{
-    pipeline::RepresentationPlanStage,
-    layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, ValueRepresentation},
     CanonicalOperation, CanonicalProgram, CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity,
+    layout_choice::{AdtRepresentation, InvokeLowering, RepresentationPlan, SumRepresentation, SumVariantRepresentation, ValueRepresentation},
+    pipeline::RepresentationPlanStage,
 };
 
 use super::diagnostics::fail_stage;
@@ -42,7 +42,8 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
             }
             let mut variants = std::collections::BTreeMap::new();
             for variant in &layout.variants {
-                let Some(record) = program.linked.variants.get(&(layout.nominal, variant.id)) else {
+                let Some(record) = program.linked.variants.get(&(layout.nominal, variant.id))
+                else {
                     return fail_stage(
                         nyar_types::CompileStage::RepresentationPlan,
                         "PLAN004",
@@ -68,7 +69,11 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                     );
                 }
             }
-            if plan.sum_reps.insert(layout.nominal, SumRepresentation { nominal: layout.nominal, tag_width: layout.tag_width, variants }).is_some() {
+            if plan
+                .sum_reps
+                .insert(layout.nominal, SumRepresentation { nominal: layout.nominal, tag_width: layout.tag_width, variants })
+                .is_some()
+            {
                 return fail_stage(
                     nyar_types::CompileStage::RepresentationPlan,
                     "PLAN007",
@@ -77,8 +82,8 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                 );
             }
         }
-        let nominal_semantics = program.linked.nominal_instances.values()
-            .map(|record| (record.ty, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
+        let nominal_semantics =
+            program.linked.nominal_instances.values().map(|record| (record.ty, record.semantics)).collect::<std::collections::BTreeMap<_, _>>();
         let mut instruction_ids = BTreeSet::new();
         for function in program.mir.functions.values() {
             for value in function.value_types.keys() {
@@ -140,11 +145,13 @@ mod tests {
 
     #[test]
     fn source_aggregate_semantics_reach_the_representation_plan_without_construction() {
-        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "structure Point { value: i32 } class Node { value: i32 } \
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                "structure Point { value: i32 } class Node { value: i32 } \
              micro value_identity(value: Point) -> Point { return value } \
              micro reference_identity(value: Node) -> Node { return value }",
-        ).expect("声明与参数源码必须完成编译，不依赖构造指令补布局");
+            )
+            .expect("声明与参数源码必须完成编译，不依赖构造指令补布局");
         let program = output.canonical();
         let plan = output.representation();
         assert_eq!(program.linked.nominal_instances.len(), 2);
@@ -161,7 +168,8 @@ mod tests {
         let mut observed = BTreeSet::new();
         for function in program.mir.functions.values() {
             let (value, ty) = function.parameters[0];
-            let CanonicalTypeKind::Nominal { declaration, .. } = &program.linked.types[&ty].kind else {
+            let CanonicalTypeKind::Nominal { declaration, .. } = &program.linked.types[&ty].kind
+            else {
                 panic!("源码参数必须保留名义类型");
             };
             let nominal = program.linked.nominal_instances.values().find(|record| record.declaration == *declaration).unwrap();
@@ -190,10 +198,12 @@ mod tests {
     fn planner_requires_each_complete_nominal_type_before_representation() {
         use nyar_types::{NominalInstanceId, SubstitutionId, TypeId, TypeRecord};
 
-        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "class Node {} micro first(value: Node, tag: bool) -> Node { return value } \
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                "class Node {} micro first(value: Node, tag: bool) -> Node { return value } \
              micro second(value: Node, tag: i32) -> Node { return value }",
-        ).expect("源码声明与函数合同必须完成编译");
+            )
+            .expect("源码声明与函数合同必须完成编译");
         let mut program = output.canonical().clone();
         let original = program.linked.nominal_instances.values().next().unwrap().clone();
         let functions = program.mir.functions.keys().copied().collect::<Vec<_>>();
@@ -203,10 +213,13 @@ mod tests {
             let nominal = NominalInstanceId::from_index(100 + index as u32).unwrap();
             let function = program.mir.functions.get_mut(function_id).unwrap();
             let argument = function.parameters[1].1;
-            program.linked.types.insert(ty, TypeRecord {
-                declaration: original.declaration,
-                kind: CanonicalTypeKind::Nominal { declaration: original.declaration, arguments: vec![argument] },
-            });
+            program.linked.types.insert(
+                ty,
+                TypeRecord {
+                    declaration: original.declaration,
+                    kind: CanonicalTypeKind::Nominal { declaration: original.declaration, arguments: vec![argument] },
+                },
+            );
             let mut record = original.clone();
             record.ty = ty;
             record.substitution = SubstitutionId::from_index(100 + index as u32).unwrap();

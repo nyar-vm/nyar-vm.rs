@@ -30,13 +30,7 @@ pub struct ExecOp {
 impl ExecOp {
     /// 构造供旧版 handler 使用的合成指令；`size` 恒为 1，使 `ip += size` 变为内码步进。
     pub fn as_instruction(self) -> NyarInstruction {
-        NyarInstruction {
-            code: self.code,
-            size: 1,
-            operand1: self.operand1,
-            operand2: self.operand2,
-            operand3: 0,
-        }
+        NyarInstruction { code: self.code, size: 1, operand1: self.operand1, operand2: self.operand2, operand3: 0 }
     }
 }
 
@@ -56,12 +50,7 @@ pub struct ExecutableFunction {
 impl ExecutableFunction {
     /// 空函数。
     pub fn empty() -> Self {
-        Self {
-            ops: Vec::new(),
-            safepoints: Vec::new(),
-            source_code_offset: 0,
-            source_code_length: 0,
-        }
+        Self { ops: Vec::new(), safepoints: Vec::new(), source_code_offset: 0, source_code_length: 0 }
     }
 }
 
@@ -74,19 +63,11 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     let length = function.code_length as usize;
     let end = start.checked_add(length).ok_or_else(|| NyarRuntimeError::ModuleLoad("function code range overflow".into()))?;
     if end > code_bytes.len() {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "function code range [{start}, {end}) exceeds code section {}",
-            code_bytes.len()
-        )));
+        return Err(NyarRuntimeError::ModuleLoad(format!("function code range [{start}, {end}) exceeds code section {}", code_bytes.len())));
     }
 
     if length == 0 {
-        return Ok(ExecutableFunction {
-            ops: Vec::new(),
-            safepoints: Vec::new(),
-            source_code_offset: start as u32,
-            source_code_length: 0,
-        });
+        return Ok(ExecutableFunction { ops: Vec::new(), safepoints: Vec::new(), source_code_offset: start as u32, source_code_length: 0 });
     }
 
     let mut decoded: Vec<(usize, NyarInstruction)> = Vec::new();
@@ -113,15 +94,10 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
     let mut safepoints = Vec::new();
     for (index, (byte_pc, instruction)) in decoded.iter().enumerate() {
         let mut target: InstructionIndex = 0;
-        if matches!(
-            instruction.code,
-            NyarHeadCode::Jump | NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse
-        ) {
+        if matches!(instruction.code, NyarHeadCode::Jump | NyarHeadCode::JumpIfTrue | NyarHeadCode::JumpIfFalse) {
             let target_pc = byte_pc.wrapping_add(instruction.operand1 as usize);
             target = *pc_to_index.get(&target_pc).ok_or_else(|| {
-                NyarRuntimeError::ModuleLoad(format!(
-                    "inner-code jump from pc {byte_pc} to {target_pc} is not an instruction boundary"
-                ))
+                NyarRuntimeError::ModuleLoad(format!("inner-code jump from pc {byte_pc} to {target_pc} is not an instruction boundary"))
             })?;
         }
         if is_safepoint(instruction.code) {
@@ -136,12 +112,7 @@ pub fn build_executable_function(code_bytes: &[u8], function: &NyarFunction) -> 
         });
     }
 
-    Ok(ExecutableFunction {
-        ops,
-        safepoints,
-        source_code_offset: start as u32,
-        source_code_length: length as u32,
-    })
+    Ok(ExecutableFunction { ops, safepoints, source_code_offset: start as u32, source_code_length: length as u32 })
 }
 
 fn is_safepoint(code: NyarHeadCode) -> bool {
@@ -182,13 +153,7 @@ mod tests {
         let offset = (return_pc as i32) - (jump_pc as i32);
         code[1..5].copy_from_slice(&offset.to_le_bytes());
 
-        let function = NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        };
+        let function = NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 };
         let exec = build_executable_function(&code, &function).expect("build");
         assert_eq!(exec.ops.len(), 3);
         assert_eq!(exec.ops[0].code, NyarHeadCode::Jump);

@@ -33,12 +33,10 @@ pub struct JitCompileRequest {
 impl JitCompileRequest {
     /// Returns the bytecode slice for the selected function.
     pub fn function_code(&self) -> Result<&[u8], crate::JitError> {
-        let offset = usize::try_from(self.function.code_offset).map_err(|_| {
-            crate::JitError::InvalidBytecode("negative code_offset".to_string())
-        })?;
-        let length = usize::try_from(self.function.code_length).map_err(|_| {
-            crate::JitError::InvalidBytecode("negative code_length".to_string())
-        })?;
+        let offset =
+            usize::try_from(self.function.code_offset).map_err(|_| crate::JitError::InvalidBytecode("negative code_offset".to_string()))?;
+        let length =
+            usize::try_from(self.function.code_length).map_err(|_| crate::JitError::InvalidBytecode("negative code_length".to_string()))?;
         let end = offset + length;
         if end > self.code_bytes.len() {
             return Err(crate::JitError::InvalidBytecode(format!(

@@ -31,15 +31,14 @@ pub use tcl::{TclModule, TclSemanticBridge, TclValue, evaluate_tcl_script, evalu
 
 pub use nyar::{
     self, ArtifactKind, ArtifactPartitionPlan, ArtifactPolicy, ArtifactSet, CanonicalAbi, CanonicalArch, CanonicalSpecification,
-    CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary,
-    ProgramFacts, PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
+    CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary, ProgramFacts,
+    PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
 };
 pub use valkyrie::{
     compile_pipeline::compile_source_groups_to_artifacts,
     derive,
     frontend_contract::{
-        ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
-        concretize_type, concretize_type_lossy,
+        ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,
     },
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, ValkyrieCompiler},
     mir,
@@ -47,10 +46,9 @@ pub use valkyrie::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,
         MirEffectKind, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValue,
         MirValueOrigin, MirValueRef, SingletonInstancePlan, SumTypeLayout, SumVariantLayout, collect_singleton_instance_plans,
-        compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
-        storage_kind_for_type,
+        compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type, storage_kind_for_type,
     },
-        module, type_checker, types,
+    module, type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
     typing, validation,
     validation::ControlFlowScheduler,

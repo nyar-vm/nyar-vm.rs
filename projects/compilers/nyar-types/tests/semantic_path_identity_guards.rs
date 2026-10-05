@@ -9,11 +9,7 @@ use std::{
 };
 
 /// 必须收缩字符串身份分派的 crate 的 `src/` 根（相对本测试文件）。
-const SEMANTIC_SRC_ROOTS: &[&str] = &[
-    "../nyar-language/src",
-    "../nyar-emitter/src",
-    "../../runtimes/nyar-vm/src",
-];
+const SEMANTIC_SRC_ROOTS: &[&str] = &["../nyar-language/src", "../nyar-emitter/src", "../../runtimes/nyar-vm/src"];
 
 /// `as_str() == "` 出现次数的冻结上限（仅生产 `src/`）。
 /// 删除违规用法后重新计数并下调这些常量（严禁上调）。
@@ -92,8 +88,8 @@ fn ends_with_symbol_heuristics_do_not_grow() {
 #[test]
 fn frozen_identity_types_are_public() {
     use nyar_types::{
-        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, IntrinsicId, ItemId, OperatorFixity, OperatorId,
-        TypeInstanceId, builtin_attribute,
+        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, IntrinsicId, ItemId, OperatorFixity, OperatorId, TypeInstanceId,
+        builtin_attribute,
     };
     assert!(ItemId::from_index(0).is_some());
     assert!(TypeInstanceId::from_index(0).is_some());
@@ -103,9 +99,6 @@ fn frozen_identity_types_are_public() {
     assert_eq!(OperatorFixity::Infix, OperatorFixity::Infix);
     assert_eq!(IntrinsicId::ArrayLen.diagnostic_path(), "builtin.array.length");
     assert_eq!(builtin_attribute::main().index(), 1);
-    assert_eq!(
-        AttributeRegistration { id: builtin_attribute::export(), name: "export".into() }.name,
-        "export"
-    );
+    assert_eq!(AttributeRegistration { id: builtin_attribute::export(), name: "export".into() }.name, "export");
     assert_eq!(ImportCapability::new("wasi_snapshot_preview1", "fd_write").to_string(), "wasi_snapshot_preview1::fd_write");
 }

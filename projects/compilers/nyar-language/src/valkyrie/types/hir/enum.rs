@@ -75,7 +75,15 @@ pub struct HirVariant {
 
 impl Default for HirVariant {
     fn default() -> Self {
-        Self { declaration: None, instance: None, name: Identifier::new(""), doc: HirDocumentation::default(), fields: Vec::new(), result_type: None, discriminator: None }
+        Self {
+            declaration: None,
+            instance: None,
+            name: Identifier::new(""),
+            doc: HirDocumentation::default(),
+            fields: Vec::new(),
+            result_type: None,
+            discriminator: None,
+        }
     }
 }
 

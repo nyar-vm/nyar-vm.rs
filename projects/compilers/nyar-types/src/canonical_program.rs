@@ -3,11 +3,13 @@
 //! 失败侧使用**结构化诊断**（共享合同的一族诊断类型），
 //! 而不是名叫 `StructuredDiagnostics` 的单一结构体。
 
-use crate::{AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalImportLink, FlagsLayout, Identifier, QualifiedName, SumTypeLayout, semantic_ids::{
-    layout_choice::RepresentationPlan,
-    EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
-    SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
-}};
+use crate::{
+    AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalImportLink, FlagsLayout, Identifier, QualifiedName, SumTypeLayout,
+    semantic_ids::{
+        EvidenceId, FieldId, ImportCapability, ImportIndex, InstructionId, ItemId, ItemInstanceId, MirValueId, NominalInstanceId,
+        SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId, layout_choice::RepresentationPlan,
+    },
+};
 use std::collections::BTreeMap;
 
 /// One structured diagnostic record (minimum contract fields).
@@ -304,7 +306,9 @@ impl LinkedSemanticProgram {
             let references = match &record.kind {
                 CanonicalTypeKind::Primitive(primitive) => {
                     let valid = match primitive {
-                        CanonicalPrimitiveType::Integer { bits, .. } => matches!(bits, 8 | 16 | 32 | 64 | 128),
+                        CanonicalPrimitiveType::Integer { bits, .. } => {
+                            matches!(bits, 8 | 16 | 32 | 64 | 128)
+                        }
                         CanonicalPrimitiveType::Float { bits } => matches!(bits, 32 | 64),
                         _ => true,
                     };
@@ -316,10 +320,12 @@ impl LinkedSemanticProgram {
                 CanonicalTypeKind::Nominal { declaration, arguments } => {
                     std::iter::once(*declaration).chain(arguments.iter().copied()).collect()
                 }
-                CanonicalTypeKind::Tuple(members)
-                | CanonicalTypeKind::Union(members)
-                | CanonicalTypeKind::Intersection(members) => members.clone(),
-                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => vec![*element],
+                CanonicalTypeKind::Tuple(members) | CanonicalTypeKind::Union(members) | CanonicalTypeKind::Intersection(members) => {
+                    members.clone()
+                }
+                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => {
+                    vec![*element]
+                }
                 CanonicalTypeKind::Function { parameters, return_type } => {
                     parameters.iter().copied().chain(std::iter::once(*return_type)).collect()
                 }
@@ -334,10 +340,12 @@ impl LinkedSemanticProgram {
         let mut nominal_types = std::collections::BTreeSet::new();
         let mut declared_fields = std::collections::BTreeSet::new();
         for (nominal, record) in &self.nominal_instances {
-            if !matches!(self.types.get(&record.declaration).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration) {
+            if !matches!(self.types.get(&record.declaration).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration)
+            {
                 return Err(CanonicalMirError::InvalidNominalDeclaration { nominal: *nominal, declaration: record.declaration });
             }
-            if !matches!(self.types.get(&record.ty).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration) {
+            if !matches!(self.types.get(&record.ty).map(|ty| &ty.kind), Some(CanonicalTypeKind::Nominal { declaration, .. }) if *declaration == record.declaration)
+            {
                 return Err(CanonicalMirError::InvalidNominalInstanceType { nominal: *nominal, ty: record.ty });
             }
             if !nominal_types.insert(record.ty) {
@@ -349,7 +357,9 @@ impl LinkedSemanticProgram {
                 }
             }
             for field in &record.fields {
-                if !declared_fields.insert(*field) || !self.fields.get(field).is_some_and(|row| row.owner == *nominal && self.types.contains_key(&row.ty)) {
+                if !declared_fields.insert(*field)
+                    || !self.fields.get(field).is_some_and(|row| row.owner == *nominal && self.types.contains_key(&row.ty))
+                {
                     return Err(CanonicalMirError::InvalidNominalField { nominal: *nominal, field: *field });
                 }
             }
@@ -374,10 +384,12 @@ impl LinkedSemanticProgram {
                     }
                     arguments.clone()
                 }
-                CanonicalTypeKind::Tuple(members)
-                | CanonicalTypeKind::Union(members)
-                | CanonicalTypeKind::Intersection(members) => members.clone(),
-                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => vec![*element],
+                CanonicalTypeKind::Tuple(members) | CanonicalTypeKind::Union(members) | CanonicalTypeKind::Intersection(members) => {
+                    members.clone()
+                }
+                CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => {
+                    vec![*element]
+                }
                 CanonicalTypeKind::Function { parameters, return_type } => {
                     parameters.iter().copied().chain(std::iter::once(*return_type)).collect()
                 }
@@ -404,7 +416,8 @@ impl LinkedSemanticProgram {
             }
         }
         for import in self.imports.values() {
-            let Some(callee) = self.item_instances.get(&import.callee) else {
+            let Some(callee) = self.item_instances.get(&import.callee)
+            else {
                 return Err(CanonicalMirError::UnknownFunction { function: import.callee });
             };
             if callee.parameter_types != import.parameter_types || callee.return_type != import.return_type {
@@ -420,9 +433,7 @@ impl LinkedSemanticProgram {
     }
 
     fn validate_nominal_value_type(&self, ty: TypeId, nominal_types: &std::collections::BTreeSet<TypeId>) -> Result<(), CanonicalMirError> {
-        if matches!(self.types.get(&ty).map(|record| &record.kind), Some(CanonicalTypeKind::Nominal { .. }))
-            && !nominal_types.contains(&ty)
-        {
+        if matches!(self.types.get(&ty).map(|record| &record.kind), Some(CanonicalTypeKind::Nominal { .. })) && !nominal_types.contains(&ty) {
             return Err(CanonicalMirError::MissingNominalInstance { ty });
         }
         Ok(())
@@ -726,7 +737,8 @@ impl CanonicalSemanticMir {
             if key != &function.instance {
                 return Err(CanonicalMirError::FunctionKeyMismatch { key: *key, instance: function.instance });
             }
-            let Some(owner) = linked.item_instances.get(key) else {
+            let Some(owner) = linked.item_instances.get(key)
+            else {
                 return Err(CanonicalMirError::UnknownFunction { function: *key });
             };
             if function.parameters.iter().map(|(_, ty)| *ty).collect::<Vec<_>>() != owner.parameter_types
@@ -764,20 +776,27 @@ impl CanonicalSemanticMir {
                 let targets = match &block.terminator {
                     CanonicalTerminator::Jump { target, .. } => vec![*target],
                     CanonicalTerminator::Branch { then_target, else_target, .. } => vec![*then_target, *else_target],
-                    CanonicalTerminator::PerformEffect { resume_target, .. } => vec![*resume_target],
+                    CanonicalTerminator::PerformEffect { resume_target, .. } => {
+                        vec![*resume_target]
+                    }
                     CanonicalTerminator::StateDispatch { cases, default_target, .. } => {
                         cases.iter().map(|(_, target)| *target).chain(std::iter::once(*default_target)).collect()
                     }
                     _ => Vec::new(),
                 };
                 for target in targets {
-                    if let Some(preds) = predecessors.get_mut(&target) { preds.insert(block.id); }
+                    if let Some(preds) = predecessors.get_mut(&target) {
+                        preds.insert(block.id);
+                    }
                 }
             }
-            let mut dominators = all_blocks.iter().map(|block| {
-                let initial = if *block == function.entry { std::collections::BTreeSet::from([*block]) } else { all_blocks.clone() };
-                (*block, initial)
-            }).collect::<BTreeMap<_, _>>();
+            let mut dominators = all_blocks
+                .iter()
+                .map(|block| {
+                    let initial = if *block == function.entry { std::collections::BTreeSet::from([*block]) } else { all_blocks.clone() };
+                    (*block, initial)
+                })
+                .collect::<BTreeMap<_, _>>();
             loop {
                 let mut changed = false;
                 for block in all_blocks.iter().copied().filter(|block| *block != function.entry) {
@@ -786,9 +805,14 @@ impl CanonicalSemanticMir {
                         next = next.intersection(dominators.get(predecessor).unwrap()).copied().collect();
                     }
                     next.insert(block);
-                    if next != dominators[&block] { dominators.insert(block, next); changed = true; }
+                    if next != dominators[&block] {
+                        dominators.insert(block, next);
+                        changed = true;
+                    }
                 }
-                if !changed { break; }
+                if !changed {
+                    break;
+                }
             }
             let mut definitions = function.parameters.iter().map(|(value, _)| (*value, None)).collect::<BTreeMap<_, _>>();
             for block in function.blocks.values() {
@@ -833,56 +857,88 @@ impl CanonicalSemanticMir {
                         CanonicalOperation::Invoke { callee, arguments } => {
                             match callee {
                                 CanonicalCallee::Item(callee) => {
-                                let Some(callee_record) = linked.item_instances.get(callee) else {
-                                    return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *callee });
-                                };
-                                for ty in callee_record.parameter_types.iter().chain(std::iter::once(&callee_record.return_type)) {
-                                    if !linked.types.contains_key(ty) {
-                                        return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                                    let Some(callee_record) = linked.item_instances.get(callee)
+                                    else {
+                                        return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *callee });
+                                    };
+                                    for ty in callee_record.parameter_types.iter().chain(std::iter::once(&callee_record.return_type)) {
+                                        if !linked.types.contains_key(ty) {
+                                            return Err(CanonicalMirError::UnknownType { function: *key, ty: *ty });
+                                        }
                                     }
-                                }
-                                if arguments.len() != callee_record.parameter_types.len() {
-                                    return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: *callee });
-                                }
-                                for (value, expected) in arguments.iter().zip(&callee_record.parameter_types) {
-                                    if function.value_types.get(value) != Some(expected) {
-                                        return Err(CanonicalMirError::CallArgumentTypeMismatch { function: *key, callee: *callee, value: *value });
+                                    if arguments.len() != callee_record.parameter_types.len() {
+                                        return Err(CanonicalMirError::CallArityMismatch { function: *key, callee: *callee });
                                     }
-                                }
-                                if let Some(result) = instruction.results.first() {
-                                    if function.value_types.get(result) != Some(&callee_record.return_type) {
-                                        return Err(CanonicalMirError::CallResultTypeMismatch { function: *key, callee: *callee, value: *result });
+                                    for (value, expected) in arguments.iter().zip(&callee_record.parameter_types) {
+                                        if function.value_types.get(value) != Some(expected) {
+                                            return Err(CanonicalMirError::CallArgumentTypeMismatch {
+                                                function: *key,
+                                                callee: *callee,
+                                                value: *value,
+                                            });
+                                        }
                                     }
-                                }
-                                let returns_unit = matches!(linked.types.get(&callee_record.return_type).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void)));
-                                if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
-                                    return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
-                                }
+                                    if let Some(result) = instruction.results.first() {
+                                        if function.value_types.get(result) != Some(&callee_record.return_type) {
+                                            return Err(CanonicalMirError::CallResultTypeMismatch {
+                                                function: *key,
+                                                callee: *callee,
+                                                value: *result,
+                                            });
+                                        }
+                                    }
+                                    let returns_unit = matches!(
+                                        linked.types.get(&callee_record.return_type).map(|row| &row.kind),
+                                        Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void))
+                                    );
+                                    if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
+                                        return Err(CanonicalMirError::OperationResultArityMismatch {
+                                            function: *key,
+                                            instruction: instruction.id,
+                                        });
+                                    }
                                 }
                                 CanonicalCallee::Value(callee) => {
-                                let Some(callee_type) = function.value_types.get(callee) else {
-                                    return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *callee });
-                                };
-                                let Some(CanonicalTypeKind::Function { parameters, return_type }) = linked.types.get(callee_type).map(|record| &record.kind) else {
-                                    return Err(CanonicalMirError::ValueCalleeNotFunction { function: *key, value: *callee });
-                                };
-                                if arguments.len() != parameters.len() {
-                                    return Err(CanonicalMirError::ValueCalleeArityMismatch { function: *key, value: *callee });
-                                }
-                                for (argument, expected) in arguments.iter().zip(parameters) {
-                                    if function.value_types.get(argument) != Some(expected) {
-                                        return Err(CanonicalMirError::ValueCalleeArgumentTypeMismatch { function: *key, value: *callee, argument: *argument });
+                                    let Some(callee_type) = function.value_types.get(callee)
+                                    else {
+                                        return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *callee });
+                                    };
+                                    let Some(CanonicalTypeKind::Function { parameters, return_type }) =
+                                        linked.types.get(callee_type).map(|record| &record.kind)
+                                    else {
+                                        return Err(CanonicalMirError::ValueCalleeNotFunction { function: *key, value: *callee });
+                                    };
+                                    if arguments.len() != parameters.len() {
+                                        return Err(CanonicalMirError::ValueCalleeArityMismatch { function: *key, value: *callee });
                                     }
-                                }
-                                if let Some(result) = instruction.results.first() {
-                                    if function.value_types.get(result) != Some(return_type) {
-                                        return Err(CanonicalMirError::ValueCalleeResultTypeMismatch { function: *key, value: *callee, result: *result });
+                                    for (argument, expected) in arguments.iter().zip(parameters) {
+                                        if function.value_types.get(argument) != Some(expected) {
+                                            return Err(CanonicalMirError::ValueCalleeArgumentTypeMismatch {
+                                                function: *key,
+                                                value: *callee,
+                                                argument: *argument,
+                                            });
+                                        }
                                     }
-                                }
-                                let returns_unit = matches!(linked.types.get(return_type).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void)));
-                                if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
-                                    return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
-                                }
+                                    if let Some(result) = instruction.results.first() {
+                                        if function.value_types.get(result) != Some(return_type) {
+                                            return Err(CanonicalMirError::ValueCalleeResultTypeMismatch {
+                                                function: *key,
+                                                value: *callee,
+                                                result: *result,
+                                            });
+                                        }
+                                    }
+                                    let returns_unit = matches!(
+                                        linked.types.get(return_type).map(|row| &row.kind),
+                                        Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit | CanonicalPrimitiveType::Void))
+                                    );
+                                    if instruction.results.len() > 1 || (!returns_unit && instruction.results.is_empty()) {
+                                        return Err(CanonicalMirError::OperationResultArityMismatch {
+                                            function: *key,
+                                            instruction: instruction.id,
+                                        });
+                                    }
                                 }
                             }
                             let mut uses = arguments.clone();
@@ -891,231 +947,406 @@ impl CanonicalSemanticMir {
                             }
                             uses
                         }
-                    CanonicalOperation::Copy { source } => {
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != function.value_types.get(source) {
-                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
-                        }
-                        vec![*source]
-                    }
-                    CanonicalOperation::AggregateCopy { source, destination } => {
-                        let source_type = function.value_types.get(source);
-                        let destination_type = function.value_types.get(destination);
-                        if source_type.is_none() || source_type != destination_type {
-                            return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *destination, expected: source_type.copied().unwrap_or(function.return_type) });
-                        }
-                        if instruction.results.as_slice() != [*destination] {
-                            return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *destination });
-                        }
-                        vec![*source]
-                    }
-                    CanonicalOperation::LoadConstant { .. } => {
-                        if instruction.results.len() != 1 {
-                            return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
-                        }
-                        Vec::new()
-                    }
-                    CanonicalOperation::SumNew { nominal, variant, payload } => {
-                        let Some(record) = linked.variants.get(&(*nominal, *variant)) else {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        };
-                        let Some(owner) = linked.nominal_instances.get(nominal) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
-                        };
-                        let result_type = instruction.results.first().and_then(|value| function.value_types.get(value));
-                        let result_is_owner = result_type == Some(&owner.ty);
-                        if instruction.results.len() != 1 || !result_is_owner {
-                            return Err(if instruction.results.len() == 1 {
-                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
-                            } else {
-                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
-                            });
-                        }
-                        match (record.payload_type, payload) {
-                            (Some(expected), Some(value)) if function.value_types.get(value) == Some(&expected) => vec![*value],
-                            (None, None) => Vec::new(),
-                            _ => return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant }),
-                        }
-                    }
-                    CanonicalOperation::SumPayloadGet { nominal, variant, object } => {
-                        let Some(record) = linked.variants.get(&(*nominal, *variant)) else {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        };
-                        if record.payload_type.is_none() {
-                            return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
-                        }
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != record.payload_type.as_ref() {
-                            return Err(if instruction.results.len() == 1 {
-                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
-                            } else {
-                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
-                            });
-                        }
-                        let Some(object_type) = function.value_types.get(object) else {
-                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
-                        };
-                        let Some(owner) = linked.nominal_instances.get(nominal) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
-                        };
-                        if *object_type != owner.ty {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
-                        }
-                        vec![*object]
-                    }
-                    CanonicalOperation::SumVariantIs { nominal, variant, object } => {
-                        let Some(_record) = linked.variants.get(&(*nominal, *variant)) else {
-                            return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
-                        };
-                        let bool_result = instruction.results.len() == 1 && instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))));
-                        if !bool_result {
-                            return Err(if instruction.results.len() == 1 {
-                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
-                            } else {
-                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
-                            });
-                        }
-                        let Some(object_type) = function.value_types.get(object) else {
-                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
-                        };
-                        let Some(owner) = linked.nominal_instances.get(nominal) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
-                        };
-                        if *object_type != owner.ty {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *object });
-                        }
-                        vec![*object]
-                    }
-                    CanonicalOperation::StructNew { nominal, fields } => {
-                        let Some(nominal_record) = linked.nominal_instances.get(nominal) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
-                        };
-                        let mut seen = std::collections::BTreeSet::new();
-                        for (field, value) in fields {
-                            if !seen.insert(*field) {
-                                return Err(CanonicalMirError::DuplicateStructField { function: *key, nominal: *nominal, field: *field });
+                        CanonicalOperation::Copy { source } => {
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value))
+                                    != function.value_types.get(source)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
                             }
-                            let Some(record) = linked.fields.get(field) else {
+                            vec![*source]
+                        }
+                        CanonicalOperation::AggregateCopy { source, destination } => {
+                            let source_type = function.value_types.get(source);
+                            let destination_type = function.value_types.get(destination);
+                            if source_type.is_none() || source_type != destination_type {
+                                return Err(CanonicalMirError::ValueTypeMismatch {
+                                    function: *key,
+                                    value: *destination,
+                                    expected: source_type.copied().unwrap_or(function.return_type),
+                                });
+                            }
+                            if instruction.results.as_slice() != [*destination] {
+                                return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *destination });
+                            }
+                            vec![*source]
+                        }
+                        CanonicalOperation::LoadConstant { .. } => {
+                            if instruction.results.len() != 1 {
+                                return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            Vec::new()
+                        }
+                        CanonicalOperation::SumNew { nominal, variant, payload } => {
+                            let Some(record) = linked.variants.get(&(*nominal, *variant))
+                            else {
+                                return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
+                            };
+                            let Some(owner) = linked.nominal_instances.get(nominal)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
+                            };
+                            let result_type = instruction.results.first().and_then(|value| function.value_types.get(value));
+                            let result_is_owner = result_type == Some(&owner.ty);
+                            if instruction.results.len() != 1 || !result_is_owner {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            match (record.payload_type, payload) {
+                                (Some(expected), Some(value)) if function.value_types.get(value) == Some(&expected) => {
+                                    vec![*value]
+                                }
+                                (None, None) => Vec::new(),
+                                _ => {
+                                    return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
+                                }
+                            }
+                        }
+                        CanonicalOperation::SumPayloadGet { nominal, variant, object } => {
+                            let Some(record) = linked.variants.get(&(*nominal, *variant))
+                            else {
+                                return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
+                            };
+                            if record.payload_type.is_none() {
+                                return Err(CanonicalMirError::VariantPayloadMismatch { function: *key, variant: *variant });
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != record.payload_type.as_ref()
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            let Some(object_type) = function.value_types.get(object)
+                            else {
+                                return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                            };
+                            let Some(owner) = linked.nominal_instances.get(nominal)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
+                            };
+                            if *object_type != owner.ty {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *object,
+                                });
+                            }
+                            vec![*object]
+                        }
+                        CanonicalOperation::SumVariantIs { nominal, variant, object } => {
+                            let Some(_record) = linked.variants.get(&(*nominal, *variant))
+                            else {
+                                return Err(CanonicalMirError::UnknownVariant { function: *key, variant: *variant });
+                            };
+                            let bool_result = instruction.results.len() == 1
+                                && instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|ty| {
+                                    matches!(
+                                        linked.types.get(ty).map(|row| &row.kind),
+                                        Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool))
+                                    )
+                                });
+                            if !bool_result {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            let Some(object_type) = function.value_types.get(object)
+                            else {
+                                return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                            };
+                            let Some(owner) = linked.nominal_instances.get(nominal)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
+                            };
+                            if *object_type != owner.ty {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *object,
+                                });
+                            }
+                            vec![*object]
+                        }
+                        CanonicalOperation::StructNew { nominal, fields } => {
+                            let Some(nominal_record) = linked.nominal_instances.get(nominal)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: *nominal });
+                            };
+                            let mut seen = std::collections::BTreeSet::new();
+                            for (field, value) in fields {
+                                if !seen.insert(*field) {
+                                    return Err(CanonicalMirError::DuplicateStructField { function: *key, nominal: *nominal, field: *field });
+                                }
+                                let Some(record) = linked.fields.get(field)
+                                else {
+                                    return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
+                                };
+                                if record.owner != *nominal {
+                                    return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: *nominal });
+                                }
+                                if function.value_types.get(value) != Some(&record.ty) {
+                                    return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
+                                }
+                            }
+                            for field in &nominal_record.fields {
+                                if !seen.contains(field) {
+                                    return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
+                                }
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&nominal_record.ty)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            fields.iter().map(|(_, value)| *value).collect()
+                        }
+                        CanonicalOperation::FieldGet { object, field } => {
+                            let Some(record) = linked.fields.get(field)
+                            else {
                                 return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
                             };
-                            if record.owner != *nominal {
-                                return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: *nominal });
+                            let Some(object_ty) = function.value_types.get(object)
+                            else {
+                                return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                            };
+                            let Some(owner) = linked.nominal_instances.get(&record.owner)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                            };
+                            if *object_ty != owner.ty {
+                                return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                            }
+                            if instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&record.ty) {
+                                return Err(CanonicalMirError::FieldTypeMismatch {
+                                    function: *key,
+                                    field: *field,
+                                    value: instruction.results.first().copied().unwrap_or(*object),
+                                });
+                            }
+                            vec![*object]
+                        }
+                        CanonicalOperation::FieldSet { object, field, value } => {
+                            if !instruction.results.is_empty() {
+                                return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            let Some(record) = linked.fields.get(field)
+                            else {
+                                return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
+                            };
+                            let Some(object_ty) = function.value_types.get(object)
+                            else {
+                                return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
+                            };
+                            let Some(owner) = linked.nominal_instances.get(&record.owner)
+                            else {
+                                return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
+                            };
+                            if *object_ty != owner.ty {
+                                return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
                             }
                             if function.value_types.get(value) != Some(&record.ty) {
                                 return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
                             }
+                            vec![*object, *value]
                         }
-                        for field in &nominal_record.fields {
-                            if !seen.contains(field) {
-                                return Err(CanonicalMirError::MissingStructField { function: *key, nominal: *nominal, field: *field });
+                        CanonicalOperation::ArrayGet { array, index } => {
+                            let Some(CanonicalTypeKind::Array { element, .. }) =
+                                function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind)
+                            else {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *array,
+                                });
+                            };
+                            let index_is_integer =
+                                function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
+                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
+                                });
+                            if !index_is_integer {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *index,
+                                });
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(element)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            vec![*array, *index]
+                        }
+                        CanonicalOperation::ArrayNew { array_type, length, initialization } => {
+                            let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind)
+                            else {
+                                return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
+                            };
+                            let length_is_integer =
+                                function.value_types.get(length).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
+                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
+                                });
+                            let fill_is_valid = match initialization {
+                                CanonicalArrayInitialization::Default => true,
+                                CanonicalArrayInitialization::Fill(value) => function.value_types.get(value) == Some(element),
+                            };
+                            if !length_is_integer || !fill_is_valid {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *length,
+                                });
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            match initialization {
+                                CanonicalArrayInitialization::Default => vec![*length],
+                                CanonicalArrayInitialization::Fill(value) => vec![*length, *value],
                             }
                         }
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&nominal_record.ty) {
-                            return Err(if instruction.results.len() == 1 {
-                                CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
-                            } else {
-                                CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
-                            });
+                        CanonicalOperation::ArrayFromElements { array_type, elements } => {
+                            let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind)
+                            else {
+                                return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
+                            };
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            if elements.iter().any(|value| function.value_types.get(value) != Some(element)) {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *elements.iter().find(|value| function.value_types.get(value) != Some(element)).unwrap(),
+                                });
+                            }
+                            elements.clone()
                         }
-                        fields.iter().map(|(_, value)| *value).collect()
-                    }
-                    CanonicalOperation::FieldGet { object, field } => {
-                        let Some(record) = linked.fields.get(field) else {
-                            return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
-                        };
-                        let Some(object_ty) = function.value_types.get(object) else {
-                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
-                        };
-                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
-                        };
-                        if *object_ty != owner.ty {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
+                        CanonicalOperation::ArraySet { array, index, value } => {
+                            let Some(CanonicalTypeKind::Array { element, .. }) =
+                                function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind)
+                            else {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *array,
+                                });
+                            };
+                            let index_is_integer =
+                                function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| {
+                                    matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
+                                });
+                            if !index_is_integer || function.value_types.get(value) != Some(element) {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: if !index_is_integer { *index } else { *value },
+                                });
+                            }
+                            if !instruction.results.is_empty() {
+                                return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            vec![*array, *index, *value]
                         }
-                        if instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(&record.ty) {
-                            return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: instruction.results.first().copied().unwrap_or(*object) });
+                        CanonicalOperation::ArrayLength { array } => {
+                            if !matches!(
+                                function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind),
+                                Some(CanonicalTypeKind::Array { .. })
+                            ) {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *array,
+                                });
+                            }
+                            let result_is_integer = instruction.results.len() == 1
+                                && instruction
+                                    .results
+                                    .first()
+                                    .and_then(|value| function.value_types.get(value))
+                                    .and_then(|ty| linked.types.get(ty))
+                                    .is_some_and(|row| {
+                                        matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
+                                    });
+                            if !result_is_integer {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            vec![*array]
                         }
-                        vec![*object]
-                    }
-                    CanonicalOperation::FieldSet { object, field, value } => {
-                        if !instruction.results.is_empty() {
-                            return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                        CanonicalOperation::TupleNew { element_types, fields } => {
+                            let Some(result) = instruction.results.first().and_then(|value| function.value_types.get(value))
+                            else {
+                                return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
+                            };
+                            if instruction.results.len() != 1
+                                || !matches!(linked.types.get(result).map(|row| &row.kind), Some(CanonicalTypeKind::Tuple(members)) if members == element_types)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            if fields.len() != element_types.len() {
+                                return Err(CanonicalMirError::OperationOperandArityMismatch { function: *key, instruction: instruction.id });
+                            }
+                            if let Some((value, _)) =
+                                fields.iter().zip(element_types).find(|(value, expected)| function.value_types.get(value) != Some(expected))
+                            {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *value,
+                                });
+                            }
+                            fields.clone()
                         }
-                        let Some(record) = linked.fields.get(field) else {
-                            return Err(CanonicalMirError::UnknownField { function: *key, field: *field });
-                        };
-                        let Some(object_ty) = function.value_types.get(object) else {
-                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *object });
-                        };
-                        let Some(owner) = linked.nominal_instances.get(&record.owner) else {
-                            return Err(CanonicalMirError::UnknownNominal { function: *key, nominal: record.owner });
-                        };
-                        if *object_ty != owner.ty {
-                            return Err(CanonicalMirError::FieldOwnerMismatch { function: *key, field: *field, nominal: record.owner });
-                        }
-                        if function.value_types.get(value) != Some(&record.ty) {
-                            return Err(CanonicalMirError::FieldTypeMismatch { function: *key, field: *field, value: *value });
-                        }
-                        vec![*object, *value]
-                    }
-                    CanonicalOperation::ArrayGet { array, index } => {
-                        let Some(CanonicalTypeKind::Array { element, .. }) = function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind) else {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array });
-                        };
-                        let index_is_integer = function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
-                        if !index_is_integer {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *index });
-                        }
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(element) {
-                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
-                        }
-                        vec![*array, *index]
-                    }
-                    CanonicalOperation::ArrayNew { array_type, length, initialization } => {
-                        let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind) else {
-                            return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
-                        };
-                        let length_is_integer = function.value_types.get(length).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
-                        let fill_is_valid = match initialization {
-                            CanonicalArrayInitialization::Default => true,
-                            CanonicalArrayInitialization::Fill(value) => function.value_types.get(value) == Some(element),
-                        };
-                        if !length_is_integer || !fill_is_valid {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *length });
-                        }
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type) {
-                            return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } });
-                        }
-                        match initialization { CanonicalArrayInitialization::Default => vec![*length], CanonicalArrayInitialization::Fill(value) => vec![*length, *value] }
-                    }
-                    CanonicalOperation::ArrayFromElements { array_type, elements } => {
-                        let Some(CanonicalTypeKind::Array { element, .. }) = linked.types.get(array_type).map(|row| &row.kind) else { return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }); };
-                        if instruction.results.len() != 1 || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type) { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
-                        if elements.iter().any(|value| function.value_types.get(value) != Some(element)) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *elements.iter().find(|value| function.value_types.get(value) != Some(element)).unwrap() }); }
-                        elements.clone()
-                    }
-                    CanonicalOperation::ArraySet { array, index, value } => {
-                        let Some(CanonicalTypeKind::Array { element, .. }) = function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind) else { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array }); };
-                        let index_is_integer = function.value_types.get(index).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
-                        if !index_is_integer || function.value_types.get(value) != Some(element) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: if !index_is_integer { *index } else { *value } }); }
-                        if !instruction.results.is_empty() { return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }); }
-                        vec![*array, *index, *value]
-                    }
-                    CanonicalOperation::ArrayLength { array } => {
-                        if !matches!(function.value_types.get(array).and_then(|ty| linked.types.get(ty)).map(|row| &row.kind), Some(CanonicalTypeKind::Array { .. })) { return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *array }); }
-                        let result_is_integer = instruction.results.len() == 1 && instruction.results.first().and_then(|value| function.value_types.get(value)).and_then(|ty| linked.types.get(ty)).is_some_and(|row| matches!(row.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. })));
-                        if !result_is_integer { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
-                        vec![*array]
-                    }
-                    CanonicalOperation::TupleNew { element_types, fields } => {
-                        let Some(result) = instruction.results.first().and_then(|value| function.value_types.get(value)) else { return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }); };
-                        if instruction.results.len() != 1 || !matches!(linked.types.get(result).map(|row| &row.kind), Some(CanonicalTypeKind::Tuple(members)) if members == element_types) { return Err(if instruction.results.len() == 1 { CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id } } else { CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id } }); }
-                        if fields.len() != element_types.len() {
-                            return Err(CanonicalMirError::OperationOperandArityMismatch { function: *key, instruction: instruction.id });
-                        }
-                        if let Some((value, _)) = fields.iter().zip(element_types).find(|(value, expected)| function.value_types.get(value) != Some(expected)) {
-                            return Err(CanonicalMirError::OperationOperandTypeMismatch { function: *key, instruction: instruction.id, value: *value });
-                        }
-                        fields.clone()
-                    }
                     };
                     if uses.iter().any(|value| !block_defined.contains(value)) {
                         let value = *uses.iter().find(|value| !block_defined.contains(value)).unwrap();
@@ -1133,7 +1364,11 @@ impl CanonicalSemanticMir {
                             return Err(CanonicalMirError::DuplicateDefinition { function: *key, value: *result });
                         }
                         if !function.value_types.contains_key(result) {
-                            return Err(CanonicalMirError::ValueTypeMismatch { function: *key, value: *result, expected: function.return_type });
+                            return Err(CanonicalMirError::ValueTypeMismatch {
+                                function: *key,
+                                value: *result,
+                                expected: function.return_type,
+                            });
                         }
                     }
                 }
@@ -1147,7 +1382,9 @@ impl CanonicalSemanticMir {
                         (Vec::new(), value.iter().copied().collect())
                     }
                     CanonicalTerminator::Jump { target, arguments } => (vec![(*target, arguments.len())], arguments.clone()),
-                    CanonicalTerminator::Branch { condition, then_target, else_target } => (vec![(*then_target, 0), (*else_target, 0)], vec![*condition]),
+                    CanonicalTerminator::Branch { condition, then_target, else_target } => {
+                        (vec![(*then_target, 0), (*else_target, 0)], vec![*condition])
+                    }
                     CanonicalTerminator::PerformEffect { effect, resume_target, payload } => {
                         let payload = payload.ok_or(CanonicalMirError::MissingEffectPayload { function: *key, block: *block_id })?;
                         let resume_arity = usize::from(*effect != CanonicalEffectKind::AsyncSpawn);
@@ -1155,7 +1392,10 @@ impl CanonicalSemanticMir {
                     }
                     CanonicalTerminator::StateDispatch { state, cases, default_target } => {
                         let state_type = function.value_types.get(state).and_then(|ty| linked.types.get(ty));
-                        if !matches!(state_type.map(|record| &record.kind), Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))) {
+                        if !matches!(
+                            state_type.map(|record| &record.kind),
+                            Some(CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { .. }))
+                        ) {
                             return Err(CanonicalMirError::InvalidDispatchState { function: *key, value: *state });
                         }
                         let mut states = std::collections::BTreeSet::new();
@@ -1183,7 +1423,8 @@ impl CanonicalSemanticMir {
                     }
                 }
                 for (target, arity) in targets {
-                    let Some(target_block) = function.blocks.get(&target) else {
+                    let Some(target_block) = function.blocks.get(&target)
+                    else {
                         return Err(CanonicalMirError::UnknownBlock { function: *key, block: target });
                     };
                     if target_block.parameters.len() != arity {
@@ -1270,10 +1511,16 @@ impl CompiledProgram {
         }
         let expected_sum_nominals = canonical.linked.sum_types.iter().map(|sum| sum.nominal).collect::<std::collections::BTreeSet<_>>();
         for nominal in &expected_sum_nominals {
-            let Some(sum) = representation.sum_reps.get(nominal) else {
+            let Some(sum) = representation.sum_reps.get(nominal)
+            else {
                 return Err(CompiledProgramError::MissingSumRepresentation { nominal: *nominal });
             };
-            let expected_variants = canonical.linked.variants.keys().filter_map(|(owner, variant)| (*owner == *nominal).then_some(*variant)).collect::<std::collections::BTreeSet<_>>();
+            let expected_variants = canonical
+                .linked
+                .variants
+                .keys()
+                .filter_map(|(owner, variant)| (*owner == *nominal).then_some(*variant))
+                .collect::<std::collections::BTreeSet<_>>();
             if sum.variants.keys().copied().collect::<std::collections::BTreeSet<_>>() != expected_variants {
                 return Err(CompiledProgramError::SumVariantRepresentationMismatch { nominal: *nominal });
             }
@@ -1293,8 +1540,7 @@ impl CompiledProgram {
             }
             for block in function.blocks.values() {
                 for instruction in &block.instructions {
-                    if matches!(&instruction.operation, CanonicalOperation::Invoke { .. })
-                    {
+                    if matches!(&instruction.operation, CanonicalOperation::Invoke { .. }) {
                         expected_invokes.insert(instruction.id);
                         if !representation.invoke_lowerings.contains_key(&instruction.id) {
                             return Err(CompiledProgramError::MissingInvokeRepresentation { instruction: instruction.id });
@@ -1374,12 +1620,15 @@ mod tests {
         let item = ItemInstanceId::from_index(0).unwrap();
         let ty = TypeId::from_index(0).unwrap();
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-        linked.item_instances.insert(item, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        });
+        linked.item_instances.insert(
+            item,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: Vec::new(),
+                return_type: ty,
+            },
+        );
         let instance = ItemInstanceId::from_index(0).unwrap();
         let function = CanonicalFunction {
             instance,
@@ -1387,10 +1636,15 @@ mod tests {
             return_type: ty,
             value_types: BTreeMap::new(),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
-                terminator: CanonicalTerminator::Return { value: None },
-            })]),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: CanonicalTerminator::Return { value: None },
+                },
+            )]),
         };
         let mut functions = BTreeMap::new();
         functions.insert(instance, function);
@@ -1406,12 +1660,15 @@ mod tests {
         let instance = ItemInstanceId::from_index(0).unwrap();
         let unknown = ItemInstanceId::from_index(1).unwrap();
         let ty = TypeId::from_index(0).unwrap();
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        });
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: Vec::new(),
+                return_type: ty,
+            },
+        );
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         let function = CanonicalFunction {
             instance,
@@ -1419,14 +1676,19 @@ mod tests {
             return_type: ty,
             value_types: BTreeMap::new(),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0), parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
-                    id: InstructionId::from_index(0).unwrap(), results: Vec::new(),
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(unknown), arguments: Vec::new() },
-                }],
-                terminator: CanonicalTerminator::Return { value: None },
-            })]),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: vec![CanonicalInstruction {
+                        id: InstructionId::from_index(0).unwrap(),
+                        results: Vec::new(),
+                        operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(unknown), arguments: Vec::new() },
+                    }],
+                    terminator: CanonicalTerminator::Return { value: None },
+                },
+            )]),
         };
         let mut functions = BTreeMap::new();
         functions.insert(instance, function);
@@ -1457,21 +1719,39 @@ mod tests {
         ] {
             linked.types.insert(ty, TypeRecord { declaration: ty, kind });
         }
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(), substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![array_type, integer], return_type: integer,
-        });
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: vec![array_type, integer],
+                return_type: integer,
+            },
+        );
         let function = CanonicalFunction {
-            instance, parameters: vec![(array, array_type), (index, integer)], return_type: integer,
+            instance,
+            parameters: vec![(array, array_type), (index, integer)],
+            return_type: integer,
             value_types: BTreeMap::from([(array, array_type), (index, integer), (result, integer)]),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0), parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction { id: instruction, results: vec![result], operation: CanonicalOperation::ArrayGet { array, index } }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
-            })]),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: vec![CanonicalInstruction {
+                        id: instruction,
+                        results: vec![result],
+                        operation: CanonicalOperation::ArrayGet { array, index },
+                    }],
+                    terminator: CanonicalTerminator::Return { value: Some(result) },
+                },
+            )]),
         };
-        let program = CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "array".into(), functions: BTreeMap::from([(instance, function)]) } };
+        let program = CanonicalProgram {
+            linked,
+            mir: CanonicalSemanticMir { module_name: "array".into(), functions: BTreeMap::from([(instance, function)]) },
+        };
         program.validate().expect("完整数组读取合同");
         let mut invalid = program.clone();
         invalid.mir.functions.get_mut(&instance).unwrap().value_types.insert(result, boolean);
@@ -1480,7 +1760,8 @@ mod tests {
         invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].results.clear();
         assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationResultArityMismatch { function: instance, instruction }));
         let mut invalid = program;
-        invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation = CanonicalOperation::ArrayGet { array: index, index };
+        invalid.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation =
+            CanonicalOperation::ArrayGet { array: index, index };
         assert_eq!(invalid.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { function: instance, instruction, value: index }));
     }
 
@@ -1492,12 +1773,15 @@ mod tests {
         let resume_value = MirValueId::from_index(1).unwrap();
         let mut linked = LinkedSemanticProgram::default();
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![ty],
-            return_type: ty,
-        });
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: vec![ty],
+                return_type: ty,
+            },
+        );
         let function = CanonicalFunction {
             instance,
             parameters: vec![(payload, ty)],
@@ -1505,16 +1789,28 @@ mod tests {
             value_types: BTreeMap::from([(payload, ty), (resume_value, ty)]),
             entry: CanonicalBlockId(0),
             blocks: BTreeMap::from([
-                (CanonicalBlockId(0), CanonicalBlock {
-                    id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
-                    terminator: CanonicalTerminator::PerformEffect {
-                        effect: CanonicalEffectKind::Raise, payload: Some(payload), resume_target: CanonicalBlockId(1),
+                (
+                    CanonicalBlockId(0),
+                    CanonicalBlock {
+                        id: CanonicalBlockId(0),
+                        parameters: Vec::new(),
+                        instructions: Vec::new(),
+                        terminator: CanonicalTerminator::PerformEffect {
+                            effect: CanonicalEffectKind::Raise,
+                            payload: Some(payload),
+                            resume_target: CanonicalBlockId(1),
+                        },
                     },
-                }),
-                (CanonicalBlockId(1), CanonicalBlock {
-                    id: CanonicalBlockId(1), parameters: vec![(resume_value, ty)], instructions: Vec::new(),
-                    terminator: CanonicalTerminator::Return { value: None },
-                }),
+                ),
+                (
+                    CanonicalBlockId(1),
+                    CanonicalBlock {
+                        id: CanonicalBlockId(1),
+                        parameters: vec![(resume_value, ty)],
+                        instructions: Vec::new(),
+                        terminator: CanonicalTerminator::Return { value: None },
+                    },
+                ),
             ]),
         };
         let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
@@ -1527,24 +1823,34 @@ mod tests {
         let ty = TypeId::from_index(0).unwrap();
         let mut linked = LinkedSemanticProgram::default();
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
-        linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: Vec::new(),
-            return_type: ty,
-        });
+        linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: Vec::new(),
+                return_type: ty,
+            },
+        );
         let function = CanonicalFunction {
             instance,
             parameters: Vec::new(),
             return_type: ty,
             value_types: BTreeMap::new(),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0), parameters: Vec::new(), instructions: Vec::new(),
-                terminator: CanonicalTerminator::PerformEffect {
-                    effect: CanonicalEffectKind::Raise, payload: None, resume_target: CanonicalBlockId(0),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: CanonicalTerminator::PerformEffect {
+                        effect: CanonicalEffectKind::Raise,
+                        payload: None,
+                        resume_target: CanonicalBlockId(0),
+                    },
                 },
-            })]),
+            )]),
         };
         let program = CanonicalSemanticMir { module_name: "effect".into(), functions: BTreeMap::from([(instance, function)]) };
         assert!(matches!(program.validate(&linked), Err(CanonicalMirError::MissingEffectPayload { .. })));
@@ -1559,12 +1865,15 @@ mod tests {
         let mut linked = LinkedSemanticProgram::default();
         linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit) });
         for instance in [caller, callee] {
-            linked.item_instances.insert(instance, ItemInstanceRecord {
-                declaration: ItemId::from_index(instance.index()).unwrap(),
-                substitution: SubstitutionId::from_index(0).unwrap(),
-                parameter_types: vec![ty],
-                return_type: ty,
-            });
+            linked.item_instances.insert(
+                instance,
+                ItemInstanceRecord {
+                    declaration: ItemId::from_index(instance.index()).unwrap(),
+                    substitution: SubstitutionId::from_index(0).unwrap(),
+                    parameter_types: vec![ty],
+                    return_type: ty,
+                },
+            );
         }
         let function = CanonicalFunction {
             instance: caller,
@@ -1572,19 +1881,21 @@ mod tests {
             return_type: ty,
             value_types: BTreeMap::from([(argument, ty), (result, ty)]),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0), parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
-                    id: InstructionId::from_index(0).unwrap(), results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments: vec![argument] },
-                }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
-            })]),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: vec![CanonicalInstruction {
+                        id: InstructionId::from_index(0).unwrap(),
+                        results: vec![result],
+                        operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Item(callee), arguments: vec![argument] },
+                    }],
+                    terminator: CanonicalTerminator::Return { value: Some(result) },
+                },
+            )]),
         };
-        CanonicalProgram {
-            linked,
-            mir: CanonicalSemanticMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) },
-        }
+        CanonicalProgram { linked, mir: CanonicalSemanticMir { module_name: "typed".into(), functions: BTreeMap::from([(caller, function)]) } }
     }
 
     fn nominal_program() -> CanonicalProgram {
@@ -1593,16 +1904,24 @@ mod tests {
         let nominal = NominalInstanceId::from_index(0).unwrap();
         let field = FieldId::from_index(0).unwrap();
         let mut program = CanonicalProgram { linked: LinkedSemanticProgram::default(), mir: CanonicalSemanticMir::default() };
-        program.linked.types.insert(declaration, TypeRecord {
-            declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() },
-        });
-        program.linked.types.insert(field_type, TypeRecord {
-            declaration: field_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool),
-        });
-        program.linked.nominal_instances.insert(nominal, NominalInstanceRecord {
-            declaration, ty: declaration, substitution: SubstitutionId::from_index(0).unwrap(),
-            semantics: NominalValueSemantics::Reference, fields: vec![field],
-        });
+        program
+            .linked
+            .types
+            .insert(declaration, TypeRecord { declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() } });
+        program
+            .linked
+            .types
+            .insert(field_type, TypeRecord { declaration: field_type, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool) });
+        program.linked.nominal_instances.insert(
+            nominal,
+            NominalInstanceRecord {
+                declaration,
+                ty: declaration,
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                semantics: NominalValueSemantics::Reference,
+                fields: vec![field],
+            },
+        );
         program.linked.fields.insert(field, FieldRecord { owner: nominal, ty: field_type });
         program
     }
@@ -1641,10 +1960,13 @@ mod tests {
         other.fields.clear();
         other.substitution = SubstitutionId::from_index(1).unwrap();
         other.ty = TypeId::from_index(2).unwrap();
-        program.linked.types.insert(other.ty, TypeRecord {
-            declaration: other.declaration,
-            kind: CanonicalTypeKind::Nominal { declaration: other.declaration, arguments: vec![TypeId::from_index(1).unwrap()] },
-        });
+        program.linked.types.insert(
+            other.ty,
+            TypeRecord {
+                declaration: other.declaration,
+                kind: CanonicalTypeKind::Nominal { declaration: other.declaration, arguments: vec![TypeId::from_index(1).unwrap()] },
+            },
+        );
         let instance = NominalInstanceId::from_index(1).unwrap();
         program.linked.nominal_instances.insert(instance, other.clone());
         program.validate().expect("同一声明不同实例保持共同值语义");
@@ -1672,22 +1994,30 @@ mod tests {
         let first_type = TypeId::from_index(2).unwrap();
         let second_type = TypeId::from_index(3).unwrap();
         let integer = TypeId::from_index(4).unwrap();
-        program.linked.types.insert(integer, TypeRecord {
-            declaration: integer, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }),
-        });
+        program.linked.types.insert(
+            integer,
+            TypeRecord { declaration: integer, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }) },
+        );
         for (ty, argument) in [(first_type, boolean), (second_type, integer)] {
-            program.linked.types.insert(ty, TypeRecord {
-                declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: vec![argument] },
-            });
+            program
+                .linked
+                .types
+                .insert(ty, TypeRecord { declaration, kind: CanonicalTypeKind::Nominal { declaration, arguments: vec![argument] } });
         }
         let first = NominalInstanceId::from_index(0).unwrap();
         let second = NominalInstanceId::from_index(1).unwrap();
         program.linked.nominal_instances.get_mut(&first).unwrap().ty = first_type;
         let second_field = FieldId::from_index(1).unwrap();
-        program.linked.nominal_instances.insert(second, NominalInstanceRecord {
-            declaration, ty: second_type, substitution: SubstitutionId::from_index(1).unwrap(),
-            semantics: NominalValueSemantics::Reference, fields: vec![second_field],
-        });
+        program.linked.nominal_instances.insert(
+            second,
+            NominalInstanceRecord {
+                declaration,
+                ty: second_type,
+                substitution: SubstitutionId::from_index(1).unwrap(),
+                semantics: NominalValueSemantics::Reference,
+                fields: vec![second_field],
+            },
+        );
         program.linked.fields.insert(second_field, FieldRecord { owner: second, ty: boolean });
         for (index, owner) in [(0, first), (1, second)] {
             program.linked.variants.insert((owner, VariantId::from_index(index).unwrap()), VariantRecord { payload_type: Some(boolean) });
@@ -1697,25 +2027,43 @@ mod tests {
         let payload = MirValueId::from_index(1).unwrap();
         let result = MirValueId::from_index(2).unwrap();
         let return_type = result_type.unwrap_or(boolean);
-        program.linked.item_instances.insert(instance, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(), substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![first_type, boolean], return_type,
-        });
+        program.linked.item_instances.insert(
+            instance,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: vec![first_type, boolean],
+                return_type,
+            },
+        );
         let mut value_types = BTreeMap::from([(object, first_type), (payload, boolean)]);
         if let Some(ty) = result_type {
             value_types.insert(result, ty);
         }
         let entry = CanonicalBlockId(0);
-        program.mir.functions.insert(instance, CanonicalFunction {
-            instance, parameters: vec![(object, first_type), (payload, boolean)], return_type,
-            value_types, entry, blocks: BTreeMap::from([(entry, CanonicalBlock {
-                id: entry, parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
-                    id: InstructionId::from_index(0).unwrap(), results: result_type.map(|_| vec![result]).unwrap_or_default(), operation,
-                }],
-                terminator: CanonicalTerminator::Return { value: Some(if result_type.is_some() { result } else { payload }) },
-            })]),
-        });
+        program.mir.functions.insert(
+            instance,
+            CanonicalFunction {
+                instance,
+                parameters: vec![(object, first_type), (payload, boolean)],
+                return_type,
+                value_types,
+                entry,
+                blocks: BTreeMap::from([(
+                    entry,
+                    CanonicalBlock {
+                        id: entry,
+                        parameters: Vec::new(),
+                        instructions: vec![CanonicalInstruction {
+                            id: InstructionId::from_index(0).unwrap(),
+                            results: result_type.map(|_| vec![result]).unwrap_or_default(),
+                            operation,
+                        }],
+                        terminator: CanonicalTerminator::Return { value: Some(if result_type.is_some() { result } else { payload }) },
+                    },
+                )]),
+            },
+        );
         program
     }
 
@@ -1732,27 +2080,50 @@ mod tests {
         let boolean = TypeId::from_index(1).unwrap();
         let first_type = TypeId::from_index(2).unwrap();
         let cases = [
-            (CanonicalOperation::StructNew { nominal: first, fields: vec![(first_field, payload)] },
-             CanonicalOperation::StructNew { nominal: second, fields: vec![(second_field, payload)] }, Some(first_type)),
-            (CanonicalOperation::FieldGet { object, field: first_field },
-             CanonicalOperation::FieldGet { object, field: second_field }, Some(boolean)),
-            (CanonicalOperation::FieldSet { object, field: first_field, value: payload },
-             CanonicalOperation::FieldSet { object, field: second_field, value: payload }, None),
-            (CanonicalOperation::SumNew { nominal: first, variant: first_variant, payload: Some(payload) },
-             CanonicalOperation::SumNew { nominal: second, variant: second_variant, payload: Some(payload) }, Some(first_type)),
-            (CanonicalOperation::SumPayloadGet { nominal: first, variant: first_variant, object },
-             CanonicalOperation::SumPayloadGet { nominal: second, variant: second_variant, object }, Some(boolean)),
-            (CanonicalOperation::SumVariantIs { nominal: first, variant: first_variant, object },
-             CanonicalOperation::SumVariantIs { nominal: second, variant: second_variant, object }, Some(boolean)),
+            (
+                CanonicalOperation::StructNew { nominal: first, fields: vec![(first_field, payload)] },
+                CanonicalOperation::StructNew { nominal: second, fields: vec![(second_field, payload)] },
+                Some(first_type),
+            ),
+            (
+                CanonicalOperation::FieldGet { object, field: first_field },
+                CanonicalOperation::FieldGet { object, field: second_field },
+                Some(boolean),
+            ),
+            (
+                CanonicalOperation::FieldSet { object, field: first_field, value: payload },
+                CanonicalOperation::FieldSet { object, field: second_field, value: payload },
+                None,
+            ),
+            (
+                CanonicalOperation::SumNew { nominal: first, variant: first_variant, payload: Some(payload) },
+                CanonicalOperation::SumNew { nominal: second, variant: second_variant, payload: Some(payload) },
+                Some(first_type),
+            ),
+            (
+                CanonicalOperation::SumPayloadGet { nominal: first, variant: first_variant, object },
+                CanonicalOperation::SumPayloadGet { nominal: second, variant: second_variant, object },
+                Some(boolean),
+            ),
+            (
+                CanonicalOperation::SumVariantIs { nominal: first, variant: first_variant, object },
+                CanonicalOperation::SumVariantIs { nominal: second, variant: second_variant, object },
+                Some(boolean),
+            ),
         ];
         for (valid, wrong_owner, result_type) in cases {
             instantiated_nominal_operation_program(valid, result_type).validate().expect("同一声明的不同泛型实例可独立持有结构合同");
-            let error = instantiated_nominal_operation_program(wrong_owner, result_type).validate().expect_err("字段形状相同不能掩盖泛型实例错位");
-            assert!(matches!(error,
-                CanonicalMirError::FieldOwnerMismatch { .. }
-                | CanonicalMirError::OperationResultTypeMismatch { .. }
-                | CanonicalMirError::OperationOperandTypeMismatch { .. }
-            ), "{error:?}");
+            let error =
+                instantiated_nominal_operation_program(wrong_owner, result_type).validate().expect_err("字段形状相同不能掩盖泛型实例错位");
+            assert!(
+                matches!(
+                    error,
+                    CanonicalMirError::FieldOwnerMismatch { .. }
+                        | CanonicalMirError::OperationResultTypeMismatch { .. }
+                        | CanonicalMirError::OperationOperandTypeMismatch { .. }
+                ),
+                "{error:?}"
+            );
         }
     }
 
@@ -1772,8 +2143,8 @@ mod tests {
         assert_eq!(program.linked.variants[&(first, variant)].payload_type, Some(boolean));
         assert_eq!(program.linked.variants[&(second, variant)].payload_type, Some(integer));
         let instance = ItemInstanceId::from_index(0).unwrap();
-        program.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap()
-            .instructions[0].operation = CanonicalOperation::SumVariantIs { nominal: second, variant, object };
+        program.mir.functions.get_mut(&instance).unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation =
+            CanonicalOperation::SumVariantIs { nominal: second, variant, object };
         assert!(matches!(program.validate(), Err(CanonicalMirError::OperationOperandTypeMismatch { .. })));
     }
 
@@ -1811,7 +2182,12 @@ mod tests {
         field_type.linked.fields.get_mut(&field).unwrap().ty = declaration;
         assert_eq!(field_type.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
         let mut payload = program.clone();
-        payload.linked.variants.get_mut(&(NominalInstanceId::from_index(0).unwrap(), VariantId::from_index(0).unwrap())).unwrap().payload_type = Some(declaration);
+        payload
+            .linked
+            .variants
+            .get_mut(&(NominalInstanceId::from_index(0).unwrap(), VariantId::from_index(0).unwrap()))
+            .unwrap()
+            .payload_type = Some(declaration);
         assert_eq!(payload.validate(), Err(CanonicalMirError::MissingNominalInstance { ty: declaration }));
 
         let wrapper = TypeId::from_index(9).unwrap();
@@ -1856,7 +2232,9 @@ mod tests {
     fn canonical_call_requires_instantiated_signature() {
         let mut program = typed_call_program();
         program.validate().expect("完整实例化调用合同");
-        if let CanonicalOperation::Invoke { arguments, .. } = &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation {
+        if let CanonicalOperation::Invoke { arguments, .. } =
+            &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation
+        {
             arguments.clear();
         }
         assert!(matches!(program.validate(), Err(CanonicalMirError::CallArityMismatch { .. })));
@@ -1911,12 +2289,13 @@ mod tests {
         let result = MirValueId::from_index(1).unwrap();
         let mut representation = RepresentationPlan::default();
         for value in [argument, result] {
-            representation.value_reps.insert(
-                ValueIdentity::new(caller, value),
-                crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
-            );
+            representation
+                .value_reps
+                .insert(ValueIdentity::new(caller, value), crate::semantic_ids::layout_choice::ValueRepresentation::Specialized);
         }
-        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        representation
+            .invoke_lowerings
+            .insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
         let compiled = CompiledProgram::new(program.clone(), representation.clone()).expect("完整处理载荷必须成功");
         assert_eq!(compiled.canonical(), &program);
         assert_eq!(compiled.representation(), &representation);
@@ -1939,7 +2318,9 @@ mod tests {
             ValueIdentity::new(caller, MirValueId::from_index(2).unwrap()),
             crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
         );
-        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        representation
+            .invoke_lowerings
+            .insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
         let error = CompiledProgram::new(program, representation).expect_err("未知值不得进入后端");
         assert!(matches!(error, CompiledProgramError::ExtraValueRepresentation { .. }));
     }
@@ -1950,13 +2331,16 @@ mod tests {
         let caller = ItemInstanceId::from_index(0).unwrap();
         let mut representation = RepresentationPlan::default();
         for value in [MirValueId::from_index(0).unwrap(), MirValueId::from_index(1).unwrap()] {
-            representation.value_reps.insert(
-                ValueIdentity::new(caller, value),
-                crate::semantic_ids::layout_choice::ValueRepresentation::Specialized,
-            );
+            representation
+                .value_reps
+                .insert(ValueIdentity::new(caller, value), crate::semantic_ids::layout_choice::ValueRepresentation::Specialized);
         }
-        representation.invoke_lowerings.insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
-        representation.invoke_lowerings.insert(InstructionId::from_index(1).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        representation
+            .invoke_lowerings
+            .insert(InstructionId::from_index(0).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
+        representation
+            .invoke_lowerings
+            .insert(InstructionId::from_index(1).unwrap(), crate::semantic_ids::layout_choice::InvokeLowering::Direct);
         let error = CompiledProgram::new(program, representation).expect_err("未知调用指令不得进入后端");
         assert!(matches!(error, CompiledProgramError::ExtraInvokeRepresentation { .. }));
     }
@@ -1999,36 +2383,48 @@ mod tests {
         let argument = MirValueId::from_index(1).unwrap();
         let result = MirValueId::from_index(2).unwrap();
         let mut linked = LinkedSemanticProgram::default();
-        linked.types.insert(function_type, TypeRecord {
-            declaration: function_type,
-            kind: CanonicalTypeKind::Function { parameters: vec![value_type], return_type: value_type },
-        });
-        linked.types.insert(value_type, TypeRecord {
-            declaration: value_type,
-            kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }),
-        });
-        linked.item_instances.insert(caller, ItemInstanceRecord {
-            declaration: ItemId::from_index(0).unwrap(),
-            substitution: SubstitutionId::from_index(0).unwrap(),
-            parameter_types: vec![function_type, value_type],
-            return_type: value_type,
-        });
+        linked.types.insert(
+            function_type,
+            TypeRecord {
+                declaration: function_type,
+                kind: CanonicalTypeKind::Function { parameters: vec![value_type], return_type: value_type },
+            },
+        );
+        linked.types.insert(
+            value_type,
+            TypeRecord {
+                declaration: value_type,
+                kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true }),
+            },
+        );
+        linked.item_instances.insert(
+            caller,
+            ItemInstanceRecord {
+                declaration: ItemId::from_index(0).unwrap(),
+                substitution: SubstitutionId::from_index(0).unwrap(),
+                parameter_types: vec![function_type, value_type],
+                return_type: value_type,
+            },
+        );
         let function = CanonicalFunction {
             instance: caller,
             parameters: vec![(function_value, function_type), (argument, value_type)],
             return_type: value_type,
             value_types: BTreeMap::from([(function_value, function_type), (argument, value_type), (result, value_type)]),
             entry: CanonicalBlockId(0),
-            blocks: BTreeMap::from([(CanonicalBlockId(0), CanonicalBlock {
-                id: CanonicalBlockId(0),
-                parameters: Vec::new(),
-                instructions: vec![CanonicalInstruction {
-                    id: InstructionId::from_index(0).unwrap(),
-                    results: vec![result],
-                    operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Value(function_value), arguments: vec![argument] },
-                }],
-                terminator: CanonicalTerminator::Return { value: Some(result) },
-            })]),
+            blocks: BTreeMap::from([(
+                CanonicalBlockId(0),
+                CanonicalBlock {
+                    id: CanonicalBlockId(0),
+                    parameters: Vec::new(),
+                    instructions: vec![CanonicalInstruction {
+                        id: InstructionId::from_index(0).unwrap(),
+                        results: vec![result],
+                        operation: CanonicalOperation::Invoke { callee: CanonicalCallee::Value(function_value), arguments: vec![argument] },
+                    }],
+                    terminator: CanonicalTerminator::Return { value: Some(result) },
+                },
+            )]),
         };
         CanonicalProgram {
             linked,
@@ -2048,7 +2444,8 @@ mod tests {
         let value = MirValueId::from_index(0).unwrap();
         function.value_types.insert(value, TypeId::from_index(1).unwrap());
         function.parameters[0].1 = TypeId::from_index(1).unwrap();
-        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types[0] = TypeId::from_index(1).unwrap();
+        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types[0] =
+            TypeId::from_index(1).unwrap();
         assert!(matches!(program.validate(), Err(CanonicalMirError::ValueCalleeNotFunction { value: rejected, .. }) if rejected == value));
     }
 
@@ -2056,7 +2453,9 @@ mod tests {
     fn canonical_function_value_call_rejects_argument_contract() {
         let mut program = typed_function_value_program();
         let wrong = MirValueId::from_index(0).unwrap();
-        if let CanonicalOperation::Invoke { arguments, .. } = &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation {
+        if let CanonicalOperation::Invoke { arguments, .. } =
+            &mut program.mir.functions.values_mut().next().unwrap().blocks.get_mut(&CanonicalBlockId(0)).unwrap().instructions[0].operation
+        {
             *arguments = vec![wrong, wrong];
         }
         assert!(matches!(program.validate(), Err(CanonicalMirError::ValueCalleeArityMismatch { .. })));
@@ -2067,8 +2466,11 @@ mod tests {
         let mut program = typed_function_value_program();
         let function = program.mir.functions.values_mut().next().unwrap();
         function.parameters = vec![(MirValueId::from_index(1).unwrap(), TypeId::from_index(1).unwrap())];
-        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types = vec![TypeId::from_index(1).unwrap()];
-        assert!(matches!(program.validate(), Err(CanonicalMirError::UseBeforeDefinition { value, .. }) if value == MirValueId::from_index(0).unwrap()));
+        program.linked.item_instances.get_mut(&ItemInstanceId::from_index(0).unwrap()).unwrap().parameter_types =
+            vec![TypeId::from_index(1).unwrap()];
+        assert!(
+            matches!(program.validate(), Err(CanonicalMirError::UseBeforeDefinition { value, .. }) if value == MirValueId::from_index(0).unwrap())
+        );
     }
 
     #[test]

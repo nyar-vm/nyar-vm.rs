@@ -27,29 +27,29 @@ pub fn materialize_value_from_json(json: &JsonValue, heap: Option<&mut ObjectHea
             }
             return Err(NyarRuntimeError::UnsupportedFeature("JSON array export type/layout contract"));
         }
-        JsonValue::Object(_) => return Err(NyarRuntimeError::TypeMismatch {
-            expected: "declared object export contract",
-            actual: "JSON object without layout contract".to_owned(),
-        }),
+        JsonValue::Object(_) => {
+            return Err(NyarRuntimeError::TypeMismatch {
+                expected: "declared object export contract",
+                actual: "JSON object without layout contract".to_owned(),
+            });
+        }
     })
 }
 
 fn json_number_to_value(number: &serde_json::Number) -> Result<Value, NyarRuntimeError> {
     if let Some(value) = number.as_i64() {
         Ok(scalar_i64(value))
-    } else if let Some(value) = number.as_f64() {
+    }
+    else if let Some(value) = number.as_f64() {
         Ok(Value::F64(value))
-    } else {
+    }
+    else {
         Err(NyarRuntimeError::TypeMismatch { expected: "number", actual: number.to_string() })
     }
 }
 
 fn scalar_i64(value: i64) -> Value {
-    if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
-        Value::I32(value as i32)
-    } else {
-        Value::I64(value)
-    }
+    if value >= i32::MIN as i64 && value <= i32::MAX as i64 { Value::I32(value as i32) } else { Value::I64(value) }
 }
 
 /// 将运行时标量序列化为 JSON；结构值没有正式导出合同就直接失败。
@@ -76,17 +76,15 @@ pub fn value_to_json_with_heap(value: &Value, heap: Option<&ObjectHeap>) -> Resu
             }
             Err(NyarRuntimeError::UnsupportedFeature("JSON object export type/layout contract"))
         }
-        Value::Coroutine(id) => Err(NyarRuntimeError::TypeMismatch {
-            expected: "JSON-exportable value",
-            actual: format!("coroutine#{id}"),
-        }),
+        Value::Coroutine(id) => Err(NyarRuntimeError::TypeMismatch { expected: "JSON-exportable value", actual: format!("coroutine#{id}") }),
     }
 }
 
 /// 解析顶层调用参数列表；当前只接受标量参数。
 pub fn parse_call_args_json(source: &str) -> Result<Vec<Value>> {
     let json: JsonValue = serde_json::from_str(source).into_diagnostic()?;
-    let JsonValue::Array(items) = json else {
+    let JsonValue::Array(items) = json
+    else {
         return Err(miette::miette!("--args-json must be a JSON array"));
     };
     items.iter().map(value_from_json).collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -95,7 +93,8 @@ pub fn parse_call_args_json(source: &str) -> Result<Vec<Value>> {
 /// 在运行时堆边界解析调用参数；结构参数缺少导出合同则失败。
 pub fn parse_call_args_json_with_heap(source: &str, heap: &mut ObjectHeap) -> Result<Vec<Value>> {
     let json: JsonValue = serde_json::from_str(source).into_diagnostic()?;
-    let JsonValue::Array(items) = json else {
+    let JsonValue::Array(items) = json
+    else {
         return Err(miette::miette!("--args-json must be a JSON array"));
     };
     let mut args = Vec::with_capacity(items.len());
@@ -122,10 +121,7 @@ mod tests {
         let mut heap = ObjectHeap::new();
         assert!(materialize_value_from_json(&serde_json::json!([3, 3]), Some(&mut heap)).is_err());
         for layout_id in [0, 1, 42] {
-            let id = heap.alloc(nyar_gc::ObjectPayload::LayoutObject {
-                layout_id,
-                slots: vec![Value::I32(3), Value::I32(3)],
-            });
+            let id = heap.alloc(nyar_gc::ObjectPayload::LayoutObject { layout_id, slots: vec![Value::I32(3), Value::I32(3)] });
             assert!(value_to_json_with_heap(&Value::Object(id), Some(&heap)).is_err());
         }
     }

@@ -42,10 +42,8 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_call(import_index);
                 }
                 else if let Some(function_index) = self.resolve_callee_function_index(callee) {
-                    callee_return = *self.return_types_by_function_index.get(&function_index)
-                        .expect("WASM 函数下标缺少返回签名");
-                    let param_types = self.param_types_by_function_index.get(&function_index)
-                        .expect("WASM 函数下标缺少参数签名").clone();
+                    callee_return = *self.return_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少返回签名");
+                    let param_types = self.param_types_by_function_index.get(&function_index).expect("WASM 函数下标缺少参数签名").clone();
                     self.emit_call_arguments(arguments, &param_types);
                     self.emit_call(function_index);
                 }
@@ -97,13 +95,12 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_set(local);
     }
 
-
-
     pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> Vec<u8> {
         if let Some(index) = import_index {
             return self.import_param_types.get(index as usize).expect("WASM 导入缺少参数签名").clone();
         }
-        let MirOperand::Item(instance) = callee else {
+        let MirOperand::Item(instance) = callee
+        else {
             panic!("WASM 普通调用缺少实例身份");
         };
         self.param_types_by_instance.get(instance).expect("WASM 实例缺少参数签名").clone()
@@ -113,7 +110,8 @@ impl<'a> WasmMirLowerer<'a> {
         if let Some(index) = import_index {
             return *self.import_return_types.get(index as usize).expect("WASM 导入缺少返回签名");
         }
-        let MirOperand::Item(instance) = callee else {
+        let MirOperand::Item(instance) = callee
+        else {
             panic!("WASM 普通调用缺少实例身份");
         };
         *self.return_types_by_instance.get(instance).expect("WASM 实例缺少返回签名")
@@ -124,13 +122,17 @@ impl<'a> WasmMirLowerer<'a> {
             MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
             MirOperand::Constant(constant) => match constant {
                 MirConstant::Utf8(_) => VALTYPE_I32,
-                MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
+                MirConstant::Utf16(_) => {
+                    panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+                }
                 MirConstant::Unit => WASM_GC_ANYREF,
                 MirConstant::Float64(_) => VALTYPE_F64,
                 MirConstant::Int(_) | MirConstant::Bool(_) => VALTYPE_I32,
             },
             MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
-            MirOperand::Item(_) => panic!("WASM callable identity cannot be used as a value operand"),
+            MirOperand::Item(_) => {
+                panic!("WASM callable identity cannot be used as a value operand")
+            }
         }
     }
 
@@ -209,10 +211,12 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {
-        let MirOperand::Item(instance) = callee else { return None; };
+        let MirOperand::Item(instance) = callee
+        else {
+            return None;
+        };
         self.callee_import_index.get(instance).copied()
     }
-
 
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
     fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
@@ -373,5 +377,4 @@ impl<'a> WasmMirLowerer<'a> {
         let simple = path.parts().last().map(|part| part.as_str()).unwrap_or("");
         simple.contains("write_line") || simple.contains("error_line")
     }
-
 }

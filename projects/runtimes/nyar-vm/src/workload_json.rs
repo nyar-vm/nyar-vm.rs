@@ -18,18 +18,17 @@ impl std::error::Error for WorkloadJsonError {}
 
 /// 解析一条工作负载意图 JSON 对象。
 pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, WorkloadJsonError> {
-    let value: serde_json::Value =
-        serde_json::from_str(source).map_err(|error| WorkloadJsonError(format!("invalid JSON: {error}")))?;
-    let obj = value
-        .as_object()
-        .ok_or_else(|| WorkloadJsonError("workload intent must be a JSON object".into()))?;
+    let value: serde_json::Value = serde_json::from_str(source).map_err(|error| WorkloadJsonError(format!("invalid JSON: {error}")))?;
+    let obj = value.as_object().ok_or_else(|| WorkloadJsonError("workload intent must be a JSON object".into()))?;
 
     let source = match obj.get("source").and_then(|v| v.as_str()).unwrap_or("project_config") {
         "project_config" => IntentSource::ProjectConfig,
         "deployment" => IntentSource::Deployment,
         "phase_event" => IntentSource::PhaseEvent,
         "profile" => IntentSource::Profile,
-        other => return Err(WorkloadJsonError(format!("unknown intent source `{other}`"))),
+        other => {
+            return Err(WorkloadJsonError(format!("unknown intent source `{other}`")));
+        }
     };
 
     let preferred_mode = match obj.get("preferred_mode").and_then(|v| v.as_str()) {
@@ -38,7 +37,9 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
         Some("generational_low_latency") => Some(GcMode::GenerationalLowLatency),
         Some("throughput_batch") => Some(GcMode::ThroughputBatch),
         Some("concurrent_mark_reserved") => Some(GcMode::ConcurrentMarkReserved),
-        Some(other) => return Err(WorkloadJsonError(format!("unknown preferred_mode `{other}`"))),
+        Some(other) => {
+            return Err(WorkloadJsonError(format!("unknown preferred_mode `{other}`")));
+        }
     };
 
     let lifetime_hint = match obj.get("lifetime_hint").and_then(|v| v.as_str()) {
@@ -47,7 +48,9 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
         Some("cross_batch_cache") => ObjectLifetimeHint::CrossBatchCache,
         Some("long_lived_shared") => ObjectLifetimeHint::LongLivedShared,
         Some("large_readonly") => ObjectLifetimeHint::LargeReadonly,
-        Some(other) => return Err(WorkloadJsonError(format!("unknown lifetime_hint `{other}`"))),
+        Some(other) => {
+            return Err(WorkloadJsonError(format!("unknown lifetime_hint `{other}`")));
+        }
     };
 
     let intent = WorkloadIntent {
@@ -63,9 +66,7 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
 
     // 复用控制器校验（紧暂停 + 吞吐冲突）
     let mut probe = nyar_gc::StrategyController::new();
-    probe
-        .set_process_intent(intent.clone())
-        .map_err(|error: IntentError| WorkloadJsonError(error.to_string()))?;
+    probe.set_process_intent(intent.clone()).map_err(|error: IntentError| WorkloadJsonError(error.to_string()))?;
 
     Ok(intent)
 }
@@ -149,8 +150,7 @@ pub fn snapshot_gc_evidence(vm: &crate::NyarVm) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/workload").join(name)
@@ -158,12 +158,7 @@ mod tests {
 
     #[test]
     fn parses_bundled_scenario_fixtures() {
-        for name in [
-            "online-request.json",
-            "offline-batch.json",
-            "resident-service.json",
-            "concurrent-interactive.json",
-        ] {
+        for name in ["online-request.json", "offline-batch.json", "resident-service.json", "concurrent-interactive.json"] {
             let text = fs::read_to_string(fixture(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
             let intent = parse_workload_intent_json(&text).unwrap_or_else(|e| panic!("parse {name}: {e}"));
             assert!(intent.scenario_id.is_some(), "{name} missing scenario_id");

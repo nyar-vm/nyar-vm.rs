@@ -50,67 +50,36 @@ unite Parcel<First, Second> {
         assert_eq!(variant.fields[1].name, "tail");
         assert_eq!(
             sum.instantiate_payload(variant, &[ValkyrieType::Boolean, ValkyrieType::Utf8]),
-            Some(Some(ValkyrieType::Tuple(vec![
-                ValkyrieType::Utf8,
-                ValkyrieType::Array(Box::new(ValkyrieType::Boolean))
-            ])))
+            Some(Some(ValkyrieType::Tuple(vec![ValkyrieType::Utf8, ValkyrieType::Array(Box::new(ValkyrieType::Boolean))])))
         );
-        assert!(
-            sum.instantiate_payload(variant, &[ValkyrieType::Boolean])
-                .is_none()
-        );
+        assert!(sum.instantiate_payload(variant, &[ValkyrieType::Boolean]).is_none());
         validate_semantic_module(&mir).expect("声明合同");
     }
 
     #[test]
     fn sum_declaration_rejects_duplicate_owner_binder_and_field() {
-        let hir = ValkyrieCompiler::default()
-            .compile_source("unite Parcel<T> { Arbitrary { value: T } }")
-            .expect("当前源码声明");
+        let hir = ValkyrieCompiler::default().compile_source("unite Parcel<T> { Arbitrary { value: T } }").expect("当前源码声明");
         let mir = MirLowerer::lower_module_semantic(&hir);
         let mut duplicate_owner = mir.clone();
         duplicate_owner.sum_types.push(mir.sum_types[0].clone());
-        assert_eq!(
-            validate_semantic_module(&duplicate_owner).unwrap_err().code,
-            "SMIR006"
-        );
+        assert_eq!(validate_semantic_module(&duplicate_owner).unwrap_err().code, "SMIR006");
         let mut duplicate_binder = mir.clone();
-        duplicate_binder.sum_types[0]
-            .generics
-            .push(mir.sum_types[0].generics[0].clone());
-        assert_eq!(
-            validate_semantic_module(&duplicate_binder)
-                .unwrap_err()
-                .code,
-            "SMIR006"
-        );
+        duplicate_binder.sum_types[0].generics.push(mir.sum_types[0].generics[0].clone());
+        assert_eq!(validate_semantic_module(&duplicate_binder).unwrap_err().code, "SMIR006");
         let mut duplicate_field = mir.clone();
-        duplicate_field.sum_types[0].variants[0]
-            .fields
-            .push(mir.sum_types[0].variants[0].fields[0].clone());
-        assert_eq!(
-            validate_semantic_module(&duplicate_field).unwrap_err().code,
-            "SMIR006"
-        );
+        duplicate_field.sum_types[0].variants[0].fields.push(mir.sum_types[0].variants[0].fields[0].clone());
+        assert_eq!(validate_semantic_module(&duplicate_field).unwrap_err().code, "SMIR006");
     }
 
     #[test]
     fn sum_declaration_preserves_variant_result_refinement() {
-        let mut hir = ValkyrieCompiler::default()
-            .compile_source("unite Parcel<T> { Arbitrary { value: T } }")
-            .expect("当前源码声明");
-        let refined = ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new("Parcel"))),
-            vec![ValkyrieType::Boolean],
-        );
+        let mut hir = ValkyrieCompiler::default().compile_source("unite Parcel<T> { Arbitrary { value: T } }").expect("当前源码声明");
+        let refined = ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Parcel"))), vec![ValkyrieType::Boolean]);
         hir.enums[0].variants[0].result_type = Some(refined.clone());
         let mir = MirLowerer::lower_module_semantic(&hir);
         let sum = &mir.sum_types[0];
         assert_eq!(sum.variants[0].result_type, Some(refined.clone()));
-        assert_eq!(
-            sum.instantiate_result(&sum.variants[0], &[ValkyrieType::Utf8]),
-            Some(refined)
-        );
+        assert_eq!(sum.instantiate_result(&sum.variants[0], &[ValkyrieType::Utf8]), Some(refined));
     }
 
     #[test]
@@ -138,10 +107,7 @@ micro wrap(value: utf8) -> Envelope<utf8> {
             })
             .expect("SumNew");
         operation.clear();
-        assert_eq!(
-            validate_semantic_module(&missing).unwrap_err().code,
-            "SMIR006"
-        );
+        assert_eq!(validate_semantic_module(&missing).unwrap_err().code, "SMIR006");
         let mut wrong = mir;
         let operation = wrong
             .functions
@@ -154,10 +120,7 @@ micro wrap(value: utf8) -> Envelope<utf8> {
             })
             .expect("SumNew");
         *operation = Some(ValkyrieType::Boolean);
-        assert_eq!(
-            validate_semantic_module(&wrong).unwrap_err().code,
-            "SMIR006"
-        );
+        assert_eq!(validate_semantic_module(&wrong).unwrap_err().code, "SMIR006");
     }
 }
 
@@ -184,63 +147,32 @@ impl MirSumVariant {
         match self.fields.as_slice() {
             [] => None,
             [field] => Some(field.ty.clone()),
-            fields => Some(ValkyrieType::Tuple(
-                fields.iter().map(|field| field.ty.clone()).collect(),
-            )),
+            fields => Some(ValkyrieType::Tuple(fields.iter().map(|field| field.ty.clone()).collect())),
         }
     }
 }
 
 impl MirSumDeclaration {
     /// 完成声明结果或 variant refinement 的同一泛型代入。
-    pub fn instantiate_result(
-        &self,
-        variant: &MirSumVariant,
-        arguments: &[ValkyrieType],
-    ) -> Option<ValkyrieType> {
+    pub fn instantiate_result(&self, variant: &MirSumVariant, arguments: &[ValkyrieType]) -> Option<ValkyrieType> {
         if self.generics.len() != arguments.len() {
             return None;
         }
         if let Some(result) = &variant.result_type {
-            let substitutions = self
-                .generics
-                .iter()
-                .zip(arguments)
-                .map(|(generic, argument)| (generic.name.clone(), argument.clone()))
-                .collect();
-            return Some(crate::valkyrie::hir::overload::substitute_type_vars(
-                result,
-                &substitutions,
-            ));
+            let substitutions =
+                self.generics.iter().zip(arguments).map(|(generic, argument)| (generic.name.clone(), argument.clone())).collect();
+            return Some(crate::valkyrie::hir::overload::substitute_type_vars(result, &substitutions));
         }
         let owner = ValkyrieType::Named(Identifier::new(&self.name));
-        Some(if arguments.is_empty() {
-            owner
-        } else {
-            ValkyrieType::Apply(Box::new(owner), arguments.to_vec())
-        })
+        Some(if arguments.is_empty() { owner } else { ValkyrieType::Apply(Box::new(owner), arguments.to_vec()) })
     }
     /// 只按声明 binder 代入，不依据 variant 拼写选择实参位置。
-    pub fn instantiate_payload(
-        &self,
-        variant: &MirSumVariant,
-        arguments: &[ValkyrieType],
-    ) -> Option<Option<ValkyrieType>> {
+    pub fn instantiate_payload(&self, variant: &MirSumVariant, arguments: &[ValkyrieType]) -> Option<Option<ValkyrieType>> {
         if self.generics.len() != arguments.len() {
             return None;
         }
-        let substitutions = self
-            .generics
-            .iter()
-            .zip(arguments)
-            .map(|(generic, argument)| (generic.name.clone(), argument.clone()))
-            .collect();
-        Some(
-            variant
-                .payload_type()
-                .as_ref()
-                .map(|ty| crate::valkyrie::hir::overload::substitute_type_vars(ty, &substitutions)),
-        )
+        let substitutions = self.generics.iter().zip(arguments).map(|(generic, argument)| (generic.name.clone(), argument.clone())).collect();
+        Some(variant.payload_type().as_ref().map(|ty| crate::valkyrie::hir::overload::substitute_type_vars(ty, &substitutions)))
     }
 
     /// 向下投影目标布局；该结果不得作为语义 lowering 的输入。
@@ -253,12 +185,14 @@ impl MirSumDeclaration {
             variants: self
                 .variants
                 .iter()
-                .map(|variant| Ok(nyar_types::SumVariantLayout {
-                    id: variant.id,
-                    name: variant.name.clone(),
-                    tag: variant.tag,
-                    payload_type: variant.payload_type().as_ref().map(crate::frontend_contract::concretize_type).transpose()?,
-                }))
+                .map(|variant| {
+                    Ok(nyar_types::SumVariantLayout {
+                        id: variant.id,
+                        name: variant.name.clone(),
+                        tag: variant.tag,
+                        payload_type: variant.payload_type().as_ref().map(crate::frontend_contract::concretize_type).transpose()?,
+                    })
+                })
                 .collect::<Result<_, crate::frontend_contract::ConcretizeError>>()?,
         })
     }

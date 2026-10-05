@@ -8,9 +8,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     FragmentSubmission,
-    backend_plan_views::{
-        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand,
-    },
+    backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand},
 };
 use nyar::QualifiedName;
 use nyar_types::{AggregateLayout, Constant, NyarFunctionType, NyarType, ValueOrigin};
@@ -106,7 +104,12 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 let location = format!("block {} instruction {index}", block.id.0);
                 let Some(layout_id) = submission.backend_plan.aggregate_layout_by_nominal().get(nominal).copied()
                 else {
-                    return Err(SemanticMirContractError { code: "SMIR010", function: function.symbol.clone(), location, detail: "aggregate construction references an unknown nominal identity".to_string() });
+                    return Err(SemanticMirContractError {
+                        code: "SMIR010",
+                        function: function.symbol.clone(),
+                        location,
+                        detail: "aggregate construction references an unknown nominal identity".to_string(),
+                    });
                 };
                 let Some(layout) = submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.id == layout_id)
                 else {
@@ -125,17 +128,18 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 let fields_match = fields.len() == layout.fields.len()
                     && fields.iter().all(|(field_id, value)| {
                         submission.backend_plan.aggregate_layout_by_field().get(field_id).is_some_and(|(owner_layout, slot)| {
-                            *owner_layout == layout_id && layout.fields.get(*slot as usize).is_some_and(|field| {
-                            let declared = &field.ty;
-                            matches!(
-                                value,
-                                ExecutableOperand::Value(value)
-                                    if function
-                                        .value_types
-                                        .get(value)
-                                        .is_some_and(|actual| aggregate_field_types_compatible(actual, &declared))
-                            )
-                            })
+                            *owner_layout == layout_id
+                                && layout.fields.get(*slot as usize).is_some_and(|field| {
+                                    let declared = &field.ty;
+                                    matches!(
+                                        value,
+                                        ExecutableOperand::Value(value)
+                                            if function
+                                                .value_types
+                                                .get(value)
+                                                .is_some_and(|actual| aggregate_field_types_compatible(actual, &declared))
+                                    )
+                                })
                         })
                     });
                 if !fields_match {
@@ -206,11 +210,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 });
             };
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
-                if function
-                    .value_types
-                    .get(&output)
-                    .is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty))
-                {
+                if function.value_types.get(&output).is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -220,11 +220,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 }
             }
             if let Some(ExecutableOperand::Value(value)) = value {
-                if function
-                    .value_types
-                    .get(value)
-                    .is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty))
-                {
+                if function.value_types.get(value).is_none_or(|actual| !aggregate_field_types_compatible(actual, &declared.ty)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -290,10 +286,9 @@ fn substitute_nyar_type(ty: &NyarType, substitution: &BTreeMap<String, NyarType>
         NyarType::Named(name) => substitution.get(name.as_str()).cloned().unwrap_or_else(|| ty.clone()),
         NyarType::Array(element) => NyarType::Array(Box::new(substitute_nyar_type(element, substitution))),
         NyarType::Nullable(element) => NyarType::Nullable(Box::new(substitute_nyar_type(element, substitution))),
-        NyarType::FixedArray { element, length } => NyarType::FixedArray {
-            element: Box::new(substitute_nyar_type(element, substitution)),
-            length: *length,
-        },
+        NyarType::FixedArray { element, length } => {
+            NyarType::FixedArray { element: Box::new(substitute_nyar_type(element, substitution)), length: *length }
+        }
         NyarType::Apply(base, args) => NyarType::Apply(
             Box::new(substitute_nyar_type(base, substitution)),
             args.iter().map(|arg| substitute_nyar_type(arg, substitution)).collect(),
@@ -337,10 +332,7 @@ fn aggregate_field_types_compatible(actual: &NyarType, declared: &NyarType) -> b
         (NyarType::Apply(actual_base, actual_args), NyarType::Apply(declared_base, declared_args)) => {
             aggregate_field_types_compatible(&actual_base, &declared_base)
                 && actual_args.len() == declared_args.len()
-                && actual_args
-                    .iter()
-                    .zip(declared_args.iter())
-                    .all(|(actual, declared)| aggregate_field_types_compatible(actual, declared))
+                && actual_args.iter().zip(declared_args.iter()).all(|(actual, declared)| aggregate_field_types_compatible(actual, declared))
         }
         _ => false,
     }
@@ -699,7 +691,8 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
     }
     match &block.terminator {
         crate::contracts::Terminator::Return { value: Some(value) } => {
-            let Some(actual) = value_type(value) else {
+            let Some(actual) = value_type(value)
+            else {
                 return Err(SemanticMirContractError {
                     code: "SMIR001",
                     function: function.symbol.clone(),
@@ -738,7 +731,8 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                 });
             }
             for (argument, parameter) in arguments.iter().zip(&destination.parameters) {
-                let Some(actual) = value_type(argument) else {
+                let Some(actual) = value_type(argument)
+                else {
                     return Err(SemanticMirContractError {
                         code: "SMIR001",
                         function: function.symbol.clone(),
@@ -746,7 +740,8 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                         detail: "jump argument has no SSA type".to_string(),
                     });
                 };
-                let Some(expected) = function.value_types.get(parameter) else {
+                let Some(expected) = function.value_types.get(parameter)
+                else {
                     return Err(SemanticMirContractError {
                         code: "SMIR001",
                         function: function.symbol.clone(),
@@ -759,9 +754,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                         code: "SMIR007",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!(
-                            "jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"
-                        ),
+                        detail: format!("jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"),
                     });
                 }
             }
@@ -813,9 +806,7 @@ mod tests {
     /// 从 terminator 推断 `return_type`，避免 `Return { Some(...) }` 与 Unit 返回类型触发 SMIR007。
     fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
         let return_type = match &terminator {
-            Terminator::Return { value: Some(Operand::Value(v)) } => {
-                value_types.get(v).cloned().unwrap_or(NyarType::Unit)
-            }
+            Terminator::Return { value: Some(Operand::Value(v)) } => value_types.get(v).cloned().unwrap_or(NyarType::Unit),
             Terminator::Return { value: Some(Operand::Constant(c)) } => match c {
                 crate::contracts::Constant::Bool(_) => NyarType::Boolean,
                 crate::contracts::Constant::Int(_) => NyarType::Integer64 { signed: true },
@@ -856,10 +847,7 @@ mod tests {
     #[test]
     fn rejects_instruction_output_without_semantic_type() {
         let result = validate_function(&function(
-            vec![instr(
-                InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
-                vec![ValueRef(7)],
-            )],
+            vec![instr(InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) }, vec![ValueRef(7)])],
             Terminator::Return { value: None },
             BTreeMap::new(),
         ));
@@ -894,10 +882,7 @@ mod tests {
         assert_eq!(observation("valid_minimal", result.as_ref().map(|_| ()).map_err(|error| error)), "valid_minimal|accept||");
 
         let result = validate_function(&function(
-            vec![instr(
-                InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) },
-                vec![ValueRef(7)],
-            )],
+            vec![instr(InstructionKind::Copy { source: Operand::Constant(crate::contracts::Constant::Unit) }, vec![ValueRef(7)])],
             Terminator::Return { value: None },
             BTreeMap::new(),
         ));

@@ -3,13 +3,12 @@
 pub mod singleton;
 /// `SSA`-based `MIR` main representation.
 pub mod ssa;
-pub mod validation;
 mod sum;
+pub mod validation;
 pub use sum::{MirSumDeclaration, MirSumVariant};
 
-use std_data::text::valkyrie::{ParseError, ValkyrieRoot};
-
-use crate::{hir::ValkyrieCompiler, types::hir::HirModule, validation::ControlFlowScheduler};
+use crate::{hir::ValkyrieCompiler, types::hir::HirModule, validation::ControlFlowScheduler, valkyrie::frontend::ValkyrieRoot};
+use std_data::text::valkyrie::ParseError;
 
 pub use singleton::{
     SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR,
@@ -18,10 +17,10 @@ pub use singleton::{
 };
 pub use ssa::{
     AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant,
-    MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind,
-    MirStruct, MirTerminator, MirValue, MirValueOrigin, MirValueRef, SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan,
-    layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type, merge_aggregate_layout_plan,
-    storage_kind_for_named_type, storage_kind_for_type,
+    MirDiagnostic, MirEffectKind, MirEntryContract, MirExportContract, MirExternalCallContract, MirField, MirFunction, MirInstruction,
+    MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirStruct, MirTerminator, MirValue, MirValueOrigin, MirValueRef,
+    SumTypeLayout, SumVariantLayout, compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
+    merge_aggregate_layout_plan, storage_kind_for_named_type, storage_kind_for_type,
 };
 
 impl ValkyrieCompiler {
@@ -49,7 +48,7 @@ impl ValkyrieCompiler {
 #[cfg(test)]
 mod analysis_contract_tests {
     use super::*;
-    use std_data::text::valkyrie::AstParser;
+    use crate::valkyrie::frontend;
 
     #[test]
     fn source_mir_analysis_rejects_the_same_unresolved_call_as_hir() {
@@ -63,7 +62,7 @@ mod analysis_contract_tests {
 
     #[test]
     fn ast_mir_analysis_rejects_unresolved_calls_before_lowering() {
-        let root = AstParser::parse_root("micro caller() -> i32 { return missing() }").expect("语法正确的源码");
+        let root = frontend::parse_source("micro caller() -> i32 { return missing() }").expect("Oak 应解析测试源码");
         let error = ValkyrieCompiler::default().lower_root_to_mir(&root).expect_err("AST 分析入口必须执行 HIR 合同");
         assert!(error.to_string().contains("SMIR003"), "{error}");
     }

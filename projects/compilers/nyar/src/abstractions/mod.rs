@@ -583,7 +583,9 @@ impl FromStr for CanonicalTarget {
                     CanonicalArch::Clr => CanonicalAbi::Clr,
                     CanonicalArch::Jvm => CanonicalAbi::Jvm,
                     CanonicalArch::NyarVm => CanonicalAbi::Managed,
-                    _ => return Err(CanonicalTargetParseError::new(format!("target '{}' cannot use managed abi", trimmed))),
+                    _ => {
+                        return Err(CanonicalTargetParseError::new(format!("target '{}' cannot use managed abi", trimmed)));
+                    }
                 }),
                 value => Some(
                     CanonicalAbi::parse(value)

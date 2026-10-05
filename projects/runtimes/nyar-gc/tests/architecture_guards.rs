@@ -5,12 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORBIDDEN_TOKENS: &[&str] = &[
-    "nyar_language::",
-    "use nyar_language",
-    "std_data::text::",
-    "ValkyrieCompiler",
-];
+const FORBIDDEN_TOKENS: &[&str] = &["nyar_language::", "use nyar_language", "std_data::text::", "ValkyrieCompiler"];
 
 fn crate_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")

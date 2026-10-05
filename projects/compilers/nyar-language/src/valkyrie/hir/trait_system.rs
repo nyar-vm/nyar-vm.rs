@@ -457,10 +457,12 @@ fn impl_where_constraint_pairs(impl_block: &HirImpl) -> BTreeSet<(HirType, crate
     impl_block
         .where_constraints
         .iter()
-        .flat_map(|constraint| constraint.bounds.iter().cloned().map(|bound| {
-            let mut bound = bound;
-            bound.associated_types.sort();
-            (constraint.target.clone(), bound)
-        }))
+        .flat_map(|constraint| {
+            constraint.bounds.iter().cloned().map(|bound| {
+                let mut bound = bound;
+                bound.associated_types.sort();
+                (constraint.target.clone(), bound)
+            })
+        })
         .collect()
 }

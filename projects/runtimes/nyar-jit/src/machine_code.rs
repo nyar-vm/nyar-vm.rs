@@ -256,13 +256,7 @@ pub fn encode_ret_i32_select_cmp_consts(cmp: I32Cmp, a: u16, b: u16, then_imm: i
 }
 
 /// 条件选择：一臂 local、一臂立即数（`flags` 恰有一位）。
-pub fn encode_ret_i32_select_cmp_mixed(
-    cmp: I32Cmp,
-    a: u16,
-    b: u16,
-    then_arm: SelectArm,
-    else_arm: SelectArm,
-) -> Vec<u8> {
+pub fn encode_ret_i32_select_cmp_mixed(cmp: I32Cmp, a: u16, b: u16, then_arm: SelectArm, else_arm: SelectArm) -> Vec<u8> {
     let (flags, then_bytes, else_bytes) = match (then_arm, else_arm) {
         (SelectArm::Imm(then_imm), SelectArm::Local(else_slot)) => {
             let mut else_pad = [0u8; 4];
@@ -425,11 +419,7 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let slot = u16::from_le_bytes([blob[5], blob[6]]);
             Ok(ScalarProgram::RetLocal { slot })
         }
-        op::RET_I32_ADD_LOCALS
-        | op::RET_I32_SUB_LOCALS
-        | op::RET_I32_MUL_LOCALS
-        | op::RET_I32_DIV_LOCALS
-        | op::RET_I32_REM_LOCALS => {
+        op::RET_I32_ADD_LOCALS | op::RET_I32_SUB_LOCALS | op::RET_I32_MUL_LOCALS | op::RET_I32_DIV_LOCALS | op::RET_I32_REM_LOCALS => {
             if blob.len() != 9 {
                 return Err(MachineCodeError::InvalidBlob);
             }
@@ -470,13 +460,7 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let b = u16::from_le_bytes([blob[8], blob[9]]);
             let then_slot = u16::from_le_bytes([blob[10], blob[11]]);
             let else_slot = u16::from_le_bytes([blob[12], blob[13]]);
-            Ok(ScalarProgram::RetI32SelectCmpLocals {
-                cmp,
-                a,
-                b,
-                then_slot,
-                else_slot,
-            })
+            Ok(ScalarProgram::RetI32SelectCmpLocals { cmp, a, b, then_slot, else_slot })
         }
         op::RET_I32_BINOP_IMM_LOCAL => {
             if blob.len() != 13 {
@@ -490,12 +474,7 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             };
             let imm = i32::from_le_bytes([blob[7], blob[8], blob[9], blob[10]]);
             let local = u16::from_le_bytes([blob[11], blob[12]]);
-            Ok(ScalarProgram::RetI32BinopImmLocal {
-                binop,
-                imm,
-                local,
-                imm_on_left,
-            })
+            Ok(ScalarProgram::RetI32BinopImmLocal { binop, imm, local, imm_on_left })
         }
         op::RET_I32_CMP_IMM_LOCAL => {
             if blob.len() != 13 {
@@ -509,12 +488,7 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             };
             let imm = i32::from_le_bytes([blob[7], blob[8], blob[9], blob[10]]);
             let local = u16::from_le_bytes([blob[11], blob[12]]);
-            Ok(ScalarProgram::RetI32CmpImmLocal {
-                cmp,
-                imm,
-                local,
-                imm_on_left,
-            })
+            Ok(ScalarProgram::RetI32CmpImmLocal { cmp, imm, local, imm_on_left })
         }
         op::RET_I32_SELECT_CMP_CONSTS => {
             if blob.len() != 18 {
@@ -525,13 +499,7 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let b = u16::from_le_bytes([blob[8], blob[9]]);
             let then_imm = i32::from_le_bytes([blob[10], blob[11], blob[12], blob[13]]);
             let else_imm = i32::from_le_bytes([blob[14], blob[15], blob[16], blob[17]]);
-            Ok(ScalarProgram::RetI32SelectCmpConsts {
-                cmp,
-                a,
-                b,
-                then_imm,
-                else_imm,
-            })
+            Ok(ScalarProgram::RetI32SelectCmpConsts { cmp, a, b, then_imm, else_imm })
         }
         op::RET_I32_SELECT_CMP_MIXED => {
             if blob.len() != 19 {
@@ -544,23 +512,11 @@ pub fn decode_scalar_program(blob: &[u8]) -> Result<ScalarProgram, MachineCodeEr
             let then_raw = i32::from_le_bytes([blob[11], blob[12], blob[13], blob[14]]);
             let else_raw = i32::from_le_bytes([blob[15], blob[16], blob[17], blob[18]]);
             let (then_arm, else_arm) = match flags {
-                SELECT_THEN_IMM => (
-                    SelectArm::Imm(then_raw),
-                    SelectArm::Local(u16::from_le_bytes([blob[15], blob[16]])),
-                ),
-                SELECT_ELSE_IMM => (
-                    SelectArm::Local(u16::from_le_bytes([blob[11], blob[12]])),
-                    SelectArm::Imm(else_raw),
-                ),
+                SELECT_THEN_IMM => (SelectArm::Imm(then_raw), SelectArm::Local(u16::from_le_bytes([blob[15], blob[16]]))),
+                SELECT_ELSE_IMM => (SelectArm::Local(u16::from_le_bytes([blob[11], blob[12]])), SelectArm::Imm(else_raw)),
                 _ => return Err(MachineCodeError::InvalidBlob),
             };
-            Ok(ScalarProgram::RetI32SelectCmpMixed {
-                cmp,
-                a,
-                b,
-                then_arm,
-                else_arm,
-            })
+            Ok(ScalarProgram::RetI32SelectCmpMixed { cmp, a, b, then_arm, else_arm })
         }
         op::RET_VOID => {
             if blob.len() != 5 {
@@ -586,10 +542,7 @@ mod tests {
     fn roundtrip_ret_i32_binops() {
         for binop in [I32Binop::Add, I32Binop::Sub, I32Binop::Mul, I32Binop::DivS, I32Binop::RemS] {
             let blob = encode_ret_i32_binop_locals(binop, 0, 1);
-            assert_eq!(
-                decode_scalar_program(&blob).unwrap(),
-                ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 }
-            );
+            assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop, a: 0, b: 1 });
         }
     }
 
@@ -602,24 +555,11 @@ mod tests {
     #[test]
     fn roundtrip_ret_i32_cmp_and_select() {
         let blob = encode_ret_i32_cmp_locals(I32Cmp::LtS, 0, 1);
-        assert_eq!(
-            decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32CmpLocals {
-                cmp: I32Cmp::LtS,
-                a: 0,
-                b: 1
-            }
-        );
+        assert_eq!(decode_scalar_program(&blob).unwrap(), ScalarProgram::RetI32CmpLocals { cmp: I32Cmp::LtS, a: 0, b: 1 });
         let blob = encode_ret_i32_select_cmp_locals(I32Cmp::Eq, 0, 1, 2, 3);
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpLocals {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_slot: 2,
-                else_slot: 3
-            }
+            ScalarProgram::RetI32SelectCmpLocals { cmp: I32Cmp::Eq, a: 0, b: 1, then_slot: 2, else_slot: 3 }
         );
     }
 
@@ -628,13 +568,7 @@ mod tests {
         let blob = encode_ret_i32_select_cmp_consts(I32Cmp::Eq, 0, 1, 7, 9);
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpConsts {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_imm: 7,
-                else_imm: 9
-            }
+            ScalarProgram::RetI32SelectCmpConsts { cmp: I32Cmp::Eq, a: 0, b: 1, then_imm: 7, else_imm: 9 }
         );
     }
 
@@ -643,60 +577,26 @@ mod tests {
         let blob = encode_ret_i32_binop_imm_local(I32Binop::Add, 10, 0, true);
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32BinopImmLocal {
-                binop: I32Binop::Add,
-                imm: 10,
-                local: 0,
-                imm_on_left: true
-            }
+            ScalarProgram::RetI32BinopImmLocal { binop: I32Binop::Add, imm: 10, local: 0, imm_on_left: true }
         );
         let blob = encode_ret_i32_cmp_imm_local(I32Cmp::LtS, 5, 1, false);
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32CmpImmLocal {
-                cmp: I32Cmp::LtS,
-                imm: 5,
-                local: 1,
-                imm_on_left: false
-            }
+            ScalarProgram::RetI32CmpImmLocal { cmp: I32Cmp::LtS, imm: 5, local: 1, imm_on_left: false }
         );
     }
 
     #[test]
     fn roundtrip_ret_i32_select_cmp_mixed_and_void() {
-        let blob = encode_ret_i32_select_cmp_mixed(
-            I32Cmp::Eq,
-            0,
-            1,
-            SelectArm::Imm(7),
-            SelectArm::Local(2),
-        );
+        let blob = encode_ret_i32_select_cmp_mixed(I32Cmp::Eq, 0, 1, SelectArm::Imm(7), SelectArm::Local(2));
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpMixed {
-                cmp: I32Cmp::Eq,
-                a: 0,
-                b: 1,
-                then_arm: SelectArm::Imm(7),
-                else_arm: SelectArm::Local(2),
-            }
+            ScalarProgram::RetI32SelectCmpMixed { cmp: I32Cmp::Eq, a: 0, b: 1, then_arm: SelectArm::Imm(7), else_arm: SelectArm::Local(2) }
         );
-        let blob = encode_ret_i32_select_cmp_mixed(
-            I32Cmp::Ne,
-            0,
-            1,
-            SelectArm::Local(3),
-            SelectArm::Imm(9),
-        );
+        let blob = encode_ret_i32_select_cmp_mixed(I32Cmp::Ne, 0, 1, SelectArm::Local(3), SelectArm::Imm(9));
         assert_eq!(
             decode_scalar_program(&blob).unwrap(),
-            ScalarProgram::RetI32SelectCmpMixed {
-                cmp: I32Cmp::Ne,
-                a: 0,
-                b: 1,
-                then_arm: SelectArm::Local(3),
-                else_arm: SelectArm::Imm(9),
-            }
+            ScalarProgram::RetI32SelectCmpMixed { cmp: I32Cmp::Ne, a: 0, b: 1, then_arm: SelectArm::Local(3), else_arm: SelectArm::Imm(9) }
         );
         assert_eq!(decode_scalar_program(&encode_ret_void()).unwrap(), ScalarProgram::RetVoid);
     }

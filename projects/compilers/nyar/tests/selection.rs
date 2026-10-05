@@ -49,4 +49,3 @@ fn selector_prefers_lane_input_target_consistent_backend() {
     let selected = selector.select(&requirement).expect("missing candidate");
     assert_eq!(selected.name, "clr-binary");
 }
-

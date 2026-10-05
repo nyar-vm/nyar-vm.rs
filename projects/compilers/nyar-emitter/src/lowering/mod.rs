@@ -6,9 +6,9 @@ use nyar::{HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "nyar-vm-lane")]
 use nyar_bytecode::NyarModuleData;
 
-use crate::{DriverBackendInput, FragmentSubmission};
 #[cfg(feature = "nyar-vm-lane")]
 use crate::NyarVmBackendInput;
+use crate::{DriverBackendInput, FragmentSubmission};
 
 pub(crate) mod backends;
 pub(crate) mod features;
@@ -20,29 +20,18 @@ use self::backends::wasm;
 #[cfg(feature = "nyar-vm-lane")]
 use self::backends::{nyar_vm, wasm};
 
-
-
-
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> WasmBinaryModule {
     backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).0
 }
-
-
 
 #[cfg(feature = "nyar-vm-lane")]
 pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
     nyar_vm::lower_fragment_to_nyar_module(submission)
 }
 
-
-
-
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
     wasm::decode_uleb128(bytes, pos)
 }
-
-
-
 
 pub(crate) fn testing_lower_fragment_to_wasm_module(
     submission: &FragmentSubmission,
@@ -51,16 +40,9 @@ pub(crate) fn testing_lower_fragment_to_wasm_module(
     wasm::lower_fragment_to_wasm_module(submission, host_boundary)
 }
 
-
-
-
-
-
-
 pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> shared::executable::ExecutableLoweringContext<'_> {
     shared::executable::ExecutableLoweringContext::new(submission)
 }
-
 
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
 
@@ -112,19 +94,17 @@ pub(crate) fn lower_fragment_to_driver_input(
             Ok(DriverBackendInput::NyarVm(NyarVmBackendInput {
                 nyar_module,
                 library_public_exports: submission
-                    .backend_plan.exported_operations()
+                    .backend_plan
+                    .exported_operations()
                     .iter()
                     .filter_map(|operation| submission.backend_plan.wasm_export_names().get(operation).cloned())
                     .collect(),
                 output_dir,
             }))
         }
-        other => Err(miette!(
-            "目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物"
-        )),
+        other => Err(miette!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
     }
 }
-
 
 pub(crate) fn write_wasm_wat_sidecar(output_dir: &Path, artifact_name: &str, input: &DriverBackendInput) -> Result<Option<PathBuf>> {
     let DriverBackendInput::Wasm(input) = input

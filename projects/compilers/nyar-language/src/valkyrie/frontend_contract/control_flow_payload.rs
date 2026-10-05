@@ -79,11 +79,7 @@ fn collect_witness_binding(
 fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
     let trait_impl = find_trait_impl(hir_module, trait_name)?;
     let type_name = impl_type_name(trait_impl)?;
-    let (index, method) = trait_impl
-        .methods
-        .iter()
-        .enumerate()
-        .find(|(_, method)| method.name.as_str() == method_name)?;
+    let (index, method) = trait_impl.methods.iter().enumerate().find(|(_, method)| method.name.as_str() == method_name)?;
     let resolved_index = u32::try_from(index).ok()?;
     let impl_symbol = format!("{}.{}", type_name, method.name);
     Some(SuspendWitnessBinding {
@@ -109,9 +105,9 @@ mod witness_identity_tests {
     use crate::{Identifier, NamePath, ValkyrieCompiler};
 
     fn module() -> HirModule {
-        let mut hir = ValkyrieCompiler::default().compile_source(
-            "micro output() -> i64 { 1 } micro poll() -> bool { true }",
-        ).expect("夹具方法来自当前源码");
+        let mut hir = ValkyrieCompiler::default()
+            .compile_source("micro output() -> i64 { 1 } micro poll() -> bool { true }")
+            .expect("夹具方法来自当前源码");
         hir.impls.push(HirImpl {
             target: ValkyrieType::Named(Identifier::new("Task")),
             trait_path: Some(NamePath::new(vec![Identifier::new("Future")])),

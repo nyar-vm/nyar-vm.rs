@@ -39,8 +39,7 @@ impl NyarVm {
         args: Vec<Value>,
     ) -> Result<Value, NyarRuntimeError> {
         let function_index = module.export_index(entry).ok_or_else(|| NyarRuntimeError::EntryNotFound(entry.to_string()))?;
-        let function = module.functions.get(function_index)
-            .ok_or(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
+        let function = module.functions.get(function_index).ok_or(NyarRuntimeError::FunctionIndexOutOfRange(function_index as i32))?;
         validate_argument_count(function, args.len())?;
         if !globals.init_done() {
             for &init_index in &module.init_function_indices {
@@ -65,11 +64,7 @@ impl NyarVm {
     }
 
     /// 构造函数的保守 GC stack map（不依赖 JIT 后端是否启用）。
-    pub fn stack_maps_for(
-        &self,
-        module: &LoadedModule,
-        function_index: usize,
-    ) -> Result<crate::jit::FunctionStackMaps, JitError> {
+    pub fn stack_maps_for(&self, module: &LoadedModule, function_index: usize) -> Result<crate::jit::FunctionStackMaps, JitError> {
         crate::jit::stack_maps_for(module, function_index)
     }
 
@@ -168,26 +163,17 @@ impl NyarVm {
     }
 
     /// 应用进程级工作负载意图并刷新 GC 策略。
-    pub fn apply_workload_intent(
-        &mut self,
-        intent: nyar_gc::WorkloadIntent,
-    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn apply_workload_intent(&mut self, intent: nyar_gc::WorkloadIntent) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
         self.executor.heap_mut().apply_intent(intent)
     }
 
     /// 进入业务阶段（嵌套）并刷新策略。
-    pub fn begin_workload_phase(
-        &mut self,
-        intent: nyar_gc::WorkloadIntent,
-    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn begin_workload_phase(&mut self, intent: nyar_gc::WorkloadIntent) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
         self.executor.heap_mut().begin_phase(intent)
     }
 
     /// 结束业务阶段并刷新策略。
-    pub fn end_workload_phase(
-        &mut self,
-        phase: Option<&str>,
-    ) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn end_workload_phase(&mut self, phase: Option<&str>) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
         self.executor.heap_mut().end_phase(phase)
     }
 

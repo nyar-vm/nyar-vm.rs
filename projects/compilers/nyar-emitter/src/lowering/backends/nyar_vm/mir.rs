@@ -3,23 +3,20 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    contracts::{EffectKind, ValueOrigin},
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
+    contracts::{EffectKind, ValueOrigin},
 };
 use nyar::NamePath;
-use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
-    NYAR_VERSION,
+    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
 };
+use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 
-use super::{
-    executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-};
+use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{BackendPrivatePlan, FragmentSubmission};
 use miette::Result;
 
@@ -62,11 +59,8 @@ impl<'a> BytecodeEmitter<'a> {
     }
 
     fn ensure_host_import(&mut self, symbol: &str) -> i32 {
-        if let Some((index, _)) = self
-            .imports
-            .iter()
-            .enumerate()
-            .find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
+        if let Some((index, _)) =
+            self.imports.iter().enumerate().find(|(_, import)| import.module_name == HOST_IMPORT_MODULE && import.symbol_name == symbol)
         {
             return index as i32;
         }
@@ -87,12 +81,7 @@ impl<'a> BytecodeEmitter<'a> {
 
     /// 按 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
-        nyar_bytecode::emit_imm2(
-            &mut self.code_bytes,
-            NyarHeadCode::CallIntrinsic,
-            intrinsic.bytecode_index() as i32,
-            arg_count,
-        );
+        nyar_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, intrinsic.bytecode_index() as i32, arg_count);
     }
 
     fn emit_jump_placeholder(&mut self, opcode: NyarHeadCode, target: MirBlockRef) -> usize {
@@ -119,17 +108,28 @@ impl<'a> BytecodeEmitter<'a> {
 /// Lower MIR-backed fragment operations into a `.nyar` module.
 pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
     for instance in submission.backend_plan.instances() {
-        let Some(view) = submission.backend_plan.get_function(&instance) else { continue; };
-        if view.function.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(
-            &instruction.kind,
-            MirInstructionKind::SumNew { .. } | MirInstructionKind::SumPayloadGet { .. } | MirInstructionKind::SumVariantIs { .. }
-        )) {
-            return Err(miette::miette!("Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"));
+        let Some(view) = submission.backend_plan.get_function(&instance)
+        else {
+            continue;
+        };
+        if view.function.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| {
+            matches!(
+                &instruction.kind,
+                MirInstructionKind::SumNew { .. } | MirInstructionKind::SumPayloadGet { .. } | MirInstructionKind::SumVariantIs { .. }
+            )
+        }) {
+            return Err(miette::miette!(
+                "Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"
+            ));
         }
     }
     let mut module = NyarModuleData {
         version: NYAR_VERSION,
-        name: format!("{}__{}", super::sanitize_symbol(submission.backend_plan.module_name()), super::sanitize_symbol(submission.backend_plan.fragment_id().as_str())),
+        name: format!(
+            "{}__{}",
+            super::sanitize_symbol(submission.backend_plan.module_name()),
+            super::sanitize_symbol(submission.backend_plan.fragment_id().as_str())
+        ),
         constants: Vec::new(),
         functions: Vec::new(),
         imports: Vec::new(),
@@ -146,11 +146,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
         let exec = &submission.backend_plan;
-        let operations: Vec<ItemInstanceId> = exec
-            .instances()
-            .into_iter()
-            .filter(|instance| exec.get_function(instance).is_some())
-            .collect();
+        let operations: Vec<ItemInstanceId> = exec.instances().into_iter().filter(|instance| exec.get_function(instance).is_some()).collect();
         for (index, instance) in operations.iter().enumerate() {
             function_index_by_instance.insert(*instance, index as i32);
         }
@@ -181,11 +177,8 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
             module.code_bytes.extend_from_slice(&emitter.code_bytes);
 
             // 与 JVM/CLR 对齐：调用约定 arity 以入口块 SSA 形参为准；`param_types` 可能含已废弃的 ABI 槽。
-            let arity = mir_fn
-                .blocks
-                .get(mir_fn.entry.0 as usize)
-                .map(|block| block.parameters.len())
-                .unwrap_or(mir_fn.param_types.len()) as i32;
+            let arity =
+                mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.len()).unwrap_or(mir_fn.param_types.len()) as i32;
             let local_count = ExecutableSlotPlan::plan_nyar(mir_fn).local_types.len() as i32;
             let function_index = module.functions.len() as i32;
             module.functions.push(NyarFunction {
@@ -205,13 +198,11 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
 }
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
-fn build_nyar_function_entry_arities(
-    exec: &BackendPrivatePlan,
-    operations: &[ItemInstanceId],
-) -> BTreeMap<i32, usize> {
+fn build_nyar_function_entry_arities(exec: &BackendPrivatePlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, usize> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
-        let Some(view) = exec.get_function(instance) else {
+        let Some(view) = exec.get_function(instance)
+        else {
             continue;
         };
         let entry_arity = view
@@ -237,7 +228,9 @@ fn nyar_mir_export_name(submission: &FragmentSubmission, operation: ItemInstance
     if let Some(public_name) = submission.backend_plan.wasm_export_names().get(&operation) {
         return public_name.clone();
     }
-    submission.backend_plan.abi_name_for_instance(operation)
+    submission
+        .backend_plan
+        .abi_name_for_instance(operation)
         .map(|name| name.to_string())
         .unwrap_or_else(|| panic!("函数实例缺少 ABI 标签: {operation:?}"))
 }
@@ -337,7 +330,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::TupleNew { layout_id, fields } => {
-                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar tuple 布局身份缺少布局合同: {layout_id:?}"));
+                let layout =
+                    self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar tuple 布局身份缺少布局合同: {layout_id:?}"));
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("TupleNew must produce an output");
@@ -349,10 +343,15 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::ArrayFromElements { layout_id, elements, .. } => {
-                let Some(output) = output else {
+                let Some(output) = output
+                else {
                     return;
                 };
-                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar fixed-array 布局身份缺少布局合同: {layout_id:?}"));
+                let layout = self
+                    .ctx
+                    .layout_by_id(*layout_id)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("Nyar fixed-array 布局身份缺少布局合同: {layout_id:?}"));
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 self.store_to_local(output);
@@ -363,7 +362,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
-                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar aggregate-copy 布局身份缺少布局合同: {layout_id:?}"));
+                let layout = self
+                    .ctx
+                    .layout_by_id(*layout_id)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("Nyar aggregate-copy 布局身份缺少布局合同: {layout_id:?}"));
                 let field_count = layout.fields.len() as i32;
                 let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
@@ -397,12 +400,16 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
-                    let index = self.function_index_by_instance.get(instance).copied().unwrap_or_else(|| {
-                        panic!("validated callable identity has no Nyar function index: {instance:?}")
-                    });
-                    let name = self.submission.backend_plan.abi_name_for_instance(*instance).unwrap_or_else(|| {
-                        panic!("validated callable identity has no diagnostic name: {instance:?}")
-                    });
+                    let index = self
+                        .function_index_by_instance
+                        .get(instance)
+                        .copied()
+                        .unwrap_or_else(|| panic!("validated callable identity has no Nyar function index: {instance:?}"));
+                    let name = self
+                        .submission
+                        .backend_plan
+                        .abi_name_for_instance(*instance)
+                        .unwrap_or_else(|| panic!("validated callable identity has no diagnostic name: {instance:?}"));
                     let path = NamePath::new(name.parts().to_vec());
                     self.emit_direct_call(index, &path, arguments, output);
                     return;
@@ -427,10 +434,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::ArrayLength { array } => {
                 // 禁止 Const(0) 回退：会把 ArrayLen 的 array 实参变成 i32，运行时报 expected object。
                 if !self.emit_call_operand(array) {
-                    panic!(
-                        "nyar-vm ArrayLength operand not materializable in `{}`",
-                        self.mir_fn.symbol
-                    );
+                    panic!("nyar-vm ArrayLength operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emitter.emit_call_intrinsic(IntrinsicId::ArrayLen, 1);
                 if let Some(output) = output {
@@ -561,13 +565,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
-    fn emit_direct_call(
-        &mut self,
-        function_index: i32,
-        path: &nyar::NamePath,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-    ) {
+    fn emit_direct_call(&mut self, function_index: i32, path: &nyar::NamePath, arguments: &[MirOperand], output: Option<MirValueRef>) {
         let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
         assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
         for argument in arguments {
@@ -591,7 +589,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     fn nyar_field_slot(&self, field: nyar_types::FieldId) -> i32 {
-        self.ctx.submission.backend_plan.aggregate_layout_by_field().get(&field).map(|(_, slot)| *slot as i32).unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
+        self.ctx
+            .submission
+            .backend_plan
+            .aggregate_layout_by_field()
+            .get(&field)
+            .map(|(_, slot)| *slot as i32)
+            .unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
     }
 
     fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {
@@ -688,7 +692,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     fn emit_store_local(&mut self, local: u16) {
         self.emitter.emit_imm1(NyarHeadCode::StoreLocal, local as i32);
     }
-
 }
 
 impl BytecodeEmitter<'_> {

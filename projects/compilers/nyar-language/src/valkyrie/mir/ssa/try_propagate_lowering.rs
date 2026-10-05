@@ -57,7 +57,8 @@ impl MirBuilder {
         self.current_label = "try_propagate_ok".to_string();
         self.instructions.clear();
         self.terminator = None;
-        let Some(payload_type) = infer_builder_operand_type(&value, &self.value_types).and_then(|ty| nullable_payload_type(&ty)) else {
+        let Some(payload_type) = infer_builder_operand_type(&value, &self.value_types).and_then(|ty| nullable_payload_type(&ty))
+        else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: "nullable try-propagate 载荷".to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
@@ -150,7 +151,8 @@ impl MirBuilder {
             panic!("try-propagate sum payload has no resolved payload type");
         };
         let type_args = object_ty.as_ref().map(super::expr_lowering::type_args_from_sum_shaped).unwrap_or_default();
-        let Some((nominal, variant_id)) = self.sum_identity(sum_type, variant) else {
+        let Some((nominal, variant_id)) = self.sum_identity(sum_type, variant)
+        else {
             return MirOperand::Constant(MirConstant::Unit);
         };
         let output = self.next_value(MirValueOrigin::Temporary);
@@ -182,22 +184,21 @@ impl MirBuilder {
             struct_fields.push((name.to_string(), self.lower_expr_to_operand(init)));
         }
         let value = self.next_value(MirValueOrigin::Temporary);
-        let Some(nominal) = self.nominal_identity_for_name(class_name.as_str()) else {
+        let Some(nominal) = self.nominal_identity_for_name(class_name.as_str())
+        else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: class_name.to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
-        let fields = struct_fields.into_iter().map(|(name, value)| {
-            self.field_identity_for_nominal(nominal, &name).map(|field| (field, value))
-        }).collect::<Option<Vec<_>>>();
-        let Some(fields) = fields else {
+        let fields = struct_fields
+            .into_iter()
+            .map(|(name, value)| self.field_identity_for_nominal(nominal, &name).map(|field| (field, value)))
+            .collect::<Option<Vec<_>>>();
+        let Some(fields) = fields
+        else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "try propagation aggregate".to_string() });
             return MirOperand::Constant(MirConstant::Unit);
         };
-        self.instructions
-            .push(MirInstruction::from_operation(MirOperation::StructNew {
-                nominal,
-                fields,
-            }));
+        self.instructions.push(MirInstruction::from_operation(MirOperation::StructNew { nominal, fields }));
         self.value_types.insert(value, ValkyrieType::Named(class_name.clone()));
         MirOperand::Value(value)
     }

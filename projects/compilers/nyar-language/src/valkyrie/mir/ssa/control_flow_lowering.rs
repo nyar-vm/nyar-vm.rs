@@ -1,11 +1,12 @@
-use crate::types::{SourceID, SourceSpan, hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType}};
+use crate::types::{
+    SourceID, SourceSpan,
+    hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType},
+};
 
 use crate::valkyrie::control_flow::TryScopeData;
 use nyar_types::builtin_operator;
 
-use super::{
-    MirBuilder, MirConstant, MirOperand, MirTerminator, control_flow_context::MirLoopContext, infer_builder_operand_type,
-};
+use super::{MirBuilder, MirConstant, MirOperand, MirTerminator, control_flow_context::MirLoopContext, infer_builder_operand_type};
 
 impl MirBuilder {
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
@@ -17,14 +18,9 @@ impl MirBuilder {
         _condition: &Option<Box<HirExpr>>,
         _body: &HirBlock,
     ) -> MirOperand {
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
-            operator: builtin_operator::infix_lt(),
-        });
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
-            operator: builtin_operator::infix_add(),
-        });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_lt() });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_add() });
         return MirOperand::Constant(MirConstant::Unit);
-
     }
 
     fn branch_merge_type(
@@ -32,18 +28,11 @@ impl MirBuilder {
         expected_type: Option<&ValkyrieType>,
         value_types: &std::collections::BTreeMap<super::MirValueRef, ValkyrieType>,
     ) -> Option<ValkyrieType> {
-        expected_type
-            .cloned()
-            .or_else(|| infer_builder_operand_type(result, value_types))
-            .filter(|ty| !matches!(ty, ValkyrieType::Unit))
+        expected_type.cloned().or_else(|| infer_builder_operand_type(result, value_types)).filter(|ty| !matches!(ty, ValkyrieType::Unit))
     }
 
     fn branch_merge_jump_arguments(result: &MirOperand, merge_ty: Option<&ValkyrieType>) -> Vec<MirOperand> {
-        if merge_ty.is_some() {
-            vec![result.clone()]
-        } else {
-            Vec::new()
-        }
+        if merge_ty.is_some() { vec![result.clone()] } else { Vec::new() }
     }
 
     pub(super) fn lower_if_expr(

@@ -361,11 +361,13 @@ fn impl_where_constraint_pairs(impl_block: &HirImpl) -> BTreeSet<(HirType, crate
     impl_block
         .where_constraints
         .iter()
-        .flat_map(|constraint| constraint.bounds.iter().cloned().map(|bound| {
-            let mut bound = bound;
-            bound.associated_types.sort();
-            (constraint.target.clone(), bound)
-        }))
+        .flat_map(|constraint| {
+            constraint.bounds.iter().cloned().map(|bound| {
+                let mut bound = bound;
+                bound.associated_types.sort();
+                (constraint.target.clone(), bound)
+            })
+        })
         .collect()
 }
 
@@ -383,10 +385,7 @@ mod constraint_identity_tests {
                 bounds: vec![HirTraitBound {
                     trait_path,
                     type_arguments: Vec::new(),
-                    associated_types: vec![HirAssociatedTypeBinding {
-                        name: Identifier::new("Item"),
-                        ty: HirType::Integer32 { signed: true },
-                    }],
+                    associated_types: vec![HirAssociatedTypeBinding { name: Identifier::new("Item"), ty: HirType::Integer32 { signed: true } }],
                 }],
                 span: crate::SourceSpan::new(crate::SourceID::default(), 0, 0),
             }],

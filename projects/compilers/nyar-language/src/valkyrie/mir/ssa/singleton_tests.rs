@@ -9,9 +9,7 @@
 
 use crate::{types::SourceID, valkyrie::hir::ValkyrieCompiler};
 
-use super::{
-    MirConstant, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
-};
+use super::{MirConstant, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirTerminator, MirValueOrigin};
 
 /// Compiles source text into semantic MIR for singleton lowering inspection.
 fn compile_mir(source: &str) -> MirModule {
@@ -418,35 +416,18 @@ imply SwissTable<K, V> {
                 let ty = match argument {
                     MirOperand::Value(value) => find_slot.value_types.get(value).cloned(),
                     MirOperand::Constant(MirConstant::Bool(_)) => Some(crate::types::hir::ValkyrieType::Boolean),
-                    MirOperand::Constant(MirConstant::Int(_)) => {
-                        Some(crate::types::hir::ValkyrieType::Integer64 { signed: true })
-                    }
+                    MirOperand::Constant(MirConstant::Int(_)) => Some(crate::types::hir::ValkyrieType::Integer64 { signed: true }),
                     MirOperand::Constant(MirConstant::Float64(_)) => Some(crate::types::hir::ValkyrieType::Float64),
                     MirOperand::Constant(MirConstant::Unit) => Some(crate::types::hir::ValkyrieType::Unit),
-                    MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => {
-                        Some(crate::types::hir::ValkyrieType::Utf8)
-                    }
+                    MirOperand::Constant(MirConstant::Utf8(_) | MirConstant::Utf16(_)) => Some(crate::types::hir::ValkyrieType::Utf8),
                     MirOperand::Callable(identity) => {
                         panic!("block {} jump to {} arg {} contains callable identity {:?}", block.id.0, target.0, index, identity);
                     }
                     MirOperand::Symbol(symbol) => {
-                        panic!(
-                            "block {} jump to {} arg {} is bare symbol {:?}",
-                            block.id.0,
-                            target.0,
-                            index,
-                            symbol
-                        );
+                        panic!("block {} jump to {} arg {} is bare symbol {:?}", block.id.0, target.0, index, symbol);
                     }
                 };
-                assert!(
-                    ty.is_some(),
-                    "block {} jump to {} arg {} has no SSA type: {:?}",
-                    block.id.0,
-                    target.0,
-                    index,
-                    argument
-                );
+                assert!(ty.is_some(), "block {} jump to {} arg {} has no SSA type: {:?}", block.id.0, target.0, index, argument);
             }
         }
     }

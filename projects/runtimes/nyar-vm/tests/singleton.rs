@@ -3,11 +3,11 @@
 //! 分配与字段访问走 `ObjectNew` / `FieldGet` / `FieldSet` + `layouts`，
 //! 不再经字符串宿主 `alloc_record` / `record_*`。
 
-use nyar_vm::{ModuleGlobals, NyarVm, Value};
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData, NYAR_VERSION,
-    emit_imm1, encode_module,
+    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarGlobal, NyarHeadCode, NyarLayout, NyarModuleData, emit_imm1,
+    encode_module,
 };
+use nyar_vm::{ModuleGlobals, NyarVm, Value};
 
 #[test]
 fn eager_singleton_init_and_accessor_roundtrip() {

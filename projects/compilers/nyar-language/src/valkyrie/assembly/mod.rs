@@ -28,7 +28,12 @@ pub(crate) fn plan_artifacts_from_compiled_program(
     let linked = &compiled_program.canonical().linked;
     let backend_registry = emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
     ArtifactPartitionPlan::from_canonical_program(
-        compiled_program.canonical(), target, nyar::RewriteTheory::default(), projection_policy, backend_registry, clr_suspend_strategy,
+        compiled_program.canonical(),
+        target,
+        nyar::RewriteTheory::default(),
+        projection_policy,
+        backend_registry,
+        clr_suspend_strategy,
     )
 }
 
@@ -45,11 +50,14 @@ pub(crate) fn assemble_fragment(
         return Err(miette!("分区索引 `{partition_index}` 超出范围"));
     }
     let partition = &plan.partitions[partition_index];
-    let fragment_view = plan.fragment_views.iter().find(|view| view.fragment_id == partition.fragment)
+    let fragment_view = plan
+        .fragment_views
+        .iter()
+        .find(|view| view.fragment_id == partition.fragment)
         .ok_or_else(|| miette!("分区 `{}` 缺少优化后的 Canonical 片段视图", partition.name))?;
     let linked = &compiled_program.canonical().linked;
-    let fragment = linked.fragments.get(&partition.fragment)
-        .ok_or_else(|| miette!("分区 `{}` 对应的 Canonical 语义片段不存在", partition.name))?;
+    let fragment =
+        linked.fragments.get(&partition.fragment).ok_or_else(|| miette!("分区 `{}` 对应的 Canonical 语义片段不存在", partition.name))?;
     if partition.exported_operations != fragment.exported_operations
         || partition.entry_operation != fragment.entry_operation
         || fragment_view.canonical_operations != fragment.exported_operations
@@ -59,10 +67,7 @@ pub(crate) fn assemble_fragment(
 
     let fragment_requires_suspend = fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend");
     if fragment_requires_suspend {
-        return Err(miette!(
-            "分区 `{}` 要求 suspend，但 Compiler 尚未提供已验证的 Canonical suspend 合同",
-            partition.name
-        ));
+        return Err(miette!("分区 `{}` 要求 suspend，但 Compiler 尚未提供已验证的 Canonical suspend 合同", partition.name));
     }
 
     Ok(AssembledFragment {
@@ -78,10 +83,12 @@ mod import_contract_tests {
 
     #[test]
     fn source_entry_survives_canonical_partition_planning() {
-        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "[export(name: \"first\")] [main] micro first() -> unit { return } \
+        let output = crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                "[export(name: \"first\")] [main] micro first() -> unit { return } \
              [export(name: \"second\")] micro second() -> unit { return }",
-        ).expect("当前源码必须形成完整成功载荷");
+            )
+            .expect("当前源码必须形成完整成功载荷");
         let program = &output;
         let plan = plan_artifacts_from_compiled_program(program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
             .expect("Compiler 必须从 Canonical 身份产生分区");
@@ -90,9 +97,8 @@ mod import_contract_tests {
 
     #[test]
     fn function_without_entry_remains_a_non_entry_partition() {
-        let output = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "micro answer() -> i32 { return 23 }",
-        ).expect("当前源码必须编译");
+        let output =
+            crate::ValkyrieCompiler::default().compile_source_to_program("micro answer() -> i32 { return 23 }").expect("当前源码必须编译");
         let plan = plan_artifacts_from_compiled_program(&output, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
             .expect("无入口函数仍可形成明确的非入口分区");
         assert!(plan.partitions.iter().all(|partition| partition.entry_operation.is_none()));
@@ -111,17 +117,21 @@ mod import_contract_tests {
 
     #[test]
     fn compiler_surface_rejects_duplicate_public_names_before_assembly() {
-        let error = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "[export(name: \"same\")] micro first() -> unit { return }\n[export(name: \"same\")] micro second() -> unit { return }",
-        ).expect_err("重复公开名不能进入装配");
+        let error = crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                "[export(name: \"same\")] micro first() -> unit { return }\n[export(name: \"same\")] micro second() -> unit { return }",
+            )
+            .expect_err("重复公开名不能进入装配");
         assert!(error.to_string().contains("DuplicateExportName"), "{error}");
     }
 
     fn source_partition_contract() -> (CompiledProgram, ArtifactPartitionPlan) {
-        let program = crate::ValkyrieCompiler::default().compile_source_to_program(
-            "[export(name: \"first\")] [main] micro first() -> unit { return } \
+        let program = crate::ValkyrieCompiler::default()
+            .compile_source_to_program(
+                "[export(name: \"first\")] [main] micro first() -> unit { return } \
              [export(name: \"second\")] micro second() -> unit { return }",
-        ).expect("当前多导出源码必须形成完整成功载荷");
+            )
+            .expect("当前多导出源码必须形成完整成功载荷");
         let plan = plan_artifacts_from_compiled_program(&program, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
             .expect("分区必须消费已验证的 Canonical 合同");
         (program, plan)
@@ -151,13 +161,11 @@ mod import_contract_tests {
                 1 => changed.partitions[0].entry_operation = None,
                 _ => {
                     let identity = changed.partitions[0].fragment.clone();
-                    changed.fragment_views.iter_mut().find(|view| view.fragment_id == identity)
-                        .expect("片段视图").canonical_operations.clear();
+                    changed.fragment_views.iter_mut().find(|view| view.fragment_id == identity).expect("片段视图").canonical_operations.clear();
                 }
             }
             let error = assemble_fragment(&program, &changed, 0).expect_err("不一致身份不得被 Canonical 原始根兜底掩盖");
             assert!(error.to_string().contains("callable 身份与 Canonical 片段合同不一致"), "{error}");
         }
     }
-
 }

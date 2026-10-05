@@ -1,6 +1,9 @@
 use nyar_jit::{RestoredInterpreterFrame, RestoredLocal};
 
-use crate::{error::NyarRuntimeError, value::{ObjectId, Value}};
+use crate::{
+    error::NyarRuntimeError,
+    value::{ObjectId, Value},
+};
 
 /// Activation frame for one function invocation.
 #[derive(Debug, Clone)]

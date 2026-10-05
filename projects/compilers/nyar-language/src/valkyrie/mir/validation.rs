@@ -2,10 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     mir::ssa::builtin_helpers::resolve_intrinsic_id,
-    types::{
-        NamePath,
-        hir::ValkyrieType,
-    },
+    types::{NamePath, hir::ValkyrieType},
 };
 use nyar_types::builtin_operator;
 use std_data::text::valkyrie::ParseError;
@@ -92,22 +89,39 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
             if let Some((object, field, stored)) = field_operation {
                 let location = format!("block {} instruction {index}", block.id.0);
                 let failure = |detail: &str| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(), detail: detail.to_string(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
+                    detail: detail.to_string(),
                 };
                 let owner = infer_operand_static_type(function, object).ok_or_else(|| failure("字段对象缺少完整语义类型"))?;
-                let base = match &owner { ValkyrieType::Apply(base, _) => base.as_ref(), other => other };
-                let ValkyrieType::Named(name) = base else { return Err(failure("字段对象不是已解析名义实例")); };
-                let declaration = module.structs.iter().find(|declaration| declaration.qualified_name() == name.as_str())
+                let base = match &owner {
+                    ValkyrieType::Apply(base, _) => base.as_ref(),
+                    other => other,
+                };
+                let ValkyrieType::Named(name) = base
+                else {
+                    return Err(failure("字段对象不是已解析名义实例"));
+                };
+                let declaration = module
+                    .structs
+                    .iter()
+                    .find(|declaration| declaration.qualified_name() == name.as_str())
                     .ok_or_else(|| failure("字段对象没有声明合同"))?;
-                let declared_field = declaration.fields.iter().find(|candidate| candidate.id == *field)
+                let declared_field = declaration
+                    .fields
+                    .iter()
+                    .find(|candidate| candidate.id == *field)
                     .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
-                let expected = declaration.instantiate_field(&owner, declared_field.name.as_str())
+                let expected = declaration
+                    .instantiate_field(&owner, declared_field.name.as_str())
                     .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?;
                 if let Some(stored) = stored {
                     if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
                         return Err(failure("字段写入值或结果数量与声明不一致"));
                     }
-                } else if instruction.results.len() != 1 || function.value_types.get(&instruction.results[0]) != Some(&expected) {
+                }
+                else if instruction.results.len() != 1 || function.value_types.get(&instruction.results[0]) != Some(&expected) {
                     return Err(failure("字段读取结果与完整实例声明不一致"));
                 }
                 continue;
@@ -133,7 +147,9 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                     });
                 };
                 let expected_payload = sum.instantiate_payload(declared, type_args).ok_or_else(|| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
                     detail: "sum 实例的类型实参数量与声明不一致".to_string(),
                 })?;
                 let expected_result = sum.instantiate_result(declared, type_args);
@@ -211,7 +227,8 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                         detail: "SumVariantIs references undeclared nominal identity".to_string(),
                     });
                 };
-                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant) else {
+                let Some(declared) = declared_variant(&module.sum_types, *nominal, *variant)
+                else {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -225,11 +242,12 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
                 };
                 let output_type = instruction.results.first().and_then(|output| function.value_types.get(output));
                 let expected_receiver = sum.instantiate_result(declared, type_args).ok_or_else(|| SemanticMirContractError {
-                    code: "SMIR006", function: function.symbol.clone(), location: location.clone(),
+                    code: "SMIR006",
+                    function: function.symbol.clone(),
+                    location: location.clone(),
                     detail: "sum 判别的类型实参数量与声明不一致".to_string(),
                 })?;
-                if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver)
-                {
+                if output_type != Some(&ValkyrieType::Boolean) || receiver_type != Some(&expected_receiver) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -247,11 +265,21 @@ fn validate_aggregate_field_contracts(module: &MirModule, function: &MirFunction
 fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (index, declaration) in module.structs.iter().enumerate() {
         let duplicate_owner = module.structs[..index].iter().any(|prior| prior.qualified_name() == declaration.qualified_name());
-        let duplicate_binder = declaration.generics.iter().enumerate().any(|(index, generic)| declaration.generics[..index].iter().any(|prior| prior.name == generic.name));
-        let invalid_field = declaration.fields.iter().enumerate().any(|(index, field)| field.name.is_empty() || declaration.fields[..index].iter().any(|prior| prior.name == field.name));
+        let duplicate_binder = declaration
+            .generics
+            .iter()
+            .enumerate()
+            .any(|(index, generic)| declaration.generics[..index].iter().any(|prior| prior.name == generic.name));
+        let invalid_field = declaration
+            .fields
+            .iter()
+            .enumerate()
+            .any(|(index, field)| field.name.is_empty() || declaration.fields[..index].iter().any(|prior| prior.name == field.name));
         if declaration.name.is_empty() || duplicate_owner || duplicate_binder || invalid_field {
             return Err(SemanticMirContractError {
-                code: "SMIR006", function: declaration.qualified_name(), location: "struct declaration".to_string(),
+                code: "SMIR006",
+                function: declaration.qualified_name(),
+                location: "struct declaration".to_string(),
                 detail: "结构声明、泛型 binder 与字段身份必须完整且唯一".to_string(),
             });
         }
@@ -259,19 +287,23 @@ fn validate_nominal_structs(module: &MirModule) -> Result<(), SemanticMirContrac
     Ok(())
 }
 
-fn declared_variant<'a>(sum_types: &'a [crate::mir::MirSumDeclaration], nominal: nyar_types::NominalInstanceId, variant: nyar_types::VariantId) -> Option<&'a crate::mir::MirSumVariant> {
+fn declared_variant<'a>(
+    sum_types: &'a [crate::mir::MirSumDeclaration],
+    nominal: nyar_types::NominalInstanceId,
+    variant: nyar_types::VariantId,
+) -> Option<&'a crate::mir::MirSumVariant> {
     sum_types.iter().find(|sum| sum.nominal == nominal)?.variants.iter().find(|declared| declared.id == variant)
 }
 
 fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractError> {
     for (sum_index, sum) in module.sum_types.iter().enumerate() {
         if module.sum_types[..sum_index].iter().any(|prior| prior.name == sum.name)
-            || sum.generics.iter().enumerate().any(|(index, generic)| {
-                sum.generics[..index].iter().any(|prior| prior.name == generic.name)
-            })
+            || sum.generics.iter().enumerate().any(|(index, generic)| sum.generics[..index].iter().any(|prior| prior.name == generic.name))
         {
             return Err(SemanticMirContractError {
-                code: "SMIR006", function: sum.name.clone(), location: "sum declaration".to_string(),
+                code: "SMIR006",
+                function: sum.name.clone(),
+                location: "sum declaration".to_string(),
                 detail: "sum 声明或泛型 binder 重复".to_string(),
             });
         }
@@ -284,11 +316,16 @@ fn validate_nominal_sums(module: &MirModule) -> Result<(), SemanticMirContractEr
             });
         }
         for (index, variant) in sum.variants.iter().enumerate() {
-            if variant.fields.iter().enumerate().any(|(index, field)| {
-                field.name.is_empty() || variant.fields[..index].iter().any(|prior| prior.name == field.name)
-            }) {
+            if variant
+                .fields
+                .iter()
+                .enumerate()
+                .any(|(index, field)| field.name.is_empty() || variant.fields[..index].iter().any(|prior| prior.name == field.name))
+            {
                 return Err(SemanticMirContractError {
-                    code: "SMIR006", function: sum.name.clone(), location: "sum variant".to_string(),
+                    code: "SMIR006",
+                    function: sum.name.clone(),
+                    location: "sum variant".to_string(),
                     detail: "variant 字段身份必须非空且唯一".to_string(),
                 });
             }
@@ -369,7 +406,9 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
                 let target_symbol = match callee {
                     MirOperand::Symbol(symbol) => Some(symbol.to_string()),
-                    MirOperand::Callable(identity) => module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone())),
+                    MirOperand::Callable(identity) => {
+                        module.callable_identities.iter().find_map(|(symbol, candidate)| (candidate == identity).then_some(symbol.clone()))
+                    }
                     _ => None,
                 };
                 if let Some(target_symbol) = target_symbol {
@@ -377,29 +416,37 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     if candidates.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
                     }
-                    let external: Vec<_> = module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
+                    let external: Vec<_> =
+                        module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
                     if external.len() > 1 {
                         return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
                     }
                     if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
                         if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
-                            return Err(error("SMIR007", location.clone(), "linked definition disagrees with external declaration signature".to_owned()));
+                            return Err(error(
+                                "SMIR007",
+                                location.clone(),
+                                "linked definition disagrees with external declaration signature".to_owned(),
+                            ));
                         }
                     }
-                    let signature = candidates.first().map(|target| (&target.param_types, &target.return_type))
+                    let signature = candidates
+                        .first()
+                        .map(|target| (&target.param_types, &target.return_type))
                         .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)));
                     if let Some((parameter_types, return_type)) = signature {
                         if arguments.len() != parameter_types.len() {
                             return Err(error("SMIR007", location.clone(), "call arguments differ from declared signature arity".to_owned()));
                         }
                         for (argument, expected) in arguments.iter().zip(parameter_types) {
-                            let actual = value_type(argument).ok_or_else(|| error(
-                                "SMIR001", location.clone(), "call argument has no semantic type".to_owned()
-                            ))?;
+                            let actual = value_type(argument)
+                                .ok_or_else(|| error("SMIR001", location.clone(), "call argument has no semantic type".to_owned()))?;
                             if actual != *expected {
-                                return Err(error("SMIR007", location.clone(), format!(
-                                    "call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"
-                                )));
+                                return Err(error(
+                                    "SMIR007",
+                                    location.clone(),
+                                    format!("call argument type differs from declared signature (actual={actual:?}, expected={expected:?})"),
+                                ));
                             }
                         }
                         let expected_results = usize::from(*return_type != ValkyrieType::Unit);
@@ -442,19 +489,19 @@ fn validate_semantic_function(module: &MirModule, function: &MirFunction) -> Res
                     return Err(error("SMIR007", location, "jump arity differs from target block parameters".to_string()));
                 }
                 for (argument, parameter) in arguments.iter().zip(&destination.parameters) {
-                    let Some(actual) = value_type(argument) else {
+                    let Some(actual) = value_type(argument)
+                    else {
                         return Err(error("SMIR001", location.clone(), "jump argument has no SSA type".to_string()));
                     };
-                    let Some(expected) = function.value_types.get(parameter) else {
+                    let Some(expected) = function.value_types.get(parameter)
+                    else {
                         return Err(error("SMIR001", location.clone(), "jump target block parameter has no SSA type".to_string()));
                     };
                     if actual != *expected {
                         return Err(error(
                             "SMIR007",
                             location,
-                            format!(
-                                "jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"
-                            ),
+                            format!("jump argument type differs from target block parameter (actual={actual:?}, expected={expected:?})"),
                         ));
                     }
                 }
@@ -503,11 +550,21 @@ fn validate_static_call_resolution(
         if module.callable_identities.values().any(|candidate| candidate == identity) {
             return Ok(());
         }
-        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "callable identity is absent from the Compiler identity table".to_string() });
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: "callable identity is absent from the Compiler identity table".to_string(),
+        });
     }
     let MirOperand::Symbol(symbol) = callee
     else {
-        return Err(SemanticMirContractError { code: "SMIR003", function: function.symbol.clone(), location, detail: "static call requires a frozen callable identity".to_string() });
+        return Err(SemanticMirContractError {
+            code: "SMIR003",
+            function: function.symbol.clone(),
+            location,
+            detail: "static call requires a frozen callable identity".to_string(),
+        });
     };
     if is_language_operator_symbol(symbol) || is_language_builtin_symbol(symbol) {
         return Ok(());
@@ -915,7 +972,9 @@ fn display_type(ty: &ValkyrieType) -> String {
                 .join(", ")
         ),
         ValkyrieType::Array(item) => format!("[{}]", display_type(item)),
-        ValkyrieType::FixedArray { element, length } => format!("[{}; {}]", display_type(element), length),
+        ValkyrieType::FixedArray { element, length } => {
+            format!("[{}; {}]", display_type(element), length)
+        }
         ValkyrieType::TypeLambda(lambda) => format!(
             "type lambda({}) -> {}",
             lambda.params.iter().map(|item| item.name.to_string()).collect::<Vec<_>>().join(", "),
@@ -924,7 +983,9 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::TraitObject(object) => {
             format!("{}<{}>", object.trait_path, object.type_arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
-        ValkyrieType::Associated(associated) => format!("{}::{}", display_type(&associated.base), associated.name),
+        ValkyrieType::Associated(associated) => {
+            format!("{}::{}", display_type(&associated.base), associated.name)
+        }
         ValkyrieType::AutoType => "auto".to_string(),
         ValkyrieType::SelfType => "Self".to_string(),
         ValkyrieType::Nullable(payload) => format!("{}?", display_type(payload)),
@@ -995,9 +1056,9 @@ mod semantic_contract_tests {
     }
 
     fn source_identity_module(actual: &ValkyrieType, expected: &ValkyrieType) -> MirModule {
-        let hir = crate::ValkyrieCompiler::default().compile_source(
-            "micro identity(value: bool) -> bool { return value }",
-        ).expect("当前源码解析后构造类型合同负向输入");
+        let hir = crate::ValkyrieCompiler::default()
+            .compile_source("micro identity(value: bool) -> bool { return value }")
+            .expect("当前源码解析后构造类型合同负向输入");
         let mut module = crate::MirLowerer::lower_module_semantic(&hir);
         let function = &mut module.functions[0];
         function.param_types = vec![actual.clone()];
@@ -1009,13 +1070,13 @@ mod semantic_contract_tests {
     }
 
     fn mismatched_nominal_contracts() -> Vec<(ValkyrieType, ValkyrieType)> {
-        let applied = |name, arguments| ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(Identifier::new(name))), arguments,
-        );
+        let applied = |name, arguments| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(name))), arguments);
         vec![
             (applied("FirstResult", vec![ValkyrieType::Boolean]), applied("SecondResult", vec![ValkyrieType::Boolean])),
-            (applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
-             applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf16])),
+            (
+                applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]),
+                applied("Result", vec![ValkyrieType::Boolean, ValkyrieType::Utf16]),
+            ),
             (applied("Option", vec![ValkyrieType::Boolean]), applied("Nullable", vec![ValkyrieType::Boolean])),
             (ValkyrieType::Integer32 { signed: true }, ValkyrieType::Named(Identifier::new("usize"))),
             (ValkyrieType::Utf16, ValkyrieType::Named(Identifier::new("Utf16Text"))),
@@ -1043,11 +1104,12 @@ mod semantic_contract_tests {
             let parameter = MirValueRef(function.value_types.keys().map(|value| value.0).max().unwrap() + 1);
             function.return_type = ValkyrieType::Unit;
             function.value_types.insert(parameter, expected);
-            function.blocks[0].terminator = MirTerminator::Jump {
-                target: MirBlockRef(1), arguments: vec![MirOperand::Value(source)],
-            };
+            function.blocks[0].terminator = MirTerminator::Jump { target: MirBlockRef(1), arguments: vec![MirOperand::Value(source)] };
             function.blocks.push(MirBlock {
-                id: MirBlockRef(1), label: "destination".into(), parameters: vec![parameter], instructions: Vec::new(),
+                id: MirBlockRef(1),
+                label: "destination".into(),
+                parameters: vec![parameter],
+                instructions: Vec::new(),
                 terminator: MirTerminator::Return { value: None },
             });
             let error = validate_semantic_module(&module).expect_err("块参数不能按名称或物理类型恢复");
@@ -1081,8 +1143,22 @@ mod semantic_contract_tests {
             is_unite: false,
             generics: Vec::new(),
             variants: vec![
-                MirSumVariant { id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"), declaration: None, name: "First".to_string(), tag: 0, fields: Vec::new(), result_type: None },
-                MirSumVariant { id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"), declaration: None, name: "Second".to_string(), tag: 0, fields: Vec::new(), result_type: None },
+                MirSumVariant {
+                    id: nyar_types::VariantId::from_index(0).expect("测试 variant identity"),
+                    declaration: None,
+                    name: "First".to_string(),
+                    tag: 0,
+                    fields: Vec::new(),
+                    result_type: None,
+                },
+                MirSumVariant {
+                    id: nyar_types::VariantId::from_index(1).expect("测试 variant identity"),
+                    declaration: None,
+                    name: "Second".to_string(),
+                    tag: 0,
+                    fields: Vec::new(),
+                    result_type: None,
+                },
             ],
         });
 
@@ -1158,7 +1234,8 @@ mod semantic_contract_tests {
             instance: None,
             symbol,
             link: nyar_types::ExternalImportLink::host(None, vec!["dependency".to_owned(), "run".to_owned()]),
-            parameter_types: Vec::new(), return_type: ValkyrieType::Unit,
+            parameter_types: Vec::new(),
+            return_type: ValkyrieType::Unit,
         });
 
         validate_semantic_module(&module).unwrap();

@@ -1,6 +1,5 @@
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry,
-    decode_module,
+    NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
 };
 
 use crate::{

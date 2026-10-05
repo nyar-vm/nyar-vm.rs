@@ -198,10 +198,8 @@ mod tests {
 
     #[test]
     fn concretizes_nominal_array_apply_like_bracket_sugar() {
-        let ty = ValkyrieType::Apply(
-            Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))),
-            vec![ValkyrieType::Integer32 { signed: true }],
-        );
+        let ty =
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(nyar::Identifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }]);
         assert_eq!(concretize_type(&ty).unwrap(), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
         assert_eq!(concretize_type_lossy(&ty), NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
     }
@@ -225,10 +223,7 @@ mod tests {
     fn lossy_erases_row_and_self() {
         // lossy 仍保留迁移污点形状；严格路径见 `rejects_named_self_as_unsubstituted_stain`。
         assert_eq!(concretize_type_lossy(&ValkyrieType::SelfType), NyarType::Named(nyar::Identifier::new("Self")));
-        assert_eq!(
-            concretize_type_lossy(&ValkyrieType::Named(nyar::Identifier::new("Self"))),
-            NyarType::Named(nyar::Identifier::new("Self"))
-        );
+        assert_eq!(concretize_type_lossy(&ValkyrieType::Named(nyar::Identifier::new("Self"))), NyarType::Named(nyar::Identifier::new("Self")));
         assert_eq!(
             concretize_type_lossy(&ValkyrieType::Row(crate::types::hir::RowType { methods: Vec::new() })),
             NyarType::Named(nyar::Identifier::new("__row"))

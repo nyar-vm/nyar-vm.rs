@@ -74,7 +74,6 @@ impl TypeRelationContext {
             return ParameterMatchResult::NominalExact;
         }
 
-
         // Nominal applications retain their type arguments at the semantic
         // boundary.  Match the constructor nominally and each argument using
         // the same parameter relation, so exported `Choice<T, E>` can accept
@@ -182,11 +181,7 @@ impl TypeRelationContext {
     }
 
     /// 在泛型实参完成代入后验证 callable 的声明级 where 合同。
-    pub fn satisfies_where_constraints(
-        &self,
-        constraints: &[HirWhereConstraint],
-        substitutions: &BTreeMap<Identifier, ValkyrieType>,
-    ) -> bool {
+    pub fn satisfies_where_constraints(&self, constraints: &[HirWhereConstraint], substitutions: &BTreeMap<Identifier, ValkyrieType>) -> bool {
         constraints.iter().all(|constraint| {
             let target = substitute_relation_type(&constraint.target, substitutions);
             let Some(target_name) = named_type_name(&target)
@@ -244,13 +239,9 @@ fn bound_is_satisfied_by_context(
     context.bounds.iter().any(|provided| {
         provided.trait_path == required.trait_path
             && provided.type_arguments.len() == required.type_arguments.len()
-            && provided
-                .type_arguments
-                .iter()
-                .zip(&required.type_arguments)
-                .all(|(provided, required)| {
-                    normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
-                })
+            && provided.type_arguments.iter().zip(&required.type_arguments).all(|(provided, required)| {
+                normalize_context_type(provided, all_contexts, substitutions) == normalize_context_type(required, all_contexts, substitutions)
+            })
             && required.associated_types.iter().all(|required_equation| {
                 let expected = normalize_context_type(&required_equation.ty, all_contexts, substitutions);
                 provided.associated_types.iter().any(|provided_equation| {
@@ -267,10 +258,12 @@ fn normalize_context_type(
     substitutions: &BTreeMap<Identifier, ValkyrieType>,
 ) -> ValkyrieType {
     let ty = substitute_relation_type(ty, substitutions);
-    let ValkyrieType::Associated(associated) = &ty else {
+    let ValkyrieType::Associated(associated) = &ty
+    else {
         return ty;
     };
-    let Some(base) = named_type_name(&associated.base) else {
+    let Some(base) = named_type_name(&associated.base)
+    else {
         return ty;
     };
     contexts

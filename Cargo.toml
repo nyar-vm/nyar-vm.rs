@@ -31,6 +31,9 @@ license = "MIT"
 repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
 [workspace.dependencies]
+# Valkyrie 文本解析的唯一生产来源；AST/CST 由 Oak 负责，语言语义层不得再拥有文本解析器。
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-valkyrie" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-core" }
 # valkyrie.rs 上 crate 名为 `vcc-data`，本仓依赖键保留 `std-data` 以稳定 `use std_data::`。
 std-data = { git = "https://github.com/valkyrie-language/valkyrie.rs", branch = "dev", package = "vcc-data" }
 
@@ -57,21 +60,21 @@ ordered-float = "5.3.0"
 clap = { version = "4.6.1", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.150"
-toml_edit = "0.22.27"
+toml_edit = "0.25.15+spec-1.1.0"
 serde_yaml = "0.9.34"
-sha1 = "0.10.6"
-sha2 = "0.10.9"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
 url = "2.5.8"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 tempfile = "3.27.0"
 pulldown-cmark = "0.13.0"
 syntect = "5.2.0"
-katex-rs = "0.2.4"
-reqwest = { version = "0.12.28", default-features = false, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
+katex-rs = "0.3.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
 flate2 = "1.1.2"
 tar = "0.4.44"
-base64 = "0.22.1"
-ed25519-dalek = "2.1.1"
+base64 = "0.23.1"
+ed25519-dalek = "3.0.0"
 thiserror = "2.0.17"
 
 # vcc-data（valkyrie）反向依赖本仓 nyar-* git 包；构建本仓时用 path 覆盖，避免拉远端残缺 dev。

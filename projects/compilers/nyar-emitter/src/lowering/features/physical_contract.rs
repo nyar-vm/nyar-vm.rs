@@ -11,11 +11,8 @@ use nyar::QualifiedName;
 use nyar_types::{ItemInstanceId, NamePath, NyarType};
 
 use crate::{
-    BackendPrivatePlan,
-    FragmentSubmission,
-    backend_plan_views::{
-        ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef,
-    },
+    BackendPrivatePlan, FragmentSubmission,
+    backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand, ExecutableValueRef},
 };
 
 /// Managed physical target selected before backend preparation.
@@ -188,7 +185,9 @@ fn build_function_plan(
             let location = format!("block {} instruction {instruction_index}", block.id.0);
             let callee = match callee {
                 ExecutableOperand::Item(instance) => *instance,
-                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => continue,
+                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => {
+                    continue;
+                }
                 ExecutableOperand::Symbol(_) => {
                     return Err(PhysicalPlanError::new(
                         "BPHYS004",
@@ -199,7 +198,8 @@ fn build_function_plan(
                 }
                 ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => continue,
             };
-            let Some(callee_view) = executable.get_function(&callee) else {
+            let Some(callee_view) = executable.get_function(&callee)
+            else {
                 return Err(PhysicalPlanError::new(
                     "BPHYS004",
                     function,
@@ -329,9 +329,10 @@ mod tests {
     use std::sync::Arc;
 
     use nyar::{Identifier, QualifiedName};
-    use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
+    use nyar_types::{
+        Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
+    };
     use std::collections::BTreeMap;
-
 
     use super::{PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission};
 
@@ -395,10 +396,7 @@ mod tests {
                 }
             }
         }
-        crate::FragmentSubmission {
-            backend_plan: Arc::new(crate::BackendPrivatePlan::from_functions(functions)),
-            ..Default::default()
-        }
+        crate::FragmentSubmission { backend_plan: Arc::new(crate::BackendPrivatePlan::from_functions(functions)), ..Default::default() }
     }
 
     #[test]
@@ -423,46 +421,27 @@ mod tests {
         let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("Int(0) capacity must not be planned as Unit");
         let caller_plan = plans.iter().find(|plan| plan.symbol == "std.HashMap.new").expect("caller plan");
         assert_eq!(caller_plan.calls.len(), 1);
-        assert_eq!(
-            caller_plan.calls.values().next().expect("call").parameters,
-            vec![PhysicalValueCategory::I64]
-        );
+        assert_eq!(caller_plan.calls.values().next().expect("call").parameters, vec![PhysicalValueCategory::I64]);
     }
 
     #[test]
     fn bare_symbol_call_argument_uses_callee_parameter_type() {
         let target = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("ArrayList"), Identifier::new("push")]);
         let caller = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("SwissTable"), Identifier::new("new")]);
-        let mut caller_function = function(
-            "std.SwissTable.new",
-            NyarType::Named(Identifier::new("SwissTable")),
-            vec![NyarType::Integer64 { signed: true }],
-        );
+        let mut caller_function =
+            function("std.SwissTable.new", NyarType::Named(Identifier::new("SwissTable")), vec![NyarType::Integer64 { signed: true }]);
         let list = ValueRef(1);
         caller_function.value_types.insert(list, NyarType::Named(Identifier::new("ArrayList")));
         caller_function.blocks[0].instructions.push(instr(
             InstructionKind::Call {
                 callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
-                arguments: vec![
-                    Operand::Value(list),
-                    Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("None")])),
-                ],
+                arguments: vec![Operand::Value(list), Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("None")]))],
             },
             Vec::new(),
         ));
-        let option_ty = NyarType::Apply(
-            Box::new(NyarType::Named(Identifier::new("Option"))),
-            vec![NyarType::Named(Identifier::new("Entry"))],
-        );
+        let option_ty = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Named(Identifier::new("Entry"))]);
         let submission = submission(vec![
-            (
-                target.clone(),
-                function(
-                    "std.ArrayList.push",
-                    NyarType::Unit,
-                    vec![NyarType::Named(Identifier::new("ArrayList")), option_ty],
-                ),
-            ),
+            (target.clone(), function("std.ArrayList.push", NyarType::Unit, vec![NyarType::Named(Identifier::new("ArrayList")), option_ty])),
             (caller, caller_function),
         ]);
         let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue)
@@ -521,10 +500,8 @@ mod tests {
         ));
         caller.value_types.insert(ValueRef(2), NyarType::Integer64 { signed: true });
         caller.value_types.insert(ValueRef(1), NyarType::Boolean);
-        let submission = submission(vec![
-            (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
-            (main_op, caller),
-        ]);
+        let submission =
+            submission(vec![(answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])), (main_op, caller)]);
         let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("operators must not require registry entries");
         let caller_plan = plans.iter().find(|plan| plan.symbol == "main::main").expect("caller plan");
         assert_eq!(caller_plan.calls.len(), 1);
@@ -537,16 +514,11 @@ mod tests {
         let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
         caller.value_types.insert(ValueRef(0), NyarType::Integer64 { signed: true });
         caller.blocks[0].instructions.push(instr(
-            InstructionKind::Call {
-                callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])),
-                arguments: vec![],
-            },
+            InstructionKind::Call { callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])), arguments: vec![] },
             vec![ValueRef(0)],
         ));
-        let submission = submission(vec![
-            (answer_op.clone(), function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
-            (main_op, caller),
-        ]);
+        let submission =
+            submission(vec![(answer_op.clone(), function("main::answer", NyarType::Integer64 { signed: true }, vec![])), (main_op, caller)]);
         let error = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect_err("bare helper must fail before physical planning");
         assert_eq!(error.code, "BPHYS004");
     }
@@ -591,5 +563,4 @@ mod tests {
         let error = build_physical_plan(&submission, PhysicalBackend::Jvm).expect_err("i128 requires an explicit JVM physical contract");
         assert_eq!(error.code, "BPHYS001");
     }
-
 }

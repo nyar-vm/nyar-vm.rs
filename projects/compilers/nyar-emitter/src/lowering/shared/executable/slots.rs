@@ -14,17 +14,9 @@ pub struct ExecutableSlotPlan {
 impl ExecutableSlotPlan {
     /// 按完整的 SSA 定义规划全部 local；后端只编码该计划，不再动态补槽。
     pub fn plan_nyar(function: &ExecutableFunction) -> Self {
-        let mut plan = Self {
-            local_types: Vec::new(),
-            value_locals: BTreeMap::new(),
-            block_param_locals: BTreeMap::new(),
-        };
+        let mut plan = Self { local_types: Vec::new(), value_locals: BTreeMap::new(), block_param_locals: BTreeMap::new() };
 
-        let entry = function
-            .blocks
-            .iter()
-            .find(|block| block.id == function.entry)
-            .expect("validated entry block");
+        let entry = function.blocks.iter().find(|block| block.id == function.entry).expect("validated entry block");
         for block in std::iter::once(entry).chain(function.blocks.iter().filter(|block| block.id != function.entry)) {
             for (index, parameter) in block.parameters.iter().enumerate() {
                 let ty = function.value_types.get(parameter).expect("validated block parameter type");

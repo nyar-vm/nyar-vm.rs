@@ -22,7 +22,11 @@ impl MirBuilder {
             .map(|field| field.id)
     }
 
-    pub(super) fn field_identity_for_nominal(&mut self, nominal: nyar_types::NominalInstanceId, field_name: &str) -> Option<nyar_types::FieldId> {
+    pub(super) fn field_identity_for_nominal(
+        &mut self,
+        nominal: nyar_types::NominalInstanceId,
+        field_name: &str,
+    ) -> Option<nyar_types::FieldId> {
         self.field_declarations
             .iter()
             .find(|declaration| declaration.nominal == nominal)
@@ -116,9 +120,7 @@ impl MirBuilder {
                 return owner.clone();
             }
         }
-        let raw = resolved
-            .map(|call| call.return_type.clone())
-            .unwrap_or_else(|| ValkyrieType::Named(name.clone()));
+        let raw = resolved.map(|call| call.return_type.clone()).unwrap_or_else(|| ValkyrieType::Named(name.clone()));
         super::resolve_self_type_with_owner(&raw, self.impl_owner_type.as_ref())
     }
 
@@ -219,18 +221,9 @@ pub(super) fn text_method_owner(ty: &ValkyrieType) -> Option<&'static str> {
     }
 }
 
-pub(super) fn receiver_method_owner_name(
-    receiver: &MirOperand,
-    value_types: &BTreeMap<MirValueRef, ValkyrieType>,
-) -> Option<String> {
+pub(super) fn receiver_method_owner_name(receiver: &MirOperand, value_types: &BTreeMap<MirValueRef, ValkyrieType>) -> Option<String> {
     infer_builder_operand_type(receiver, value_types).and_then(|ty| {
-        text_method_owner(&ty)
-            .map(str::to_string)
-            .or_else(|| {
-                named_type_name(&ty)
-                    .or_else(|| option_owner_name(&ty))
-                    .map(str::to_string)
-            })
+        text_method_owner(&ty).map(str::to_string).or_else(|| named_type_name(&ty).or_else(|| option_owner_name(&ty)).map(str::to_string))
     })
 }
 
@@ -243,9 +236,7 @@ pub(super) fn is_array_shaped_valkyrie_type(ty: &ValkyrieType) -> bool {
 }
 
 /// Lower instance calls to `Owner.method` when HIR only supplies a bare method name.
-pub(super) fn qualify_instance_method_symbol(
-    resolved: Option<&HirResolvedCall>,
-) -> (NamePath, Option<ValkyrieType>) {
+pub(super) fn qualify_instance_method_symbol(resolved: Option<&HirResolvedCall>) -> (NamePath, Option<ValkyrieType>) {
     let call = resolved.expect("validated HIR must provide the instance callable contract");
     (call.symbol.clone(), Some(call.return_type.clone()))
 }

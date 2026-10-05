@@ -6,13 +6,14 @@ use miette::{Result, miette};
 use nyar::QualifiedName;
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value, ValueOrigin,
+    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value,
+    ValueOrigin,
+    layout_choice::{InvokeLowering, ValueRepresentation},
 };
-use nyar_types::layout_choice::{InvokeLowering, ValueRepresentation};
 
 use crate::{
-    contracts::{Block, BlockRef, ValueRef},
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
+    contracts::{Block, BlockRef, ValueRef},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -82,8 +83,7 @@ impl BackendPrivatePlan {
         roots: &[ItemInstanceId],
     ) -> Result<Self> {
         let canonical = program.canonical();
-        let fragment = canonical.linked.fragments.get(fragment_id)
-            .ok_or_else(|| miette!("Canonical 片段 `{fragment_id}` 不存在"))?;
+        let fragment = canonical.linked.fragments.get(fragment_id).ok_or_else(|| miette!("Canonical 片段 `{fragment_id}` 不存在"))?;
         let mut declared_imports = BTreeMap::new();
         for (index, import) in &canonical.linked.imports {
             if canonical.mir.functions.contains_key(&import.callee) {
@@ -93,32 +93,39 @@ impl BackendPrivatePlan {
                 return Err(miette!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
             }
         }
-        let mut pending = roots.iter().copied().map(|instance| {
-            if !canonical.mir.functions.contains_key(&instance) {
-                return Err(miette!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
-            }
-            Ok(instance)
-        }).collect::<Result<Vec<_>>>()?;
+        let mut pending = roots
+            .iter()
+            .copied()
+            .map(|instance| {
+                if !canonical.mir.functions.contains_key(&instance) {
+                    return Err(miette!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
+                }
+                Ok(instance)
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mut seen = std::collections::BTreeSet::new();
         let mut functions = BTreeMap::new();
         let mut abi_names = BTreeMap::new();
         let mut imports = BTreeMap::new();
         while let Some(instance) = pending.pop() {
-            if !seen.insert(instance) { continue; }
-            if let Some((index, import)) = declared_imports.get(&instance) {
-                imports.insert(instance, BackendImport {
-                    index: *index,
-                    link: import.link.clone(),
-                    parameter_types: import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<_>>()?,
-                    return_type: lower_type(canonical, import.return_type)?,
-                });
+            if !seen.insert(instance) {
                 continue;
             }
-            let name = canonical.linked.callable_names.get(&instance)
-                .ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
+            if let Some((index, import)) = declared_imports.get(&instance) {
+                imports.insert(
+                    instance,
+                    BackendImport {
+                        index: *index,
+                        link: import.link.clone(),
+                        parameter_types: import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<_>>()?,
+                        return_type: lower_type(canonical, import.return_type)?,
+                    },
+                );
+                continue;
+            }
+            let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| miette!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
             abi_names.insert(instance, name.clone());
-            let function = canonical.mir.functions.get(&instance)
-                .ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
+            let function = canonical.mir.functions.get(&instance).ok_or_else(|| miette!("callable `{name}` 缺少 canonical 函数体"))?;
             let (lowered, callees) = lower_function(program, function)?;
             pending.extend(callees);
             functions.insert(instance, lowered);
@@ -140,27 +147,62 @@ impl BackendPrivatePlan {
             aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
-            functions, abi_names, imports, sum_reps: program.representation().sum_reps.clone(),
+            functions,
+            abi_names,
+            imports,
+            sum_reps: program.representation().sum_reps.clone(),
         })
     }
 
-    pub fn module_name(&self) -> &str { &self.module_name }
-    pub fn fragment_id(&self) -> &nyar::Identifier { &self.fragment_id }
-    pub fn exported_operations(&self) -> &[ItemInstanceId] { &self.exported_operations }
-    pub fn required_capabilities(&self) -> &[nyar::CapabilityTag] { &self.required_capabilities }
-    pub fn theory_bundle(&self) -> &nyar::TheoryBundle { &self.theory_bundle }
-    pub fn entry_operation(&self) -> Option<ItemInstanceId> { self.entry_operation }
-    pub fn wasm_export_names(&self) -> &BTreeMap<ItemInstanceId, String> { &self.wasm_export_names }
-    pub fn external_import_links(&self) -> &BTreeMap<ItemInstanceId, nyar::ExternalImportLink> { &self.external_import_links }
-    pub fn external_call_edges(&self) -> &[nyar_types::CanonicalExternalCallEdge] { &self.external_call_edges }
-    pub fn internal_call_edges(&self) -> &[nyar_types::CanonicalCallEdge] { &self.internal_call_edges }
+    pub fn module_name(&self) -> &str {
+        &self.module_name
+    }
+    pub fn fragment_id(&self) -> &nyar::Identifier {
+        &self.fragment_id
+    }
+    pub fn exported_operations(&self) -> &[ItemInstanceId] {
+        &self.exported_operations
+    }
+    pub fn required_capabilities(&self) -> &[nyar::CapabilityTag] {
+        &self.required_capabilities
+    }
+    pub fn theory_bundle(&self) -> &nyar::TheoryBundle {
+        &self.theory_bundle
+    }
+    pub fn entry_operation(&self) -> Option<ItemInstanceId> {
+        self.entry_operation
+    }
+    pub fn wasm_export_names(&self) -> &BTreeMap<ItemInstanceId, String> {
+        &self.wasm_export_names
+    }
+    pub fn external_import_links(&self) -> &BTreeMap<ItemInstanceId, nyar::ExternalImportLink> {
+        &self.external_import_links
+    }
+    pub fn external_call_edges(&self) -> &[nyar_types::CanonicalExternalCallEdge] {
+        &self.external_call_edges
+    }
+    pub fn internal_call_edges(&self) -> &[nyar_types::CanonicalCallEdge] {
+        &self.internal_call_edges
+    }
 
-    pub fn aggregate_layouts(&self) -> &nyar_types::AggregateLayoutPlan { &self.aggregate_layouts }
-    pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> { &self.aggregate_layout_by_nominal }
-    pub fn aggregate_layout_by_field(&self) -> &BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)> { &self.aggregate_layout_by_field }
-    pub fn aggregate_layout_by_type(&self) -> &BTreeMap<nyar_types::TypeId, nyar_types::LayoutId> { &self.aggregate_layout_by_type }
-    pub fn flags_types(&self) -> &[nyar_types::FlagsLayout] { &self.flags_types }
-    pub fn singleton_instances(&self) -> &[nyar_types::SingletonInstancePlan] { &self.singleton_instances }
+    pub fn aggregate_layouts(&self) -> &nyar_types::AggregateLayoutPlan {
+        &self.aggregate_layouts
+    }
+    pub fn aggregate_layout_by_nominal(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId> {
+        &self.aggregate_layout_by_nominal
+    }
+    pub fn aggregate_layout_by_field(&self) -> &BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)> {
+        &self.aggregate_layout_by_field
+    }
+    pub fn aggregate_layout_by_type(&self) -> &BTreeMap<nyar_types::TypeId, nyar_types::LayoutId> {
+        &self.aggregate_layout_by_type
+    }
+    pub fn flags_types(&self) -> &[nyar_types::FlagsLayout] {
+        &self.flags_types
+    }
+    pub fn singleton_instances(&self) -> &[nyar_types::SingletonInstancePlan] {
+        &self.singleton_instances
+    }
 
     pub fn imports(&self) -> &BTreeMap<ItemInstanceId, BackendImport> {
         &self.imports
@@ -193,16 +235,19 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
         let identity = nyar_types::ValueIdentity::new(function.instance, *value);
         match program.representation().value_reps.get(&identity) {
             Some(ValueRepresentation::Specialized) => {}
-            Some(representation) => return Err(miette!(
-                "值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"
-            )),
-            None => return Err(miette!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同")),
+            Some(representation) => {
+                return Err(miette!("值 `{identity:?}` 的表示 `{representation:?}` 尚无目标私有载体合同，拒绝按语义类型重新选择表示"));
+            }
+            None => {
+                return Err(miette!("值 `{identity:?}` 缺少 RepresentationPlan 载体合同"));
+            }
         }
     }
     for block in function.blocks.values() {
         for instruction in &block.instructions {
             for (nominal, variant) in canonical_sum_operations(instruction) {
-                let Some(sum) = program.representation().sum_reps.get(&nominal) else {
+                let Some(sum) = program.representation().sum_reps.get(&nominal)
+                else {
                     return Err(miette!("sum `{nominal:?}` 缺少 RepresentationPlan 布局合同"));
                 };
                 if !sum.variants.contains_key(&variant) {
@@ -212,16 +257,21 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             if let CanonicalOperation::Invoke { callee, .. } = &instruction.operation {
                 match (callee, program.representation().invoke_lowerings.get(&instruction.id)) {
                     (CanonicalCallee::Item(_), Some(InvokeLowering::Direct)) => {}
-                    (_, None) => return Err(miette!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index())),
-                    (_, Some(lowering)) => return Err(miette!(
-                        "调用指令 `{}` 的表示 `{lowering:?}` 与 callee `{callee:?}` 尚无目标私有调用合同，拒绝改用普通调用",
-                        instruction.id.index()
-                    )),
+                    (_, None) => {
+                        return Err(miette!("调用指令 `{}` 缺少 RepresentationPlan 降低合同", instruction.id.index()));
+                    }
+                    (_, Some(lowering)) => {
+                        return Err(miette!(
+                            "调用指令 `{}` 的表示 `{lowering:?}` 与 callee `{callee:?}` 尚无目标私有调用合同，拒绝改用普通调用",
+                            instruction.id.index()
+                        ));
+                    }
                 }
             }
         }
     }
-    let mut values = function.value_types.keys().map(|value| Value { id: ValueRef(value.index()), origin: ValueOrigin::Temporary }).collect::<Vec<_>>();
+    let mut values =
+        function.value_types.keys().map(|value| Value { id: ValueRef(value.index()), origin: ValueOrigin::Temporary }).collect::<Vec<_>>();
     for (index, (value, _)) in function.parameters.iter().enumerate() {
         let row = values.iter_mut().find(|row| row.id.0 == value.index()).ok_or_else(|| miette!("入口参数缺少 SSA 值合同"))?;
         row.origin = ValueOrigin::Parameter { index, name: format!("arg{index}") };
@@ -229,18 +279,24 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     let mut callees = Vec::new();
     let mut blocks = Vec::new();
     for block in function.blocks.values() {
-        let instructions = block.instructions.iter().map(|instruction| {
-            Ok(Instruction {
-                id: instruction.id,
-                results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
-                kind: lower_operation(canonical, function, instruction, &mut callees)?,
-                provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| miette!("指令 identity 溢出"))?,
+        let instructions = block
+            .instructions
+            .iter()
+            .map(|instruction| {
+                Ok(Instruction {
+                    id: instruction.id,
+                    results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
+                    kind: lower_operation(canonical, function, instruction, &mut callees)?,
+                    provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| miette!("指令 identity 溢出"))?,
+                })
             })
-        }).collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
         blocks.push(Block {
-            id: BlockRef(block.id.0), label: format!("block_{}", block.id.0),
+            id: BlockRef(block.id.0),
+            label: format!("block_{}", block.id.0),
             parameters: block.parameters.iter().map(|(value, _)| ValueRef(value.index())).collect(),
-            instructions, terminator: lower_terminator(block.terminator.clone())?,
+            instructions,
+            terminator: lower_terminator(block.terminator.clone())?,
         });
     }
     let symbol = canonical.linked.callable_names.get(&function.instance).ok_or_else(|| miette!("函数实例缺少 ABI 名称"))?.to_string();
@@ -248,19 +304,33 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     let value_layouts = function
         .value_types
         .iter()
-        .filter_map(|(value, type_id)| canonical.linked.aggregate_layout_by_type.get(type_id).copied().map(|layout| (ValueRef(value.index()), layout)))
+        .filter_map(|(value, type_id)| {
+            canonical.linked.aggregate_layout_by_type.get(type_id).copied().map(|layout| (ValueRef(value.index()), layout))
+        })
         .collect();
     let return_layout = canonical.linked.aggregate_layout_by_type.get(&function.return_type).copied();
-    Ok((ExecutableFunction {
-        symbol,
-        return_type: type_of(function.return_type)?,
-        param_types: function.parameters.iter().map(|(_, id)| type_of(*id)).collect::<Result<_>>()?,
-        value_types: function.value_types.iter().map(|(value, id)| Ok((ValueRef(value.index()), type_of(*id)?))).collect::<Result<_>>()?,
-        value_layouts,
-        return_layout,
-        entry: BlockRef(function.entry.0), values, suspend_points: Vec::new(), frame_layouts: Vec::new(), continuations: Vec::new(),
-        case_chains: Vec::new(), #[allow(deprecated)] state_machine: None, suspend_plan: None, blocks, diagnostics: Vec::new(),
-    }, callees))
+    Ok((
+        ExecutableFunction {
+            symbol,
+            return_type: type_of(function.return_type)?,
+            param_types: function.parameters.iter().map(|(_, id)| type_of(*id)).collect::<Result<_>>()?,
+            value_types: function.value_types.iter().map(|(value, id)| Ok((ValueRef(value.index()), type_of(*id)?))).collect::<Result<_>>()?,
+            value_layouts,
+            return_layout,
+            entry: BlockRef(function.entry.0),
+            values,
+            suspend_points: Vec::new(),
+            frame_layouts: Vec::new(),
+            continuations: Vec::new(),
+            case_chains: Vec::new(),
+            #[allow(deprecated)]
+            state_machine: None,
+            suspend_plan: None,
+            blocks,
+            diagnostics: Vec::new(),
+        },
+        callees,
+    ))
 }
 
 fn canonical_sum_operations(instruction: &nyar_types::CanonicalInstruction) -> Vec<(nyar_types::NominalInstanceId, nyar_types::VariantId)> {
@@ -288,11 +358,7 @@ fn lower_operation(
             .ok_or_else(|| miette!("{operation} 缺少编译器绑定的布局身份: {type_id:?}"))
     };
     let value_type = |value: nyar_types::MirValueId| {
-        function
-            .value_types
-            .get(&value)
-            .copied()
-            .ok_or_else(|| miette!("聚合值 `{value:?}` 缺少 Semantic MIR 类型事实"))
+        function.value_types.get(&value).copied().ok_or_else(|| miette!("聚合值 `{value:?}` 缺少 Semantic MIR 类型事实"))
     };
     Ok(match &instruction.operation {
         CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), arguments } => {
@@ -302,7 +368,9 @@ fn lower_operation(
             callees.push(*instance);
             InstructionKind::Call { callee: Operand::Item(*instance), arguments: arguments.iter().map(|id| value(*id)).collect() }
         }
-        CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() },
+        CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => {
+            InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() }
+        }
         CanonicalOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
         CanonicalOperation::AggregateCopy { source, destination } => {
             let source_type = value_type(*source)?;
@@ -318,10 +386,14 @@ fn lower_operation(
         }
         CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
         CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
-        CanonicalOperation::ArraySet { array, index, value: stored } => InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) },
+        CanonicalOperation::ArraySet { array, index, value: stored } => {
+            InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) }
+        }
         CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
-            array_type: lower_type(program, *array_type)?, length: value(*length), initialization: match initialization {
+            array_type: lower_type(program, *array_type)?,
+            length: value(*length),
+            initialization: match initialization {
                 CanonicalArrayInitialization::Default => nyar_types::ArrayInitialization::Default,
                 CanonicalArrayInitialization::Fill(fill) => nyar_types::ArrayInitialization::Fill(value(*fill)),
             },
@@ -345,29 +417,34 @@ fn lower_operation(
                 fields: fields.iter().map(|id| value(*id)).collect(),
             }
         }
-        CanonicalOperation::StructNew { nominal, fields } => InstructionKind::StructNew {
-            nominal: *nominal,
-            fields: fields.iter().map(|(field, id)| (*field, value(*id))).collect(),
-        },
+        CanonicalOperation::StructNew { nominal, fields } => {
+            InstructionKind::StructNew { nominal: *nominal, fields: fields.iter().map(|(field, id)| (*field, value(*id))).collect() }
+        }
         CanonicalOperation::FieldGet { object, field } => InstructionKind::FieldGet { object: value(*object), field: *field },
-        CanonicalOperation::FieldSet { object, field, value: stored } => InstructionKind::FieldSet {
-            object: value(*object), field: *field, value: value(*stored),
-        },
-        CanonicalOperation::SumNew { nominal, variant, payload } => InstructionKind::SumNew {
-            nominal: *nominal, variant: *variant, payload: payload.map(value),
-        },
-        CanonicalOperation::SumPayloadGet { nominal, variant, object } => InstructionKind::SumPayloadGet {
-            nominal: *nominal, variant: *variant, object: value(*object),
-        },
-        CanonicalOperation::SumVariantIs { nominal, variant, object } => InstructionKind::SumVariantIs {
-            nominal: *nominal, variant: *variant, object: value(*object),
-        },
+        CanonicalOperation::FieldSet { object, field, value: stored } => {
+            InstructionKind::FieldSet { object: value(*object), field: *field, value: value(*stored) }
+        }
+        CanonicalOperation::SumNew { nominal, variant, payload } => {
+            InstructionKind::SumNew { nominal: *nominal, variant: *variant, payload: payload.map(value) }
+        }
+        CanonicalOperation::SumPayloadGet { nominal, variant, object } => {
+            InstructionKind::SumPayloadGet { nominal: *nominal, variant: *variant, object: value(*object) }
+        }
+        CanonicalOperation::SumVariantIs { nominal, variant, object } => {
+            InstructionKind::SumVariantIs { nominal: *nominal, variant: *variant, object: value(*object) }
+        }
         unsupported => return Err(miette!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
 }
 
 fn lower_constant(constant: &CanonicalConstant) -> Constant {
-    match constant { CanonicalConstant::Int(v) => Constant::Int(*v), CanonicalConstant::Bool(v) => Constant::Bool(*v), CanonicalConstant::Utf8(v) => Constant::Utf8(v.clone()), CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()), CanonicalConstant::Unit => Constant::Unit }
+    match constant {
+        CanonicalConstant::Int(v) => Constant::Int(*v),
+        CanonicalConstant::Bool(v) => Constant::Bool(*v),
+        CanonicalConstant::Utf8(v) => Constant::Utf8(v.clone()),
+        CanonicalConstant::Utf16(v) => Constant::Utf16(v.clone()),
+        CanonicalConstant::Unit => Constant::Unit,
+    }
 }
 
 fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
@@ -385,7 +462,10 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         },
         CanonicalTypeKind::Tuple(items) => NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?),
         CanonicalTypeKind::Array { element, length: None } => NyarType::Array(Box::new(lower_type(program, *element)?)),
-        CanonicalTypeKind::Array { element, length: Some(length) } => NyarType::FixedArray { element: Box::new(lower_type(program, *element)?), length: usize::try_from(*length).map_err(|_| miette!("固定数组长度溢出"))? },
+        CanonicalTypeKind::Array { element, length: Some(length) } => NyarType::FixedArray {
+            element: Box::new(lower_type(program, *element)?),
+            length: usize::try_from(*length).map_err(|_| miette!("固定数组长度溢出"))?,
+        },
         CanonicalTypeKind::Nullable(element) => NyarType::Nullable(Box::new(lower_type(program, *element)?)),
         unsupported => return Err(miette!("canonical 类型尚无目标合同: {unsupported:?}")),
     })
@@ -395,10 +475,16 @@ fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
     let value = |id: nyar_types::MirValueId| Operand::Value(ValueRef(id.index()));
     Ok(match terminator {
         CanonicalTerminator::Return { value: result } => Terminator::Return { value: result.map(value) },
-        CanonicalTerminator::Jump { target, arguments } => Terminator::Jump { target: BlockRef(target.0), arguments: arguments.into_iter().map(value).collect() },
-        CanonicalTerminator::Branch { condition, then_target, else_target } => Terminator::Branch { condition: value(condition), then_target: BlockRef(then_target.0), else_target: BlockRef(else_target.0) },
+        CanonicalTerminator::Jump { target, arguments } => {
+            Terminator::Jump { target: BlockRef(target.0), arguments: arguments.into_iter().map(value).collect() }
+        }
+        CanonicalTerminator::Branch { condition, then_target, else_target } => {
+            Terminator::Branch { condition: value(condition), then_target: BlockRef(then_target.0), else_target: BlockRef(else_target.0) }
+        }
         CanonicalTerminator::Unreachable => Terminator::Unreachable,
-        unsupported => return Err(miette!("canonical effect terminator 尚无目标合同: {unsupported:?}")),
+        unsupported => {
+            return Err(miette!("canonical effect terminator 尚无目标合同: {unsupported:?}"));
+        }
     })
 }
 
@@ -415,13 +501,12 @@ mod representation_contract_tests {
 
     fn source_program_from(source: &str) -> CompiledProgram {
         use nyar_types::pipeline::RepresentationPlanStage;
-        let hir = nyar_language::ValkyrieCompiler::default()
-            .compile_source(source)
-            .expect("单测源码必须完成 HIR 分析");
+        let hir = nyar_language::ValkyrieCompiler::default().compile_source(source).expect("单测源码必须完成 HIR 分析");
         let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
-        let canonical = nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir)
-            .expect("单测 MIR 必须满足 Canonical 合同");
-        let representation = nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical)
+        let canonical =
+            nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir).expect("单测 MIR 必须满足 Canonical 合同");
+        let representation = nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner
+            .plan(&canonical)
             .expect("单测 Canonical 必须形成表示计划");
         CompiledProgram::new(canonical, representation).expect("单测表示输入必须一致，不代表生产流水线验收")
     }
@@ -443,9 +528,8 @@ mod representation_contract_tests {
     fn unknown_fragment_identity_fails_before_backend_preparation() {
         let program = source_program();
         let missing = nyar::Identifier::new("missing_fragment");
-        let error = BackendPrivatePlan::from_compiled_program(
-            &program, &missing, nyar::TheoryBundle::default(), &[],
-        ).expect_err("片段必须来自同一 Canonical 程序，不能按根或顺序猜测");
+        let error = BackendPrivatePlan::from_compiled_program(&program, &missing, nyar::TheoryBundle::default(), &[])
+            .expect_err("片段必须来自同一 Canonical 程序，不能按根或顺序猜测");
         assert!(error.to_string().contains("不存在"), "{error}");
     }
 
@@ -466,8 +550,7 @@ mod representation_contract_tests {
         let root = *source.canonical().mir.functions.keys().next().expect("源码有函数");
         let mut canonical = source.canonical().clone();
         canonical.linked.callable_names.insert(root, QualifiedName::new(vec![nyar::Identifier::new("renamed_boundary")]));
-        let program = CompiledProgram::new(canonical, source.representation().clone())
-            .expect("ABI 名不改变已经验证的调用与表示身份");
+        let program = CompiledProgram::new(canonical, source.representation().clone()).expect("ABI 名不改变已经验证的调用与表示身份");
         let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段");
         let plan = BackendPrivatePlan::from_compiled_program(&program, fragment, nyar::TheoryBundle::default(), &[root])
             .expect("目标准备必须消费同一根身份");
@@ -480,11 +563,16 @@ mod representation_contract_tests {
         let program = source_program();
         for parts in [vec!["infix +"], vec!["builtin", "array", "push"]] {
             let mut plan = prepare(&program).expect("源码计划必须成功");
-            let call = plan.functions.values_mut().flat_map(|function| &mut function.blocks)
-                .flat_map(|block| &mut block.instructions).find_map(|instruction| match &mut instruction.kind {
+            let call = plan
+                .functions
+                .values_mut()
+                .flat_map(|function| &mut function.blocks)
+                .flat_map(|block| &mut block.instructions)
+                .find_map(|instruction| match &mut instruction.kind {
                     InstructionKind::Call { callee, .. } => Some(callee),
                     _ => None,
-                }).expect("源码包含调用");
+                })
+                .expect("源码包含调用");
             *call = Operand::Symbol(nyar::NamePath::new(parts.iter().map(|part| nyar::Identifier::new(part)).collect()));
             let submission = crate::FragmentSubmission { backend_plan: std::sync::Arc::new(plan), ..Default::default() };
             let error = crate::lowering::features::semantic_mir_contract::validate_submission(&submission)
@@ -506,14 +594,11 @@ mod representation_contract_tests {
         }
         let program = CompiledProgram::new(canonical, source.representation().clone()).expect("标签不改变语义合同");
         let mut plan = prepare(&program).expect("独立实例必须可准备");
-        plan.wasm_export_names = exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
-        let submission = crate::FragmentSubmission {
-            backend_plan: std::sync::Arc::new(plan),
-            ..Default::default()
-        };
-        let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module(
-            &submission, nyar::HostProjectionBoundary::WasmJsGlue,
-        ).expect("Wasm 调用和导出只能沿实例编码");
+        plan.wasm_export_names =
+            exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
+        let submission = crate::FragmentSubmission { backend_plan: std::sync::Arc::new(plan), ..Default::default() };
+        let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module(&submission, nyar::HostProjectionBoundary::WasmJsGlue)
+            .expect("Wasm 调用和导出只能沿实例编码");
         let directory = tempfile::tempdir().expect("测试目录");
         let artifact = directory.path().join("identity.wasm");
         std::fs::write(&artifact, module.to_bytes().expect("Wasm 编码成功")).expect("写入测试产物");
@@ -528,17 +613,18 @@ mod representation_contract_tests {
         let program = source_program_from("micro identity(value: i64) -> i64 { return value }");
         let exports = program.canonical().linked.callable_names.clone();
         let mut plan = prepare(&program).expect("标量导出有完整实例合同");
-        plan.wasm_export_names = exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
-        let submission = crate::FragmentSubmission {
-            backend_plan: std::sync::Arc::new(plan),
-            ..Default::default()
-        };
+        plan.wasm_export_names =
+            exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
+        let submission = crate::FragmentSubmission { backend_plan: std::sync::Arc::new(plan), ..Default::default() };
         let (module, _) = crate::lowering::backends::wasm::lower_fragment_to_wasm_module_for(
-            &submission, nyar::HostProjectionBoundary::WasmJsGlue,
-            crate::nyar_backend_wasi::WasiPreview::Preview2, crate::nyar_backend_wasi::WasmPackageKind::Library,
-        ).expect("标量库不得要求 ArrayList 函数或字段布局");
-        let section = module.sections.iter().find(|section| section.name.as_deref() == Some("nyar.library_invoke"))
-            .expect("必须提供明确导出 ABI");
+            &submission,
+            nyar::HostProjectionBoundary::WasmJsGlue,
+            crate::nyar_backend_wasi::WasiPreview::Preview2,
+            crate::nyar_backend_wasi::WasmPackageKind::Library,
+        )
+        .expect("标量库不得要求 ArrayList 函数或字段布局");
+        let section =
+            module.sections.iter().find(|section| section.name.as_deref() == Some("nyar.library_invoke")).expect("必须提供明确导出 ABI");
         let metadata: serde_json::Value = serde_json::from_slice(&section.bytes).expect("ABI JSON 有效");
         assert_eq!(metadata["exports"]["identity"]["params"], serde_json::json!(["i64"]));
         assert_eq!(metadata["exports"]["identity"]["returns"], "i64");
@@ -559,12 +645,8 @@ mod representation_contract_tests {
         let mut plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
         plan.exported_operations = instances.clone();
         plan.wasm_export_names = instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect();
-        let submission = crate::FragmentSubmission {
-            backend_plan: std::sync::Arc::new(plan),
-            ..Default::default()
-        };
-        let module = crate::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&submission)
-            .expect("只允许沿已绑定实例发射");
+        let submission = crate::FragmentSubmission { backend_plan: std::sync::Arc::new(plan), ..Default::default() };
+        let module = crate::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&submission).expect("只允许沿已绑定实例发射");
         assert_eq!(module.functions.len(), 2);
         assert_eq!(module.exports.len(), 2);
         for (index, export) in module.exports.iter().enumerate() {
@@ -581,11 +663,18 @@ mod representation_contract_tests {
             }
             position += instruction.size as usize;
         }
-        let callee = source.canonical().mir.functions.values().flat_map(|function| function.blocks.values())
-            .flat_map(|block| &block.instructions).find_map(|instruction| match &instruction.operation {
+        let callee = source
+            .canonical()
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| &block.instructions)
+            .find_map(|instruction| match &instruction.operation {
                 CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), .. } => Some(*instance),
                 _ => None,
-            }).expect("源码包含普通调用");
+            })
+            .expect("源码包含普通调用");
         assert_eq!(calls, vec![instances.iter().position(|instance| *instance == callee).expect("目标实例存在") as i32]);
     }
 
@@ -593,15 +682,10 @@ mod representation_contract_tests {
     fn unsupported_value_choices_do_not_reuse_specialized_encoding() {
         let source = source_program();
         let identity = *source.representation().value_reps.keys().next().expect("源码应有 SSA 值");
-        for representation in [
-            ValueRepresentation::CompileTimeIdentity,
-            ValueRepresentation::Reified,
-            ValueRepresentation::ErasedBoxed,
-        ] {
+        for representation in [ValueRepresentation::CompileTimeIdentity, ValueRepresentation::Reified, ValueRepresentation::ErasedBoxed] {
             let mut plan = source.representation().clone();
             plan.value_reps.insert(identity, representation.clone());
-            let program = CompiledProgram::new(source.canonical().clone(), plan)
-                .expect("表示选择的可表达性属于目标准备边界");
+            let program = CompiledProgram::new(source.canonical().clone(), plan).expect("表示选择的可表达性属于目标准备边界");
             let error = prepare(&program).expect_err("不得忽略表示选择而重用标量编码");
             assert!(error.to_string().contains("目标私有载体合同"), "{error}");
             assert!(error.to_string().contains(&format!("{representation:?}")), "{error}");
@@ -612,16 +696,12 @@ mod representation_contract_tests {
     fn unsupported_call_choices_do_not_reuse_direct_encoding() {
         let source = source_program();
         let instruction = *source.representation().invoke_lowerings.keys().next().expect("源码应有普通调用");
-        for lowering in [
-            InvokeLowering::TypedWitness,
-            InvokeLowering::SharedOperationTable,
-            InvokeLowering::Specialized,
-            InvokeLowering::TypedReference,
-        ] {
+        for lowering in
+            [InvokeLowering::TypedWitness, InvokeLowering::SharedOperationTable, InvokeLowering::Specialized, InvokeLowering::TypedReference]
+        {
             let mut plan = source.representation().clone();
             plan.invoke_lowerings.insert(instruction, lowering.clone());
-            let program = CompiledProgram::new(source.canonical().clone(), plan)
-                .expect("调用表示的可表达性属于目标准备边界");
+            let program = CompiledProgram::new(source.canonical().clone(), plan).expect("调用表示的可表达性属于目标准备边界");
             let error = prepare(&program).expect_err("不得忽略调用表示而重用直接调用编码");
             assert!(error.to_string().contains("目标私有调用合同"), "{error}");
             assert!(error.to_string().contains(&format!("{lowering:?}")), "{error}");

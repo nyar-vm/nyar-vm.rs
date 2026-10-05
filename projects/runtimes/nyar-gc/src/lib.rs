@@ -25,7 +25,7 @@ mod trace;
 mod value;
 
 pub use barrier::{WriteBarrier, write_value_slot};
-pub use collector::{GcRoots, GarbageCollector, RootHandshakeReport, TracePollReport};
+pub use collector::{GarbageCollector, GcRoots, RootHandshakeReport, TracePollReport};
 pub use concurrent::{ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState};
 pub use concurrent_ticker::ConcurrentMarkTicker;
 pub use controller::{StrategyController, StrategyDecision, StrategyTransition};

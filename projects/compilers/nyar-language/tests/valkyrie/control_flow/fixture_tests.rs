@@ -1,7 +1,4 @@
-use super::fixtures::{
-    EXPLICIT_RETURN, NULLABLE_TRY_PROPAGATE, assert_nullable_try_mir_shape, assert_return_mir_shape,
-    compile_fixture,
-};
+use super::fixtures::{EXPLICIT_RETURN, NULLABLE_TRY_PROPAGATE, assert_nullable_try_mir_shape, assert_return_mir_shape, compile_fixture};
 
 #[test]
 fn return_fixture_has_mir_return_terminator() {

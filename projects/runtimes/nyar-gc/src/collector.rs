@@ -1,8 +1,10 @@
-use crate::generation::Generation;
-use crate::heap::ObjectHeap;
-use crate::relocate::RelocateMap;
-use crate::trace::{enqueue_object_gray, enqueue_value_gray, scan_gray_object, trace_value};
-use crate::value::{ObjectId, Value};
+use crate::{
+    generation::Generation,
+    heap::ObjectHeap,
+    relocate::RelocateMap,
+    trace::{enqueue_object_gray, enqueue_value_gray, scan_gray_object, trace_value},
+    value::{ObjectId, Value},
+};
 
 /// ConcurrentTrace 每拍默认扫描的灰对象上限（mutator 侧有界切片）。
 const DEFAULT_GRAY_BUDGET_PER_SLICE: usize = 64;
@@ -175,7 +177,8 @@ impl GarbageCollector {
             let map = self.collect_nursery(roots, heap);
             self.nursery_collects_since_full = self.nursery_collects_since_full.saturating_add(1);
             map
-        } else {
+        }
+        else {
             self.collect(roots, heap);
             self.nursery_collects_since_full = 0;
             RelocateMap::new()
@@ -190,12 +193,7 @@ impl GarbageCollector {
     }
 
     /// `force_complete` 为真时，`ConcurrentTrace` 忽略 ticker，直接进入终止（供整周期回收）。
-    pub fn poll_concurrent_mark_ex(
-        &mut self,
-        roots: GcRoots<'_>,
-        heap: &mut ObjectHeap,
-        force_complete: bool,
-    ) -> bool {
+    pub fn poll_concurrent_mark_ex(&mut self, roots: GcRoots<'_>, heap: &mut ObjectHeap, force_complete: bool) -> bool {
         use crate::concurrent::{ConcurrentMarkEvent, ConcurrentMarkState};
 
         heap.concurrent_mark_mut().set_enabled(true);
@@ -207,9 +205,7 @@ impl GarbageCollector {
                 if slot_count == 0 {
                     return true;
                 }
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::BeginCycle)
-                    .expect("enabled BeginCycle");
+                heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::BeginCycle).expect("enabled BeginCycle");
                 self.marked.resize(slot_count, false);
                 self.marked.fill(false);
                 self.gray.clear();
@@ -226,12 +222,8 @@ impl GarbageCollector {
                     host_roots,
                     gray_after_roots: self.gray.len() as u32,
                 };
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::RootsReady)
-                    .expect("RootsReady");
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::TraceSliceDone)
-                    .expect("enter ConcurrentTrace");
+                heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::RootsReady).expect("RootsReady");
+                heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TraceSliceDone).expect("enter ConcurrentTrace");
                 self.last_concurrent_ticks = heap.concurrent_mark_ticks();
                 false
             }
@@ -263,29 +255,20 @@ impl GarbageCollector {
                     gray_scanned += scanned as u32;
                     gray_done = done;
                 }
-                self.last_trace_poll = TracePollReport {
-                    slices_run,
-                    gray_scanned,
-                    budget_exhausted: !gray_done,
-                    gray_pending_before,
-                };
+                self.last_trace_poll = TracePollReport { slices_run, gray_scanned, budget_exhausted: !gray_done, gray_pending_before };
                 if !gray_done {
                     // 灰队列未空：本拍有界切片结束，停留 ConcurrentTrace。
                     self.last_concurrent_ticks = ticks;
-                    heap.concurrent_mark_mut()
-                        .transition(ConcurrentMarkEvent::TraceSliceDone)
-                        .expect("stay ConcurrentTrace for gray work");
-                } else if !force_complete && ticks > self.last_concurrent_ticks {
+                    heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TraceSliceDone).expect("stay ConcurrentTrace for gray work");
+                }
+                else if !force_complete && ticks > self.last_concurrent_ticks {
                     // 灰已空但后台节拍有进展：再留一拍（仍不在后台扫堆）。
                     self.last_concurrent_ticks = ticks;
-                    heap.concurrent_mark_mut()
-                        .transition(ConcurrentMarkEvent::TraceSliceDone)
-                        .expect("stay ConcurrentTrace");
-                } else {
+                    heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TraceSliceDone).expect("stay ConcurrentTrace");
+                }
+                else {
                     // 灰空且（强制完成或无新节拍）：进入终止检测。
-                    heap.concurrent_mark_mut()
-                        .transition(ConcurrentMarkEvent::TerminationOk)
-                        .expect("to TerminationCheck");
+                    heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TerminationOk).expect("to TerminationCheck");
                 }
                 false
             }
@@ -295,13 +278,10 @@ impl GarbageCollector {
                 self.drain_satb_to_gray(heap);
                 let pending_gray = !self.gray.is_empty();
                 if pending_satb || pending_gray {
-                    heap.concurrent_mark_mut()
-                        .transition(ConcurrentMarkEvent::TerminationRetry)
-                        .expect("back to ConcurrentTrace");
-                } else {
-                    heap.concurrent_mark_mut()
-                        .transition(ConcurrentMarkEvent::TerminationOk)
-                        .expect("to Remark");
+                    heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TerminationRetry).expect("back to ConcurrentTrace");
+                }
+                else {
+                    heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::TerminationOk).expect("to Remark");
                 }
                 false
             }
@@ -314,9 +294,7 @@ impl GarbageCollector {
                 }
                 self.mark_interpreter_roots(roots, heap);
                 self.mark_host_roots(heap);
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::RemarkDone)
-                    .expect("to Sweep");
+                heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::RemarkDone).expect("to Sweep");
                 false
             }
             ConcurrentMarkState::Sweep => {
@@ -325,9 +303,7 @@ impl GarbageCollector {
                 heap.barrier_mut().clear_satb();
                 self.gray.clear();
                 self.last_relocate = RelocateMap::new();
-                heap.concurrent_mark_mut()
-                    .transition(ConcurrentMarkEvent::SweepDone)
-                    .expect("to Idle");
+                heap.concurrent_mark_mut().transition(ConcurrentMarkEvent::SweepDone).expect("to Idle");
                 true
             }
         }
@@ -352,7 +328,8 @@ impl GarbageCollector {
         let budget = self.gray_budget_per_slice;
         let mut scanned = 0usize;
         for _ in 0..budget {
-            let Some(id) = self.gray.pop() else {
+            let Some(id) = self.gray.pop()
+            else {
                 return (scanned, true);
             };
             scan_gray_object(id, heap, &mut self.marked, &mut self.gray);

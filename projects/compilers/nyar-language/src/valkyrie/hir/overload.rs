@@ -17,8 +17,8 @@ use crate::{
     types::{
         Identifier, NamePath, QualifiedName,
         hir::{
-            GenericType, HirBlock, HirCallArgument, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern, HirField, HirFunction,
-            HirCallKind, HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement,
+            GenericType, HirBlock, HirCallArgument, HirCallKind, HirCallableDomain, HirEnum, HirExpr, HirExprKind, HirExtractorPattern,
+            HirField, HirFunction, HirIdentifier, HirMatchArm, HirModule, HirParam, HirPattern, HirResolvedCall, HirSingleton, HirStatement,
             HirStatementKind, HirStruct, HirVariadicKind, HirVariant, HirWhereConstraint, ValkyrieType,
         },
     },
@@ -153,7 +153,9 @@ pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCand
     match tied.as_slice() {
         [selected] => Ok((*selected).clone()),
         [] => Err(OverloadResolutionError::NoMatch),
-        ambiguous => Err(OverloadResolutionError::Ambiguous { candidates: ambiguous.iter().map(|candidate| candidate.symbol.clone()).collect() }),
+        ambiguous => {
+            Err(OverloadResolutionError::Ambiguous { candidates: ambiguous.iter().map(|candidate| candidate.symbol.clone()).collect() })
+        }
     }
 }
 
@@ -242,9 +244,11 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     }
     for item in &module.singletons {
         let owner_type = ValkyrieType::Named(item.name.clone());
-        candidates.extend(item.methods.iter().map(|method| {
-            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &owner_type, &[])
-        }));
+        candidates.extend(
+            item.methods
+                .iter()
+                .map(|method| specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &owner_type, &[])),
+        );
     }
     for item in &module.traits {
         candidates.extend(item.methods.iter().map(|method| build_method_candidate(method, None, Some(item.name.clone()))));
@@ -252,9 +256,11 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     }
     for item in &module.impls {
         let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
-        candidates.extend(item.methods.iter().map(|method| {
-            specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
-        }));
+        candidates.extend(
+            item.methods
+                .iter()
+                .map(|method| specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)),
+        );
     }
     // Dependency exports contribute only their declared call contracts. Their
     // bodies remain owned by the exporting module and are never reparsed or
@@ -264,7 +270,11 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         for item in &export.structs {
             candidates.push(build_struct_constructor_candidate(item));
             candidates.extend(item.methods.iter().map(|method| {
-                specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item), &item.generics)
+                specialize_method_candidate(
+                    build_method_candidate(method, Some(item.name.clone()), None),
+                    &struct_apply_type(item),
+                    &item.generics,
+                )
             }));
         }
         for item in &export.traits {
@@ -273,9 +283,11 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
         }
         for item in &export.impls {
             let owner = impl_nominal_type_name(&item.target).map(Identifier::new);
-            candidates.extend(item.methods.iter().map(|method| {
-                specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
-            }));
+            candidates.extend(
+                item.methods.iter().map(|method| {
+                    specialize_method_candidate(build_method_candidate(method, owner.clone(), None), &item.target, &item.generics)
+                }),
+            );
         }
     }
     for item in &module.enums {
@@ -335,10 +347,7 @@ fn match_intrinsic_builtin_candidate(
             let element = element.as_ref().clone();
             let value_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
             if matches!(value_ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType)
-                || matches!(
-                    type_relations.match_parameter(&value_ty, &element),
-                    ParameterMatchResult::NoMatch { .. }
-                )
+                || matches!(type_relations.match_parameter(&value_ty, &element), ParameterMatchResult::NoMatch { .. })
             {
                 return None;
             }
@@ -352,10 +361,7 @@ fn match_intrinsic_builtin_candidate(
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
                 domain: OverloadDomain::Function,
-                signature: OverloadSignature {
-                    params: vec![array_ty.clone(), element],
-                    return_type: array_ty,
-                },
+                signature: OverloadSignature { params: vec![array_ty.clone(), element], return_type: array_ty },
                 match_kind: OverloadMatchKind::NominalExact,
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
@@ -573,12 +579,7 @@ fn specialize_method_candidate(
     owner_type: &ValkyrieType,
     owner_generics: &[GenericType],
 ) -> OverloadCandidate {
-    candidate.signature.params = candidate
-        .signature
-        .params
-        .iter()
-        .map(|ty| substitute_type_self(ty, owner_type))
-        .collect();
+    candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_type_self(ty, owner_type)).collect();
     candidate.signature.return_type = substitute_type_self(&candidate.signature.return_type, owner_type);
     candidate.param_specs = candidate
         .param_specs
@@ -692,9 +693,8 @@ fn resolve_statement_calls(
             if let Some(initializer) = initializer {
                 resolve_expr_calls(initializer, candidates, type_relations, locals, struct_fields, singleton_names);
             }
-            let binding_type = ty.clone().or_else(|| {
-                initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names))
-            });
+            let binding_type =
+                ty.clone().or_else(|| initializer.as_ref().and_then(|expr| infer_scrutinee_type(expr, locals, struct_fields, singleton_names)));
             if let Some(binding_type) = binding_type {
                 bind_pattern_type(pattern, &binding_type, locals);
             }
@@ -953,14 +953,13 @@ fn match_call_candidate(
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<OverloadCandidate> {
     // 语言 builtin：以候选符号的 IntrinsicId 为准（ADR 0013），不得按调用点表面名特判。
-    if let Some(matched) =
-        match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names)
-    {
+    if let Some(matched) = match_intrinsic_builtin_candidate(candidate, args, type_relations, locals, struct_fields, singleton_names) {
         return Some(matched);
     }
     let actual_types = if candidate.param_specs.is_empty() {
         args.iter().map(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
-    } else {
+    }
+    else {
         let bound = bind_call_arguments(&candidate.param_specs, args).ok()?;
         bound.iter().map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     };
@@ -1166,7 +1165,17 @@ fn try_resolve_call(
             let owner = &path.parts()[0];
             let method_name = &path.parts()[1];
             if let Some(trait_name) = constrained_trait_owner(owner, type_relations.callable_constraints()) {
-                return try_resolve_type_static_method(owner, method_name, args, candidates, type_relations, locals, struct_fields, singleton_names, Some(&trait_name));
+                return try_resolve_type_static_method(
+                    owner,
+                    method_name,
+                    args,
+                    candidates,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                    Some(&trait_name),
+                );
             }
             if singleton_names.contains(owner) {
                 return try_resolve_singleton_method(
@@ -1232,8 +1241,7 @@ fn try_resolve_call(
                 );
             }
             if candidates.iter().any(|candidate| {
-                candidate.owner.as_ref() == Some(type_owner)
-                    && candidate.symbol.parts().last().is_some_and(|name| name == method_name)
+                candidate.owner.as_ref() == Some(type_owner) && candidate.symbol.parts().last().is_some_and(|name| name == method_name)
             }) {
                 return try_resolve_type_static_method(
                     type_owner,
@@ -1247,15 +1255,7 @@ fn try_resolve_call(
                     None,
                 );
             }
-            return try_resolve_qualified_free_function(
-                path,
-                args,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-            );
+            return try_resolve_qualified_free_function(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
         }
     }
 
@@ -1402,8 +1402,7 @@ fn try_resolve_instance_method(
     full_args.push(receiver_arg);
     full_args.extend_from_slice(args);
 
-    let receiver_type = infer_expr_type(receiver, locals)
-        .or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
+    let receiver_type = infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
     let generic_trait_owner = receiver_type.as_ref().and_then(|ty| match ty {
         ValkyrieType::Generic(generic) => constrained_trait_owner(&generic.name, type_relations.callable_constraints()),
         ValkyrieType::Named(name) => constrained_trait_owner(name, type_relations.callable_constraints()),
@@ -1419,20 +1418,13 @@ fn try_resolve_instance_method(
         .filter_map(|candidate| {
             let candidate = generic_trait_owner
                 .as_ref()
-                .map(|_| {
-                    substitute_trait_self(candidate, receiver_type.as_ref().expect("generic receiver type"))
-                })
+                .map(|_| substitute_trait_self(candidate, receiver_type.as_ref().expect("generic receiver type")))
                 .unwrap_or_else(|| candidate.clone());
             let matched = match_call_candidate(&candidate, &full_args, type_relations, locals, struct_fields, singleton_names)?;
             match generic_trait_owner.as_ref() {
                 Some(trait_owner) => {
                     let generic_subject = receiver_type.as_ref().and_then(generic_type_parameter_name)?;
-                    Some(substitute_context_associated_types(
-                        &matched,
-                        type_relations.callable_constraints(),
-                        &generic_subject,
-                        trait_owner,
-                    ))
+                    Some(substitute_context_associated_types(&matched, type_relations.callable_constraints(), &generic_subject, trait_owner))
                 }
                 None => Some(matched),
             }
@@ -1470,12 +1462,8 @@ fn substitute_context_associated_types(
         .map(|equation| (equation.name.clone(), equation.ty.clone()))
         .collect::<BTreeMap<_, _>>();
     candidate.signature.return_type = substitute_associated_equations(&candidate.signature.return_type, constrained_type, &substitutions);
-    candidate.signature.params = candidate
-        .signature
-        .params
-        .iter()
-        .map(|ty| substitute_associated_equations(ty, constrained_type, &substitutions))
-        .collect();
+    candidate.signature.params =
+        candidate.signature.params.iter().map(|ty| substitute_associated_equations(ty, constrained_type, &substitutions)).collect();
     candidate
 }
 
@@ -1516,22 +1504,18 @@ fn substitute_associated_equations(
             element: Box::new(substitute_associated_equations(element, constrained_type, equations)),
             length: *length,
         },
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(
-            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
-        ),
-        ValkyrieType::Union(items) => ValkyrieType::Union(
-            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
-        ),
-        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(
-            items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect(),
-        ),
+        ValkyrieType::Tuple(items) => {
+            ValkyrieType::Tuple(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
+        }
+        ValkyrieType::Union(items) => {
+            ValkyrieType::Union(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
+        }
+        ValkyrieType::Intersection(items) => {
+            ValkyrieType::Intersection(items.iter().map(|item| substitute_associated_equations(item, constrained_type, equations)).collect())
+        }
         ValkyrieType::Nullable(inner) => ValkyrieType::Nullable(Box::new(substitute_associated_equations(inner, constrained_type, equations))),
         ValkyrieType::Function(function) => ValkyrieType::Function(Box::new(crate::types::hir::FunctionType {
-            params: function
-                .params
-                .iter()
-                .map(|param| substitute_associated_equations(param, constrained_type, equations))
-                .collect(),
+            params: function.params.iter().map(|param| substitute_associated_equations(param, constrained_type, equations)).collect(),
             return_type: substitute_associated_equations(&function.return_type, constrained_type, equations),
         })),
         other => other.clone(),
@@ -1587,12 +1571,7 @@ fn try_resolve_type_static_method(
                 .map(|trait_owner| {
                     let owner_type = ValkyrieType::Named(type_owner.clone());
                     let candidate = substitute_trait_self(candidate, &owner_type);
-                    substitute_context_associated_types(
-                        &candidate,
-                        type_relations.callable_constraints(),
-                        type_owner,
-                        trait_owner,
-                    )
+                    substitute_context_associated_types(&candidate, type_relations.callable_constraints(), type_owner, trait_owner)
                 })
                 .unwrap_or_else(|| candidate.clone());
             match_call_candidate(&candidate, args, type_relations, locals, struct_fields, singleton_names)
@@ -1758,10 +1737,7 @@ fn match_singleton_method_candidate(
     }
     else {
         let bound = bind_call_arguments(&param_specs, call_args).ok()?;
-        bound
-            .iter()
-            .map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names))
-            .collect::<Option<Vec<_>>>()?
+        bound.iter().map(|arg| infer_scrutinee_type(arg, locals, struct_fields, singleton_names)).collect::<Option<Vec<_>>>()?
     };
     let match_kind = compute_call_match_kind(type_relations, &actual_types, &expected_types)?;
     let mut matched = candidate.clone();
@@ -1886,10 +1862,9 @@ pub(crate) fn substitute_type_vars(ty: &ValkyrieType, substitutions: &BTreeMap<I
             args.iter().map(|arg| substitute_type_vars(arg, substitutions)).collect(),
         ),
         ValkyrieType::Array(inner) => ValkyrieType::Array(Box::new(substitute_type_vars(inner, substitutions))),
-        ValkyrieType::FixedArray { element, length } => ValkyrieType::FixedArray {
-            element: Box::new(substitute_type_vars(element, substitutions)),
-            length: *length,
-        },
+        ValkyrieType::FixedArray { element, length } => {
+            ValkyrieType::FixedArray { element: Box::new(substitute_type_vars(element, substitutions)), length: *length }
+        }
         ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
         ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| substitute_type_vars(item, substitutions)).collect()),
         ValkyrieType::Intersection(items) => {
@@ -2282,9 +2257,10 @@ fn validate_block_extractor_patterns(
                 // 对于 refutable pattern（如 `let Some(x) = opt`），跳过 extractor 校验，
                 // 由后续 `check_pattern_refutability` 统一拒绝。
                 if pattern.refutability() != PatternRefutability::Refutable {
-                    let inferred_type = ty.as_ref().cloned().or_else(|| {
-                        initializer.as_ref().and_then(|init| infer_scrutinee_type(init, &locals, struct_fields, &BTreeSet::new()))
-                    });
+                    let inferred_type = ty
+                        .as_ref()
+                        .cloned()
+                        .or_else(|| initializer.as_ref().and_then(|init| infer_scrutinee_type(init, &locals, struct_fields, &BTreeSet::new())));
                     validate_pattern_extractor_contract(pattern, inferred_type.as_ref(), candidates, type_relations, struct_fields)?;
                 }
                 if let Some(initializer) = initializer {
@@ -2538,7 +2514,9 @@ fn is_builtin_result_pattern(canonical_callee: &NamePath, actual_type: &Valkyrie
     }
     match actual_type {
         ValkyrieType::Named(name) => name.as_str().ends_with("Result"),
-        ValkyrieType::Apply(base, _) => matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str().ends_with("Result")),
+        ValkyrieType::Apply(base, _) => {
+            matches!(base.as_ref(), ValkyrieType::Named(name) if name.as_str().ends_with("Result"))
+        }
         _ => false,
     }
 }
@@ -2753,22 +2731,33 @@ fn render_valkyrie_type_name(ty: &ValkyrieType) -> String {
 #[cfg(test)]
 mod identity_tests {
     use super::*;
-    use crate::{ValkyrieCompiler, types::{SourceID, hir::HirTraitBound}};
+    use crate::{
+        ValkyrieCompiler,
+        types::{SourceID, hir::HirTraitBound},
+    };
 
     #[test]
     fn nested_call_type_requires_the_selected_contract() {
         let compiler = ValkyrieCompiler::default();
-        let mut hir = compiler.compile_source(
-            "micro produce() -> i64 { 7 } micro consume(value: i64) -> i64 { value } micro caller() -> i64 { consume(produce()) }",
-        ).expect("嵌套调用必须从源码完成声明选择");
+        let mut hir = compiler
+            .compile_source(
+                "micro produce() -> i64 { 7 } micro consume(value: i64) -> i64 { value } micro caller() -> i64 { consume(produce()) }",
+            )
+            .expect("嵌套调用必须从源码完成声明选择");
         compiler.validate_hir_semantic_contract(&hir).expect("完整调用合同必须通过");
         let caller = hir.functions.iter_mut().find(|function| function.name.as_str() == "caller").unwrap();
-        let HirExprKind::Call { args, .. } = &mut caller.body.expr.as_mut().unwrap().kind else { panic!("预期外层调用"); };
+        let HirExprKind::Call { args, .. } = &mut caller.body.expr.as_mut().unwrap().kind
+        else {
+            panic!("预期外层调用");
+        };
         let nested = &mut args[0].value;
         let expected = Some(ValkyrieType::Integer64 { signed: true });
         assert_eq!(infer_expr_type(nested, &BTreeMap::new()), expected);
         assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
-        let HirExprKind::Call { resolved, .. } = &mut nested.kind else { panic!("预期嵌套调用"); };
+        let HirExprKind::Call { resolved, .. } = &mut nested.kind
+        else {
+            panic!("预期嵌套调用");
+        };
         assert!(resolved.take().is_some());
         assert_eq!(infer_expr_type(nested, &BTreeMap::new()), None);
         assert_eq!(infer_scrutinee_type(nested, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
@@ -2778,10 +2767,7 @@ mod identity_tests {
     #[test]
     fn panic_and_format_names_require_source_callable_declarations() {
         let compiler = ValkyrieCompiler::default();
-        for source in [
-            "micro caller(value: i64) -> i64 { panic(value) }",
-            "micro formatter(value: i64) -> i64 { format(value) }",
-        ] {
+        for source in ["micro caller(value: i64) -> i64 { panic(value) }", "micro formatter(value: i64) -> i64 { format(value) }"] {
             let error = compiler.compile_source(source).expect_err("未声明名称不得获得合成 callable 合同");
             assert!(error.to_string().contains("SMIR003"), "应在 Semantic HIR 合同边界失败：{error}");
         }
@@ -2796,7 +2782,8 @@ micro caller(value: i64) -> i64 { panic(value) }
             .expect("显式声明应通过普通 callable resolver");
         let declaration = hir.functions.iter().find(|function| function.name.as_str() == "panic").unwrap();
         let caller = hir.functions.iter().find(|function| function.name.as_str() == "caller").unwrap();
-        let HirExprKind::Call { resolved: Some(call), .. } = &caller.body.expr.as_ref().unwrap().kind else {
+        let HirExprKind::Call { resolved: Some(call), .. } = &caller.body.expr.as_ref().unwrap().kind
+        else {
             panic!("显式声明必须得到正式调用合同");
         };
         assert_eq!(call.instance, declaration.instance);
@@ -2805,16 +2792,19 @@ micro caller(value: i64) -> i64 { panic(value) }
     #[test]
     fn construction_type_requires_the_selected_contract() {
         let compiler = ValkyrieCompiler::default();
-        let mut hir = compiler.compile_source(
-            "structure Parcel { value: i64 } micro create() -> Parcel { Parcel { value: 7 } }",
-        ).expect("构造必须从源码完成字段绑定与声明选择");
+        let mut hir = compiler
+            .compile_source("structure Parcel { value: i64 } micro create() -> Parcel { Parcel { value: 7 } }")
+            .expect("构造必须从源码完成字段绑定与声明选择");
         compiler.validate_hir_semantic_contract(&hir).expect("完整构造合同必须通过");
         let create = hir.functions.iter_mut().find(|function| function.name.as_str() == "create").unwrap();
         let construction = create.body.expr.as_mut().unwrap();
         let expected = Some(ValkyrieType::Named(Identifier::new("Parcel")));
         assert_eq!(infer_expr_type(construction, &BTreeMap::new()), expected);
         assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), expected);
-        let HirExprKind::Construct { resolved, .. } = &mut construction.kind else { panic!("预期结构构造"); };
+        let HirExprKind::Construct { resolved, .. } = &mut construction.kind
+        else {
+            panic!("预期结构构造");
+        };
         assert!(resolved.take().is_some());
         assert_eq!(infer_expr_type(construction, &BTreeMap::new()), None);
         assert_eq!(infer_scrutinee_type(construction, &BTreeMap::new(), &BTreeMap::new(), &BTreeSet::new()), None);
@@ -2890,7 +2880,8 @@ micro caller(value: i64) -> i64 { panic(value) }
             &BTreeMap::new(),
             &BTreeSet::new(),
             true,
-        ).expect("singleton 匹配不得擦除 self 或声明合同");
+        )
+        .expect("singleton 匹配不得擦除 self 或声明合同");
         assert_eq!(matched, declaration);
     }
 
@@ -2902,15 +2893,18 @@ micro caller(value: i64) -> i64 { panic(value) }
             kind: HirExprKind::Variable(HirIdentifier { name: Identifier::new("unknown"), shadow_index: 0, span: span.clone() }),
             span,
         });
-        assert!(match_singleton_method_candidate(
-            &declaration,
-            &[unknown],
-            &TypeRelationContext::from_module(&HirModule::default()),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeSet::new(),
-            true,
-        ).is_none());
+        assert!(
+            match_singleton_method_candidate(
+                &declaration,
+                &[unknown],
+                &TypeRelationContext::from_module(&HirModule::default()),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                true,
+            )
+            .is_none()
+        );
     }
 
     fn declaration_candidate() -> OverloadCandidate {
@@ -2941,31 +2935,39 @@ micro caller(value: i64) -> i64 { panic(value) }
 
     fn resolve_constructor_contract(candidates: &[OverloadCandidate], actual: &[Option<ValkyrieType>]) -> Option<HirResolvedCall> {
         let mut locals = BTreeMap::new();
-        let arguments = actual.iter().enumerate().map(|(index, ty)| {
-            let name = Identifier::new(&format!("argument_{index}"));
-            let span = crate::types::SourceSpan::new(SourceID::default(), 0, 0);
-            if let Some(ty) = ty {
-                locals.insert(name.to_string(), ty.clone());
-            }
-            HirExpr {
-                kind: HirExprKind::Variable(HirIdentifier { name, shadow_index: 0, span: span.clone() }),
-                span,
-            }
-        }).collect::<Vec<_>>();
+        let arguments = actual
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| {
+                let name = Identifier::new(&format!("argument_{index}"));
+                let span = crate::types::SourceSpan::new(SourceID::default(), 0, 0);
+                if let Some(ty) = ty {
+                    locals.insert(name.to_string(), ty.clone());
+                }
+                HirExpr { kind: HirExprKind::Variable(HirIdentifier { name, shadow_index: 0, span: span.clone() }), span }
+            })
+            .collect::<Vec<_>>();
         try_resolve_constructor(
-            &Identifier::new("Present"), &arguments, candidates,
-            &TypeRelationContext::from_module(&HirModule::default()), &locals,
-            &BTreeMap::new(), &BTreeSet::new(),
+            &Identifier::new("Present"),
+            &arguments,
+            candidates,
+            &TypeRelationContext::from_module(&HirModule::default()),
+            &locals,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
         )
     }
 
     fn generic_constructor(owner: &str, parameters: Vec<ValkyrieType>) -> OverloadCandidate {
         OverloadCandidate::new_method(
-            Identifier::new(owner), NamePath::new(vec![Identifier::new("Present")]),
-            OverloadDomain::Constructor, parameters,
+            Identifier::new(owner),
+            NamePath::new(vec![Identifier::new("Present")]),
+            OverloadDomain::Constructor,
+            parameters,
             ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new(owner))), vec![ValkyrieType::Named(Identifier::new("T"))]),
             OverloadMatchKind::Row,
-        ).with_generic_binder(Identifier::new("T"))
+        )
+        .with_generic_binder(Identifier::new("T"))
     }
 
     #[test]
@@ -2974,7 +2976,10 @@ micro caller(value: i64) -> i64 { panic(value) }
         let resolved = resolve_constructor_contract(&[candidate], &[Some(ValkyrieType::Utf8)]).expect("声明 binder 应完成代入");
         assert_eq!(resolved.symbol, NamePath::new(vec![Identifier::new("Envelope"), Identifier::new("Present")]));
         assert_eq!(resolved.parameter_types, vec![ValkyrieType::Utf8]);
-        assert_eq!(resolved.return_type, ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8]));
+        assert_eq!(
+            resolved.return_type,
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8])
+        );
         assert!(!resolved.has_receiver);
     }
 
@@ -3002,7 +3007,9 @@ micro caller(value: i64) -> i64 { panic(value) }
 
     #[test]
     fn constructor_contract_from_source_preserves_generic_sum_signature() {
-        let hir = ValkyrieCompiler::new(SourceID { version_id: 5210 }).compile_source(r#"
+        let hir = ValkyrieCompiler::new(SourceID { version_id: 5210 })
+            .compile_source(
+                r#"
 unite Envelope<T> {
     Present { value: T },
     Absent,
@@ -3011,25 +3018,31 @@ micro wrap(value: utf8) -> Envelope<utf8> {
     let wrapped = Present { value: value }
     return wrapped
 }
-"#).expect("当前源码中的构造声明应完成实例化");
+"#,
+            )
+            .expect("当前源码中的构造声明应完成实例化");
         let function = hir.functions.iter().find(|function| function.name.as_str() == "wrap").expect("wrap");
-        let HirStatementKind::Let { initializer: Some(initializer), .. } = &function.body.statements[0].kind else {
+        let HirStatementKind::Let { initializer: Some(initializer), .. } = &function.body.statements[0].kind
+        else {
             panic!("缺少构造表达式");
         };
-        let HirExprKind::Construct { resolved: Some(resolved), .. } = &initializer.kind else {
+        let HirExprKind::Construct { resolved: Some(resolved), .. } = &initializer.kind
+        else {
             panic!("构造身份未解析：{initializer:?}");
         };
         assert_eq!(resolved.symbol, NamePath::new(vec![Identifier::new("Envelope"), Identifier::new("Present")]));
         assert_eq!(resolved.parameter_types, vec![ValkyrieType::Utf8]);
-        assert_eq!(resolved.return_type, ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8]));
+        assert_eq!(
+            resolved.return_type,
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Envelope"))), vec![ValkyrieType::Utf8])
+        );
     }
 
     #[test]
     fn ambiguous_bare_new_does_not_resolve_via_simple_name_fallback() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 5201 });
-        let hir = compiler
-            .compile_source(
-                r#"
+        let hir = compiler.compile_source(
+            r#"
 structure Alpha { value: i64 }
 
 structure Beta { value: i64 }
@@ -3050,7 +3063,7 @@ micro main() {
     let x = new(1)
 }
 "#,
-            );
+        );
 
         match hir {
             Ok(hir) => {
@@ -3087,9 +3100,8 @@ micro main() {
     #[test]
     fn qualified_type_static_call_does_not_fall_back_to_unrelated_new() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 5202 });
-        let result = compiler
-            .compile_source(
-                r#"
+        let result = compiler.compile_source(
+            r#"
 structure HashMap<K, V> {
     capacity: i64
 }
@@ -3114,7 +3126,7 @@ micro main() {
     let map: HashMap<i64, i64> = HashMap::new(0)
 }
 "#,
-            );
+        );
         let hir = result.expect("qualified static call must resolve from its declared signature");
         let main = hir.functions.iter().find(|function| function.name.as_str() == "main").expect("main");
         let resolved = main
@@ -3395,19 +3407,23 @@ micro answer(): i64 {
     #[test]
     fn qualified_namespace_call_uses_canonical_identity() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4210 });
-        let hir = compiler.compile_source(r#"
+        let hir = compiler
+            .compile_source(
+                r#"
 namespace library.console;
 micro emit(flag: bool): unit {}
 namespace library.client;
 micro invoke(): unit { library.console.emit(true) }
-"#).expect("qualified source call");
+"#,
+            )
+            .expect("qualified source call");
         fn find(module: &HirModule) -> Option<&HirFunction> {
-            module.functions.iter().find(|function| function.name.as_str() == "invoke")
-                .or_else(|| module.submodules.iter().find_map(find))
+            module.functions.iter().find(|function| function.name.as_str() == "invoke").or_else(|| module.submodules.iter().find_map(find))
         }
         let function = find(&hir).expect("invoke");
         let expression = function.body.expr.as_ref().expect("call expression");
-        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind else {
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind
+        else {
             panic!("qualified call must resolve");
         };
         assert_eq!(resolved.symbol.to_string(), "library::console::emit");
@@ -3416,7 +3432,9 @@ micro invoke(): unit { library.console.emit(true) }
     #[test]
     fn submodule_imply_body_resolves_qualified_call() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4211 });
-        let hir = compiler.compile_source(r#"
+        let hir = compiler
+            .compile_source(
+                r#"
 namespace library.console;
 micro emit(flag: bool): unit {}
 namespace library.client;
@@ -3424,15 +3442,21 @@ class Client {}
 imply Client {
     micro invoke(): unit { library.console.emit(true) }
 }
-"#).expect("qualified imply source call");
+"#,
+            )
+            .expect("qualified imply source call");
         fn find(module: &HirModule) -> Option<&HirFunction> {
-            module.impls.iter().flat_map(|item| &item.methods)
+            module
+                .impls
+                .iter()
+                .flat_map(|item| &item.methods)
                 .find(|function| function.name.as_str() == "invoke")
                 .or_else(|| module.submodules.iter().find_map(find))
         }
         let function = find(&hir).expect("invoke");
         let expression = function.body.expr.as_ref().expect("call expression");
-        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind else {
+        let HirExprKind::Call { resolved: Some(resolved), .. } = &expression.kind
+        else {
             panic!("qualified imply call must resolve");
         };
         assert_eq!(resolved.symbol.to_string(), "library::console::emit");
@@ -3441,11 +3465,15 @@ imply Client {
     #[test]
     fn method_generic_parameters_survive_hir_lowering() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4212 });
-        let hir = compiler.compile_source(r#"
+        let hir = compiler
+            .compile_source(
+                r#"
 class Collector {
     micro identity<T>(value: T) -> T where T: Iterator<Item = i32> { return value; }
 }
-"#).expect("generic method source");
+"#,
+            )
+            .expect("generic method source");
         let method = &hir.structs[0].methods[0];
         assert_eq!(method.generics.len(), 1);
         assert_eq!(method.generics[0].name.as_str(), "T");
@@ -3464,11 +3492,15 @@ class Collector {
     #[test]
     fn where_bounds_preserve_positional_arguments_and_equation_ownership() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4214 });
-        let hir = compiler.compile_source(r#"
+        let hir = compiler
+            .compile_source(
+                r#"
 micro identity<T>(value: T) -> T
     where T: Mapper<i32, bool, Item = i32> + Mapper<bool, i32, Item = bool>
 { return value; }
-"#).expect("structured generic bounds");
+"#,
+            )
+            .expect("structured generic bounds");
         let bounds = &hir.functions[0].where_constraints[0].bounds;
         assert_eq!(bounds.len(), 2);
         assert_eq!(bounds[0].trait_path, bounds[1].trait_path);
@@ -3482,10 +3514,14 @@ micro identity<T>(value: T) -> T
     #[test]
     fn unrelated_generic_declaration_does_not_make_nominal_type_a_wildcard() {
         let compiler = ValkyrieCompiler::new(SourceID { version_id: 4213 });
-        let hir = compiler.compile_source(r#"
+        let hir = compiler
+            .compile_source(
+                r#"
 class T {}
 micro identity<T>(value: T) -> T { return value; }
-"#).expect("nominal and scoped generic declarations");
+"#,
+            )
+            .expect("nominal and scoped generic declarations");
         let relations = TypeRelationContext::from_module(&hir);
         assert!(matches!(
             relations.match_parameter(&ValkyrieType::Boolean, &ValkyrieType::Named(Identifier::new("T"))),
@@ -3705,12 +3741,7 @@ imply Utf8Text {
 "#,
             )
             .expect("imply array push must compile");
-        let method = hir
-            .impls
-            .iter()
-            .flat_map(|item| item.methods.iter())
-            .find(|method| method.name.as_str() == "split")
-            .expect("split");
+        let method = hir.impls.iter().flat_map(|item| item.methods.iter()).find(|method| method.name.as_str() == "split").expect("split");
         let mut push_calls = 0usize;
         for statement in &method.body.statements {
             fn walk(expr: &HirExpr, push_calls: &mut usize) {

@@ -9,9 +9,7 @@ use nyar_language::{
 mod valkyrie_v;
 
 fn core_types_dir() -> Option<PathBuf> {
-    valkyrie_v::projects()
-        .map(|projects| projects.join("core/source/types"))
-        .filter(|path| path.is_dir())
+    valkyrie_v::projects().map(|projects| projects.join("core/source/types")).filter(|path| path.is_dir())
 }
 
 /// 读取并编译外部检出中 `core/source/types` 下的 `.v` 文件；无 `VALKYRIE_V_ROOT` 时返回 `None`。
@@ -47,7 +45,10 @@ fn has_mir_function(mir: &MirModule, suffix: &str) -> bool {
 
 #[test]
 fn core_types_option_file_compiles_to_hir() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
 
     let option = module
         .enums
@@ -65,7 +66,10 @@ fn core_types_option_file_compiles_to_hir() {
 
 #[test]
 fn core_types_result_file_compiles_to_hir() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
 
     let result = module
         .enums
@@ -88,14 +92,20 @@ fn core_types_result_file_compiles_to_hir() {
 
 #[test]
 fn core_types_option_file_exposes_constructors() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     assert!(has_top_function(&module, "Some"), "constructor `Some` should be present");
     assert!(has_top_function(&module, "option_none"), "constructor `option_none` should be present");
 }
 
 #[test]
 fn core_types_option_imply_exposes_all_methods() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     for method in ["is_some", "is_none", "unwrap", "unwrap_or", "unwrap_or_else", "map", "map_or", "and_then", "or_else", "filter", "flatten"] {
         assert!(has_inherent_method(&module, method), "Option::{} should be present in imply block", method);
     }
@@ -103,7 +113,10 @@ fn core_types_option_imply_exposes_all_methods() {
 
 #[test]
 fn core_types_result_imply_exposes_all_methods() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
     for method in ["unwrap", "unwrap_fail", "unwrap_or", "unwrap_or_else", "map", "and_then", "fold"] {
         assert!(has_inherent_method(&module, method), "Result::{} should be present in imply block", method);
     }

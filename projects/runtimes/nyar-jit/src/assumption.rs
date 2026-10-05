@@ -21,10 +21,7 @@ impl JitAssumption {
 
 /// 基线标量 JIT 默认挂载的假设集。
 pub fn baseline_scalar_assumptions(module_version: u32) -> Vec<JitAssumption> {
-    vec![
-        JitAssumption::ScalarLeafShape,
-        JitAssumption::ModuleVersion(module_version),
-    ]
+    vec![JitAssumption::ScalarLeafShape, JitAssumption::ModuleVersion(module_version)]
 }
 
 #[cfg(test)]

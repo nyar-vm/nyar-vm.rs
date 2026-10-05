@@ -235,7 +235,9 @@ impl ControlFlowContext {
                     self.unregister_label(&label);
                 }
             }
-            other => panic!("pop_case_chain called when innermost scope is not a CaseChain: {other:?}"),
+            other => {
+                panic!("pop_case_chain called when innermost scope is not a CaseChain: {other:?}")
+            }
         }
     }
 
@@ -262,7 +264,9 @@ impl ControlFlowContext {
                     self.unregister_label(&label);
                 }
             }
-            other => panic!("pop_generator called when innermost scope is not a Generator: {other:?}"),
+            other => {
+                panic!("pop_generator called when innermost scope is not a Generator: {other:?}")
+            }
         }
     }
 

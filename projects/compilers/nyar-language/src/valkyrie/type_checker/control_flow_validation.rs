@@ -154,7 +154,13 @@ fn infer_block_type(inference: &mut TypeInference, block: &crate::types::hir::Hi
 #[cfg(test)]
 mod tests {
     use super::{TypeError, TypeInference};
-    use crate::{types::{Identifier, NamePath, SourceID, SourceSpan, hir::{HirExpr, HirExprKind}}, valkyrie::hir::HirResolvedCall};
+    use crate::{
+        types::{
+            Identifier, NamePath, SourceID, SourceSpan,
+            hir::{HirExpr, HirExprKind},
+        },
+        valkyrie::hir::HirResolvedCall,
+    };
 
     fn span() -> SourceSpan {
         SourceSpan::new(SourceID::default(), 0, 0)

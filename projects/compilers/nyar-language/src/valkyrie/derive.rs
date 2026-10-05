@@ -42,7 +42,9 @@ impl std::fmt::Display for DeriveError {
             DeriveError::UnknownTrait { trait_name, available } => {
                 write!(f, "未知的派生 trait `{trait_name}`，可用 trait: {}", available.join(", "))
             }
-            DeriveError::AbstractType { target, trait_name } => write!(f, "抽象类型 `{target}` 不能自动派生 `{trait_name}`"),
+            DeriveError::AbstractType { target, trait_name } => {
+                write!(f, "抽象类型 `{target}` 不能自动派生 `{trait_name}`")
+            }
         }
     }
 }

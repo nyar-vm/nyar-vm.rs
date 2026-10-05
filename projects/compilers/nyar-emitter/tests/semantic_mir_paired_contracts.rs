@@ -77,7 +77,9 @@ fn rust_array_intrinsic_submission(
     let value = ValueRef(2);
     let output = ValueRef(3);
     let arguments = match opcode {
-        nyar_types::IntrinsicOpcode::ArrayGet => vec![Operand::Value(receiver), Operand::Value(index)],
+        nyar_types::IntrinsicOpcode::ArrayGet => {
+            vec![Operand::Value(receiver), Operand::Value(index)]
+        }
         _ => vec![Operand::Value(receiver), Operand::Value(index), Operand::Value(value)],
     };
     let parameter_types = arguments
@@ -152,7 +154,9 @@ fn valkyrie_array_intrinsic_module(
     let value_type = valkyrie_type(&value_type);
     let output_type = valkyrie_type(&output_type);
     let arguments = match opcode {
-        nyar_types::IntrinsicOpcode::ArrayGet => vec![MirOperand::Value(receiver), MirOperand::Value(index)],
+        nyar_types::IntrinsicOpcode::ArrayGet => {
+            vec![MirOperand::Value(receiver), MirOperand::Value(index)]
+        }
         _ => vec![MirOperand::Value(receiver), MirOperand::Value(index), MirOperand::Value(value)],
     };
     let parameter_types = arguments

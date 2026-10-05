@@ -6,10 +6,7 @@ use nyar::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, Partit
 use nyar_bytecode::{NyarExportKind, NyarModuleData};
 
 use super::BundledBackendCompiler;
-use crate::{
-    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract,
-    bundled_backend_capability_descriptor,
-};
+use crate::{DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, bundled_backend_capability_descriptor};
 
 pub(super) struct NyarVmFamilyCompiler;
 
@@ -57,20 +54,14 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
 }
 
 fn resolve_entry_symbols(module: &NyarModuleData, library_public_exports: &[String]) -> Result<Vec<String>> {
-    let entries = if library_public_exports.is_empty() {
-        vec!["main".to_owned()]
-    } else {
-        library_public_exports.to_vec()
-    };
+    let entries = if library_public_exports.is_empty() { vec!["main".to_owned()] } else { library_public_exports.to_vec() };
     for entry in &entries {
-        let matches: Vec<_> = module.exports.iter().filter(|export| {
-            export.kind == NyarExportKind::Function && export.symbol_name == *entry
-        }).collect();
+        let matches: Vec<_> =
+            module.exports.iter().filter(|export| export.kind == NyarExportKind::Function && export.symbol_name == *entry).collect();
         if matches.len() != 1 {
             return Err(miette!("Nyar 入口 `{entry}` 必须对应唯一明确函数导出"));
         }
-        let index = usize::try_from(matches[0].function_index)
-            .map_err(|_| miette!("Nyar 入口 `{entry}` 的函数索引无效"))?;
+        let index = usize::try_from(matches[0].function_index).map_err(|_| miette!("Nyar 入口 `{entry}` 的函数索引无效"))?;
         if module.functions.get(index).is_none() {
             return Err(miette!("Nyar 入口 `{entry}` 的函数索引越界"));
         }
@@ -97,17 +88,14 @@ mod tests {
             version: 2,
             name: "test".to_owned(),
             constants: Vec::new(),
-            functions: vec![NyarFunction {
-                name: "owner::main".to_owned(), arity: 0, local_count: 0,
-                code_offset: 0, code_length: 1,
-            }],
+            functions: vec![NyarFunction { name: "owner::main".to_owned(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],
             imports: Vec::new(),
-            exports: vec![NyarExport {
-                kind: NyarExportKind::Function,
-                symbol_name: "owner::main".to_owned(), function_index: 0,
-            }],
-            witness_entries: Vec::new(), code_bytes: vec![0x05],
-            globals: Vec::new(), init_function_indices: Vec::new(), layouts: Vec::new(),
+            exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "owner::main".to_owned(), function_index: 0 }],
+            witness_entries: Vec::new(),
+            code_bytes: vec![0x05],
+            globals: Vec::new(),
+            init_function_indices: Vec::new(),
+            layouts: Vec::new(),
         }
     }
 
@@ -135,9 +123,7 @@ mod tests {
     #[test]
     fn entry_contract_preserves_all_declared_library_exports() {
         let mut module = module();
-        module.exports.push(NyarExport {
-            kind: NyarExportKind::Function, symbol_name: "second".to_owned(), function_index: 0,
-        });
+        module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: "second".to_owned(), function_index: 0 });
         let entries = vec!["second".to_owned(), "owner::main".to_owned()];
         assert_eq!(resolve_entry_symbols(&module, &entries).unwrap(), entries);
     }

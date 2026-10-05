@@ -3,31 +3,39 @@ use nyar_language::{ValkyrieCompiler, types::SourceID};
 #[test]
 fn generic_static_call_uses_declared_trait_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4301 });
-    compiler.compile_source(r#"
+    compiler
+        .compile_source(
+            r#"
 trait Factory {
     micro build(value: bool) -> Self
 }
 micro invoke<C>(value: bool) -> C where C: Factory {
     return C::build(value);
 }
-"#).expect("泛型静态调用必须沿声明的 trait 合同解析");
+"#,
+        )
+        .expect("泛型静态调用必须沿声明的 trait 合同解析");
 }
 
 #[test]
 fn generic_call_rejects_unsatisfied_declared_trait_bound() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4300 });
-    let result = compiler.compile_source(r#"
+    let result = compiler.compile_source(
+        r#"
 trait Required {}
 micro constrained<T>(value: T) -> T where T: Required { return value; }
 micro invoke(value: bool) -> bool { return constrained(value); }
-"#);
+"#,
+    );
     assert!(result.is_err(), "缺少 Required evidence 的调用不得成为前端成功结果");
 }
 
 #[test]
 fn generic_static_call_preserves_associated_equations() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4302 });
-    let hir = compiler.compile_source(r#"
+    let hir = compiler
+        .compile_source(
+            r#"
 trait Iterator { type Item; }
 trait FromIterator {
     type Item;
@@ -40,18 +48,25 @@ micro collect<I, T, C>(item: T, self: I) -> C
 {
     return C::from_iterator(item, self);
 }
-"#).expect("关联类型等式必须贯穿泛型静态调用");
+"#,
+        )
+        .expect("关联类型等式必须贯穿泛型静态调用");
     let collect = hir.functions.iter().find(|function| function.name.as_str() == "collect").expect("collect HIR");
-    let resolved = collect.body.statements.iter().find_map(|statement| match &statement.kind {
-        nyar_language::types::hir::HirStatementKind::Expr(expression) => match &expression.kind {
-            nyar_language::types::hir::HirExprKind::Return(Some(value)) => match &value.kind {
-                nyar_language::types::hir::HirExprKind::Call { resolved: Some(resolved), .. } => Some(resolved),
+    let resolved = collect
+        .body
+        .statements
+        .iter()
+        .find_map(|statement| match &statement.kind {
+            nyar_language::types::hir::HirStatementKind::Expr(expression) => match &expression.kind {
+                nyar_language::types::hir::HirExprKind::Return(Some(value)) => match &value.kind {
+                    nyar_language::types::hir::HirExprKind::Call { resolved: Some(resolved), .. } => Some(resolved),
+                    _ => None,
+                },
                 _ => None,
             },
             _ => None,
-        },
-        _ => None,
-    }).expect("the static trait call must have a resolved HIR contract");
+        })
+        .expect("the static trait call must have a resolved HIR contract");
     assert_eq!(resolved.symbol.to_string(), "FromIterator.from_iterator");
     assert_eq!(resolved.parameter_types.len(), 2);
     assert_eq!(resolved.parameter_types[0], nyar_language::types::hir::ValkyrieType::Named(nyar_language::types::Identifier::new("T")));
@@ -82,15 +97,15 @@ micro collect_array<I, T>(self: I) -> [T]
 
     for value in ["result", "iter.next()", "iter.next().unwrap()", "push(result, iter.next().unwrap())"] {
         let source = base.replace("VALUE", value);
-        let hir = compiler
-            .compile_source(&source)
-            .unwrap_or_else(|error| panic!("调用 `{value}` 未形成完整合同: {error:?}"));
+        let hir = compiler.compile_source(&source).unwrap_or_else(|error| panic!("调用 `{value}` 未形成完整合同: {error:?}"));
         let iterator = hir.traits.iter().find(|item| item.name.as_str() == "Iterator").expect("Iterator 声明");
         let next = iterator.methods.iter().find(|method| method.name.as_str() == "next").expect("next 声明");
-        let nyar_language::types::hir::ValkyrieType::Apply(_, arguments) = &next.return_type else {
+        let nyar_language::types::hir::ValkyrieType::Apply(_, arguments) = &next.return_type
+        else {
             panic!("Option<Item> 必须保留 nominal 应用")
         };
-        let nyar_language::types::hir::ValkyrieType::Associated(associated) = &arguments[0] else {
+        let nyar_language::types::hir::ValkyrieType::Associated(associated) = &arguments[0]
+        else {
             panic!("trait 关联结果不得退化为普通 Named 类型")
         };
         assert_eq!(associated.base, nyar_language::types::hir::ValkyrieType::SelfType);
@@ -102,7 +117,8 @@ micro collect_array<I, T>(self: I) -> [T]
 fn namespaced_function_preserves_where_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4308 });
     let hir = compiler
-        .compile_source(r#"
+        .compile_source(
+            r#"
 namespace std.iterator;
 trait Iterator { type Item; micro next(self) -> Option<Item>; }
 micro collect_array<I, T>(self: I) -> bool
@@ -110,7 +126,8 @@ micro collect_array<I, T>(self: I) -> bool
 {
     return true;
 }
-"#)
+"#,
+        )
         .expect("带 namespace 的函数必须保留 where 合同");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "collect_array").expect("collect_array HIR");
     assert_eq!(function.where_constraints.len(), 1);
@@ -120,7 +137,8 @@ micro collect_array<I, T>(self: I) -> bool
 fn concatenated_namespace_preserves_where_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4309 });
     let hir = compiler
-        .compile_source(r#"
+        .compile_source(
+            r#"
 namespace std.iterator;
 trait Iterator { type Item; micro next(self) -> Option<Item>; }
 
@@ -130,7 +148,8 @@ micro collect_array<I, T>(self: I) -> bool
 {
     return true;
 }
-"#)
+"#,
+        )
         .expect("拼接后的重复 namespace 必须保留 where 合同");
     let function = hir.functions.iter().find(|function| function.name.as_str() == "collect_array").expect("collect_array HIR");
     assert_eq!(function.where_constraints.len(), 1);
@@ -139,13 +158,17 @@ micro collect_array<I, T>(self: I) -> bool
 #[test]
 fn imported_impl_method_contract_survives_dependency_boundary() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4307 });
-    let provider = compiler.compile_source(r#"
+    let provider = compiler
+        .compile_source(
+            r#"
 namespace core.types;
 unite Option<T> { Some { value: T }, None }
 imply Option<T> {
     micro unwrap(self) -> T { match self { case Some(value): value case None: panic("none") } }
 }
-"#).expect("provider");
+"#,
+        )
+        .expect("provider");
     let export = nyar_language::types::hir::HirDependencySemanticExport {
         module: nyar_language::types::NamePath::new(vec![nyar_language::types::Identifier::new("core.types")]),
         functions: provider.functions.clone(),
@@ -155,7 +178,12 @@ imply Option<T> {
         type_aliases: provider.type_aliases.clone(),
         impls: provider.impls.clone(),
     };
-    compiler.compile_source_with_semantic_exports(r#"
+    compiler
+        .compile_source_with_semantic_exports(
+            r#"
 micro consume(value: Option<i32>) -> i32 { return value.unwrap() }
-"#, &[export]).expect("imported impl method must resolve from its exported contract");
+"#,
+            &[export],
+        )
+        .expect("imported impl method must resolve from its exported contract");
 }

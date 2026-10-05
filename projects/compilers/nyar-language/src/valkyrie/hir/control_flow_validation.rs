@@ -2284,7 +2284,9 @@ fn display_type(ty: &ValkyrieType) -> String {
                 .join(", ")
         ),
         ValkyrieType::Array(item) => format!("[{}]", display_type(item)),
-        ValkyrieType::FixedArray { element, length } => format!("[{}; {}]", display_type(element), length),
+        ValkyrieType::FixedArray { element, length } => {
+            format!("[{}; {}]", display_type(element), length)
+        }
         ValkyrieType::TypeLambda(lambda) => format!(
             "type lambda({}) -> {}",
             lambda.params.iter().map(|item| item.name.to_string()).collect::<Vec<_>>().join(", "),
@@ -2293,7 +2295,9 @@ fn display_type(ty: &ValkyrieType) -> String {
         ValkyrieType::TraitObject(object) => {
             format!("{}<{}>", object.trait_path, object.type_arguments.iter().map(display_type).collect::<Vec<_>>().join(", "))
         }
-        ValkyrieType::Associated(associated) => format!("{}::{}", display_type(&associated.base), associated.name),
+        ValkyrieType::Associated(associated) => {
+            format!("{}::{}", display_type(&associated.base), associated.name)
+        }
         ValkyrieType::AutoType => "auto".to_string(),
         ValkyrieType::SelfType => "Self".to_string(),
         ValkyrieType::Nullable(payload) => format!("{}?", display_type(payload)),

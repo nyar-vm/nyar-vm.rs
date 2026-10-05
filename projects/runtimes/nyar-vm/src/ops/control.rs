@@ -103,11 +103,7 @@ pub fn execute_control(
             args.reverse();
 
             let result = match intrinsic_index {
-                0 => array_push(
-                    ctx.heap,
-                    args.first().unwrap_or(&Value::Null),
-                    args.get(1).unwrap_or(&Value::Null),
-                )?,
+                0 => array_push(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
                 1 => array_len(ctx.heap, args.first().unwrap_or(&Value::Null))?,
                 2 => array_get(ctx.heap, args.first().unwrap_or(&Value::Null), args.get(1).unwrap_or(&Value::Null))?,
                 3 => array_set(
@@ -125,10 +121,7 @@ pub fn execute_control(
                 }
                 6 => match args.first().unwrap_or(&Value::Null) {
                     Value::Null => {
-                        return Err(NyarRuntimeError::TypeMismatch {
-                            expected: "non-null value",
-                            actual: "null".to_string(),
-                        });
+                        return Err(NyarRuntimeError::TypeMismatch { expected: "non-null value", actual: "null".to_string() });
                     }
                     other => other.clone(),
                 },

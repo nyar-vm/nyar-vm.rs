@@ -10,19 +10,19 @@
 //! 依赖闭包完成后，由同一入口校验 Semantic MIR 并生产表示规划成功载荷。
 //! 目标 preparation 与旧装配成功链的替换尚未完成。
 
-mod diagnostics;
 mod backend_bundle;
+mod canonical;
+mod diagnostics;
 mod driver;
 mod envelope_checks;
-mod canonical;
 mod link;
 mod representation;
 
-pub use diagnostics::{diagnostic, fail_stage};
 pub use backend_bundle::compile_source_groups_to_artifacts;
+pub use canonical::canonical_program_from_semantic_mir;
+pub use diagnostics::{diagnostic, fail_stage};
 pub(crate) use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
-pub use canonical::canonical_program_from_semantic_mir;
 pub(crate) use link::link_reachable_dependency_mir;
 pub use representation::CanonicalRepresentationPlanner;
 

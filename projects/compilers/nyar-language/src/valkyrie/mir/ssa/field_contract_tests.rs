@@ -1,14 +1,22 @@
 use super::{MirLowerer, MirModule, MirOperand, MirOperation, MirStruct};
-use crate::{ValkyrieCompiler, types::{Identifier, hir::{FunctionType, ValkyrieType}}};
-use crate::mir::validation::validate_semantic_module;
+use crate::{
+    ValkyrieCompiler,
+    mir::validation::validate_semantic_module,
+    types::{
+        Identifier,
+        hir::{FunctionType, ValkyrieType},
+    },
+};
 
 fn source_module() -> MirModule {
-    let hir = ValkyrieCompiler::default().compile_source(
-        "class Parcel<First, Second> { head: First, tail: Second, items: [Second] } \
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            "class Parcel<First, Second> { head: First, tail: Second, items: [Second] } \
          micro head(value: Parcel<bool, utf8>) -> bool { return value.head } \
          micro tail(value: Parcel<bool, utf8>) -> utf8 { return value.tail } \
          micro items(value: Parcel<bool, utf8>) -> [utf8] { return value.items }",
-    ).expect("字段源码必须通过 HIR");
+        )
+        .expect("字段源码必须通过 HIR");
     let module = MirLowerer::lower_module_semantic(&hir);
     assert_eq!(module.structs[0].generics, hir.structs[0].generics);
     validate_semantic_module(&module).expect("字段结果必须符合完整声明代入");
@@ -20,17 +28,20 @@ fn applied(name: &str, arguments: Vec<ValkyrieType>) -> ValkyrieType {
 }
 
 fn field_id(module: &MirModule, name: &str) -> nyar_types::FieldId {
-    module.structs.iter().flat_map(|structure| &structure.fields).find(|field| field.name == name).map(|field| field.id).expect("field identity")
+    module
+        .structs
+        .iter()
+        .flat_map(|structure| &structure.fields)
+        .find(|field| field.name == name)
+        .map(|field| field.id)
+        .expect("field identity")
 }
 
 #[test]
 fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
     let module = source_module();
-    let expected = [
-        ("head", ValkyrieType::Boolean),
-        ("tail", ValkyrieType::Utf8),
-        ("items", ValkyrieType::Array(Box::new(ValkyrieType::Utf8))),
-    ];
+    let expected =
+        [("head", ValkyrieType::Boolean), ("tail", ValkyrieType::Utf8), ("items", ValkyrieType::Array(Box::new(ValkyrieType::Utf8)))];
     let field_ids = expected.iter().map(|(name, _)| (*name, field_id(&module, name))).collect::<std::collections::BTreeMap<_, _>>();
     for (name, ty) in expected {
         let mut matches = 0;
@@ -41,7 +52,10 @@ fn source_generic_field_reads_preserve_all_binders_without_class_dereference() {
                         matches += 1;
                         assert_eq!(instruction.results.len(), 1);
                         assert_eq!(function.value_types[&instruction.results[0]], ty);
-                        let MirOperand::Value(object) = object else { panic!("字段对象必须是 SSA 值"); };
+                        let MirOperand::Value(object) = object
+                        else {
+                            panic!("字段对象必须是 SSA 值");
+                        };
                         assert_eq!(function.value_types[object], applied("Parcel", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]));
                     }
                     MirOperation::Call { .. } => panic!("直接字段读取不得补造 class 解引用调用"),
@@ -62,9 +76,12 @@ fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout
     assert_eq!(validate_semantic_module(&missing).expect_err("物理布局不能代替语义声明").code, "SMIR006");
     let mut wrong = module;
     let function = wrong.functions.iter_mut().find(|function| function.return_type == ValkyrieType::Utf8).unwrap();
-    let result = function.blocks.iter().flat_map(|block| &block.instructions).find_map(|instruction| {
-        matches!(&instruction.kind, MirOperation::FieldGet { .. }).then(|| instruction.results[0])
-    }).unwrap();
+    let result = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|instruction| matches!(&instruction.kind, MirOperation::FieldGet { .. }).then(|| instruction.results[0]))
+        .unwrap();
     function.value_types.insert(result, ValkyrieType::Boolean);
     function.return_type = ValkyrieType::Boolean;
     assert_eq!(validate_semantic_module(&wrong).expect_err("同形或返回合同变化不能掩盖字段错位").code, "SMIR006");
@@ -92,11 +109,15 @@ fn declared_fields_instantiate_function_fixed_array_and_self_without_layout() {
     let second = declaration.fields[1].ty.clone();
     let owner = applied("Parcel", vec![ValkyrieType::Boolean, ValkyrieType::Utf8]);
     declaration.fields[0].ty = ValkyrieType::Function(Box::new(FunctionType { params: vec![first], return_type: second.clone() }));
-    assert_eq!(declaration.instantiate_field(&owner, "head"), Some(ValkyrieType::Function(Box::new(FunctionType {
-        params: vec![ValkyrieType::Boolean], return_type: ValkyrieType::Utf8,
-    }))));
+    assert_eq!(
+        declaration.instantiate_field(&owner, "head"),
+        Some(ValkyrieType::Function(Box::new(FunctionType { params: vec![ValkyrieType::Boolean], return_type: ValkyrieType::Utf8 })))
+    );
     declaration.fields[1].ty = ValkyrieType::FixedArray { element: Box::new(second), length: 3 };
-    assert_eq!(declaration.instantiate_field(&owner, "tail"), Some(ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Utf8), length: 3 }));
+    assert_eq!(
+        declaration.instantiate_field(&owner, "tail"),
+        Some(ValkyrieType::FixedArray { element: Box::new(ValkyrieType::Utf8), length: 3 })
+    );
     declaration.fields[2].ty = ValkyrieType::Nullable(Box::new(ValkyrieType::SelfType));
     assert_eq!(declaration.instantiate_field(&owner, "items"), Some(ValkyrieType::Nullable(Box::new(owner))));
 }
@@ -106,7 +127,8 @@ fn source_field_declarations_keep_qualified_owners_and_reject_short_name_aliases
     let compiler = ValkyrieCompiler::default();
     let mut declarations: Vec<MirStruct> = Vec::new();
     for namespace in ["first", "second"] {
-        let hir = compiler.compile_source(&format!("namespace {namespace}; structure Item {{ value: bool }}"))
+        let hir = compiler
+            .compile_source(&format!("namespace {namespace}; structure Item {{ value: bool }}"))
             .expect("不同 namespace 的同名声明源码");
         declarations.extend(MirLowerer::lower_module_semantic(&hir).structs);
     }
@@ -122,9 +144,9 @@ fn source_field_declarations_keep_qualified_owners_and_reject_short_name_aliases
 
 #[test]
 fn source_field_declaration_reaches_canonical_without_a_construction_seed() {
-    let output = ValkyrieCompiler::default().compile_source_to_program(
-        "structure Flag { value: bool } micro read(flag: Flag) -> bool { return flag.value }",
-    ).expect("当前源码字段声明必须贯穿 Compiler 成功载荷");
+    let output = ValkyrieCompiler::default()
+        .compile_source_to_program("structure Flag { value: bool } micro read(flag: Flag) -> bool { return flag.value }")
+        .expect("当前源码字段声明必须贯穿 Compiler 成功载荷");
     let program = output.canonical();
     program.validate().expect("Canonical 完整字段身份与结果合同");
     let mut reads = 0;
@@ -157,17 +179,22 @@ fn semantic_fields_reject_duplicate_declarations_binders_and_fields() {
 
 #[test]
 fn source_generic_field_write_uses_the_declared_second_argument() {
-    let module = ValkyrieCompiler::default().compile_source_to_mir(
-        "class Parcel<First, Second> { head: First, tail: Second } \
+    let module = ValkyrieCompiler::default()
+        .compile_source_to_mir(
+            "class Parcel<First, Second> { head: First, tail: Second } \
          micro write(value: Parcel<bool, utf8>, text: utf8) -> unit { value.tail = text }",
-    ).expect("泛型字段写入源码必须满足 Semantic MIR 合同");
+        )
+        .expect("泛型字段写入源码必须满足 Semantic MIR 合同");
     validate_semantic_module(&module).expect("完整写入合同");
     let mut invalid = module;
     let function = &mut invalid.functions[0];
     let replacement = function.blocks[0].parameters[0];
-    let instruction = function.blocks.iter_mut().flat_map(|block| &mut block.instructions).find(|instruction| {
-        matches!(&instruction.kind, MirOperation::FieldSet { .. })
-    }).expect("源码必须产生字段写入");
+    let instruction = function
+        .blocks
+        .iter_mut()
+        .flat_map(|block| &mut block.instructions)
+        .find(|instruction| matches!(&instruction.kind, MirOperation::FieldSet { .. }))
+        .expect("源码必须产生字段写入");
     if let MirOperation::FieldSet { value, .. } = &mut instruction.kind {
         *value = MirOperand::Value(replacement);
     }

@@ -62,10 +62,8 @@ fn gpu_backend_placeholders_accept_spirv_and_dxil() {
 #[test]
 fn graphic_fragment_optimization_session_applies_equations() {
     let module = shader_dot_module();
-    let fragment = hir_module_to_semantic_fragments(&module)
-        .into_iter()
-        .find(|fragment| fragment.id.as_str() == "graphic")
-        .expect("graphic fragment");
+    let fragment =
+        hir_module_to_semantic_fragments(&module).into_iter().find(|fragment| fragment.id.as_str() == "graphic").expect("graphic fragment");
     let session = OptimizationSession;
     let result = session.optimize(OptimizationRequest {
         program: hir_module_to_object_algebraic_program(&module),

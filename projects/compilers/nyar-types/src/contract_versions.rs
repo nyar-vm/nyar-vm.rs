@@ -14,7 +14,5 @@ pub const LAYOUT_PLAN_VERSION: u32 = 3;
 
 /// 将四元组格式化为 cache / provenance 指纹片段。
 pub fn contract_version_fingerprint() -> String {
-    format!(
-        "identity={IDENTITY_SCHEMA_VERSION};mir={MIR_CONTRACT_VERSION};layout={LAYOUT_PLAN_VERSION}"
-    )
+    format!("identity={IDENTITY_SCHEMA_VERSION};mir={MIR_CONTRACT_VERSION};layout={LAYOUT_PLAN_VERSION}")
 }

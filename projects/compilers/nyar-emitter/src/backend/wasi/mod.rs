@@ -114,7 +114,9 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
     fn validate(&self, input: &Self::Input) -> Result<()> {
         match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue | HostProjectionBoundary::WasiComponent => {}
-            other => return Err(miette::miette!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other)),
+            other => {
+                return Err(miette::miette!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other));
+            }
         };
 
         // This is intentionally a physical gate, separate from Semantic MIR
@@ -141,9 +143,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
             _ => unreachable!(),
         };
         if !exports.contains(required_entry) {
-            if !input.library_wasm_exports.is_empty()
-                && input.library_wasm_exports.iter().all(|name| exports.contains(name))
-            {
+            if !input.library_wasm_exports.is_empty() && input.library_wasm_exports.iter().all(|name| exports.contains(name)) {
                 return Ok(());
             }
             return Err(miette::miette!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));
@@ -180,13 +180,16 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
                     package_core_wasm_as_component(&core_wasm_path, &wit_package_path, &component_path)?;
                 }
             }
-            other => return Err(miette::miette!("`WASM` 后端不支持的 host boundary：{:?}", other)),
+            other => {
+                return Err(miette::miette!("`WASM` 后端不支持的 host boundary：{:?}", other));
+            }
         }
 
         let mut artifacts = ArtifactSet::default();
         let core_path = if matches!(input.host_boundary, HostProjectionBoundary::WasmJsGlue) {
             format!("{artifact_stem}.wasm")
-        } else {
+        }
+        else {
             format!("{artifact_stem}.core.wasm")
         };
         artifacts.push(ArtifactDescriptor {

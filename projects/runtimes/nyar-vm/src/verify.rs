@@ -2,14 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use nyar_bytecode::{
-    NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, NYAR_VERSION, OBSOLETE_CALL_NATIVE, decode_at,
-};
+use nyar_bytecode::{NYAR_VERSION, NyarHeadCode, NyarImport, NyarInstruction, NyarModuleData, OBSOLETE_CALL_NATIVE, decode_at};
 
-use crate::{
-    error::NyarRuntimeError,
-    host::resolve_import,
-};
+use crate::{error::NyarRuntimeError, host::resolve_import};
 
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
 const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
@@ -71,11 +66,7 @@ fn assign_local_kind(old: StackKind, new: StackKind) -> Option<StackKind> {
     }
 }
 
-fn merge_kind_vecs(
-    left: &[StackKind],
-    right: &[StackKind],
-    merge: fn(StackKind, StackKind) -> Option<StackKind>,
-) -> Option<Vec<StackKind>> {
+fn merge_kind_vecs(left: &[StackKind], right: &[StackKind], merge: fn(StackKind, StackKind) -> Option<StackKind>) -> Option<Vec<StackKind>> {
     if left.len() != right.len() {
         return None;
     }
@@ -97,10 +88,7 @@ fn merge_local_kinds(left: &[StackKind], right: &[StackKind]) -> Option<Vec<Stac
 /// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
 pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     if data.version != NYAR_VERSION {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "unsupported module version {}; expected {NYAR_VERSION}",
-            data.version
-        )));
+        return Err(NyarRuntimeError::ModuleLoad(format!("unsupported module version {}; expected {NYAR_VERSION}", data.version)));
     }
 
     if data.code_bytes.len() > MAX_MODULE_CODE_BYTES {
@@ -112,10 +100,7 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
 
     for (index, layout) in data.layouts.iter().enumerate() {
         if layout.field_count < 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
-                "layout[{index}] has negative field_count {}",
-                layout.field_count
-            )));
+            return Err(NyarRuntimeError::ModuleLoad(format!("layout[{index}] has negative field_count {}", layout.field_count)));
         }
     }
 
@@ -142,8 +127,8 @@ pub fn verify_module(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
         }
     }
     for &index in &data.init_function_indices {
-        let function = usize::try_from(index).ok().and_then(|index| data.functions.get(index))
-            .ok_or(NyarRuntimeError::FunctionIndexOutOfRange(index))?;
+        let function =
+            usize::try_from(index).ok().and_then(|index| data.functions.get(index)).ok_or(NyarRuntimeError::FunctionIndexOutOfRange(index))?;
         if function.arity != 0 {
             return Err(NyarRuntimeError::ModuleLoad(format!("init function[{index}] must have zero arguments")));
         }
@@ -219,22 +204,15 @@ fn verify_code_stream(data: &NyarModuleData) -> Result<(), NyarRuntimeError> {
     Ok(())
 }
 
-fn verify_function(
-    data: &NyarModuleData,
-    function_index: usize,
-    function: &nyar_bytecode::NyarFunction,
-) -> Result<(), NyarRuntimeError> {
+fn verify_function(data: &NyarModuleData, function_index: usize, function: &nyar_bytecode::NyarFunction) -> Result<(), NyarRuntimeError> {
     if function.code_offset < 0 || function.code_length < 0 {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "function[{function_index}] has negative code_offset or code_length"
-        )));
+        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] has negative code_offset or code_length")));
     }
 
     let start = function.code_offset as usize;
     let length = function.code_length as usize;
-    let end = start.checked_add(length).ok_or_else(|| {
-        NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range overflows"))
-    })?;
+    let end =
+        start.checked_add(length).ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range overflows")))?;
     if end > data.code_bytes.len() {
         return Err(NyarRuntimeError::ModuleLoad(format!(
             "function[{function_index}] code range [{start}, {end}) exceeds code section length {}",
@@ -257,11 +235,7 @@ fn verify_function(
 
     // 普通函数入口相对 `stack_base` 高度为 0。
     // effect handler 由 `InvokeHandler` 压入 `[continuation, effect_value]`，入口高度为 2。
-    let entry_height = if data.witness_entries.iter().any(|entry| entry.function_index == function_index as i32) {
-        2
-    } else {
-        0
-    };
+    let entry_height = if data.witness_entries.iter().any(|entry| entry.function_index == function_index as i32) { 2 } else { 0 };
 
     let entry_types = vec![StackKind::Any; entry_height.max(0) as usize];
     // 入口局部均为 `Any`（帧以 `Null` 填充；参数类型由调用约定另行约束）。
@@ -285,11 +259,10 @@ fn verify_function(
         }
         let mut types = type_stacks[&pc].clone();
         let mut locals = local_kinds[&pc].clone();
-        let instruction = instructions.get(&pc).copied().ok_or_else(|| {
-            NyarRuntimeError::ModuleLoad(format!(
-                "function[{function_index}] control reaches non-instruction pc {pc}"
-            ))
-        })?;
+        let instruction = instructions
+            .get(&pc)
+            .copied()
+            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] control reaches non-instruction pc {pc}")))?;
 
         let arity = function.arity.max(0) as usize;
         verify_instruction_operands(data, function_index, pc, instruction, local_slots, arity)?;
@@ -302,7 +275,8 @@ fn verify_function(
             }
             let shape = if height <= 0 {
                 ReturnShape::Void
-            } else {
+            }
+            else {
                 let top = types.last().copied().unwrap_or(StackKind::Any);
                 ReturnShape::Value(top)
             };
@@ -329,9 +303,7 @@ fn verify_function(
                 )));
             }
             if types.len() as i32 != edge_height {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
-                    "function[{function_index}] internal type-stack length mismatch at pc {pc}"
-                )));
+                return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] internal type-stack length mismatch at pc {pc}")));
             }
             match heights.get(&target) {
                 Some(existing) if *existing != edge_height => {
@@ -346,15 +318,15 @@ fn verify_function(
             }
             let stack_changed = match type_stacks.get(&target) {
                 Some(existing) => {
-                    let Some(merged) = merge_type_stacks(existing, &types) else {
-                        return Err(NyarRuntimeError::ModuleLoad(format!(
-                            "function[{function_index}] stack type mismatch at pc {target}"
-                        )));
+                    let Some(merged) = merge_type_stacks(existing, &types)
+                    else {
+                        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack type mismatch at pc {target}")));
                     };
                     if merged != *existing {
                         type_stacks.insert(target, merged);
                         true
-                    } else {
+                    }
+                    else {
                         false
                     }
                 }
@@ -365,15 +337,15 @@ fn verify_function(
             };
             let locals_changed = match local_kinds.get(&target) {
                 Some(existing) => {
-                    let Some(merged) = merge_local_kinds(existing, &locals) else {
-                        return Err(NyarRuntimeError::ModuleLoad(format!(
-                            "function[{function_index}] local type mismatch at pc {target}"
-                        )));
+                    let Some(merged) = merge_local_kinds(existing, &locals)
+                    else {
+                        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] local type mismatch at pc {target}")));
                     };
                     if merged != *existing {
                         local_kinds.insert(target, merged);
                         true
-                    } else {
+                    }
+                    else {
                         false
                     }
                 }
@@ -402,25 +374,19 @@ fn decode_function_instructions(
     while pc < end {
         let instruction = decode_at(&data.code_bytes, pc);
         if instruction.size == 0 {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
-                "function[{function_index}] truncated instruction at pc {pc}"
-            )));
+            return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] truncated instruction at pc {pc}")));
         }
-        let next = pc.checked_add(instruction.size as usize).ok_or_else(|| {
-            NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction size overflows at pc {pc}"))
-        })?;
+        let next = pc
+            .checked_add(instruction.size as usize)
+            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction size overflows at pc {pc}")))?;
         if next > end {
-            return Err(NyarRuntimeError::ModuleLoad(format!(
-                "function[{function_index}] instruction at pc {pc} crosses function end {end}"
-            )));
+            return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] instruction at pc {pc} crosses function end {end}")));
         }
         instructions.insert(pc, instruction);
         pc = next;
     }
     if pc != end {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "function[{function_index}] code range leaves a gap ending at {pc}, expected {end}"
-        )));
+        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] code range leaves a gap ending at {pc}, expected {end}")));
     }
     Ok(instructions)
 }
@@ -481,24 +447,17 @@ fn verify_instruction_operands(
 
 fn require_height(function_index: usize, pc: usize, height: i32, needed: i32) -> Result<(), NyarRuntimeError> {
     if height < needed {
-        Err(NyarRuntimeError::ModuleLoad(format!(
-            "function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}"
-        )))
-    } else {
+        Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}: height {height}, need {needed}")))
+    }
+    else {
         Ok(())
     }
 }
 
-fn require_kind(
-    function_index: usize,
-    pc: usize,
-    kinds: &mut Vec<StackKind>,
-    expected: StackKind,
-) -> Result<(), NyarRuntimeError> {
-    let Some(actual) = kinds.pop() else {
-        return Err(NyarRuntimeError::ModuleLoad(format!(
-            "function[{function_index}] stack underflow at pc {pc}"
-        )));
+fn require_kind(function_index: usize, pc: usize, kinds: &mut Vec<StackKind>, expected: StackKind) -> Result<(), NyarRuntimeError> {
+    let Some(actual) = kinds.pop()
+    else {
+        return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
     };
     match (actual, expected) {
         (_, StackKind::Any) | (StackKind::Any, _) => Ok(()),
@@ -584,14 +543,14 @@ fn stack_transfer(
         }
         NyarHeadCode::StoreLocal => {
             require_height(function_index, pc, height, 1)?;
-            let Some(stored) = types.pop() else {
-                return Err(NyarRuntimeError::ModuleLoad(format!(
-                    "function[{function_index}] stack underflow at pc {pc}"
-                )));
+            let Some(stored) = types.pop()
+            else {
+                return Err(NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")));
             };
             let slot = instruction.operand1 as usize;
             let old = locals.get(slot).copied().unwrap_or(StackKind::Any);
-            let Some(next) = assign_local_kind(old, stored) else {
+            let Some(next) = assign_local_kind(old, stored)
+            else {
                 return Err(NyarRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] local type conflict at pc {pc}: slot {slot} was {old:?}, store {stored:?}"
                 )));
@@ -608,9 +567,8 @@ fn stack_transfer(
         }
         NyarHeadCode::Dup => {
             require_height(function_index, pc, height, 1)?;
-            let top = *types.last().ok_or_else(|| {
-                NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}"))
-            })?;
+            let top =
+                *types.last().ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("function[{function_index}] stack underflow at pc {pc}")))?;
             types.push(top);
             Ok(vec![(fallthrough, height + 1)])
         }
@@ -698,7 +656,8 @@ mod tests {
         let mut module = empty_module();
         module.exports.push(nyar_bytecode::NyarExport {
             kind: nyar_bytecode::NyarExportKind::Global,
-            symbol_name: "value".to_owned(), function_index: -1,
+            symbol_name: "value".to_owned(),
+            function_index: -1,
         });
         assert!(verify_module(&module).is_err());
         module.exports[0].function_index = 0;
@@ -715,9 +674,7 @@ mod tests {
     #[test]
     fn rejects_invalid_function_and_initializer_contracts() {
         let mut module = empty_module();
-        module.functions.push(NyarFunction {
-            name: "init".to_owned(), arity: -1, local_count: 0, code_offset: 0, code_length: 1,
-        });
+        module.functions.push(NyarFunction { name: "init".to_owned(), arity: -1, local_count: 0, code_offset: 0, code_length: 1 });
         module.code_bytes.push(NyarHeadCode::Return as u8);
         assert!(verify_module(&module).is_err());
         module.functions[0].arity = 0;
@@ -786,13 +743,7 @@ mod tests {
         code.extend_from_slice(&0i32.to_le_bytes());
         code.extend_from_slice(&1i32.to_le_bytes());
         // 无函数表覆盖时只做流式检查；补一个覆盖整段代码的函数以启用 CFG。
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         // CallImport argc=1 需要栈上有 1 个值——构造 Const + CallImport 会更完整；此处仅保留索引检查路径：
         // 空栈 CallImport 应在函数校验中因 underflow 失败。
         module.code_bytes = code;
@@ -815,13 +766,7 @@ mod tests {
         code.extend_from_slice(&0i32.to_le_bytes());
         code.extend_from_slice(&1i32.to_le_bytes());
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("balanced CallImport");
     }
@@ -866,13 +811,7 @@ mod tests {
         // Jump +1 落到 Imm1 立即数中间。
         emit_imm1(&mut code, NyarHeadCode::Jump, 1);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("bad jump");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("instruction boundary")));
@@ -905,13 +844,7 @@ mod tests {
         let to_join_b = (join as i32) - (jump_b_at as i32);
         code[jump_b_at + 1..jump_b_at + 5].copy_from_slice(&to_join_b.to_le_bytes());
 
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("height mismatch");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack height mismatch")));
@@ -927,13 +860,7 @@ mod tests {
         emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
         emit_plain(&mut code, NyarHeadCode::I32Add);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("type mismatch");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
@@ -949,13 +876,7 @@ mod tests {
             emit_imm1(&mut code, NyarHeadCode::Const, 0);
         }
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("stack too deep");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("exceeds limit")));
@@ -986,13 +907,7 @@ mod tests {
         let to_join_b = (join as i32) - (jump_b_at as i32);
         code[jump_b_at + 1..jump_b_at + 5].copy_from_slice(&to_join_b.to_le_bytes());
 
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("balanced join");
     }
@@ -1011,13 +926,7 @@ mod tests {
         emit_imm1(&mut code, NyarHeadCode::LoadLocal, 1);
         emit_plain(&mut code, NyarHeadCode::I32Add);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("local i32 store/load");
     }
@@ -1033,13 +942,7 @@ mod tests {
         emit_imm1(&mut code, NyarHeadCode::Const, 0);
         emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 1,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 1, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("local conflict");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("local type conflict")));
@@ -1050,13 +953,7 @@ mod tests {
         let mut module = empty_module();
         let mut code = vec![NyarHeadCode::Nop as u8; MAX_FUNCTION_CODE_BYTES + 1];
         code.push(NyarHeadCode::Return as u8);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("size budget");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("exceeds limit")));
@@ -1076,13 +973,7 @@ mod tests {
         emit_plain(&mut code, NyarHeadCode::Return); // i32
         let to_value = (value_ret as i32) - (jif_at as i32);
         code[jif_at + 1..jif_at + 5].copy_from_slice(&to_value.to_le_bytes());
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("return mismatch");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("return type mismatch")));
@@ -1103,13 +994,7 @@ mod tests {
         emit_plain(&mut code, NyarHeadCode::Return);
         let to_other = (other as i32) - (jif_at as i32);
         code[jif_at + 1..jif_at + 5].copy_from_slice(&to_other.to_le_bytes());
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("consistent i32 returns");
     }
@@ -1121,13 +1006,7 @@ mod tests {
         // arity=1 却 LoadArg 1（仅 local_count 允许该槽）。
         emit_imm1(&mut code, NyarHeadCode::LoadArg, 1);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 1,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 1, local_count: 2, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("LoadArg arity");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("out of arity")));
@@ -1144,13 +1023,7 @@ mod tests {
         emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
         emit_plain(&mut code, NyarHeadCode::I32Add);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 1,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 1, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("ref as i32");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
@@ -1169,13 +1042,7 @@ mod tests {
         let rel = (else_pc as i32) - (br_pc as i32);
         code[br_pc + 1..br_pc + 5].copy_from_slice(&rel.to_le_bytes());
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("ref JumpIfFalse");
         assert!(matches!(err, NyarRuntimeError::ModuleLoad(message) if message.contains("stack type mismatch")));
@@ -1190,13 +1057,7 @@ mod tests {
         emit_plain(&mut code, NyarHeadCode::I32Add);
         emit_plain(&mut code, NyarHeadCode::Pop);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 2,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("i32 Pop void");
     }
@@ -1210,13 +1071,7 @@ mod tests {
         emit_imm1(&mut code, NyarHeadCode::Const, 0);
         emit_imm1(&mut code, NyarHeadCode::Const, 1);
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         let err = verify_module(&module).expect_err("extra stack on return");
         assert!(matches!(
@@ -1238,13 +1093,7 @@ mod tests {
         let rel = (else_pc as i32) - (br_pc as i32);
         code[br_pc + 1..br_pc + 5].copy_from_slice(&rel.to_le_bytes());
         emit_plain(&mut code, NyarHeadCode::Return);
-        module.functions.push(NyarFunction {
-            name: "main".into(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        });
+        module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
         module.code_bytes = code;
         verify_module(&module).expect("boolean JumpIfFalse");
     }

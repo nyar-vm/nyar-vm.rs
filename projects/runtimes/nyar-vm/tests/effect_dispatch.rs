@@ -6,11 +6,11 @@
 //! continuation, and invokes the handler function with `[continuation, effect_value]`
 //! on its operand stack.
 
-use nyar_vm::{NyarVm, Value};
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, NYAR_VERSION,
-    emit_imm1, emit_plain, encode_module,
+    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NyarWitnessDispatchEntry, emit_imm1,
+    emit_plain, encode_module,
 };
+use nyar_vm::{NyarVm, Value};
 
 /// Builds a module with:
 ///   function 0 "raiser": Const effect_payload, PerformEffect(method_name="raise"), Const 999, Return

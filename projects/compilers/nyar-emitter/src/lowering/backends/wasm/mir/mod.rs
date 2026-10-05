@@ -12,8 +12,8 @@
 //! - **Reference aggregates** (`class` / trait object / heap `[T]`): wasm-gc struct/array ops
 //! - **Node (`main`) and WASI (`_start`)**: both register structtype + arraytype (V8 13.6+ / wasmtime)
 
-use std::collections::{BTreeMap, BTreeSet};
 use miette::miette;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     backend_plan_views::{
@@ -449,10 +449,15 @@ fn build_param_types_by_instance(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> BTreeMap<ItemInstanceId, Vec<u8>> {
-    submission.backend_plan.instances().into_iter().map(|instance| {
-        let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-        (instance, wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
-    }).collect()
+    submission
+        .backend_plan
+        .instances()
+        .into_iter()
+        .map(|instance| {
+            let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
+            (instance, wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+        })
+        .collect()
 }
 
 fn build_return_types_by_instance(
@@ -461,10 +466,15 @@ fn build_return_types_by_instance(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> BTreeMap<ItemInstanceId, Option<u8>> {
-    submission.backend_plan.instances().into_iter().map(|instance| {
-        let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-        (instance, wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
-    }).collect()
+    submission
+        .backend_plan
+        .instances()
+        .into_iter()
+        .map(|instance| {
+            let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
+            (instance, wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref))
+        })
+        .collect()
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module(
@@ -476,7 +486,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module(
         export_name,
         crate::nyar_backend_wasi::WasiPreview::Preview2,
         crate::nyar_backend_wasi::WasmPackageKind::Binary,
-    ).expect("测试 Wasm MIR 输入必须满足完整 lowering 合同")
+    )
+    .expect("测试 Wasm MIR 输入必须满足完整 lowering 合同")
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
@@ -561,9 +572,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // `code_bodies.len()` 错位：错位时 call 会打到别人的 (param i64) 却按本函?anyref 签名?ref.null?
     let mir_operations: Vec<(nyar_types::ItemInstanceId, _)> = operations
         .iter()
-        .filter_map(|operation| {
-            submission.backend_plan.get_function(operation).map(|view| (*operation, view.function))
-        })
+        .filter_map(|operation| submission.backend_plan.get_function(operation).map(|view| (*operation, view.function)))
         .collect();
     eprintln!("[wasm::module-stage] mir_operations={} types={}", mir_operations.len(), type_indices.len());
     let base_function_index = import_count;
@@ -601,8 +610,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut mir_wasm_functions: Vec<(u32, String)> = Vec::new();
 
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
-        let full = submission.backend_plan.abi_name_for_instance(*instance)
-            .ok_or_else(|| miette!("函数实例缺少 ABI 标签"))?.to_string();
+        let full = submission.backend_plan.abi_name_for_instance(*instance).ok_or_else(|| miette!("函数实例缺少 ABI 标签"))?.to_string();
         eprintln!(
             "[wasm::function-lower-start] dense={dense}/{} symbol={} blocks={} instructions={}",
             mir_operations.len(),
@@ -675,11 +683,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // `ref.cast`/`array.len`), call entry, drop any return, then Ok(0) for CLI run.
             // (Nonzero guest status belongs on `wasi:cli/exit`, not this empty `result`.)
             // Full argv via `get-arguments` cabi is follow-up; empty argv still exercises help.
-            let entry_instance = submission.backend_plan.entry_operation()
-                .expect("WASI 入口必须保留 Compiler 实例身份");
+            let entry_instance = submission.backend_plan.entry_operation().expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
             let entry_mir_params: Vec<NyarType> = submission
-                .backend_plan.entry_operation()
+                .backend_plan
+                .entry_operation()
                 .as_ref()
                 .and_then(|instance| submission.backend_plan.get_function(instance))
                 .map(|view| view.function.param_types.clone())
@@ -785,11 +793,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         }
     }
 
-    library_glue::append_library_mode_glue(
-        wasm_package_kind,
-        submission,
-        &mut module,
-    )?;
+    library_glue::append_library_mode_glue(wasm_package_kind, submission, &mut module)?;
 
     module.sections.push(type_section_bytes(type_indices));
     if !host_imports.is_empty() {
@@ -889,7 +893,9 @@ fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<S
         NyarType::Unit => encode_ref_null_anyref(body),
         NyarType::Bottom => encode_i32_const(0, body),
         other if is_js_glue_host_string_type(other) => encode_i32_const(0, body),
-        other if type_is_wasm_gc_heap_reference(other) => panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同"),
+        other if type_is_wasm_gc_heap_reference(other) => {
+            panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同")
+        }
         _ => encode_i32_const(0, body),
     }
 }
@@ -1073,8 +1079,10 @@ pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinary
     if mir_functions_len == 0 {
         return;
     }
-    let value_layout_count = submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Value).count();
-    let reference_layout_count = submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Reference).count();
+    let value_layout_count =
+        submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Value).count();
+    let reference_layout_count =
+        submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Reference).count();
     let payload =
         format!("mir_functions={};value_layouts={};reference_layouts={}", mir_functions_len, value_layout_count, reference_layout_count);
     module.sections.push(WasmSection { id: 0, name: Some("nyar.value_aggregate".to_string()), bytes: payload.into_bytes() });
@@ -1266,7 +1274,13 @@ impl<'a> WasmMirLowerer<'a> {
         for block in &mir_fn.blocks {
             for (param_slot, param) in block.parameters.iter().enumerate() {
                 let ty = mir_fn.value_types.get(param).expect("WASM 块参数缺少已确定类型");
-                let stack_type = wasm_param_value_type_for(ctx, ty, mir_fn.value_layouts.get(param).copied(), gc_struct_type_indices, js_glue_utf8_as_anyref);
+                let stack_type = wasm_param_value_type_for(
+                    ctx,
+                    ty,
+                    mir_fn.value_layouts.get(param).copied(),
+                    gc_struct_type_indices,
+                    js_glue_utf8_as_anyref,
+                );
                 let local = if block.id == mir_fn.entry {
                     assert_eq!(ty, &mir_fn.param_types[param_slot], "WASM 入口 SSA 类型与函数参数不一致");
                     u32::try_from(param_slot).expect("WASM 参数索引溢出")
@@ -1350,8 +1364,6 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-
-
     /// 分配一?anyref local。该 local ?`finish()` 中按?local index 自动归入 anyref 组?
     fn alloc_anyref_local(&mut self) -> u32 {
         let local = self.next_local;
@@ -1369,7 +1381,13 @@ impl<'a> WasmMirLowerer<'a> {
             let ty = &self.mir_fn.param_types[local_index as usize];
             let entry = self.mir_fn.blocks.iter().find(|block| block.id == self.mir_fn.entry).expect("Wasm 函数缺少入口合同");
             let parameter = entry.parameters.get(local_index as usize).expect("Wasm 参数 local 缺少 SSA 身份");
-            return wasm_param_value_type_for(self.ctx, ty, self.mir_fn.value_layouts.get(parameter).copied(), self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
+            return wasm_param_value_type_for(
+                self.ctx,
+                ty,
+                self.mir_fn.value_layouts.get(parameter).copied(),
+                self.gc_struct_type_indices,
+                self.js_glue_utf8_as_anyref,
+            );
         }
         let declared = usize::try_from(local_index - self.stack_ptr_local).expect("WASM local 索引溢出");
         let valtype = self.local_valtypes.get(declared).expect("WASM local 未预规划");
@@ -1381,7 +1399,13 @@ impl<'a> WasmMirLowerer<'a> {
         assert!(!matches!(instruction.kind, MirInstructionKind::StoreVar { .. }), "WASM 输入必须完成 SSA 降低");
         for output in &instruction.results {
             let ty = self.mir_fn.value_types.get(output).expect("WASM SSA 结果缺少已确定类型");
-            let stack_type = wasm_param_value_type_for(self.ctx, ty, self.mir_fn.value_layouts.get(output).copied(), self.gc_struct_type_indices, self.js_glue_utf8_as_anyref);
+            let stack_type = wasm_param_value_type_for(
+                self.ctx,
+                ty,
+                self.mir_fn.value_layouts.get(output).copied(),
+                self.gc_struct_type_indices,
+                self.js_glue_utf8_as_anyref,
+            );
             assert!(!self.value_locals.contains_key(output) && !self.reference_locals.contains_key(output), "WASM SSA 结果重复定义");
             let local = self.alloc_value_local(stack_type);
             if matches!(stack_type, WASM_GC_ANYREF | WASM_GC_EXTERNREF) {
@@ -1401,8 +1425,6 @@ impl<'a> WasmMirLowerer<'a> {
         local
     }
 
-
-
     fn emit_instruction(&mut self, instruction: &MirInstruction) {
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
@@ -1418,7 +1440,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_load_constant(constant);
                 }
             }
-            MirInstructionKind::StoreVar { .. } => panic!("WASM 只接受 SSA 定义，不能按变量名重建值"),
+            MirInstructionKind::StoreVar { .. } => {
+                panic!("WASM 只接受 SSA 定义，不能按变量名重建值")
+            }
             MirInstructionKind::Copy { source } => {
                 // plan/emit 顺序不一致时，output 可能被误分配?i32?
                 // ?source **真实栈类?*（含 param 槽位 valtype）校?output 槽?
@@ -1453,7 +1477,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
                         let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field_id)
-                        else { continue; };
+                        else {
+                            continue;
+                        };
                         let field = field_layout;
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
@@ -1469,7 +1495,10 @@ impl<'a> WasmMirLowerer<'a> {
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
-                        let Some((_, field, _)) = self.ctx.field_layout_by_id(*field_id) else { continue; };
+                        let Some((_, field, _)) = self.ctx.field_layout_by_id(*field_id)
+                        else {
+                            continue;
+                        };
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
@@ -1491,7 +1520,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
                         let Some((_, field, field_index)) = self.ctx.field_layout_by_id(*field_id)
-                        else { continue; };
+                        else {
+                            continue;
+                        };
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
                         self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field));
@@ -1619,7 +1650,8 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_local_set(local);
             }
             MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
-                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() else {
+                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
+                else {
                     eprintln!("[wasm::mir] AggregateCopy layout identity is not registered in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
                     return;
@@ -1704,7 +1736,10 @@ impl<'a> WasmMirLowerer<'a> {
                     else {
                         return;
                     };
-                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
@@ -1724,7 +1759,10 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
-                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
@@ -1754,7 +1792,10 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
-                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
@@ -1785,7 +1826,10 @@ impl<'a> WasmMirLowerer<'a> {
                     return;
                 };
                 if let Some(object_local) = self.operand_address_local(object) {
-                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
@@ -1793,13 +1837,19 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_store_at_field(&field_layout);
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
-                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldSet");
                         return;
                     };
-                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
+                    else {
+                        return;
+                    };
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
                     self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout));
@@ -2041,13 +2091,17 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 普通调用只按 Compiler 实例身份查询物理函数下标。
     fn resolve_callee_function_index(&self, callee: &MirOperand) -> Option<u32> {
-        let MirOperand::Item(instance) = callee else { return None; };
+        let MirOperand::Item(instance) = callee
+        else {
+            return None;
+        };
         self.function_index_by_instance.get(instance).copied()
     }
 
     /// 类型化调用必须具备对应实例的物理签名，禁止选择第一个函数类型。
     fn resolve_callee_type_index(&self, callee: &MirOperand) -> u32 {
-        let MirOperand::Item(instance) = callee else {
+        let MirOperand::Item(instance) = callee
+        else {
             panic!("WASM 调用缺少 Compiler 实例身份");
         };
         *self.type_index_by_instance.get(instance).expect("WASM 调用缺少实例签名")
@@ -2149,9 +2203,10 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     fn resolve_layout(&self, nominal: nyar_types::NominalInstanceId) -> AggregateLayout {
-        self.ctx.layout_by_nominal(nominal).cloned().unwrap_or_else(|| {
-            panic!("WASM semantic MIR contract violation: missing aggregate layout identity in `{}`", self.mir_fn.symbol)
-        })
+        self.ctx
+            .layout_by_nominal(nominal)
+            .cloned()
+            .unwrap_or_else(|| panic!("WASM semantic MIR contract violation: missing aggregate layout identity in `{}`", self.mir_fn.symbol))
     }
 
     fn emit_operand(&mut self, operand: &MirOperand) {
@@ -2162,7 +2217,9 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirOperand::Constant(constant) => self.emit_load_constant(constant),
             MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
-            MirOperand::Item(_) => panic!("WASM callable identity cannot be used as a value operand"),
+            MirOperand::Item(_) => {
+                panic!("WASM callable identity cannot be used as a value operand")
+            }
         }
     }
 
@@ -2195,7 +2252,9 @@ impl<'a> WasmMirLowerer<'a> {
                 assert_eq!(slot_ty, WASM_GC_ANYREF, "WASM 单元值与已规划槽不一致");
                 self.emit_load_constant(constant);
             }
-            MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
+            MirConstant::Utf16(_) => {
+                panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+            }
         }
     }
 
@@ -2225,7 +2284,9 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 self.emit_i32_const(0);
             }
-            MirConstant::Utf16(_) => panic!("WASM lowering requires an explicit UTF-16 ABI contract"),
+            MirConstant::Utf16(_) => {
+                panic!("WASM lowering requires an explicit UTF-16 ABI contract")
+            }
             // Unit ADT=1（恰有一个值）；用 ref.null any ?GC 占位，勿?void(ADT=0) 混淆?
             MirConstant::Unit => self.emit_ref_null_anyref(),
         }
@@ -2443,12 +2504,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return Some(element.clone());
                 }
                 // 迁移期：未代入的单字母类型参数仍可作元素占位；不得用 `Array`/`List` 名猜。
-                if is_generic_array_element_type(ty) {
-                    Some(ty.clone())
-                }
-                else {
-                    None
-                }
+                if is_generic_array_element_type(ty) { Some(ty.clone()) } else { None }
             }),
             _ => None,
         }

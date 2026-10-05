@@ -1,18 +1,10 @@
-use nyar_gc::{
-    ConcurrentMarkEvent, CoroutineState, GarbageCollector, GcRoots, Generation, ObjectHeap, ObjectPayload,
-    Value,
-};
+use nyar_gc::{ConcurrentMarkEvent, CoroutineState, GarbageCollector, GcRoots, Generation, ObjectHeap, ObjectPayload, Value};
 
 fn empty_layout(layout_id: u32) -> ObjectPayload {
     ObjectPayload::LayoutObject { layout_id, slots: vec![] }
 }
 
-fn roots<'a>(
-    stack: &'a [Value],
-    frame_locals: &'a [&'a [Value]],
-    globals: &'a [Value],
-    frame_coroutines: &'a [usize],
-) -> GcRoots<'a> {
+fn roots<'a>(stack: &'a [Value], frame_locals: &'a [&'a [Value]], globals: &'a [Value], frame_coroutines: &'a [usize]) -> GcRoots<'a> {
     GcRoots { stack, frame_locals, globals, frame_coroutines }
 }
 
@@ -36,10 +28,7 @@ fn collect_reclaims_unreachable_objects() {
 fn collect_traces_nested_layout_references() {
     let mut heap = ObjectHeap::new();
     let inner = heap.alloc(empty_layout(0));
-    let outer = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 1,
-        slots: vec![Value::Object(inner)],
-    });
+    let outer = heap.alloc(ObjectPayload::LayoutObject { layout_id: 1, slots: vec![Value::Object(inner)] });
     let orphan = heap.alloc(empty_layout(0));
 
     let stack = [Value::Object(outer)];
@@ -163,10 +152,7 @@ fn write_barrier_satb_and_remembered_set_both_fire_on_old_slot() {
 
     // 合同：并发标记期覆盖旧引用 → SATB；老→年轻 → 记忆集。二者义务独立、可同一次写入同时成立。
     let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
-    let old_holder = heap.alloc_tenured(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Null],
-    });
+    let old_holder = heap.alloc_tenured(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null] });
     let keep = heap.alloc(empty_layout(1));
     let doomed = heap.alloc(empty_layout(2));
     let young = heap.alloc(empty_layout(3));
@@ -180,14 +166,8 @@ fn write_barrier_satb_and_remembered_set_both_fire_on_old_slot() {
 
     heap.barrier_mut().clear_remembered();
     heap.set_field(old_holder, 0, Value::Object(young)).unwrap();
-    assert!(
-        heap.barrier().satb_buffer().contains(&keep),
-        "SATB must snapshot overwritten ref"
-    );
-    assert!(
-        !heap.barrier().remembered_set().is_empty(),
-        "remembered set must record old→young"
-    );
+    assert!(heap.barrier().satb_buffer().contains(&keep), "SATB must snapshot overwritten ref");
+    assert!(!heap.barrier().remembered_set().is_empty(), "remembered set must record old→young");
 
     // doomed 仅曾存在、无根无屏障义务 → 周期结束后应消失；keep 经 SATB、young 经记忆集/根侧字段可达。
     let _ = doomed;
@@ -205,10 +185,7 @@ fn write_barrier_satb_and_remembered_set_both_fire_on_old_slot() {
 #[test]
 fn write_barrier_remembers_old_to_young_for_nursery_collect() {
     let mut heap = ObjectHeap::new();
-    let old = heap.alloc_tenured(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Null],
-    });
+    let old = heap.alloc_tenured(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null] });
     let young = heap.alloc(empty_layout(1));
     let orphan_young = heap.alloc(empty_layout(2));
 
@@ -304,10 +281,7 @@ fn accounting_tracks_live_bytes_and_soft_limit_forces_full() {
     let mut heap = ObjectHeap::with_policy(
         GcPolicy::generational_low_latency()
             .with_full_collect_every(100)
-            .with_hints(WorkloadHints {
-                heap_soft_limit_bytes: Some(1),
-                ..WorkloadHints::default()
-            }),
+            .with_hints(WorkloadHints { heap_soft_limit_bytes: Some(1), ..WorkloadHints::default() }),
     );
     let live = heap.alloc(empty_layout(0));
     let dead = heap.alloc(empty_layout(1));
@@ -328,10 +302,7 @@ fn accounting_tracks_live_bytes_and_soft_limit_forces_full() {
 #[test]
 fn satb_buffer_records_overwritten_refs_during_concurrent_trace() {
     let mut heap = ObjectHeap::new();
-    let container = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Null],
-    });
+    let container = heap.alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null] });
     let old_ref = heap.alloc(empty_layout(1));
     let new_ref = heap.alloc(empty_layout(2));
     heap.set_field(container, 0, Value::Object(old_ref)).unwrap();
@@ -360,10 +331,7 @@ fn concurrent_mark_reserved_poll_drains_satb_and_reclaims() {
     let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
     assert!(heap.concurrent_mark().enabled());
 
-    let container = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Null],
-    });
+    let container = heap.alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null] });
     let keep = heap.alloc(empty_layout(1));
     let doomed = heap.alloc(empty_layout(2));
     heap.set_field(container, 0, Value::Object(keep)).unwrap();
@@ -420,18 +388,9 @@ fn concurrent_trace_gray_slices_reach_nested_refs() {
     let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
     // 链：root → a → b → c（三层嵌套，预算 1 时需多拍 ConcurrentTrace）
     let c = heap.alloc(empty_layout(3));
-    let b = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 2,
-        slots: vec![Value::Object(c)],
-    });
-    let a = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 1,
-        slots: vec![Value::Object(b)],
-    });
-    let root = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Object(a)],
-    });
+    let b = heap.alloc(ObjectPayload::LayoutObject { layout_id: 2, slots: vec![Value::Object(c)] });
+    let a = heap.alloc(ObjectPayload::LayoutObject { layout_id: 1, slots: vec![Value::Object(b)] });
+    let root = heap.alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Object(a)] });
     let dead = heap.alloc(empty_layout(9));
 
     let stack = [Value::Object(root)];
@@ -486,14 +445,8 @@ fn concurrent_trace_poll_records_work_units() {
 
     let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
     let b = heap.alloc(empty_layout(2));
-    let a = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 1,
-        slots: vec![Value::Object(b)],
-    });
-    let root = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Object(a)],
-    });
+    let a = heap.alloc(ObjectPayload::LayoutObject { layout_id: 1, slots: vec![Value::Object(b)] });
+    let root = heap.alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Object(a)] });
     let stack = [Value::Object(root)];
     let mut gc = GarbageCollector::new();
     gc.set_gray_budget_per_slice(1);
@@ -517,10 +470,7 @@ fn workload_hints_sync_gray_budget_on_collector() {
 
     let mut gc = GarbageCollector::new();
     assert_eq!(gc.gray_budget_per_slice(), 64);
-    gc.apply_workload_hints(&WorkloadHints {
-        pause_budget_ms: Some(1),
-        ..WorkloadHints::default()
-    });
+    gc.apply_workload_hints(&WorkloadHints { pause_budget_ms: Some(1), ..WorkloadHints::default() });
     assert_eq!(gc.gray_budget_per_slice(), 8);
     assert_eq!(gc.max_trace_slices_per_poll(), 2);
     gc.apply_workload_hints(&WorkloadHints {
@@ -534,25 +484,15 @@ fn workload_hints_sync_gray_budget_on_collector() {
 
 #[test]
 fn concurrent_trace_tick_boost_drains_extra_gray_slices() {
-    use std::thread;
-    use std::time::Duration;
+    use std::{thread, time::Duration};
 
     use nyar_gc::{ConcurrentMarkState, GcPolicy};
 
     let mut heap = ObjectHeap::with_policy(GcPolicy::concurrent_mark_reserved());
     let c = heap.alloc(empty_layout(3));
-    let b = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 2,
-        slots: vec![Value::Object(c)],
-    });
-    let a = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 1,
-        slots: vec![Value::Object(b)],
-    });
-    let root = heap.alloc(ObjectPayload::LayoutObject {
-        layout_id: 0,
-        slots: vec![Value::Object(a)],
-    });
+    let b = heap.alloc(ObjectPayload::LayoutObject { layout_id: 2, slots: vec![Value::Object(c)] });
+    let a = heap.alloc(ObjectPayload::LayoutObject { layout_id: 1, slots: vec![Value::Object(b)] });
+    let root = heap.alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Object(a)] });
 
     let stack = [Value::Object(root)];
     let mut gc = GarbageCollector::new();
@@ -575,8 +515,7 @@ fn concurrent_trace_tick_boost_drains_extra_gray_slices() {
 
 #[test]
 fn concurrent_trace_waits_for_ticker_before_termination() {
-    use std::thread;
-    use std::time::Duration;
+    use std::{thread, time::Duration};
 
     use nyar_gc::{ConcurrentMarkState, GcPolicy};
 

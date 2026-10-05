@@ -32,12 +32,11 @@ fn array_literal_lowers_to_builtin_array_literal_without_array_call() {
     let mir = compiler.compile_source_to_mir(source).expect("mir ok");
     let mir_operations = &mir.functions[0].blocks[0].instructions;
     assert!(mir_operations.iter().any(|instruction| matches!(instruction.kind, MirOperation::ArrayFromElements { .. })));
-    assert!(mir_operations.iter().any(|instruction| {
-        matches!(
-            &instruction.kind,
-            MirOperation::ArrayFromElements { array_type: ValkyrieType::Array(_), .. }
-        )
-    }));
+    assert!(
+        mir_operations
+            .iter()
+            .any(|instruction| { matches!(&instruction.kind, MirOperation::ArrayFromElements { array_type: ValkyrieType::Array(_), .. }) })
+    );
     assert!(!mir_operations.iter().any(|instruction| {
         matches!(
             &instruction.kind,
@@ -161,17 +160,13 @@ micro probe(items: Array<i32>): usize {
         .iter()
         .flat_map(|block| block.instructions.iter())
         .any(|instruction| matches!(instruction.kind, MirOperation::ArrayLength { .. }));
-    let calls_array_len = probe
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .any(|instruction| {
-            matches!(
-                &instruction.kind,
-                MirOperation::Call { callee: MirOperand::Symbol(path), .. }
-                    if path.parts().last().is_some_and(|name| name.as_str() == "__array_len")
-            )
-        });
+    let calls_array_len = probe.blocks.iter().flat_map(|block| block.instructions.iter()).any(|instruction| {
+        matches!(
+            &instruction.kind,
+            MirOperation::Call { callee: MirOperand::Symbol(path), .. }
+                if path.parts().last().is_some_and(|name| name.as_str() == "__array_len")
+        )
+    });
     assert!(has_array_length, "expected ArrayLength MIR for __array_len intrinsic");
     assert!(!calls_array_len, "expected no static Call to __array_len");
 }

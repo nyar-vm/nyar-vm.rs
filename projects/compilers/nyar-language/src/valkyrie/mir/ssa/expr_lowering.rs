@@ -13,24 +13,17 @@ use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
     builtin_helpers::resolve_intrinsic_id,
     callee_name_matches,
-    expr_helpers::{
-        is_array_shaped_valkyrie_type, named_type_name, peel_generic_apply,
-        lower_resolved_callee, receiver_method_owner_name,
-    },
+    expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply, receiver_method_owner_name},
     infer_builder_operand_type, lower_callee_operand,
-    value_semantics::{
-        ensure_layout_for_type, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type,
-    },
+    value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_named_type, storage_kind_for_type},
 };
 
 impl MirBuilder {
     fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
-        resolved
-            .and_then(|call| resolve_intrinsic_id(&call.symbol))
-            .or_else(|| match callee {
-                MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
-                _ => None,
-            })
+        resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)).or_else(|| match callee {
+            MirOperand::Symbol(symbol) => resolve_intrinsic_id(symbol),
+            _ => None,
+        })
     }
 
     fn try_lower_ref_deref_intrinsic(
@@ -63,9 +56,7 @@ impl MirBuilder {
     }
 
     fn option_uses_generic_payload(actual_type: &ValkyrieType) -> bool {
-        Self::option_payload_type(actual_type).is_some_and(|payload| {
-            matches!(payload, ValkyrieType::Named(name) if name.as_str() == "T")
-        })
+        Self::option_payload_type(actual_type).is_some_and(|payload| matches!(payload, ValkyrieType::Named(name) if name.as_str() == "T"))
     }
 
     fn infer_array_element_type(&self, array: &MirOperand) -> Option<ValkyrieType> {
@@ -83,12 +74,7 @@ impl MirBuilder {
         let (nominal, variant) = self.sum_identity(&sum_name, "Some")?;
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
-            MirOperation::SumVariantIs {
-                nominal,
-                type_args: type_args_from_sum_shaped(&actual_type),
-                variant,
-                object: receiver,
-            },
+            MirOperation::SumVariantIs { nominal, type_args: type_args_from_sum_shaped(&actual_type), variant, object: receiver },
             vec![value],
         );
         self.value_types.insert(value, ValkyrieType::Boolean);
@@ -105,9 +91,7 @@ impl MirBuilder {
             .filter(|ty| Self::option_sum_name(ty).is_some())
             .or_else(|| hint.cloned().filter(|ty| Self::option_sum_name(ty).is_some()))
             .or_else(|| {
-                payload_hint.map(|payload| {
-                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
-                })
+                payload_hint.map(|payload| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()]))
             })
     }
 
@@ -162,30 +146,17 @@ impl MirBuilder {
         expected_type: Option<&ValkyrieType>,
         explicit_generic_arguments: &[ValkyrieType],
     ) -> Option<MirOperand> {
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .or_else(|| {
-                (!explicit_generic_arguments.is_empty()).then(|| {
-                    ValkyrieType::Apply(
-                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                        explicit_generic_arguments.to_vec(),
-                    )
-                })
-            })?;
+        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).or_else(|| {
+            (!explicit_generic_arguments.is_empty())
+                .then(|| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), explicit_generic_arguments.to_vec()))
+        })?;
         if Self::option_sum_name(&return_type).is_none() {
             return None;
         }
         let (nominal, variant) = self.sum_identity("Option", "None")?;
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
-            MirOperation::SumNew {
-                nominal,
-                type_args: type_args_from_sum_shaped(&return_type),
-                variant,
-                payload_type: None,
-                payload: None,
-            },
+            MirOperation::SumNew { nominal, type_args: type_args_from_sum_shaped(&return_type), variant, payload_type: None, payload: None },
             vec![value],
         );
         self.value_types.insert(value, return_type);
@@ -202,14 +173,9 @@ impl MirBuilder {
         let payload_operand = self.lower_expr_to_operand(payload_expr);
         let payload_type = infer_builder_operand_type(&payload_operand, &self.value_types)
             .or_else(|| resolved.and_then(|call| call.parameter_types.first().cloned()));
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .or_else(|| {
-                payload_type.clone().map(|payload| {
-                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload])
-                })
-            })?;
+        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).or_else(|| {
+            payload_type.clone().map(|payload| ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload]))
+        })?;
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(
             MirOperation::SumNew {
@@ -282,7 +248,6 @@ impl MirBuilder {
         _wraps_option: bool,
     ) -> Option<MirOperand> {
         return None;
-
     }
 
     fn try_lower_array_get_intrinsic(
@@ -303,9 +268,7 @@ impl MirBuilder {
         let ordinal = arguments.get(1).cloned()?;
         let lowered = self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type, wraps_option);
         if lowered.is_none() {
-            self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
-                operator: nyar_types::builtin_operator::infix_sub(),
-            });
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: nyar_types::builtin_operator::infix_sub() });
             return Some(MirOperand::Constant(MirConstant::Unit));
         }
         lowered
@@ -331,19 +294,11 @@ impl MirBuilder {
         }
         let value = self.next_value(MirValueOrigin::CallResult);
         // 使用已解析合同上的符号（IntrinsicId 路径），不得再拼写表面名。
-        let callee_symbol = resolved
-            .map(|call| call.symbol.clone())
-            .or_else(|| match callee {
-                MirOperand::Symbol(path) => Some(path.clone()),
-                _ => None,
-            })?;
-        self.push_instruction(
-            MirOperation::Call {
-                callee: MirOperand::Symbol(callee_symbol),
-                arguments: arguments.to_vec(),
-            },
-            vec![value],
-        );
+        let callee_symbol = resolved.map(|call| call.symbol.clone()).or_else(|| match callee {
+            MirOperand::Symbol(path) => Some(path.clone()),
+            _ => None,
+        })?;
+        self.push_instruction(MirOperation::Call { callee: MirOperand::Symbol(callee_symbol), arguments: arguments.to_vec() }, vec![value]);
         let return_type = resolved
             .map(|call| call.return_type.clone())
             .filter(|ty| is_array_shaped_valkyrie_type(ty))
@@ -354,11 +309,19 @@ impl MirBuilder {
     }
 
     fn field_type_for_semantic_type(&self, ty: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
-        let base = match ty { ValkyrieType::Apply(base, _) => base.as_ref(), other => other };
-        let ValkyrieType::Named(owner) = base else { return None; };
+        let base = match ty {
+            ValkyrieType::Apply(base, _) => base.as_ref(),
+            other => other,
+        };
+        let ValkyrieType::Named(owner) = base
+        else {
+            return None;
+        };
         let mut declarations = self.field_declarations.iter().filter(|declaration| declaration.qualified_name() == owner.as_str());
         let declaration = declarations.next()?;
-        if declarations.next().is_some() { return None; }
+        if declarations.next().is_some() {
+            return None;
+        }
         declaration.instantiate_field(ty, field)
     }
 
@@ -409,9 +372,7 @@ impl MirBuilder {
             return Some(id);
         }
         match ty {
-            ValkyrieType::Named(name) => {
-                None
-            }
+            ValkyrieType::Named(name) => None,
             _ if self.storage_for_type(ty) == MirStorageKind::Value => ensure_layout_for_type(&mut self.aggregate_layouts, ty),
             _ => None,
         }
@@ -480,23 +441,15 @@ impl MirBuilder {
                 // 先要求 Option 形接收者，再按 Extractor 合同（或迁移显示名）进入结构操作。
                 if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref()) {
                     let receiver_operand = self.lower_expr_to_operand(&args[0].value);
-                    let payload_hint = resolved
-                        .as_ref()
-                        .map(|call| call.return_type.clone())
-                        .or_else(|| expected_type.cloned());
+                    let payload_hint = resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| expected_type.cloned());
                     let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                         .filter(|ty| Self::option_sum_name(ty).is_some())
                         .or_else(|| {
                             payload_hint.as_ref().map(|payload| {
-                                ValkyrieType::Apply(
-                                    Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                                    vec![payload.clone()],
-                                )
+                                ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
                             })
                         });
-                    if let Some(operand) =
-                        self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
-                    {
+                    if let Some(operand) = self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref()) {
                         return operand;
                     }
                 }
@@ -506,8 +459,7 @@ impl MirBuilder {
                     }
                 }
                 if callee_name_matches(&callee.kind, "option_none") && args.is_empty() {
-                    if let Some(operand) =
-                        self.try_lower_option_none_constructor(resolved.as_ref(), expected_type, &explicit_generic_arguments)
+                    if let Some(operand) = self.try_lower_option_none_constructor(resolved.as_ref(), expected_type, &explicit_generic_arguments)
                     {
                         return operand;
                     }
@@ -521,7 +473,9 @@ impl MirBuilder {
                         types
                     }
                     else {
-                        let Some(types) = fields.iter().map(|operand| infer_builder_operand_type(operand, &self.value_types)).collect::<Option<Vec<_>>>() else {
+                        let Some(types) =
+                            fields.iter().map(|operand| infer_builder_operand_type(operand, &self.value_types)).collect::<Option<Vec<_>>>()
+                        else {
                             self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: "tuple 构造元素".to_string() });
                             return MirOperand::Constant(MirConstant::Unit);
                         };
@@ -536,8 +490,8 @@ impl MirBuilder {
                     self.value_types.insert(value, tuple_type);
                     return MirOperand::Value(value);
                 }
-                if let Some((receiver_operand, _method_name)) = self.extract_method_call(callee)
-                    .filter(|_| resolved.as_ref().is_some_and(|call| call.has_receiver))
+                if let Some((receiver_operand, _method_name)) =
+                    self.extract_method_call(callee).filter(|_| resolved.as_ref().is_some_and(|call| call.has_receiver))
                 {
                     let param_types = resolved.as_ref().map(|call| call.parameter_types.as_slice());
                     // Skip receiver slot (index 0) when binding hints for explicit args.
@@ -558,32 +512,23 @@ impl MirBuilder {
                         }
                     }
                     if args.is_empty() && Self::is_option_unwrap_call(resolved.as_ref()) {
-                        let payload_hint = resolved
-                            .as_ref()
-                            .map(|call| call.return_type.clone())
-                            .or_else(|| expected_type.cloned());
+                        let payload_hint = resolved.as_ref().map(|call| call.return_type.clone()).or_else(|| expected_type.cloned());
                         // 仅采纳已是 Option 形的接收者类型；非 Option 推断不得挡住 payload 回退。
                         let hint = infer_builder_operand_type(&receiver_operand, &self.value_types)
                             .filter(|ty| Self::option_sum_name(ty).is_some())
                             .or_else(|| {
                                 payload_hint.as_ref().map(|payload| {
-                                    ValkyrieType::Apply(
-                                        Box::new(ValkyrieType::Named(Identifier::new("Option"))),
-                                        vec![payload.clone()],
-                                    )
+                                    ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload.clone()])
                                 })
                             });
-                        if let Some(operand) =
-                            self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref())
-                        {
+                        if let Some(operand) = self.try_lower_option_unwrap(receiver_operand.clone(), hint.as_ref(), payload_hint.as_ref()) {
                             return operand;
                         }
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
-                    let Some(callee) = lower_resolved_callee(resolved_call) else {
-                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                            symbol: resolved_call.symbol.to_string(),
-                        });
+                    let Some(callee) = lower_resolved_callee(resolved_call)
+                    else {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
                     return self.push_call_returning(callee, arguments, resolved_call.return_type.clone());
@@ -597,18 +542,13 @@ impl MirBuilder {
                     let receiver_operand = self.lower_expr_to_operand(object);
                     let field_ty = self.field_type_for_object_operand(&receiver_operand, field);
                     if matches!(field_ty, Some(ValkyrieType::Function(_))) {
-                        let Some(field_id) = self.field_identity_for_object(&receiver_operand, field) else {
+                        let Some(field_id) = self.field_identity_for_object(&receiver_operand, field)
+                        else {
                             self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
                             return MirOperand::Constant(MirConstant::Unit);
                         };
                         let callee_value = self.next_value(MirValueOrigin::Temporary);
-                        self.push_instruction(
-                            MirOperation::FieldGet {
-                                object: receiver_operand,
-                                field: field_id,
-                            },
-                            vec![callee_value],
-                        );
+                        self.push_instruction(MirOperation::FieldGet { object: receiver_operand, field: field_id }, vec![callee_value]);
                         if let Some(field_ty) = field_ty {
                             self.value_types.insert(callee_value, field_ty);
                         }
@@ -621,11 +561,7 @@ impl MirBuilder {
                                 self.lower_expr_to_operand_with_hint(&arg.value, hint)
                             })
                             .collect::<Vec<_>>();
-                        let return_type = resolved
-                            .as_ref()
-                            .expect("函数类型字段调用必须有已解析调用合同")
-                            .return_type
-                            .clone();
+                        let return_type = resolved.as_ref().expect("函数类型字段调用必须有已解析调用合同").return_type.clone();
                         // `unit` 不得占用物理 value 槽（BPHYS001）。
                         return self.push_call_returning(MirOperand::Value(callee_value), arguments, return_type);
                     }
@@ -646,22 +582,18 @@ impl MirBuilder {
                         arguments.insert(0, receiver_operand.clone());
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved field receiver call contract");
-                    let Some(callee) = lower_resolved_callee(resolved_call) else {
-                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                            symbol: resolved_call.symbol.to_string(),
-                        });
+                    let Some(callee) = lower_resolved_callee(resolved_call)
+                    else {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
-                    let return_type = resolved
-                        .as_ref()
-                        .expect("字段调用必须有已解析调用合同")
-                        .return_type
-                        .clone();
+                    let return_type = resolved.as_ref().expect("字段调用必须有已解析调用合同").return_type.clone();
                     // `unit` 不得占用物理 value 槽（BPHYS001）。
                     return self.push_call_returning(callee, arguments, return_type);
                 }
                 let is_prefix_not = callee_name_matches(&callee.kind, "prefix !");
-                let Some(callee) = lower_callee_operand(callee, resolved.as_ref(), self) else {
+                let Some(callee) = lower_callee_operand(callee, resolved.as_ref(), self)
+                else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
                         symbol: "静态调用缺少 HIR callable contract".to_string(),
                     });
@@ -706,11 +638,13 @@ impl MirBuilder {
                             sum_new_parts_from_constructor(call, &arguments, &self.sum_types)
                         {
                             let value = self.next_value(MirValueOrigin::CallResult);
-                            let Some((owner, variant_declaration)) = call.sum_owner.zip(call.sum_variant) else {
+                            let Some((owner, variant_declaration)) = call.sum_owner.zip(call.sum_variant)
+                            else {
                                 self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
-                            let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration) else {
+                            let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration)
+                            else {
                                 return MirOperand::Constant(MirConstant::Unit);
                             };
                             let (return_type, payload_type) = concretize_variant_constructor_types(
@@ -745,9 +679,8 @@ impl MirBuilder {
                 }
                 // Call 仅含 { callee, arguments }；禁止 intrinsic / dispatch / generic 旁路。
                 // `unit` 不得占用物理 value 槽（BPHYS001）——一律经 `push_call_returning`。
-                let Some(return_type) = function_ty
-                    .map(|func| func.return_type)
-                    .or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
+                let Some(return_type) =
+                    function_ty.map(|func| func.return_type).or_else(|| resolved.as_ref().map(|call| call.return_type.clone()))
                 else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType { context: format!("调用结果 `{:?}`", callee) });
                     return MirOperand::Constant(MirConstant::Unit);
@@ -787,10 +720,7 @@ impl MirBuilder {
                 };
                 let elements = items.iter().map(|item| self.lower_expr_to_operand_with_hint(item, element_hint)).collect::<Vec<_>>();
                 let array_value = self.next_value(MirValueOrigin::Temporary);
-                self.push_instruction(
-                    MirOperation::ArrayFromElements { array_type: array_type.clone(), elements },
-                    vec![array_value],
-                );
+                self.push_instruction(MirOperation::ArrayFromElements { array_type: array_type.clone(), elements }, vec![array_value]);
                 self.value_types.insert(array_value, array_type);
                 MirOperand::Value(array_value)
             }
@@ -880,11 +810,13 @@ impl MirBuilder {
                         _ => field_values.first().cloned(),
                     };
                     let variant = name.to_string();
-                    let Some((owner, variant_declaration)) = resolved.as_ref().and_then(|call| call.sum_owner.zip(call.sum_variant)) else {
+                    let Some((owner, variant_declaration)) = resolved.as_ref().and_then(|call| call.sum_owner.zip(call.sum_variant))
+                    else {
                         self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
-                    let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration) else {
+                    let Some((nominal, variant_id)) = self.sum_identity_by_declarations(owner, variant_declaration)
+                    else {
                         return MirOperand::Constant(MirConstant::Unit);
                     };
                     let (return_type, payload_type) = concretize_variant_constructor_types(
@@ -895,22 +827,22 @@ impl MirBuilder {
                         &field_values,
                         &self.value_types,
                     );
-                    self.push_instruction(
-                        MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payload },
-                        vec![value],
-                    );
+                    self.push_instruction(MirOperation::SumNew { nominal, type_args, variant: variant_id, payload_type, payload }, vec![value]);
                     self.value_types.insert(value, return_type);
                     return MirOperand::Value(value);
                 }
                 let value = self.next_value(MirValueOrigin::Temporary);
-                let Some(nominal) = self.nominal_identity_for_name(&struct_type_name) else {
+                let Some(nominal) = self.nominal_identity_for_name(&struct_type_name)
+                else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedNominalIdentity { type_name: struct_type_name });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
-                let fields = fields.into_iter().map(|(name, value)| {
-                    self.field_identity_for_nominal(nominal, &name).map(|field| (field, value))
-                }).collect::<Option<Vec<_>>>();
-                let Some(fields) = fields else {
+                let fields = fields
+                    .into_iter()
+                    .map(|(name, value)| self.field_identity_for_nominal(nominal, &name).map(|field| (field, value)))
+                    .collect::<Option<Vec<_>>>();
+                let Some(fields) = fields
+                else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: "struct initializer".to_string() });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
@@ -936,7 +868,8 @@ impl MirBuilder {
                 let layout_id = self.layout_id_for_object_operand(&object_operand);
                 let field_type = self.field_type_for_object_operand(&object_operand, field);
                 let value_operand = self.lower_expr_to_operand_with_hint(value, field_type.as_ref());
-                let Some(field_id) = self.field_identity_for_object(&object_operand, field) else {
+                let Some(field_id) = self.field_identity_for_object(&object_operand, field)
+                else {
                     self.diagnostics.push(super::MirDiagnostic::UnresolvedFieldIdentity { field: field.to_string() });
                     return MirOperand::Constant(MirConstant::Unit);
                 };
@@ -963,10 +896,10 @@ impl MirBuilder {
                         let layout_id = ensure_layout_for_type(&mut self.aggregate_layouts, &ty);
                         if let Some(layout_id) = layout_id {
                             let dest = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
-                            self.push_instruction(MirOperation::AggregateCopy {
-                                source: operand.clone(),
-                                dest: MirOperand::Value(dest),
-                            }, vec![dest]);
+                            self.push_instruction(
+                                MirOperation::AggregateCopy { source: operand.clone(), dest: MirOperand::Value(dest) },
+                                vec![dest],
+                            );
                             self.value_types.insert(dest, ty);
                             self.bindings.insert(name, MirOperand::Value(dest));
                             return MirOperand::Constant(MirConstant::Unit);
@@ -974,11 +907,7 @@ impl MirBuilder {
                     }
                 }
                 let new_value = self.next_value(MirValueOrigin::LetBinding { name: name.clone() });
-                self.push_instruction(MirOperation::StoreVar {
-                    name: name.clone(),
-                    value: operand.clone(),
-                    ty: None,
-                }, vec![new_value]);
+                self.push_instruction(MirOperation::StoreVar { name: name.clone(), value: operand.clone(), ty: None }, vec![new_value]);
                 if let Some(ty) = infer_builder_operand_type(&operand, &self.value_types) {
                     self.value_types.insert(new_value, ty);
                 }
@@ -1074,16 +1003,7 @@ impl MirBuilder {
             concretize_variant_constructor_types(&contextual, None, variant_name, Some(&contextual), &[], &self.value_types);
         let type_args = type_args_from_sum_shaped(&contextual);
         let (nominal, variant) = self.sum_identity(&sum_type, variant_name)?;
-        self.push_instruction(
-            MirOperation::SumNew {
-                nominal,
-                type_args,
-                variant,
-                payload_type,
-                payload: None,
-            },
-            vec![value],
-        );
+        self.push_instruction(MirOperation::SumNew { nominal, type_args, variant, payload_type, payload: None }, vec![value]);
         self.value_types.insert(value, return_type);
         Some(MirOperand::Value(value))
     }

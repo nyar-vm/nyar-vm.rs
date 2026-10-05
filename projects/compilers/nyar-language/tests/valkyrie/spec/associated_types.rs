@@ -169,9 +169,18 @@ fn trait_impl(target: &str, trait_name: &str, associated_type_impls: Vec<HirAsso
 }
 
 fn where_constraint(target: ValkyrieType, bounds: Vec<&str>) -> HirWhereConstraint {
-    HirWhereConstraint { target, bounds: bounds.into_iter().map(|name| nyar_language::valkyrie::types::hir::HirTraitBound {
-        trait_path: NamePath::new(vec![Identifier::new(name)]), type_arguments: Vec::new(), associated_types: Vec::new(),
-    }).collect(), span: span() }
+    HirWhereConstraint {
+        target,
+        bounds: bounds
+            .into_iter()
+            .map(|name| nyar_language::valkyrie::types::hir::HirTraitBound {
+                trait_path: NamePath::new(vec![Identifier::new(name)]),
+                type_arguments: Vec::new(),
+                associated_types: Vec::new(),
+            })
+            .collect(),
+        span: span(),
+    }
 }
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {

@@ -1,4 +1,7 @@
-use nyar_language::{MirLowerer, MirOperand, MirOperation, MirValueRef, ValkyrieCompiler, types::{SourceID, hir::ValkyrieType}};
+use nyar_language::{
+    MirLowerer, MirOperand, MirOperation, MirValueRef, ValkyrieCompiler,
+    types::{SourceID, hir::ValkyrieType},
+};
 
 #[test]
 fn cross_namespace_call_resolves_callee_without_call_side_channel_fields() {
@@ -34,7 +37,8 @@ micro wasi_core_sig_to_functype(sig: WitWasiCoreImportSig) -> [WasmValueType] {
     let mut found = false;
     for block in &caller.blocks {
         for instruction in &block.instructions {
-            let MirOperation::Call { callee: MirOperand::Symbol(path), arguments } = &instruction.kind else {
+            let MirOperation::Call { callee: MirOperand::Symbol(path), arguments } = &instruction.kind
+            else {
                 continue;
             };
             let is_target = path.parts().last().is_some_and(|part| part.as_str() == "wasm_i32_types");

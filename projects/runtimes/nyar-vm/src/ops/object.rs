@@ -12,11 +12,7 @@ use crate::{
 };
 
 /// 执行结构指令族。
-pub fn execute_object(
-    instruction: NyarInstruction,
-    frame: &mut Frame,
-    ctx: &mut ExecutionContext<'_>,
-) -> Result<StepResult, NyarRuntimeError> {
+pub fn execute_object(instruction: NyarInstruction, frame: &mut Frame, ctx: &mut ExecutionContext<'_>) -> Result<StepResult, NyarRuntimeError> {
     match instruction.code {
         NyarHeadCode::ObjectNew => {
             let layout_id = instruction.operand1;
@@ -38,10 +34,7 @@ pub fn execute_object(
             let object_id = match object {
                 Value::Object(id) => id,
                 other => {
-                    return Err(NyarRuntimeError::TypeMismatch {
-                        expected: "object",
-                        actual: other.type_name().to_string(),
-                    });
+                    return Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: other.type_name().to_string() });
                 }
             };
             let value = match ctx.heap.get(object_id) {
@@ -52,10 +45,7 @@ pub fn execute_object(
                     slots[field_slot as usize].clone()
                 }
                 Some(_) => {
-                    return Err(NyarRuntimeError::TypeMismatch {
-                        expected: "layout object",
-                        actual: "non-layout object".to_string(),
-                    });
+                    return Err(NyarRuntimeError::TypeMismatch { expected: "layout object", actual: "non-layout object".to_string() });
                 }
                 None => {
                     return Err(NyarRuntimeError::ModuleLoad(format!("object heap id {object_id} not found")));
@@ -75,10 +65,7 @@ pub fn execute_object(
             let object_id = match object {
                 Value::Object(id) => id,
                 other => {
-                    return Err(NyarRuntimeError::TypeMismatch {
-                        expected: "object",
-                        actual: other.type_name().to_string(),
-                    });
+                    return Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: other.type_name().to_string() });
                 }
             };
             if ctx.heap.get(object_id).is_none() {
@@ -86,12 +73,11 @@ pub fn execute_object(
             }
             match ctx.heap.set_field(object_id, field_slot as usize, value) {
                 Ok(()) => {}
-                Err("field slot out of range") => return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot)),
+                Err("field slot out of range") => {
+                    return Err(NyarRuntimeError::FieldSlotOutOfRange(field_slot));
+                }
                 Err(_) => {
-                    return Err(NyarRuntimeError::TypeMismatch {
-                        expected: "layout object",
-                        actual: "non-layout object".to_string(),
-                    });
+                    return Err(NyarRuntimeError::TypeMismatch { expected: "layout object", actual: "non-layout object".to_string() });
                 }
             }
             ctx.stack.push(Value::Object(object_id));

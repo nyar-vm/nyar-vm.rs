@@ -120,13 +120,9 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             frame.ip += 1;
             match coroutine {
                 Value::Coroutine(id) => {
-                    let state =
-                        ctx.heap.get_coroutine(id).ok_or(NyarRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
+                    let state = ctx.heap.get_coroutine(id).ok_or(NyarRuntimeError::ModuleLoad(format!("coroutine heap id {id} not found")))?;
                     if state.done {
-                        return Err(NyarRuntimeError::TypeMismatch {
-                            expected: "active coroutine",
-                            actual: "completed coroutine".to_string(),
-                        });
+                        return Err(NyarRuntimeError::TypeMismatch { expected: "active coroutine", actual: "completed coroutine".to_string() });
                     }
                     Ok(StepResult::ResumeCoroutine { coroutine_id: id, state: state.clone(), resume_value })
                 }
@@ -171,8 +167,6 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
         | NyarHeadCode::I32LeS
         | NyarHeadCode::I32GtS
         | NyarHeadCode::I32GeS => execute_arithmetic(op.as_instruction(), frame, ctx.stack),
-        NyarHeadCode::ObjectNew | NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => {
-            execute_object(op.as_instruction(), frame, ctx)
-        }
+        NyarHeadCode::ObjectNew | NyarHeadCode::FieldGet | NyarHeadCode::FieldSet => execute_object(op.as_instruction(), frame, ctx),
     }
 }

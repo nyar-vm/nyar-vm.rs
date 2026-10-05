@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+};
 
 use crate::{
     error::NyarRuntimeError,
     frame::Frame,
-    jit::{
-        DisabledJit, JitAssumption, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry,
-        compile_request,
-    },
+    jit::{DisabledJit, JitAssumption, JitCompiledArtifact, JitCompiler, JitError, RestoredInterpreterFrame, StackMapEntry, compile_request},
     module::LoadedModule,
     ops::{ExecutionContext, StepResult, dispatch_exec},
     stack::ValueStack,
@@ -21,7 +20,8 @@ type Nj1CacheKey = (u32, String, usize);
 pub(crate) fn validate_argument_count(function: &nyar_bytecode::NyarFunction, actual: usize) -> Result<(), NyarRuntimeError> {
     if usize::try_from(function.arity).ok() != Some(actual) {
         return Err(NyarRuntimeError::ModuleLoad(format!(
-            "function `{}` argument count mismatch: expected {}, got {actual}", function.name, function.arity
+            "function `{}` argument count mismatch: expected {}, got {actual}",
+            function.name, function.arity
         )));
     }
     Ok(())
@@ -35,11 +35,7 @@ struct Nj1CacheEntry {
 
 /// 按 stack map 条目抽取可能含引用的 local 槽（拷贝，供 `GcRoots` 借用）。
 fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
-    entry
-        .local_root_slots
-        .iter()
-        .filter_map(|&slot| locals.get(slot as usize).cloned())
-        .collect()
+    entry.local_root_slots.iter().filter_map(|&slot| locals.get(slot as usize).cloned()).collect()
 }
 
 /// Bytecode interpreter loop.
@@ -90,14 +86,12 @@ impl Executor {
 
     /// 按模块版本与名称失效该模块下全部函数的 NJ1 缓存。
     pub fn invalidate_nj1_module(&mut self, module_version: u32, module_name: &str) {
-        self.nj1_cache
-            .retain(|(version, name, _), _| *version != module_version || name != module_name);
+        self.nj1_cache.retain(|(version, name, _), _| *version != module_version || name != module_name);
     }
 
     /// 失效依赖给定假设的全部 NJ1 缓存条目。
     pub fn invalidate_assumption(&mut self, assumption: JitAssumption) {
-        self.nj1_cache
-            .retain(|_, entry| !entry.assumptions.iter().any(|item| *item == assumption));
+        self.nj1_cache.retain(|_, entry| !entry.assumptions.iter().any(|item| *item == assumption));
     }
 
     /// Attempts JIT compilation for one module function.
@@ -241,19 +235,15 @@ impl Executor {
             let cache_key = (module.version, module.name.clone(), function_index);
             let blob = if let Some(cached) = self.nj1_cache.get(&cache_key) {
                 Some(cached.blob.clone())
-            } else if let Ok(artifact) = self.try_jit_compile(module, function_index) {
+            }
+            else if let Ok(artifact) = self.try_jit_compile(module, function_index) {
                 let assumptions = artifact.assumptions.clone();
                 artifact.machine_code.map(|blob| {
-                    self.nj1_cache.insert(
-                        cache_key,
-                        Nj1CacheEntry {
-                            blob: blob.clone(),
-                            assumptions,
-                        },
-                    );
+                    self.nj1_cache.insert(cache_key, Nj1CacheEntry { blob: blob.clone(), assumptions });
                     blob
                 })
-            } else {
+            }
+            else {
                 None
             };
             if let Some(blob) = blob {
@@ -262,15 +252,9 @@ impl Executor {
                     self.frames = vec![frame];
                     let owned_locals = self.frames[0].locals.clone();
                     let frame_locals = [owned_locals.as_slice()];
-                    let frame_coroutines: Vec<_> =
-                        self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
+                    let frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
                     let relocate = self.gc.collect_for_policy(
-                        GcRoots {
-                            stack: self.stack.values(),
-                            frame_locals: &frame_locals,
-                            globals,
-                            frame_coroutines: &frame_coroutines,
-                        },
+                        GcRoots { stack: self.stack.values(), frame_locals: &frame_locals, globals, frame_coroutines: &frame_coroutines },
                         &mut self.heap,
                     );
                     self.apply_relocate_map(&relocate, globals);
@@ -283,11 +267,7 @@ impl Executor {
         self.frames = vec![frame];
 
         while let Some(current) = self.frames.last_mut() {
-            let ops_len = module
-                .executable
-                .get(current.function_index)
-                .map(|exec| exec.ops.len())
-                .unwrap_or(0);
+            let ops_len = module.executable.get(current.function_index).map(|exec| exec.ops.len()).unwrap_or(0);
 
             if current.ip >= ops_len {
                 self.frames.pop();
@@ -297,11 +277,7 @@ impl Executor {
             let function_index = current.function_index;
             let ip_at_op = current.ip as u32;
             let pressure_safepoint = (self.heap.over_soft_limit() || self.heap.nursery_pressure())
-                && module
-                    .executable
-                    .get(function_index)
-                    .map(|exec| exec.safepoints.binary_search(&ip_at_op).is_ok())
-                    .unwrap_or(false);
+                && module.executable.get(function_index).map(|exec| exec.safepoints.binary_search(&ip_at_op).is_ok()).unwrap_or(false);
 
             let op = module.executable[function_index].ops[current.ip];
             let step = {
@@ -333,18 +309,12 @@ impl Executor {
                     }
                     let mut frame_locals: Vec<&[Value]> = self.frames.iter().map(|frame| frame.locals.as_slice()).collect();
                     frame_locals.push(finished.locals.as_slice());
-                    let mut frame_coroutines: Vec<_> =
-                        self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
+                    let mut frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
                     if let Some(coroutine_id) = finished.coroutine_origin {
                         frame_coroutines.push(coroutine_id);
                     }
                     let relocate = self.gc.collect_for_policy(
-                        GcRoots {
-                            stack: self.stack.values(),
-                            frame_locals: &frame_locals,
-                            globals,
-                            frame_coroutines: &frame_coroutines,
-                        },
+                        GcRoots { stack: self.stack.values(), frame_locals: &frame_locals, globals, frame_coroutines: &frame_coroutines },
                         &mut self.heap,
                     );
                     self.apply_relocate_map(&relocate, globals);
@@ -416,8 +386,7 @@ impl Executor {
                     let continuation_id = self.heap.alloc_coroutine(continuation_state);
 
                     let target = &module.functions[handler_function_index];
-                    let mut handler_frame =
-                        Frame::new(handler_function_index, target.local_count.max(target.arity) as usize, self.stack.len());
+                    let mut handler_frame = Frame::new(handler_function_index, target.local_count.max(target.arity) as usize, self.stack.len());
                     handler_frame.ip = 0;
                     self.frames.push(handler_frame);
 
@@ -432,13 +401,7 @@ impl Executor {
     }
 
     /// 压力 safepoint：顶帧按 stack map 收窄 local 根后回收。
-    fn collect_active_roots_at_safepoint(
-        &mut self,
-        module: &LoadedModule,
-        function_index: usize,
-        ip: u32,
-        globals: &mut [Value],
-    ) {
+    fn collect_active_roots_at_safepoint(&mut self, module: &LoadedModule, function_index: usize, ip: u32, globals: &mut [Value]) {
         let maps = crate::jit::stack_maps_for(module, function_index).ok();
         let entry = maps.as_ref().and_then(|m| m.entry_at(ip));
 
@@ -457,12 +420,7 @@ impl Executor {
         let frame_locals: Vec<&[Value]> = owned_precise.iter().map(|locals| locals.as_slice()).collect();
         let frame_coroutines: Vec<_> = self.frames.iter().filter_map(|frame| frame.coroutine_origin).collect();
         let relocate = self.gc.collect_for_policy(
-            GcRoots {
-                stack: self.stack.values(),
-                frame_locals: &frame_locals,
-                globals,
-                frame_coroutines: &frame_coroutines,
-            },
+            GcRoots { stack: self.stack.values(), frame_locals: &frame_locals, globals, frame_coroutines: &frame_coroutines },
             &mut self.heap,
         );
         self.apply_relocate_map(&relocate, globals);
@@ -505,9 +463,7 @@ impl Debug for Executor {
 
 #[cfg(test)]
 mod tests {
-    use nyar_bytecode::{
-        NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, encode_module,
-    };
+    use nyar_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
 
     use super::*;
     use crate::module::LoadedModule;
@@ -566,11 +522,7 @@ mod tests {
     #[test]
     fn select_local_roots_keeps_only_mapped_slots() {
         let locals = vec![Value::I32(1), Value::I32(2), Value::I32(3)];
-        let entry = StackMapEntry {
-            instruction_index: 0,
-            local_root_slots: vec![0, 2],
-            operand_root_depth: None,
-        };
+        let entry = StackMapEntry { instruction_index: 0, local_root_slots: vec![0, 2], operand_root_depth: None };
         let selected = select_local_roots(&locals, &entry);
         assert_eq!(selected, vec![Value::I32(1), Value::I32(3)]);
     }
@@ -581,20 +533,11 @@ mod tests {
 
         let mut executor = Executor::new();
         *executor.heap_mut().policy_mut() = GcPolicy::concurrent_mark_reserved();
-        let live = executor.heap_mut().alloc(ObjectPayload::LayoutObject {
-            layout_id: 0,
-            slots: vec![],
-        });
+        let live = executor.heap_mut().alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![] });
         let stack = [Value::Object(live)];
-        let _ = executor.gc.collect_for_policy(
-            GcRoots {
-                stack: &stack,
-                frame_locals: &[],
-                globals: &[],
-                frame_coroutines: &[],
-            },
-            &mut executor.heap,
-        );
+        let _ = executor
+            .gc
+            .collect_for_policy(GcRoots { stack: &stack, frame_locals: &[], globals: &[], frame_coroutines: &[] }, &mut executor.heap);
         let hs = executor.last_root_handshake();
         assert_eq!(hs.stack_slots, 1);
         assert!(hs.gray_after_roots >= 1);

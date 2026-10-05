@@ -1,7 +1,9 @@
 //! 策略控制器：合并进程意图与阶段栈，产出可解释的 [`StrategyDecision`]。
 
-use crate::intent::{IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
-use crate::policy::{GcMode, GcPolicy, WorkloadHints};
+use crate::{
+    intent::{IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent},
+    policy::{GcMode, GcPolicy, WorkloadHints},
+};
 
 /// 保留的策略切换证据条数上限。
 const MAX_STRATEGY_TRANSITIONS: usize = 32;
@@ -61,9 +63,7 @@ impl StrategyController {
     pub fn begin_phase(&mut self, intent: WorkloadIntent) -> Result<(), IntentError> {
         validate_single(&intent)?;
         if intent.phase.is_none() {
-            return Err(IntentError::PhaseMismatch {
-                message: "phase intent requires a phase name".into(),
-            });
+            return Err(IntentError::PhaseMismatch { message: "phase intent requires a phase name".into() });
         }
         self.phases.push(intent);
         Ok(())
@@ -71,21 +71,15 @@ impl StrategyController {
 
     /// 弹出阶段；若提供名字则必须与栈顶匹配（不匹配时不弹出）。
     pub fn end_phase(&mut self, phase: Option<&str>) -> Result<WorkloadIntent, IntentError> {
-        let top = self.phases.last().ok_or_else(|| IntentError::PhaseMismatch {
-            message: "phase stack is empty".into(),
-        })?;
+        let top = self.phases.last().ok_or_else(|| IntentError::PhaseMismatch { message: "phase stack is empty".into() })?;
         if let Some(expected) = phase {
             match &top.phase {
                 Some(name) if name == expected => {}
                 Some(name) => {
-                    return Err(IntentError::PhaseMismatch {
-                        message: format!("expected to end phase `{expected}`, stack top is `{name}`"),
-                    });
+                    return Err(IntentError::PhaseMismatch { message: format!("expected to end phase `{expected}`, stack top is `{name}`") });
                 }
                 None => {
-                    return Err(IntentError::PhaseMismatch {
-                        message: format!("expected to end phase `{expected}`, stack top has no name"),
-                    });
+                    return Err(IntentError::PhaseMismatch { message: format!("expected to end phase `{expected}`, stack top has no name") });
                 }
             }
         }
@@ -116,11 +110,7 @@ impl StrategyController {
         if mode_changed {
             let sequence = self.next_sequence;
             self.next_sequence = self.next_sequence.saturating_add(1);
-            self.transitions.push(StrategyTransition {
-                sequence,
-                from_mode,
-                decision: decision.clone(),
-            });
+            self.transitions.push(StrategyTransition { sequence, from_mode, decision: decision.clone() });
             if self.transitions.len() > MAX_STRATEGY_TRANSITIONS {
                 let drop = self.transitions.len() - MAX_STRATEGY_TRANSITIONS;
                 self.transitions.drain(0..drop);
@@ -147,9 +137,7 @@ fn validate_single(intent: &WorkloadIntent) -> Result<(), IntentError> {
             });
         }
     }
-    if let (Some(GcMode::ConcurrentMarkReserved), Some(true)) =
-        (intent.preferred_mode, intent.allow_heavy_collection)
-    {
+    if let (Some(GcMode::ConcurrentMarkReserved), Some(true)) = (intent.preferred_mode, intent.allow_heavy_collection) {
         return Err(IntentError::HardConflict {
             message: "preferred ConcurrentMarkReserved conflicts with allow_heavy_collection=true".into(),
         });
@@ -210,19 +198,17 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
         }
     }
 
-    let lifetime = layers
-        .iter()
-        .rev()
-        .map(|l| l.lifetime_hint)
-        .find(|h| *h != ObjectLifetimeHint::Unspecified)
-        .unwrap_or(ObjectLifetimeHint::Unspecified);
+    let lifetime =
+        layers.iter().rev().map(|l| l.lifetime_hint).find(|h| *h != ObjectLifetimeHint::Unspecified).unwrap_or(ObjectLifetimeHint::Unspecified);
 
     let mut mode = preferred.map(|(_, m)| m).unwrap_or_else(|| {
         if matches!(lifetime, ObjectLifetimeHint::ShortLivedBatch) || pause_budget_ms.is_some_and(|p| p <= 20) {
             GcMode::GenerationalLowLatency
-        } else if allow_heavy_collection {
+        }
+        else if allow_heavy_collection {
             GcMode::ThroughputBatch
-        } else {
+        }
+        else {
             GcMode::MarkSweep
         }
     });
@@ -254,13 +240,7 @@ fn merge_layers(layers: &[&WorkloadIntent]) -> StrategyDecision {
 
     StrategyDecision {
         mode,
-        hints: WorkloadHints {
-            phase,
-            pause_budget_ms,
-            heap_soft_limit_bytes,
-            allow_heavy_collection,
-            ..WorkloadHints::default()
-        },
+        hints: WorkloadHints { phase, pause_budget_ms, heap_soft_limit_bytes, allow_heavy_collection, ..WorkloadHints::default() },
         reason,
         sources_considered: sources,
         unknown_dimensions: unknown,
@@ -306,17 +286,13 @@ mod tests {
 
     #[test]
     fn hard_conflict_rejects_throughput_with_tight_pause() {
-        let err = StrategyController::new()
-            .set_process_intent(WorkloadIntent::sample_hard_conflict_throughput_tight_pause())
-            .unwrap_err();
+        let err = StrategyController::new().set_process_intent(WorkloadIntent::sample_hard_conflict_throughput_tight_pause()).unwrap_err();
         assert!(matches!(err, IntentError::HardConflict { .. }));
     }
 
     #[test]
     fn hard_conflict_rejects_concurrent_with_heavy() {
-        let err = StrategyController::new()
-            .set_process_intent(WorkloadIntent::sample_hard_conflict_concurrent_heavy())
-            .unwrap_err();
+        let err = StrategyController::new().set_process_intent(WorkloadIntent::sample_hard_conflict_concurrent_heavy()).unwrap_err();
         assert!(matches!(err, IntentError::HardConflict { .. }));
     }
 

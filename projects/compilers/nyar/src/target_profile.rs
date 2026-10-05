@@ -543,7 +543,9 @@ impl CanonicalTarget {
             _ => {}
         }
         match self.vendor {
-            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => return TargetHostKind::JavaScript,
+            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => {
+                return TargetHostKind::JavaScript;
+            }
             _ => {}
         }
         match self.specification {
@@ -600,7 +602,9 @@ impl CanonicalTarget {
             _ => {}
         }
         match self.vendor {
-            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => return HostProjectionBoundary::WasmJsGlue,
+            CanonicalVendor::Node | CanonicalVendor::Deno | CanonicalVendor::Bun => {
+                return HostProjectionBoundary::WasmJsGlue;
+            }
             _ => {}
         }
         match self.specification {
@@ -745,7 +749,9 @@ impl CanonicalTarget {
                         vec![PublishFormat::Directory, PublishFormat::Zip, PublishFormat::SingleFile, PublishFormat::UnityPlayer]
                     }
                     CanonicalSpecification::Android => vec![PublishFormat::Apk, PublishFormat::Aab],
-                    CanonicalSpecification::Ios => vec![PublishFormat::Ipa, PublishFormat::AppBundle],
+                    CanonicalSpecification::Ios => {
+                        vec![PublishFormat::Ipa, PublishFormat::AppBundle]
+                    }
                     CanonicalSpecification::MacOs => {
                         vec![PublishFormat::AppBundle, PublishFormat::Pkg, PublishFormat::Directory, PublishFormat::UnityPlayer]
                     }

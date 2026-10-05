@@ -8,7 +8,7 @@ use std::path::Path;
 use miette::Result;
 use nyar::{BinaryTarget, HostProjectionBoundary, packaging::ArtifactDescriptor};
 
-use crate::nyar_backend_wasi::{WasmPackageKind, WasiPreview};
+use crate::nyar_backend_wasi::{WasiPreview, WasmPackageKind};
 
 /// 宿主绑定生成阶段共享的输入上下文。
 pub(crate) struct BindingGenerationContext<'a> {

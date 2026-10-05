@@ -136,4 +136,3 @@ pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
         )
     })
 }
-

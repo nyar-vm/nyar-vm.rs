@@ -49,11 +49,7 @@ mod tests {
             generics: Vec::new(),
             params: Vec::new(),
             return_type: ValkyrieType::Unit,
-            body: HirBlock {
-                statements: Vec::new(),
-                expr: None,
-                span: SourceSpan::new(SourceID::default(), 0, 0),
-            },
+            body: HirBlock { statements: Vec::new(), expr: None, span: SourceSpan::new(SourceID::default(), 0, 0) },
             span: SourceSpan::new(SourceID::default(), 0, 0),
             visibility: HirVisibility::default(),
             is_abstract: false,

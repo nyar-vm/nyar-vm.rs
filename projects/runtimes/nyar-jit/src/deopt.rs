@@ -66,10 +66,7 @@ impl std::fmt::Display for DeoptRestoreError {
                 write!(f, "deopt frame count mismatch: expected {expected}, got {actual}")
             }
             Self::LocalOverflow { frame, local_count, provided } => {
-                write!(
-                    f,
-                    "deopt frame {frame}: provided {provided} locals but local_count is {local_count}"
-                )
+                write!(f, "deopt frame {frame}: provided {provided} locals but local_count is {local_count}")
             }
         }
     }
@@ -122,18 +119,10 @@ pub struct InlineFrameSpec {
 }
 
 /// 由 safepoint 列表构造最小 deopt 表（每点一帧，无内联）。
-pub fn build_baseline_deopt_map(
-    function_index: usize,
-    local_count: i32,
-    safepoint_indices: &[u32],
-) -> DeoptMap {
+pub fn build_baseline_deopt_map(function_index: usize, local_count: i32, safepoint_indices: &[u32]) -> DeoptMap {
     build_inline_deopt_map(
         function_index,
-        &[InlineFrameSpec {
-            function_index,
-            local_count: local_count.max(0) as u16,
-            resume_instruction: None,
-        }],
+        &[InlineFrameSpec { function_index, local_count: local_count.max(0) as u16, resume_instruction: None }],
         safepoint_indices,
     )
 }
@@ -141,19 +130,12 @@ pub fn build_baseline_deopt_map(
 /// 由内联帧链规格构造 deopt 表（每 safepoint 共享同一逻辑帧链形状）。
 ///
 /// `frame_chain[0]` 为最内层。空链得到空 `entries` 的表（仍记录 `owning_function_index`）。
-pub fn build_inline_deopt_map(
-    owning_function_index: usize,
-    frame_chain: &[InlineFrameSpec],
-    safepoint_indices: &[u32],
-) -> DeoptMap {
+pub fn build_inline_deopt_map(owning_function_index: usize, frame_chain: &[InlineFrameSpec], safepoint_indices: &[u32]) -> DeoptMap {
     let mut indices = safepoint_indices.to_vec();
     indices.sort_unstable();
     indices.dedup();
     if frame_chain.is_empty() {
-        return DeoptMap {
-            function_index: owning_function_index,
-            entries: Vec::new(),
-        };
+        return DeoptMap { function_index: owning_function_index, entries: Vec::new() };
     }
     let entries = indices
         .into_iter()
@@ -163,28 +145,18 @@ pub fn build_inline_deopt_map(
                 .enumerate()
                 .map(|(depth, spec)| {
                     let instruction_index = if depth == 0 {
-                        spec.resume_instruction
-                            .unwrap_or_else(|| safepoint.saturating_add(1))
-                    } else {
+                        spec.resume_instruction.unwrap_or_else(|| safepoint.saturating_add(1))
+                    }
+                    else {
                         spec.resume_instruction.unwrap_or(0)
                     };
-                    DeoptFrame {
-                        function_index: spec.function_index,
-                        instruction_index,
-                        local_count: spec.local_count,
-                    }
+                    DeoptFrame { function_index: spec.function_index, instruction_index, local_count: spec.local_count }
                 })
                 .collect();
-            DeoptMapEntry {
-                instruction_index: safepoint,
-                frames,
-            }
+            DeoptMapEntry { instruction_index: safepoint, frames }
         })
         .collect();
-    DeoptMap {
-        function_index: owning_function_index,
-        entries,
-    }
+    DeoptMap { function_index: owning_function_index, entries }
 }
 
 /// 将 deopt 条目物化为解释器帧链（无机器码、无寄存器分配）。
@@ -199,19 +171,12 @@ pub fn materialize_interpreter_frames(
         return Err(DeoptRestoreError::EmptyFrameChain);
     }
     if provided_locals.len() != entry.frames.len() {
-        return Err(DeoptRestoreError::FrameCountMismatch {
-            expected: entry.frames.len(),
-            actual: provided_locals.len(),
-        });
+        return Err(DeoptRestoreError::FrameCountMismatch { expected: entry.frames.len(), actual: provided_locals.len() });
     }
     let mut restored = Vec::with_capacity(entry.frames.len());
     for (frame_index, (frame, provided)) in entry.frames.iter().zip(provided_locals.iter()).enumerate() {
         if provided.len() > frame.local_count as usize {
-            return Err(DeoptRestoreError::LocalOverflow {
-                frame: frame_index,
-                local_count: frame.local_count,
-                provided: provided.len(),
-            });
+            return Err(DeoptRestoreError::LocalOverflow { frame: frame_index, local_count: frame.local_count, provided: provided.len() });
         }
         let mut locals = Vec::with_capacity(frame.local_count as usize);
         for slot in 0..frame.local_count as usize {
@@ -221,11 +186,7 @@ pub fn materialize_interpreter_frames(
             };
             locals.push(cell);
         }
-        restored.push(RestoredInterpreterFrame {
-            function_index: frame.function_index,
-            instruction_index: frame.instruction_index,
-            locals,
-        });
+        restored.push(RestoredInterpreterFrame { function_index: frame.function_index, instruction_index: frame.instruction_index, locals });
     }
     Ok(restored)
 }
@@ -271,16 +232,8 @@ mod tests {
         let map = build_inline_deopt_map(
             1,
             &[
-                InlineFrameSpec {
-                    function_index: 1,
-                    local_count: 2,
-                    resume_instruction: None,
-                },
-                InlineFrameSpec {
-                    function_index: 0,
-                    local_count: 3,
-                    resume_instruction: Some(99),
-                },
+                InlineFrameSpec { function_index: 1, local_count: 2, resume_instruction: None },
+                InlineFrameSpec { function_index: 0, local_count: 3, resume_instruction: Some(99) },
             ],
             &[10],
         );

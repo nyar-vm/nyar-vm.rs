@@ -14,7 +14,9 @@ serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
 nyar-vm-lane = ["emitter/nyar-vm-lane"]
 
 [dependencies]
-# Layering: language → driver → std-data (language is the upper layer).
+# 分层：Oak 文本前端 → language 语义层；`std-data` 不能再承担 Valkyrie 文本解析。
+oak-valkyrie = { workspace = true }
+oak-core = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 emitter = { workspace = true }

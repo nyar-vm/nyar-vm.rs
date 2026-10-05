@@ -5,10 +5,14 @@
 //! 侧多跑有界灰切片；真实对象扫描仍只在协作点完成，避免与 `ObjectHeap`
 //! 可变借用并发。
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
 
 /// 后台节拍：周期唤醒并 `ticks += 1`，默认不启动。
 #[derive(Debug, Default)]

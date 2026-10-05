@@ -3,13 +3,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use nyar::{Identifier, QualifiedName};
-use nyar_emitter::{
-    FragmentSubmission, executable_provider::MirFunctionMapProvider, testing::semantic_mir_observation,
-};
-use nyar_language::{
-    SourceID, ValkyrieCompiler,
-    mir::ssa::MirLowerer,
-};
+use nyar_emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, testing::semantic_mir_observation};
+use nyar_language::{SourceID, ValkyrieCompiler, mir::ssa::MirLowerer};
 
 fn qualified_symbol_from_string(symbol: &str) -> QualifiedName {
     QualifiedName::new(symbol.split([':', '.']).filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>())
@@ -34,11 +29,7 @@ imply Box<T> {
         )
         .expect("compile Box");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let new_fn = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("new"))
-        .expect("Box.new");
+    let new_fn = mir.functions.iter().find(|function| function.symbol.ends_with("new")).expect("Box.new");
     let operation = qualified_symbol_from_string(&new_fn.symbol);
     let mut mir_map = BTreeMap::new();
     mir_map.insert(operation.clone(), new_fn.clone().into());
@@ -72,11 +63,7 @@ imply ArrayList<T> {
         )
         .expect("compile ArrayList");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    let new_fn = mir
-        .functions
-        .iter()
-        .find(|function| function.symbol.ends_with("new"))
-        .expect("ArrayList.new");
+    let new_fn = mir.functions.iter().find(|function| function.symbol.ends_with("new")).expect("ArrayList.new");
     let operation = qualified_symbol_from_string(&new_fn.symbol);
     let mut mir_map = BTreeMap::new();
     mir_map.insert(operation.clone(), new_fn.clone().into());
@@ -88,18 +75,14 @@ imply ArrayList<T> {
     submission.executable = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
 
     let observation = semantic_mir_observation(&submission, "array_list_new");
-    assert_eq!(
-        observation, "array_list_new|accept||",
-        "SMIR010 must accept ArrayList.new under type-arg substitution; got {observation}"
-    );
+    assert_eq!(observation, "array_list_new|accept||", "SMIR010 must accept ArrayList.new under type-arg substitution; got {observation}");
 }
 
 #[test]
 fn named_self_output_rejects_without_string_special_case() {
     use nyar_types::{
-        Block, BlockRef, Instruction, InstructionKind, Operand, Terminator, ValueRef,
+        Block, BlockRef, Instruction, InstructionKind, NyarType, Operand, Terminator, ValueRef,
         layout::{AggregateLayout, AggregateLayoutPlan, FieldLayout, StorageKind},
-        NyarType,
     };
 
     let output = ValueRef(0);
@@ -113,10 +96,7 @@ fn named_self_output_rejects_without_string_special_case() {
 
     let mut struct_new = Instruction::from_kind(InstructionKind::StructNew {
         type_name: "Box".to_string(),
-        fields: vec![
-            ("_items".to_string(), Operand::Value(items)),
-            ("_cap".to_string(), Operand::Value(cap)),
-        ],
+        fields: vec![("_items".to_string(), Operand::Value(items)), ("_cap".to_string(), Operand::Value(cap))],
     });
     struct_new.results = vec![output];
 
@@ -160,13 +140,7 @@ fn named_self_output_rejects_without_string_special_case() {
                 size: 8,
                 align: 8,
             },
-            FieldLayout {
-                name: "_cap".to_string(),
-                ty: NyarType::Integer32 { signed: true },
-                offset: 8,
-                size: 4,
-                align: 4,
-            },
+            FieldLayout { name: "_cap".to_string(), ty: NyarType::Integer32 { signed: true }, offset: 8, size: 4, align: 4 },
         ],
     });
 

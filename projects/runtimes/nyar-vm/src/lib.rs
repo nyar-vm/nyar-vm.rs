@@ -22,9 +22,9 @@ pub mod executor;
 pub mod frame;
 pub mod host;
 pub mod jit;
-pub mod nj1_runtime;
 pub mod json_bridge;
 pub mod module;
+pub mod nj1_runtime;
 pub mod ops;
 pub mod stack;
 pub mod value;
@@ -32,18 +32,16 @@ pub mod verify;
 pub mod vm;
 pub mod workload_json;
 
-pub use deopt_value::{
-    decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned,
-};
+pub use deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned};
 pub use error::NyarRuntimeError;
-pub use nj1_runtime::{execute_nj1_blob, execute_scalar_program};
 pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
 pub use module::ModuleGlobals;
+pub use nj1_runtime::{execute_nj1_blob, execute_scalar_program};
 pub use nyar_gc::{
-    ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector,
-    GcMode, GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap,
-    ObjectPayload, ObjectLifetimeHint, PromotionFailure, RelocateMap, RootHandle, RootHandshakeReport, StrategyController,
-    StrategyDecision, StrategyTransition, TracePollReport, WorkloadHints, WorkloadIntent, WriteBarrier,
+    ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector, GcMode,
+    GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap, ObjectLifetimeHint,
+    ObjectPayload, PromotionFailure, RelocateMap, RootHandle, RootHandshakeReport, StrategyController, StrategyDecision, StrategyTransition,
+    TracePollReport, WorkloadHints, WorkloadIntent, WriteBarrier,
 };
 pub use value::{CoroutineState, ObjectId, Value};
 pub use vm::NyarVm;

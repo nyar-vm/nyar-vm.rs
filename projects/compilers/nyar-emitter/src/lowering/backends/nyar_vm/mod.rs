@@ -1,4 +1,4 @@
-use nyar_bytecode::{NyarModuleData, NYAR_VERSION};
+use nyar_bytecode::{NYAR_VERSION, NyarModuleData};
 
 use super::sanitize_symbol;
 use crate::FragmentSubmission;
@@ -10,4 +10,3 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
     }
     Err(miette::miette!("Nyar VM backend requires Compiler-owned executable functions; edge-based semantic replay is not a valid input"))
 }
-

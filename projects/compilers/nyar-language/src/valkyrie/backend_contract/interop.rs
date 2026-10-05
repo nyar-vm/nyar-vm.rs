@@ -65,16 +65,11 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), ParseEr
 
 /// 从函数声明杝坖语言中性的外部导入链接。
 pub(crate) fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
-    function
-        .annotations
-        .iter()
-        .find_map(attribute_to_interop_contract)
-        .or_else(|| {
-            function.annotations.iter().find_map(|attribute| {
-                (attribute_name(attribute).as_deref() == Some("host_contract"))
-                    .then(|| ExternalImportLink::host(None, Vec::new()))
-            })
+    function.annotations.iter().find_map(attribute_to_interop_contract).or_else(|| {
+        function.annotations.iter().find_map(|attribute| {
+            (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
         })
+    })
 }
 
 /// 从 `[host_provider(X)]` 属性中杝坖目标契约符坷。
@@ -344,7 +339,9 @@ micro declaration(message: utf8): unit;
         assert!(declaration.is_abstract);
         assert!(function_interop_contract(declaration).is_none());
         let output = compiler.compile_source_to_program("micro declaration(message: utf8): unit;").expect("declaration output");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("micro declaration(message: utf8): unit;").expect("declaration source"));
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(
+            &compiler.compile_source("micro declaration(message: utf8): unit;").expect("declaration source"),
+        );
         assert!(semantic_mir.external_calls.is_empty());
     }
 
@@ -363,8 +360,11 @@ micro declaration(message: utf8): unit;
         let contract = function_interop_contract(declaration).expect("explicit host contract");
         assert!(contract.matches_boundary("host"));
         assert!(contract.locator_segments().is_empty());
-        let output = compiler.compile_source_to_program("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
-        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"));
+        let output =
+            compiler.compile_source_to_program("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration output");
+        let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(
+            &compiler.compile_source("[host_contract] micro declaration(message: utf8): unit;").expect("host declaration source"),
+        );
         assert_eq!(semantic_mir.external_calls.len(), 1);
     }
 
@@ -469,5 +469,4 @@ micro console_read(message: utf8): unit;
             }
         }
     }
-
 }

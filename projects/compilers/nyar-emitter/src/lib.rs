@@ -4,10 +4,10 @@
 mod artifacts;
 mod assembly;
 mod backend;
+pub mod backend_plan_views;
+mod backend_private_plan;
 pub mod contracts;
 mod driver;
-mod backend_private_plan;
-pub mod backend_plan_views;
 mod lowering;
 mod nullable_profiles;
 
@@ -36,8 +36,8 @@ use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name},
     backend_plan_views::ExecutableFunction,
+    driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name},
     lowering::{lower_fragment_to_driver_input, write_wasm_wat_sidecar},
 };
 
@@ -54,15 +54,13 @@ pub mod testing {
     use miette::Result;
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
 
-
     use super::{
-        DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput,
-        compile_with_bundled_backends,
+        DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
-    use nyar_types::SingletonInstancePlan;
     #[cfg(feature = "nyar-vm-lane")]
     use nyar_bytecode::NyarModuleData;
+    use nyar_types::SingletonInstancePlan;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,9 +100,6 @@ pub mod testing {
         super::lowering::features::physical_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))
     }
 
-
-
-
     /// Lower a fragment submission to a WASM module via MIR.
     /// GC is mandatory for wasm/wasi targets (language specification).
     pub fn lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> WasmBinaryModule {
@@ -117,16 +112,10 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
 
-
-
-
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
     }
-
-
-
 
     /// Lower a fragment submission to a host-boundary-specific WASM module.
     pub fn lower_fragment_to_wasm_module(
@@ -135,14 +124,6 @@ pub mod testing {
     ) -> Result<(WasmBinaryModule, Vec<(String, String)>), miette::Report> {
         super::lowering::testing_lower_fragment_to_wasm_module(submission, host_boundary).map_err(|error| miette::miette!("{error}"))
     }
-
-
-
-
-
-
-
-
 
     /// Append singleton metadata custom sections to an existing WASM module.
     pub fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
@@ -439,17 +420,14 @@ pub struct FragmentSubmission {
 
 impl std::fmt::Debug for FragmentSubmission {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FragmentSubmission")
-            .finish()
+        f.debug_struct("FragmentSubmission").finish()
     }
 }
 
 #[cfg(test)]
 impl Default for FragmentSubmission {
     fn default() -> Self {
-        Self {
-            backend_plan: Arc::new(BackendPrivatePlan::default()),
-        }
+        Self { backend_plan: Arc::new(BackendPrivatePlan::default()) }
     }
 }
 
@@ -540,7 +518,12 @@ impl LoweredBackendInput {
                 host_flavor,
                 wasm_package_kind,
             )?,
-            entry_artifact_name: submission.backend_plan.entry_operation().and_then(|instance| submission.backend_plan.abi_name_for_instance(instance)).as_ref().and_then(entry_artifact_name),
+            entry_artifact_name: submission
+                .backend_plan
+                .entry_operation()
+                .and_then(|instance| submission.backend_plan.abi_name_for_instance(instance))
+                .as_ref()
+                .and_then(entry_artifact_name),
         })
     }
 
@@ -553,16 +536,9 @@ impl LoweredBackendInput {
         host_flavor: &str,
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
-        let submission = crate::assembly::fragment_submission_from_assembled(payload)
-            .map_err(|error| miette!("后端私有计划生产失败: {error}"))?;
-        Self::from_fragment_submission(
-            &submission,
-            backend_family,
-            host_boundary,
-            output_dir,
-            host_flavor,
-            wasm_package_kind,
-        )
+        let submission =
+            crate::assembly::fragment_submission_from_assembled(payload).map_err(|error| miette!("后端私有计划生产失败: {error}"))?;
+        Self::from_fragment_submission(&submission, backend_family, host_boundary, output_dir, host_flavor, wasm_package_kind)
     }
 
     pub(crate) fn into_driver_backend_input(self) -> DriverBackendInput {
@@ -630,14 +606,7 @@ impl<'a> DriverPartitionCompileRequest<'a> {
         emit_wat_sidecar: bool,
         generate_runtime_config: bool,
     ) -> Self {
-        Self {
-            bundle,
-            planned_partitions: bundle.planned_partitions(),
-            output_dir,
-            project_name,
-            emit_wat_sidecar,
-            generate_runtime_config,
-        }
+        Self { bundle, planned_partitions: bundle.planned_partitions(), output_dir, project_name, emit_wat_sidecar, generate_runtime_config }
     }
 }
 
@@ -681,10 +650,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         );
         let lowering_started_at = std::time::Instant::now();
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
-        let host_flavor = request
-            .bundle
-            .target_host_flavor()
-            .ok_or_else(|| miette!("分区计划缺少目标 host flavor"))?;
+        let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| miette!("分区计划缺少目标 host flavor"))?;
         let lowered_input = LoweredBackendInput::from_assembled_fragment(
             fragment,
             backend_family_for_partition(partition),

@@ -11,10 +11,7 @@ use crate::{error::NyarRuntimeError, value::Value};
 ///
 /// `layout_id` 仅作堆描述；`ArrayGet`/`ArraySet`/`ArrayLen` 只读 `slots`。
 pub fn build_fixed_array(heap: &mut ObjectHeap, layout_id: u32, elements: &[Value]) -> Value {
-    Value::Object(heap.alloc(ObjectPayload::LayoutObject {
-        layout_id,
-        slots: elements.to_vec(),
-    }))
+    Value::Object(heap.alloc(ObjectPayload::LayoutObject { layout_id, slots: elements.to_vec() }))
 }
 
 /// `ArrayLen`：布局对象槽位数。
@@ -54,17 +51,11 @@ pub fn array_set(heap: &mut ObjectHeap, array: &Value, index: &Value, value: &Va
 /// `ArrayPush`：向可增长数组布局末尾追加元素；返回原数组引用。
 pub fn array_push(heap: &mut ObjectHeap, array: &Value, value: &Value) -> Result<Value, NyarRuntimeError> {
     match array {
-        Value::Null => Err(NyarRuntimeError::TypeMismatch {
-            expected: "object",
-            actual: "null".to_string(),
-        }),
+        Value::Null => Err(NyarRuntimeError::TypeMismatch { expected: "object", actual: "null".to_string() }),
         Value::Object(object_id) => {
             heap.append_field(*object_id, value.clone()).map_err(|reason| match reason {
                 "object not found" => NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")),
-                other => NyarRuntimeError::TypeMismatch {
-                    expected: "layout array",
-                    actual: other.to_string(),
-                },
+                other => NyarRuntimeError::TypeMismatch { expected: "layout array", actual: other.to_string() },
             })?;
             Ok(array.clone())
         }
@@ -83,10 +74,7 @@ fn index_as_usize(value: &Value) -> Result<usize, NyarRuntimeError> {
 fn layout_array_len(heap: &ObjectHeap, object_id: ObjectId) -> Result<i32, NyarRuntimeError> {
     match heap.get(object_id) {
         Some(ObjectPayload::LayoutObject { slots, .. }) => Ok(slots.len() as i32),
-        Some(_) => Err(NyarRuntimeError::TypeMismatch {
-            expected: "layout array",
-            actual: "non-layout object".to_string(),
-        }),
+        Some(_) => Err(NyarRuntimeError::TypeMismatch { expected: "layout array", actual: "non-layout object".to_string() }),
         None => Err(NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}"))),
     }
 }
@@ -99,10 +87,7 @@ fn read_layout_element(heap: &ObjectHeap, object_id: ObjectId, index: usize) -> 
             }
             Ok(slots[index].clone())
         }
-        Some(_) => Err(NyarRuntimeError::TypeMismatch {
-            expected: "layout array",
-            actual: "non-layout object".to_string(),
-        }),
+        Some(_) => Err(NyarRuntimeError::TypeMismatch { expected: "layout array", actual: "non-layout object".to_string() }),
         None => Err(NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}"))),
     }
 }
@@ -112,10 +97,7 @@ fn write_layout_element(heap: &mut ObjectHeap, object_id: ObjectId, index: usize
     heap.set_field(object_id, index, value).map_err(|reason| match reason {
         "field slot out of range" => NyarRuntimeError::FieldSlotOutOfRange(index as i32),
         "object not found" => NyarRuntimeError::ModuleLoad(format!("invalid object id {object_id}")),
-        other => NyarRuntimeError::TypeMismatch {
-            expected: "layout array",
-            actual: other.to_string(),
-        },
+        other => NyarRuntimeError::TypeMismatch { expected: "layout array", actual: other.to_string() },
     })
 }
 
@@ -158,14 +140,8 @@ mod tests {
         use nyar_gc::Generation;
 
         let mut heap = ObjectHeap::new();
-        let array_id = heap.alloc_tenured(ObjectPayload::LayoutObject {
-            layout_id: 0,
-            slots: vec![Value::Null, Value::Null],
-        });
-        let young = heap.alloc(ObjectPayload::LayoutObject {
-            layout_id: 1,
-            slots: vec![],
-        });
+        let array_id = heap.alloc_tenured(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null, Value::Null] });
+        let young = heap.alloc(ObjectPayload::LayoutObject { layout_id: 1, slots: vec![] });
         let array = Value::Object(array_id);
         array_set(&mut heap, &array, &Value::I32(0), &Value::Object(young)).expect("set");
         assert!(!heap.barrier().remembered_set().is_empty());

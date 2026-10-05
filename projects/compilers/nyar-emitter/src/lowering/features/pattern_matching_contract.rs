@@ -7,10 +7,10 @@
 //! 语义或 dangling block 引用而生成错误代码。
 
 use crate::{
-    contracts::{CaseArm as MirCaseArm, CaseChain as MirCaseChain},
     backend_plan_views::{
         ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction, ExecutableInstructionKind as MirInstructionKind,
     },
+    contracts::{CaseArm as MirCaseArm, CaseChain as MirCaseChain},
 };
 
 /// 后端模式匹配不变量校验失败时返回的错误。

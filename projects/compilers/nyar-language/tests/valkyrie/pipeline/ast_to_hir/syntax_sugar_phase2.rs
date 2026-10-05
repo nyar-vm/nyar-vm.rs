@@ -136,7 +136,7 @@ class Point {
 "#,
     );
     assert_eq!(hir.structs[0].derives.len(), 3);
-    assert!(hir.impls.iter().any(|impl_block| impl_block.trait_path.as_ref().is_some_and(|path| path.to_string() == "Clone")));
+    assert!(hir.impls.iter().any(|impl_block| { impl_block.trait_path.as_ref().is_some_and(|path| path.to_string() == "Clone") }));
 }
 
 #[test]

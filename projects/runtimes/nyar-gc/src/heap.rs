@@ -1,16 +1,18 @@
-use crate::barrier::WriteBarrier;
-use crate::concurrent::ConcurrentMarkController;
-use crate::concurrent_ticker::ConcurrentMarkTicker;
+use crate::{
+    barrier::WriteBarrier,
+    concurrent::ConcurrentMarkController,
+    concurrent_ticker::ConcurrentMarkTicker,
+    controller::{StrategyController, StrategyDecision},
+    generation::Generation,
+    intent::{IntentError, WorkloadIntent},
+    layout::{LayoutDescriptor, LayoutId},
+    policy::GcPolicy,
+    promotion::PromotionFailure,
+    relocate::RelocateMap,
+    roots::{HostRoots, RootHandle},
+    value::{CoroutineState, ObjectId, Value},
+};
 use std::time::Duration;
-use crate::controller::{StrategyController, StrategyDecision};
-use crate::generation::Generation;
-use crate::intent::{IntentError, WorkloadIntent};
-use crate::layout::{LayoutDescriptor, LayoutId};
-use crate::policy::GcPolicy;
-use crate::promotion::PromotionFailure;
-use crate::relocate::RelocateMap;
-use crate::roots::{HostRoots, RootHandle};
-use crate::value::{CoroutineState, ObjectId, Value};
 
 /// 默认 nursery 存活对象上限（超过则形成分配压力，促使 minor GC）。
 const DEFAULT_NURSERY_CAPACITY: usize = 1024;
@@ -38,9 +40,7 @@ impl ObjectPayload {
     /// 近似托管字节数（记账用）。
     pub fn accounting_bytes(&self) -> u64 {
         match self {
-            Self::LayoutObject { slots, .. } => {
-                OBJECT_HEADER_BYTES + (slots.len() as u64).saturating_mul(VALUE_SLOT_BYTES)
-            }
+            Self::LayoutObject { slots, .. } => OBJECT_HEADER_BYTES + (slots.len() as u64).saturating_mul(VALUE_SLOT_BYTES),
             Self::Coroutine(state) => {
                 let locals = (state.locals.len() as u64).saturating_mul(VALUE_SLOT_BYTES);
                 let ops = (state.operand_stack.len() as u64).saturating_mul(VALUE_SLOT_BYTES);
@@ -278,11 +278,7 @@ impl ObjectHeap {
 
     /// Nursery 中存活对象数量。
     pub fn nursery_live_count(&self) -> usize {
-        self.objects
-            .iter()
-            .enumerate()
-            .filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Nursery))
-            .count()
+        self.objects.iter().enumerate().filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Nursery)).count()
     }
 
     /// nursery 软容量。
@@ -312,11 +308,7 @@ impl ObjectHeap {
 
     /// 老年代存活对象数。
     pub fn tenured_live_count(&self) -> usize {
-        self.objects
-            .iter()
-            .enumerate()
-            .filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Tenured))
-            .count()
+        self.objects.iter().enumerate().filter(|(id, slot)| slot.is_some() && self.generations.get(*id) == Some(&Generation::Tenured)).count()
     }
 
     /// 最近一次晋升失败。
@@ -335,11 +327,7 @@ impl ObjectHeap {
 
     pub(crate) fn count_marked_nursery(&self, marked: &[bool]) -> usize {
         (0..self.objects.len())
-            .filter(|&id| {
-                marked.get(id) == Some(&true)
-                    && self.generations.get(id) == Some(&Generation::Nursery)
-                    && self.objects[id].is_some()
-            })
+            .filter(|&id| marked.get(id) == Some(&true) && self.generations.get(id) == Some(&Generation::Nursery) && self.objects[id].is_some())
             .count()
     }
 
@@ -354,7 +342,8 @@ impl ObjectHeap {
                 tenured_soft_capacity: capacity,
                 reason: "tenured soft capacity exceeded",
             })
-        } else {
+        }
+        else {
             None
         }
     }
@@ -411,10 +400,7 @@ impl ObjectHeap {
         if self.layout(layout_id).is_none() {
             self.register_layout(LayoutDescriptor::all_references(layout_id, field_count as u32));
         }
-        self.alloc(ObjectPayload::LayoutObject {
-            layout_id,
-            slots: vec![Value::Null; field_count],
-        })
+        self.alloc(ObjectPayload::LayoutObject { layout_id, slots: vec![Value::Null; field_count] })
     }
 
     /// Borrows an object payload by id.
@@ -430,8 +416,8 @@ impl ObjectHeap {
     /// 向布局对象末尾追加一个槽（可增长数组 `ArrayPush`）；写屏障与 `set_field` 同构。
     pub fn append_field(&mut self, id: ObjectId, value: Value) -> Result<usize, &'static str> {
         let container_gen = self.generation(id).ok_or("object not found")?;
-        let is_old_to_young = container_gen == Generation::Tenured
-            && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
+        let is_old_to_young =
+            container_gen == Generation::Tenured && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
         if value.heap_ids().next().is_some() {
             self.barrier.note_ref_write();
         }
@@ -453,14 +439,12 @@ impl ObjectHeap {
     /// Write a field slot through the write barrier（含老→年轻记忆集与可选 SATB）。
     pub fn set_field(&mut self, id: ObjectId, field_slot: usize, value: Value) -> Result<(), &'static str> {
         let container_gen = self.generation(id).ok_or("object not found")?;
-        let is_old_to_young = container_gen == Generation::Tenured
-            && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
+        let is_old_to_young =
+            container_gen == Generation::Tenured && value.heap_ids().any(|child| self.generation(child) == Some(Generation::Nursery));
         let satb = self.concurrent_mark.requires_satb();
 
         let old = match self.objects.get(id).and_then(|slot| slot.as_ref()) {
-            Some(ObjectPayload::LayoutObject { slots, .. }) => {
-                slots.get(field_slot).cloned().ok_or("field slot out of range")?
-            }
+            Some(ObjectPayload::LayoutObject { slots, .. }) => slots.get(field_slot).cloned().ok_or("field slot out of range")?,
             _ => return Err("not a layout object"),
         };
         if satb {
@@ -566,11 +550,7 @@ impl ObjectHeap {
     pub(crate) fn promote_marked_nursery_moving(&mut self, marked: &[bool]) -> RelocateMap {
         let mut map = RelocateMap::with_capacity(self.objects.len());
         let survivors: Vec<ObjectId> = (0..self.objects.len())
-            .filter(|&id| {
-                marked.get(id) == Some(&true)
-                    && self.generations.get(id) == Some(&Generation::Nursery)
-                    && self.objects[id].is_some()
-            })
+            .filter(|&id| marked.get(id) == Some(&true) && self.generations.get(id) == Some(&Generation::Nursery) && self.objects[id].is_some())
             .collect();
 
         let mut vacated = Vec::with_capacity(survivors.len());

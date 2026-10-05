@@ -1,6 +1,4 @@
-use crate::assumption::JitAssumption;
-use crate::stack_map::FunctionStackMaps;
-use crate::deopt::DeoptMap;
+use crate::{assumption::JitAssumption, deopt::DeoptMap, stack_map::FunctionStackMaps};
 
 /// Opaque native code artifact produced by a JIT backend.
 ///
@@ -23,35 +21,17 @@ impl JitCompiledArtifact {
     /// 仅含 stack map / 基线 deopt、尚无机器码入口的占位产物（分析 / 差分用）。
     pub fn stack_maps_only(stack_maps: FunctionStackMaps) -> Self {
         let deopt_map = DeoptMap::empty(stack_maps.function_index);
-        Self {
-            function_index: stack_maps.function_index,
-            stack_maps,
-            deopt_map,
-            machine_code: None,
-            assumptions: Vec::new(),
-        }
+        Self { function_index: stack_maps.function_index, stack_maps, deopt_map, machine_code: None, assumptions: Vec::new() }
     }
 
     /// 同时附带基线 deopt 表的分析产物。
     pub fn with_baseline_deopt(stack_maps: FunctionStackMaps, deopt_map: DeoptMap) -> Self {
-        Self {
-            function_index: stack_maps.function_index,
-            stack_maps,
-            deopt_map,
-            machine_code: None,
-            assumptions: Vec::new(),
-        }
+        Self { function_index: stack_maps.function_index, stack_maps, deopt_map, machine_code: None, assumptions: Vec::new() }
     }
 
     /// 分析元数据 + NJ1 机器码 blob。
     pub fn with_machine_code(stack_maps: FunctionStackMaps, deopt_map: DeoptMap, machine_code: Vec<u8>) -> Self {
-        Self {
-            function_index: stack_maps.function_index,
-            stack_maps,
-            deopt_map,
-            machine_code: Some(machine_code),
-            assumptions: Vec::new(),
-        }
+        Self { function_index: stack_maps.function_index, stack_maps, deopt_map, machine_code: Some(machine_code), assumptions: Vec::new() }
     }
 
     /// 附带假设列表。

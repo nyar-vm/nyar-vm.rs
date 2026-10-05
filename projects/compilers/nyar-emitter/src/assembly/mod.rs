@@ -12,8 +12,7 @@ use crate::{BackendPrivatePlan, FragmentSubmission};
 pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> miette::Result<FragmentSubmission> {
     let linked = &payload.compiled_program.canonical().linked;
     let partition = &payload.partition;
-    let fragment = linked.fragments.get(&partition.fragment)
-        .ok_or_else(|| miette!("Canonical 片段 `{}` 不存在", partition.fragment))?;
+    let fragment = linked.fragments.get(&partition.fragment).ok_or_else(|| miette!("Canonical 片段 `{}` 不存在", partition.fragment))?;
     if partition.exported_operations != fragment.exported_operations || partition.entry_operation != fragment.entry_operation {
         return Err(miette!("分区 `{}` 的根与 Canonical 片段不一致", partition.name));
     }
@@ -23,14 +22,8 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
             roots.push(entry);
         }
     }
-    let backend_plan = BackendPrivatePlan::from_compiled_program(
-        &payload.compiled_program,
-        &partition.fragment,
-        payload.theory_bundle,
-        &roots,
-    )?;
+    let backend_plan =
+        BackendPrivatePlan::from_compiled_program(&payload.compiled_program, &partition.fragment, payload.theory_bundle, &roots)?;
 
-    Ok(FragmentSubmission {
-        backend_plan: std::sync::Arc::new(backend_plan),
-    })
+    Ok(FragmentSubmission { backend_plan: std::sync::Arc::new(backend_plan) })
 }

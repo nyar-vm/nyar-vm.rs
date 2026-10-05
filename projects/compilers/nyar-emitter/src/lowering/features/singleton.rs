@@ -5,13 +5,6 @@ use nyar_types::{AggregateLayout, SingletonInstancePlan};
 
 use crate::{FragmentSubmission, lowering::backends::wasm};
 
-
-
-
-
-
-
-
 pub(crate) fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
     let mode = if plan.is_lazy { "lazy" } else { "static" };
     let ctor = plan.constructor_symbol.as_deref().unwrap_or("-");
@@ -33,22 +26,9 @@ pub(crate) fn nyar_singleton_accessor_export_name(plan: &SingletonInstancePlan) 
     nyar_singleton_export_name(plan)
 }
 
-
 fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
     submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 /// Append legion singleton metadata sections for backends without dedicated singleton slots.
 pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
@@ -90,7 +70,8 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
     wasm::append_wasm_function_decls(module, &type_indices);
 
     let exports: Vec<(String, u8, u32)> = submission
-        .backend_plan.singleton_instances()
+        .backend_plan
+        .singleton_instances()
         .iter()
         .enumerate()
         .map(|(index, plan)| (nyar_singleton_export_name(plan), 0x00, first_new_function_index + index as u32))
@@ -98,7 +79,8 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
     wasm::append_wasm_exports(module, &exports);
 
     let bodies: Vec<Vec<u8>> = submission
-        .backend_plan.singleton_instances()
+        .backend_plan
+        .singleton_instances()
         .iter()
         .enumerate()
         .map(|(index, plan)| {
@@ -181,15 +163,3 @@ fn wasm_singleton_accessor_body(global_index: u32, is_lazy: bool, realloc_index:
     body.push(0x0B);
     body
 }
-
-
-
-
-
-
-
-
-
-
-
-

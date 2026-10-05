@@ -1,8 +1,8 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
 use crate::error::NyarRuntimeError;
-use nyar_gc::ObjectHeap;
 use nyar_bytecode::NyarImport;
+use nyar_gc::ObjectHeap;
 
 use crate::value::Value;
 
@@ -53,12 +53,8 @@ pub enum ResolvedImport {
 /// 将导入表项解析为 [`ResolvedImport`]（仅加载 / verify 期调用）。
 pub fn resolve_import(import: &NyarImport) -> Result<ResolvedImport, NyarRuntimeError> {
     if import.module_name == HOST_IMPORT_MODULE {
-        let op = parse_host_op(&import.symbol_name).ok_or_else(|| {
-            NyarRuntimeError::ModuleLoad(format!(
-                "unknown host import `{HOST_IMPORT_MODULE}::{}`",
-                import.symbol_name
-            ))
-        })?;
+        let op = parse_host_op(&import.symbol_name)
+            .ok_or_else(|| NyarRuntimeError::ModuleLoad(format!("unknown host import `{HOST_IMPORT_MODULE}::{}`", import.symbol_name)))?;
         Ok(ResolvedImport::Host(op))
     }
     else {
@@ -127,9 +123,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
                     });
                 }
                 None => {
-                    return Err(NyarRuntimeError::UnsupportedFeature(
-                        "begin_phase requires a phase name string argument".into(),
-                    ));
+                    return Err(NyarRuntimeError::UnsupportedFeature("begin_phase requires a phase name string argument".into()));
                 }
             };
             let pause_budget_ms = match args.get(1) {
@@ -153,10 +147,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let phase = match args.first() {
                 Some(Value::String(name)) => Some(name.as_str()),
                 Some(other) => {
-                    return Err(NyarRuntimeError::TypeMismatch {
-                        expected: "string phase name",
-                        actual: other.type_name().to_string(),
-                    });
+                    return Err(NyarRuntimeError::TypeMismatch { expected: "string phase name", actual: other.type_name().to_string() });
                 }
                 None => None,
             };
@@ -270,11 +261,8 @@ mod tests {
 
     #[test]
     fn resolves_non_host_as_external() {
-        let import = NyarImport {
-            kind: nyar_bytecode::NyarImportKind::Function,
-            module_name: "guest.mod".into(),
-            symbol_name: "whatever".into(),
-        };
+        let import =
+            NyarImport { kind: nyar_bytecode::NyarImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
         assert_eq!(resolve_import(&import).unwrap(), ResolvedImport::External);
     }
 }

@@ -45,7 +45,8 @@ pub(super) fn type_uses_gc_struct_param(
     if is_js_glue_host_string_type(ty) {
         return false;
     }
-    let Some(layout_id) = layout_id else {
+    let Some(layout_id) = layout_id
+    else {
         return false;
     };
     let Some(layout) = ctx.layout_by_id(layout_id)
@@ -83,16 +84,21 @@ pub(super) fn wasm_param_types(
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> Vec<u8> {
-    mir_fn.param_types.iter().enumerate().map(|(index, ty)| {
-        let layout_id = mir_fn
-            .blocks
-            .iter()
-            .find(|block| block.id == mir_fn.entry)
-            .and_then(|block| block.parameters.get(index))
-            .and_then(|value| mir_fn.value_layouts.get(value))
-            .copied();
-        wasm_param_value_type_for(ctx, ty, layout_id, gc_struct_type_indices, js_glue_utf8_as_anyref)
-    }).collect()
+    mir_fn
+        .param_types
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| {
+            let layout_id = mir_fn
+                .blocks
+                .iter()
+                .find(|block| block.id == mir_fn.entry)
+                .and_then(|block| block.parameters.get(index))
+                .and_then(|value| mir_fn.value_layouts.get(value))
+                .copied();
+            wasm_param_value_type_for(ctx, ty, layout_id, gc_struct_type_indices, js_glue_utf8_as_anyref)
+        })
+        .collect()
 }
 
 pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_anyref: bool) -> u8 {

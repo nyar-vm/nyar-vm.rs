@@ -4,10 +4,12 @@
 
 pub use self::{
     canonical_program::{
-        CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallee, CanonicalConstant, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperation,
-        CanonicalOperand, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CompiledProgram, CompiledProgramError, CompileStage, DiagnosticRecord, EvidenceRecord,
-        FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord, CanonicalPrimitiveType,
-        CanonicalTypeKind, NominalValueSemantics, CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, pipeline,
+        CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
+        CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperand,
+        CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
+        CompileStage, CompiledProgram, CompiledProgramError, DiagnosticRecord, EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord,
+        LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord,
+        pipeline,
     },
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     errors::{NyarError, NyarErrorKind},
@@ -18,10 +20,9 @@ pub use self::{
     },
     external_import::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, InternalCallEdge},
     layout::{
-        AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId,
-        SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR,
-        SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, StorageKind, SumTypeLayout, SumVariantLayout,
-        layout_key_for_nyar_type, nyar_type_layout_key_component,
+        AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR,
+        SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan,
+        StorageKind, SumTypeLayout, SumVariantLayout, layout_key_for_nyar_type, nyar_type_layout_key_component,
     },
     neutral_contract::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,
@@ -34,9 +35,8 @@ pub use self::{
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
         ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, OperatorFixity,
-        ValueIdentity,
-        OperatorId, OperatorRegistration, ProvenanceId, SemanticId, SubstitutionId, TypeId, TypeInstanceId, VariantId, builtin_attribute,
-        layout_choice,
+        OperatorId, OperatorRegistration, ProvenanceId, SemanticId, SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
+        builtin_attribute, layout_choice,
     },
     source::{Location, Position, SourceID, SourceSpan},
     symbols::{Identifier, NamePath, QualifiedName, SymbolIdentity},

@@ -206,7 +206,9 @@ mod tests {
 
         assert_eq!(cases.len(), 2);
         assert!(
-            cases.iter().all(|path| path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("demo")))
+            cases
+                .iter()
+                .all(|path| { path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("demo")) })
         );
     }
 }

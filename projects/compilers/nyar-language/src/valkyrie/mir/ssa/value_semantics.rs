@@ -19,8 +19,7 @@ use crate::{
 };
 
 pub use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout,
-    layout_key_for_nyar_type,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout, layout_key_for_nyar_type,
 };
 
 /// Physical storage class for aggregate values at lowering time.
@@ -265,7 +264,8 @@ fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStr
         }
         plan.type_name_to_layout.insert(qualified, layout.id);
         plan.layouts.push(layout);
-    } else {
+    }
+    else {
         register_layout(plan, layout);
     }
 }
@@ -410,7 +410,9 @@ fn type_layout_key_component(ty: &ValkyrieType) -> String {
         ValkyrieType::Utf8 => "utf8".to_string(),
         ValkyrieType::Utf16 => "utf16".to_string(),
         ValkyrieType::Tuple(types) => format!("tuple_{}", types.iter().map(type_layout_key_component).collect::<Vec<_>>().join("_")),
-        ValkyrieType::FixedArray { element, length } => format!("arr{length}_{}", type_layout_key_component(element)),
+        ValkyrieType::FixedArray { element, length } => {
+            format!("arr{length}_{}", type_layout_key_component(element))
+        }
         ValkyrieType::Array(inner) => format!("heaparr_{}", type_layout_key_component(inner)),
         _ => "ref".to_string(),
     }

@@ -1,4 +1,4 @@
-﻿use nyar_language::{
+use nyar_language::{
     ValkyrieCompiler,
     types::{SourceID, hir::HirParameterBindingKind},
 };

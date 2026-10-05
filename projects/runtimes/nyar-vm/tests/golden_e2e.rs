@@ -1,10 +1,9 @@
 //! End-to-end golden path: encode `.nyar` → load → execute.
 
-use nyar_vm::{NyarVm, Value};
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarLayout, NyarModuleData, NYAR_VERSION,
-    encode_module,
+    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarLayout, NyarModuleData, encode_module,
 };
+use nyar_vm::{NyarVm, Value};
 
 #[test]
 fn golden_const_add_return_roundtrip() {
@@ -61,13 +60,7 @@ fn golden_object_new_field_get_set_roundtrip() {
         version: NYAR_VERSION,
         name: "golden-layout".to_string(),
         constants: vec![NyarConstant::Integer32(42)],
-        functions: vec![NyarFunction {
-            name: "main".to_string(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
+        functions: vec![NyarFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
         imports: Vec::new(),
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),

@@ -8,12 +8,16 @@ pub mod compile_pipeline;
 pub mod control_flow;
 pub(crate) mod cst_format;
 pub mod derive;
+/// Oak 前端：唯一文本事实源与 AST 类型出口。
+pub mod frontend;
 pub mod frontend_contract;
 pub mod highlight;
 pub mod hir;
 pub mod meta_reactive;
 pub mod mir;
 pub mod module;
+/// Valkyrie 文本解析入口（委托 `frontend`）。
+pub mod parser;
 pub(crate) mod source_format;
 pub(crate) mod symbols;
 pub mod type_checker;
@@ -24,14 +28,9 @@ pub mod typing;
 /// 跨 HIR 与 Semantic MIR 的编译器一致性校验入口。
 pub mod validation;
 
-pub(crate) use assembly::{
-    AssembledFragment, build_output_surface_counts,
-    assemble_fragment,
-    plan_artifacts_from_compiled_program,
-};
+pub(crate) use assembly::{AssembledFragment, assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
 pub use frontend_contract::{
-    ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
-    concretize_type, concretize_type_lossy,
+    ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,
 };
 pub use hir::{CaptureAnalyzer, function_body_contains_yield, *};
 pub use mir::{
@@ -40,6 +39,6 @@ pub use mir::{
 };
 pub use nyar::{
     self, ArtifactKind, ArtifactPartitionPlan, ArtifactPolicy, ArtifactSet, CanonicalAbi, CanonicalArch, CanonicalSpecification,
-    CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary,
-    ProgramFacts, PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
+    CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary, ProgramFacts,
+    PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
 };

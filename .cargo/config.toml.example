@@ -1,0 +1,11 @@
+# 复制到 `.cargo/config.toml`（该目录已在 .gitignore 中）。
+# CI 与未配置 patch 的环境直接使用根 `Cargo.toml` 里的 git 依赖。
+
+[registries.crates-io]
+protocol = "sparse"
+
+[patch."https://github.com/yggdrasil-language/oak.rs"]
+oak-core = { path = "../oaks/projects/oak-core" }
+oak-dejavu = { path = "../oaks/examples/oak-dejavu" }
+oak-macros = { path = "../oaks/projects/oak-macros" }
+oak-valkyrie = { path = "../oaks/examples/oak-valkyrie" }

@@ -1,8 +1,8 @@
 #![doc = include_str!("readme.md")]
 
 pub mod context;
-pub mod export_spec;
 pub mod r#enum;
+pub mod export_spec;
 pub mod expr;
 pub mod function;
 pub mod identifier;
@@ -20,11 +20,10 @@ pub mod widget;
 pub use types::{AccessLevel, *};
 
 pub use context::RenameContext;
-pub use export_spec::{
-    HirExportSpec, parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id,
-    snake_case_to_camel_case,
-};
 pub use r#enum::{HirEnum, HirFlagMember, HirFlags, HirVariant};
+pub use export_spec::{
+    HirExportSpec, parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id, snake_case_to_camel_case,
+};
 pub use expr::{
     CaptureMode, CaptureStorage, HirCallArgument, HirCallKind, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall,
     hir_call_arg_values,

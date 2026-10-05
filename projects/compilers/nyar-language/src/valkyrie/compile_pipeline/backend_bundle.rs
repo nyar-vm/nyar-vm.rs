@@ -9,8 +9,10 @@ use emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 use miette::{Result, miette};
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, TargetBackendFamily};
 
-use crate::{CompilerSourceGroup, ValkyrieCompiler};
-use crate::valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
+use crate::{
+    CompilerSourceGroup, ValkyrieCompiler,
+    valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
+};
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
@@ -24,7 +26,6 @@ impl CompilerBuildBundle {
     fn surface_counts(&self) -> (usize, usize) {
         build_output_surface_counts(&self.compiled_program)
     }
-
 }
 
 /// 从 Resolver 提供的源码组生产唯一目标 bundle。
@@ -44,9 +45,8 @@ fn compile_source_groups_to_backend_bundle(
             group
         })
         .collect::<Vec<_>>();
-    let compiled_program = compiler
-        .compile_source_groups_to_program(&groups)
-        .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
+    let compiled_program =
+        compiler.compile_source_groups_to_program(&groups).map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, target, clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
     let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind };
@@ -67,21 +67,8 @@ pub fn compile_source_groups_to_artifacts(
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<emitter::DriverCompileReport> {
-    let bundle = compile_source_groups_to_backend_bundle(
-        compiler,
-        groups,
-        arch,
-        target,
-        clr_suspend_strategy,
-        wasm_package_kind,
-    )?;
-    emitter::compile_frontend_bundle_with_bundled_backends(
-        &bundle,
-        output_dir,
-        project_name,
-        emit_wat_sidecar,
-        generate_runtime_config,
-    )
+    let bundle = compile_source_groups_to_backend_bundle(compiler, groups, arch, target, clr_suspend_strategy, wasm_package_kind)?;
+    emitter::compile_frontend_bundle_with_bundled_backends(&bundle, output_dir, project_name, emit_wat_sidecar, generate_runtime_config)
 }
 
 fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
@@ -153,7 +140,8 @@ fn preprocess_target_templates(source: &str, arch: &str) -> String {
     let mut result = String::with_capacity(source.len());
     let mut pos = 0;
     while pos < source.len() {
-        let Some(rel) = source[pos..].find("<% match ") else {
+        let Some(rel) = source[pos..].find("<% match ")
+        else {
             result.push_str(&source[pos..]);
             break;
         };
@@ -191,12 +179,7 @@ fn select_arch_match_body<'a>(
             return &arm.body;
         }
     }
-    match_node
-        .arms
-        .iter()
-        .find(|arm| arm.pattern.is_none())
-        .map(|arm| arm.body.as_slice())
-        .unwrap_or(&[])
+    match_node.arms.iter().find(|arm| arm.pattern.is_none()).map(|arm| arm.body.as_slice()).unwrap_or(&[])
 }
 
 fn normalize_case_pattern(pattern: &str) -> String {

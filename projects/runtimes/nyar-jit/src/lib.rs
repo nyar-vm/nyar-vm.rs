@@ -20,15 +20,14 @@ pub use assumption::{JitAssumption, baseline_scalar_assumptions};
 pub use baseline_scalar::{BaselineScalarJit, match_scalar_program};
 pub use compiler::{DisabledJit, JitCompiler, StackMapJit};
 pub use deopt::{
-    DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, InlineFrameSpec, RestoredInterpreterFrame, RestoredLocal,
-    build_baseline_deopt_map, build_inline_deopt_map, materialize_interpreter_frames,
+    DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, InlineFrameSpec, RestoredInterpreterFrame, RestoredLocal, build_baseline_deopt_map,
+    build_inline_deopt_map, materialize_interpreter_frames,
 };
 pub use error::JitError;
 pub use machine_code::{
-    I32Binop, I32Cmp, IMM_ON_LEFT, IMM_ON_RIGHT, MACHINE_CODE_MAGIC, MachineCodeError, SELECT_ELSE_IMM,
-    SELECT_THEN_IMM, ScalarProgram, SelectArm, decode_scalar_program, encode_ret_const_i32,
-    encode_ret_i32_add_locals, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
-    encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
+    I32Binop, I32Cmp, IMM_ON_LEFT, IMM_ON_RIGHT, MACHINE_CODE_MAGIC, MachineCodeError, SELECT_ELSE_IMM, SELECT_THEN_IMM, ScalarProgram,
+    SelectArm, decode_scalar_program, encode_ret_const_i32, encode_ret_i32_add_locals, encode_ret_i32_binop_imm_local,
+    encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
     encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
 };
 pub use request::{JitCompileRequest, JitFunctionSpec};

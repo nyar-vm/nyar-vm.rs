@@ -4,11 +4,10 @@
 //! for `Yield`, `Resume`, and `PerformEffect` form a coherent suspend/resume pipeline,
 //! independent of any emitter-side lowering path.
 
-use nyar_vm::{NyarVm, Value};
 use nyar_bytecode::{
-    NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, NYAR_VERSION, emit_imm1, emit_plain,
-    encode_module,
+    NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, emit_imm1, emit_plain, encode_module,
 };
+use nyar_vm::{NyarVm, Value};
 
 /// Builds a module with two functions: a generator `gen` that yields once then returns the
 /// resumed value, and `main` that calls `gen`, stores the resulting coroutine, then resumes
@@ -185,10 +184,14 @@ fn resuming_a_completed_coroutine_is_rejected() {
     let result = vm.run(&loaded, "main", Vec::new());
 
     match result {
-        Err(nyar_vm::NyarRuntimeError::TypeMismatch { expected, actual }) if expected == "active coroutine" && actual == "completed coroutine" => {
+        Err(nyar_vm::NyarRuntimeError::TypeMismatch { expected, actual })
+            if expected == "active coroutine" && actual == "completed coroutine" =>
+        {
             // expected: Resume handler rejected the second resume because `done == true`
         }
-        other => panic!("expected TypeMismatch(active coroutine vs completed coroutine), got {other:?}"),
+        other => {
+            panic!("expected TypeMismatch(active coroutine vs completed coroutine), got {other:?}")
+        }
     }
 }
 
