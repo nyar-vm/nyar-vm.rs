@@ -214,19 +214,6 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
 
-    /// Unite sum `FieldGet` 快捷路径，与 CLR `try_emit_unite_tagged_payload_get` 同构?
-    ///
-    /// unite sum ?wasm-gc structtype 固定?`[i32 tag, anyref payload]`?
-    /// MIR 仍使?Fine/Fail 的语义字段名（`"tag"` / `"payload"` / `"value"` / `"error"`），
-    /// 这些名字不在聚合布局?fields 列表中，?FieldGet 路径?return，导?output 无赋值?
-    ///
-    /// 降低规则（void≠unit 约束）：
-    /// - `"tag"` →?struct.get field 0 →?i32（discriminant?
-    /// - `"payload"` / `"value"` / `"error"` →?struct.get field 1 →?anyref?
-    ///   ?MIR 输出类型为标量（utf8/bool/i32），再从 `[i32]` box 解箱?
-    // Sum 的字段快捷路径已删除。Semantic MIR 尚未携带完整 sum identity，
-    // 后端不得把字段名解释成 tag 或 payload。
-
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
     fn emit_box_i64_payload(&mut self, operand: &MirOperand) {
         let box_ty = self.gc_i64_box_type_index;

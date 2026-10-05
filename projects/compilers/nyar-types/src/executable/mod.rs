@@ -247,7 +247,7 @@ pub enum InstructionKind {
     },
     /// Test whether a sum value is currently the given declared variant.
     ///
-    /// Carries the same `NominalInstanceKey` as [`Self::SumNew`] / [`Self::SumPayloadGet`].
+    /// Carries the same nominal identity as [`Self::SumNew`] / [`Self::SumPayloadGet`].
     /// Must not be lowered as a field named `tag` discovered from a physical carrier.
     SumVariantIs {
         /// 已冻结的 sum 名义实例身份。
