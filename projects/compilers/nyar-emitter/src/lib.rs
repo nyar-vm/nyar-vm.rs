@@ -33,7 +33,7 @@ use nyar::{
     TargetProfile, TheoryBundle, VmSuspendStrategy, WitnessCallEdge, WitnessSubmission, backends::CompilationOptions, packaging::ArtifactSet,
     suspend_consumption_model_for_lane,
 };
-use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan, SumTypeLayout};
+use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
@@ -576,10 +576,6 @@ pub struct FragmentSubmission {
     pub aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
     /// Compiler 已绑定的完整类型身份到物理布局身份映射。
     pub aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
-    /// Compiler 已声明的 nominal variant 身份集合。
-    pub sum_variant_ids: std::collections::BTreeSet<(nyar_types::NominalInstanceId, nyar_types::VariantId)>,
-    /// Sum type discriminant layouts。
-    pub sum_types: Vec<SumTypeLayout>,
     /// Flags bitmask layouts。
     pub flags_types: Vec<FlagsLayout>,
     /// 已完成语义闭包与表示合同的目标私有计划。
@@ -625,8 +621,6 @@ impl Default for FragmentSubmission {
             aggregate_layout_by_nominal: BTreeMap::new(),
             aggregate_layout_by_field: BTreeMap::new(),
             aggregate_layout_by_type: BTreeMap::new(),
-            sum_variant_ids: std::collections::BTreeSet::new(),
-            sum_types: Vec::new(),
             flags_types: Vec::new(),
             backend_plan: Arc::new(BackendPrivatePlan::default()),
             singleton_instances: Vec::new(),

@@ -22,6 +22,7 @@ pub struct BackendPrivatePlan {
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
+    sum_reps: BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation>,
 }
 
 /// 已由 Compiler 绑定身份、签名和链接合同的导入。
@@ -87,7 +88,7 @@ impl BackendPrivatePlan {
             pending.extend(callees);
             functions.insert(instance, lowered);
         }
-        Ok(Self { functions, abi_names, imports })
+        Ok(Self { functions, abi_names, imports, sum_reps: program.representation().sum_reps.clone() })
     }
 
     pub fn imports(&self) -> &BTreeMap<ItemInstanceId, BackendImport> {
@@ -108,6 +109,10 @@ impl BackendPrivatePlan {
 
     pub fn suspend_metadata(&self, instance: ItemInstanceId) -> Option<SuspendMetadataView> {
         self.functions.get(&instance).and_then(SuspendMetadataView::from_function)
+    }
+
+    pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
+        &self.sum_reps
     }
 }
 

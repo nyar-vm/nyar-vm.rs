@@ -150,7 +150,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
             }
             if let ExecutableInstructionKind::SumNew { nominal, variant, .. } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                if !submission.sum_variant_ids.contains(&(*nominal, *variant)) {
+                if !submission.backend_plan.sum_representations().get(nominal).is_some_and(|sum| sum.variants.contains_key(variant)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -162,7 +162,7 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
             }
             if let ExecutableInstructionKind::SumPayloadGet { nominal, variant, object } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                if !submission.sum_variant_ids.contains(&(*nominal, *variant)) {
+                if !submission.backend_plan.sum_representations().get(nominal).is_some_and(|sum| sum.variants.contains_key(variant)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
@@ -501,32 +501,23 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
 }
 
 fn validate_nominal_sums(submission: &FragmentSubmission) -> Result<(), SemanticMirContractError> {
-    let mut nominal_ids = std::collections::BTreeSet::new();
-    let mut variant_ids = std::collections::BTreeSet::new();
-    for sum in &submission.sum_types {
-        if !nominal_ids.insert(sum.nominal) || sum.variants.is_empty() || sum.tag_width == 0 {
+    for (nominal, sum) in submission.backend_plan.sum_representations() {
+        if *nominal != sum.nominal || sum.variants.is_empty() || sum.tag_width == 0 {
             return Err(SemanticMirContractError {
                 code: "SMIR006",
-                function: sum.name.clone(),
+                function: format!("{nominal:?}"),
                 location: "sum layout".to_string(),
-                detail: "nominal sum layout requires a name, tag width, and at least one variant".to_string(),
+                detail: "nominal sum layout requires identity, tag width, and at least one variant".to_string(),
             });
         }
-        for (index, variant) in sum.variants.iter().enumerate() {
-            if !variant_ids.insert((sum.nominal, variant.id)) {
+        let mut tags = std::collections::BTreeSet::new();
+        for variant in sum.variants.values() {
+            if !tags.insert(variant.tag) {
                 return Err(SemanticMirContractError {
                     code: "SMIR006",
-                    function: sum.name.clone(),
+                    function: format!("{nominal:?}"),
                     location: "sum variant".to_string(),
-                    detail: format!("nominal sum variant {index} has no name"),
-                });
-            }
-            if sum.variants[..index].iter().any(|prior| prior.id == variant.id || prior.tag == variant.tag) {
-                return Err(SemanticMirContractError {
-                    code: "SMIR006",
-                    function: sum.name.clone(),
-                    location: "sum variant".to_string(),
-                    detail: format!("nominal sum variant {} duplicates a prior name or tag", variant.name),
+                    detail: "nominal sum variant tag is duplicated".to_string(),
                 });
             }
         }
