@@ -141,7 +141,9 @@ fn same_struct_contract(left: &MirStruct, right: &MirStruct) -> bool {
 }
 
 fn same_sum_contract(left: &MirSumDeclaration, right: &MirSumDeclaration) -> bool {
-    left.name == right.name
+    left.declaration.is_some()
+        && left.declaration == right.declaration
+        && left.name == right.name
         && left.is_unite == right.is_unite
         && left.generics == right.generics
         && left.variants.iter().map(|variant| (&variant.name, variant.tag, &variant.result_type, variant.fields.iter().map(|field| (&field.name, &field.ty)).collect::<Vec<_>>()))
@@ -184,7 +186,9 @@ fn freeze_aggregate_identities(
             }
         }
         for declaration in &module.sum_types {
-            if let Some(existing) = global_sums.iter().find(|existing| existing.name == declaration.name) {
+            if let Some(existing) = global_sums.iter().find(|existing| {
+                existing.declaration.is_some() && existing.declaration == declaration.declaration
+            }) {
                 if !same_sum_contract(existing, declaration) {
                     return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
                 }
