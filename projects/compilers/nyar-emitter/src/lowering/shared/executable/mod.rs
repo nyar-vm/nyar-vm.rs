@@ -50,21 +50,12 @@ impl<'a> ExecutableLoweringContext<'a> {
         Some((layout, field_layout, *slot))
     }
 
-    pub fn layout_by_type_name(&self, name: &str) -> Option<&AggregateLayout> {
-        self.layouts.type_name_to_layout.get(name).and_then(|id| self.layout_by_id(*id))
-    }
-
-
     pub fn field_layout(&self, layout_id: LayoutId, field: &str) -> Option<&FieldLayout> {
         self.layout_by_id(layout_id).and_then(|layout| layout.fields.iter().find(|item| item.name == field))
     }
 
     pub fn is_value_type_name(&self, name: &str) -> bool {
         self.layouts.value_type_names.contains(name)
-    }
-
-    pub fn layout_for_value_type(&self, ty: &NyarType) -> Option<&AggregateLayout> {
-        nyar_types::layout_key_for_nyar_type(ty).and_then(|key| self.layout_by_type_name(&key))
     }
 
     pub fn storage_for_type(&self, ty: &NyarType) -> ExecutableStorageKind {
