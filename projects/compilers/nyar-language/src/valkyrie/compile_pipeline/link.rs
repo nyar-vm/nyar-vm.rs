@@ -116,10 +116,23 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
                 }
                 continue;
             }
+            let qualified = qualified_layout_name(layout);
+            if let Some(&existing_id) = merged.type_name_to_layout.get(&qualified) {
+                let existing = merged.layouts.iter().find(|candidate| candidate.id == existing_id);
+                if let Some(existing) = existing {
+                    if existing.storage == layout.storage
+                        && existing.size == layout.size
+                        && existing.align == layout.align
+                        && existing.fields == layout.fields
+                    {
+                        continue;
+                    }
+                    return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", qualified)));
+                }
+            }
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
             copied.id = new_id;
-            let qualified = qualified_layout_name(&copied);
             if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
                 return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
             }

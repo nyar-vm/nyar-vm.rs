@@ -450,12 +450,43 @@ fn lower_call_expression(
         .map(|arg| HirCallArgument::positional(lower_term_expression_with_context(arg, source_id, fallback_span.clone(), false)))
         .collect();
     if let TermExpression::DotCall { receiver, field, .. } = callee {
-        let mut method_args =
-            vec![HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, fallback_span.clone(), false))];
-        method_args.extend(lowered_args);
-        return lower_method_call_kind(field.name.as_str(), method_args, span);
+        if receiver_names_static_type(receiver) {
+            let mut parts = receiver_name_path_parts(receiver);
+            parts.push(Identifier::new(&field.name));
+            let callee_expr = HirExpr {
+                kind: HirExprKind::Path(NamePath::new(parts)),
+                span: span.clone(),
+            };
+            return lower_canonical_call_arguments(callee_expr, lowered_args);
+        }
+        let object = lower_term_expression_with_context(receiver, source_id, fallback_span.clone(), false);
+        let callee_expr = HirExpr {
+            kind: HirExprKind::FieldAccess {
+                object: Box::new(object),
+                field: Identifier::new(&field.name),
+            },
+            span: span.clone(),
+        };
+        return lower_canonical_call_arguments(callee_expr, lowered_args);
     }
     lower_canonical_call_arguments(lower_term_expression_with_context(callee, source_id, fallback_span, true), lowered_args)
+}
+
+fn receiver_names_static_type(receiver: &TermExpression) -> bool {
+    match receiver {
+        TermExpression::NamePath(path) => path
+            .parts
+            .first()
+            .is_some_and(|part| part.name.chars().next().is_some_and(|ch| ch.is_ascii_uppercase())),
+        _ => false,
+    }
+}
+
+fn receiver_name_path_parts(receiver: &TermExpression) -> Vec<Identifier> {
+    match receiver {
+        TermExpression::NamePath(path) => path.parts.iter().map(|part| Identifier::new(&part.name)).collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn lower_method_call_kind(member: &str, args: Vec<HirCallArgument>, span: SourceSpan) -> HirExprKind {
