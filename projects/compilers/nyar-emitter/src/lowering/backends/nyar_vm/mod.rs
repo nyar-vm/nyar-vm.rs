@@ -10,7 +10,7 @@ pub(crate) fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> 
     }
 
     if !submission.backend_plan.instances().is_empty() {
-        return Ok(super::nyar_vm_mir::lower_fragment_mir_to_nyar_module(submission));
+        return super::nyar_vm_mir::lower_fragment_mir_to_nyar_module(submission);
     }
     Err(miette::miette!("Nyar VM backend requires Compiler-owned executable functions; edge-based semantic replay is not a valid input"))
 }

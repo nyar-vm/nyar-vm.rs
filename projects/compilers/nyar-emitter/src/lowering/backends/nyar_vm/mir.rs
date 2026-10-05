@@ -21,6 +21,7 @@ use super::{
     executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
 };
 use crate::{BackendPrivatePlan, FragmentSubmission};
+use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
@@ -116,7 +117,16 @@ impl<'a> BytecodeEmitter<'a> {
 }
 
 /// Lower MIR-backed fragment operations into a `.nyar` module.
-pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> NyarModuleData {
+pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
+    for instance in submission.backend_plan.instances() {
+        let Some(view) = submission.backend_plan.get_function(&instance) else { continue; };
+        if view.function.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(
+            &instruction.kind,
+            MirInstructionKind::SumNew { .. } | MirInstructionKind::SumPayloadGet { .. } | MirInstructionKind::SumVariantIs { .. }
+        )) {
+            return Err(miette::miette!("Nyar backend requires a typed sum representation plan; semantic sum operation has no target contract"));
+        }
+    }
     let mut module = NyarModuleData {
         version: NYAR_VERSION,
         name: format!("{}__{}", super::sanitize_symbol(&submission.module_name), super::sanitize_symbol(submission.fragment_id.as_str())),
@@ -191,7 +201,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         }
     }
 
-    module
+    Ok(module)
 }
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
@@ -434,38 +444,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_call_intrinsic(IntrinsicId::ArrayLen, 1);
                 if let Some(output) = output {
                     self.store_to_local(output);
-                }
-            }
-            MirInstructionKind::SumNew { variant, payload, .. } => {
-                // Option / 名义 sum 的最小 ABI：Some(payload) 直接传 payload；None → Null（Const 0 占位，由后续 SumVariantIs 区分前需扩展）。
-                // 与 SumPayloadGet 成对：先保证 unwrap 链可读，再演进带 tag 的布局。
-                if let Some(payload) = payload {
-                    self.emit_call_operand(payload);
-                } else {
-                    self.emitter.emit_const_i32(0);
-                }
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                } else {
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
-                }
-            }
-            MirInstructionKind::SumPayloadGet { object, .. } => {
-                // 与上方 Some 直通 ABI 对齐：payload 即 receiver。
-                self.emit_call_operand(object);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-            }
-            MirInstructionKind::SumVariantIs { object, .. } => {
-                // 直通 ABI：None 为 i32(0)；Some 为非 0 / 对象。`is_some` ≈ 非零。
-                self.emit_call_operand(object);
-                self.emitter.emit_const_i32(0);
-                self.emitter.emit_plain(NyarHeadCode::I32Ne);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                } else {
-                    self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
             _ => {}
