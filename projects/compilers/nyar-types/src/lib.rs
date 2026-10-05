@@ -20,7 +20,7 @@ pub use self::{
     layout::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId,
         SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR,
-        SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, StorageKind, SumTypeLayout, SumVariantLayout, layout_id_for_nyar_type,
+        SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, StorageKind, SumTypeLayout, SumVariantLayout,
         layout_key_for_nyar_type, nyar_type_layout_key_component,
     },
     neutral_contract::{

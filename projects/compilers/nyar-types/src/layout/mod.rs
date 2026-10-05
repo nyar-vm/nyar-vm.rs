@@ -195,11 +195,6 @@ pub fn layout_key_for_nyar_type(ty: &NyarType) -> Option<String> {
     }
 }
 
-/// Resolve layout id from a platform [`NyarType`].
-pub fn layout_id_for_nyar_type(ty: &NyarType, plan: &AggregateLayoutPlan) -> Option<LayoutId> {
-    layout_key_for_nyar_type(ty).and_then(|key| plan.type_name_to_layout.get(&key).copied())
-}
-
 /// Stable component string used inside synthetic layout keys.
 pub fn nyar_type_layout_key_component(ty: &NyarType) -> String {
     match ty {

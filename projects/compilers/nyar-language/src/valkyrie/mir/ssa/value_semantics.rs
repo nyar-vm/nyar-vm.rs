@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout, layout_id_for_nyar_type,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout,
     layout_key_for_nyar_type,
 };
 
