@@ -194,11 +194,15 @@ pub enum InstructionKind {
     },
     /// Construct a tuple.
     TupleNew {
+        /// 编译器已验证的完整 tuple 布局身份。
+        layout_id: crate::LayoutId,
         /// 元素值；arity / 类型来自结果 `TypeId`。
         fields: Vec<Operand>,
     },
     /// Copy an aggregate by layout.
     AggregateCopy {
+        /// 编译器已验证的源/目标聚合布局身份。
+        layout_id: crate::LayoutId,
         /// Source aggregate.
         source: Operand,
         /// Destination aggregate.
@@ -271,6 +275,8 @@ pub enum InstructionKind {
     },
     /// Construct language array from a complete element sequence (replaces FixedArrayNew/ArrayLiteral).
     ArrayFromElements {
+        /// 编译器已验证的完整固定数组布局身份。
+        layout_id: crate::LayoutId,
         /// Full array type; fixed length lives in the type, not a parallel `usize`.
         array_type: NyarType,
         /// Element values in evaluation order already sequenced by SSA/CFG.

@@ -149,7 +149,7 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
             Ok(Instruction {
                 id: instruction.id,
                 results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
-                kind: lower_operation(canonical, instruction, &mut callees)?,
+                kind: lower_operation(canonical, function, instruction, &mut callees)?,
                 provenance: nyar_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| miette!("指令 identity 溢出"))?,
             })
         }).collect::<Result<Vec<_>>>()?;
@@ -171,8 +171,28 @@ fn lower_function(program: &CompiledProgram, function: &nyar_types::CanonicalFun
     }, callees))
 }
 
-fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::CanonicalInstruction, callees: &mut Vec<ItemInstanceId>) -> Result<InstructionKind> {
+fn lower_operation(
+    program: &CanonicalProgram,
+    function: &nyar_types::CanonicalFunction,
+    instruction: &nyar_types::CanonicalInstruction,
+    callees: &mut Vec<ItemInstanceId>,
+) -> Result<InstructionKind> {
     let value = |id: nyar_types::MirValueId| Operand::Value(ValueRef(id.index()));
+    let layout_for_type = |type_id: nyar_types::TypeId, operation: &str| {
+        program
+            .linked
+            .aggregate_layout_by_type
+            .get(&type_id)
+            .copied()
+            .ok_or_else(|| miette!("{operation} 缺少编译器绑定的布局身份: {type_id:?}"))
+    };
+    let value_type = |value: nyar_types::MirValueId| {
+        function
+            .value_types
+            .get(&value)
+            .copied()
+            .ok_or_else(|| miette!("聚合值 `{value:?}` 缺少 Semantic MIR 类型事实"))
+    };
     Ok(match &instruction.operation {
         CanonicalOperation::Invoke { callee: CanonicalCallee::Item(instance), arguments } => {
             if !program.linked.item_instances.contains_key(instance) {
@@ -183,7 +203,18 @@ fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::Canonic
         }
         CanonicalOperation::Invoke { callee: CanonicalCallee::Value(callee), arguments } => InstructionKind::Call { callee: value(*callee), arguments: arguments.iter().map(|id| value(*id)).collect() },
         CanonicalOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
-        CanonicalOperation::AggregateCopy { source, destination } => InstructionKind::AggregateCopy { source: value(*source), dest: value(*destination) },
+        CanonicalOperation::AggregateCopy { source, destination } => {
+            let source_type = value_type(*source)?;
+            let destination_type = value_type(*destination)?;
+            if source_type != destination_type {
+                return Err(miette!("AggregateCopy 源与目标类型不一致: {source_type:?} != {destination_type:?}"));
+            }
+            InstructionKind::AggregateCopy {
+                layout_id: layout_for_type(source_type, "AggregateCopy")?,
+                source: value(*source),
+                dest: value(*destination),
+            }
+        }
         CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
         CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
         CanonicalOperation::ArraySet { array, index, value: stored } => InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) },
@@ -194,8 +225,25 @@ fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::Canonic
                 CanonicalArrayInitialization::Fill(fill) => nyar_types::ArrayInitialization::Fill(value(*fill)),
             },
         },
-        CanonicalOperation::ArrayFromElements { array_type, elements } => InstructionKind::ArrayFromElements { array_type: lower_type(program, *array_type)?, elements: elements.iter().map(|id| value(*id)).collect() },
-        CanonicalOperation::TupleNew { fields, .. } => InstructionKind::TupleNew { fields: fields.iter().map(|id| value(*id)).collect() },
+        CanonicalOperation::ArrayFromElements { array_type, elements } => InstructionKind::ArrayFromElements {
+            layout_id: layout_for_type(*array_type, "ArrayFromElements")?,
+            array_type: lower_type(program, *array_type)?,
+            elements: elements.iter().map(|id| value(*id)).collect(),
+        },
+        CanonicalOperation::TupleNew { fields, element_types } => {
+            let result = instruction.results.first().copied().ok_or_else(|| miette!("TupleNew 缺少结果值"))?;
+            let result_type = value_type(result)?;
+            if !matches!(program.linked.types.get(&result_type).map(|row| &row.kind), Some(nyar_types::CanonicalTypeKind::Tuple(_))) {
+                return Err(miette!("TupleNew 结果不是 tuple 类型: {result_type:?}"));
+            }
+            if fields.len() != element_types.len() {
+                return Err(miette!("TupleNew 元素合同长度不一致"));
+            }
+            InstructionKind::TupleNew {
+                layout_id: layout_for_type(result_type, "TupleNew")?,
+                fields: fields.iter().map(|id| value(*id)).collect(),
+            }
+        }
         CanonicalOperation::StructNew { nominal, fields } => InstructionKind::StructNew {
             nominal: *nominal,
             fields: fields.iter().map(|(field, id)| (*field, value(*id))).collect(),

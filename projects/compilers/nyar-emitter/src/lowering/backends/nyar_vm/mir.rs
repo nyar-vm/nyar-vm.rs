@@ -336,12 +336,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
-            MirInstructionKind::TupleNew { fields } => {
-                let layout = self.resolve_layout(None, "__tuple");
-                let layout_index = match &layout {
-                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
-                    None => self.ensure_nyar_layout_count(fields.len() as i32),
-                };
+            MirInstructionKind::TupleNew { layout_id, fields } => {
+                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar tuple 布局身份缺少布局合同: {layout_id:?}"));
+                let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("TupleNew must produce an output");
                 self.store_to_local(output);
@@ -351,15 +348,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
-            MirInstructionKind::ArrayFromElements { elements, .. } => {
+            MirInstructionKind::ArrayFromElements { layout_id, elements, .. } => {
                 let Some(output) = output else {
                     return;
                 };
-                let layout = self.resolve_layout(None, "__fixedarray");
-                let layout_index = match &layout {
-                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
-                    None => self.ensure_nyar_layout_count(elements.len() as i32),
-                };
+                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar fixed-array 布局身份缺少布局合同: {layout_id:?}"));
+                let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
@@ -368,13 +362,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
             }
-            MirInstructionKind::AggregateCopy { source, dest } => {
-                let layout = self.infer_layout_for_operand(source);
-                let field_count = layout.as_ref().map(|item| item.fields.len() as i32).unwrap_or(0);
-                let layout_index = match &layout {
-                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
-                    None => self.ensure_nyar_layout_count(field_count),
-                };
+            MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
+                let layout = self.ctx.layout_by_id(*layout_id).cloned().unwrap_or_else(|| panic!("Nyar aggregate-copy 布局身份缺少布局合同: {layout_id:?}"));
+                let field_count = layout.fields.len() as i32;
+                let layout_index = self.ensure_nyar_layout(&layout);
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 if let MirOperand::Value(dest_value) = dest {
                     self.store_to_local(*dest_value);
@@ -599,25 +590,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         false
     }
 
-    /// 解析聚合 layout：优先 layout_id，否则回退 type_name。
-    fn resolve_layout(&self, layout_id: Option<LayoutId>, type_name: &str) -> Option<AggregateLayout> {
-        layout_id.and_then(|id| self.ctx.layout_by_id(id).cloned()).or_else(|| self.ctx.layout_by_type_name(type_name).cloned())
-    }
-
-    fn infer_layout_for_operand(&self, operand: &MirOperand) -> Option<AggregateLayout> {
-        match operand {
-            MirOperand::Value(value) => self
-                .mir_fn
-                .value_types
-                .get(value)
-                .and_then(|ty| match ty {
-                    NyarType::Named(name) => self.ctx.layout_by_type_name(name.as_str()).cloned(),
-                    _ => None,
-                }),
-            _ => None,
-        }
-    }
-
     fn nyar_field_slot(&self, field: nyar_types::FieldId) -> i32 {
         self.ctx.submission.aggregate_layout_by_field.get(&field).map(|(_, slot)| *slot as i32).unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
     }
@@ -629,12 +601,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         let index = self.layouts.len() as i32;
         self.layouts.push(NyarLayout { field_count: aggregate.fields.len() as i32 });
         self.layout_index_by_id.insert(aggregate.id, index);
-        index
-    }
-
-    fn ensure_nyar_layout_count(&mut self, field_count: i32) -> i32 {
-        let index = self.layouts.len() as i32;
-        self.layouts.push(NyarLayout { field_count });
         index
     }
 

@@ -1526,15 +1526,12 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            MirInstructionKind::TupleNew { fields, .. } => {
+            MirInstructionKind::TupleNew { layout_id, fields } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
                     return;
                 };
-                let Some(layout) = instruction_primary_result(instruction)
-                    .and_then(|out| self.mir_fn.value_types.get(&out))
-                    .and_then(|ty| self.ctx.layout_for_value_type(ty))
-                    .cloned()
+                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
                 else {
                     eprintln!("[wasm::mir] TupleNew missing layout from result type in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
@@ -1594,7 +1591,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            MirInstructionKind::ArrayFromElements { array_type, elements } => {
+            MirInstructionKind::ArrayFromElements { layout_id, array_type, elements } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
                     return;
@@ -1607,7 +1604,7 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 if matches!(array_type, NyarType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
-                    if let Some(layout) = self.ctx.layout_for_value_type(array_type).cloned() {
+                    if let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() {
                         let Some(&local) = self.value_locals.get(&output)
                         else {
                             return;
@@ -1648,11 +1645,9 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_array_new_fixed(type_index, elements.len() as u32);
                 self.emit_local_set(local);
             }
-            MirInstructionKind::AggregateCopy { source, dest } => {
-                let Some(layout) =
-                    self.infer_aggregate_layout_for_operand(source).or_else(|| self.infer_aggregate_layout_for_operand(dest)).cloned()
-                else {
-                    eprintln!("[wasm::mir] AggregateCopy missing layout in `{}`", self.mir_fn.symbol);
+            MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
+                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() else {
+                    eprintln!("[wasm::mir] AggregateCopy layout identity is not registered in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
                     return;
                 };
