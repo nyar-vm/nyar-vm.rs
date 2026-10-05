@@ -96,14 +96,11 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
     let mut merged = consumer.aggregate_layouts.clone();
     for module in dependencies {
         for layout in &module.aggregate_layouts.layouts {
-            if let Some(existing) = merged.layouts.iter().find(|candidate| candidate.name == layout.name && candidate.namespace == layout.namespace) {
-                let owner = layout_owner(module, layout);
-                let existing_owner = layout_owner(consumer, existing).or_else(|| {
-                    dependencies.iter().find_map(|dependency| layout_owner(dependency, existing))
-                });
-                if owner.is_none() || existing_owner.is_none() || owner != existing_owner {
-                    return Err(ParseError::invalid(format!("布局 `{}` 缺少一致的声明 identity", qualified_layout_name(layout))));
-                }
+            let owner = declaration_for_layout(module, layout);
+            let existing = owner
+                .and_then(|item| merged.declaration_to_layout.get(&item).copied())
+                .and_then(|id| merged.layouts.iter().find(|candidate| candidate.id == id));
+            if let Some(existing) = existing {
                 if existing.storage != layout.storage
                     || existing.size != layout.size
                     || existing.align != layout.align
@@ -123,19 +120,20 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
             if copied.storage == nyar_types::layout::StorageKind::Value {
                 merged.value_type_names.insert(qualified);
             }
+            if let Some(item) = owner {
+                if merged.declaration_to_layout.insert(item, new_id).is_some() {
+                    return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", qualified_layout_name(layout))));
+                }
+            }
             merged.layouts.push(copied);
         }
     }
     Ok(merged)
 }
 
-fn layout_owner(module: &MirModule, layout: &AggregateLayout) -> Option<nyar_types::ItemId> {
-    let qualified = qualified_layout_name(layout);
-    module
-        .structs
-        .iter()
-        .find(|declaration| declaration.qualified_name() == qualified)
-        .and_then(|declaration| declaration.declaration)
+fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Option<nyar_types::ItemId> {
+    module.aggregate_layouts.declaration_to_layout.iter()
+        .find_map(|(item, id)| (*id == layout.id).then_some(*item))
 }
 
 fn qualified_layout_name(layout: &AggregateLayout) -> String {

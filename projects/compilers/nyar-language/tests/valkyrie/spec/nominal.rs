@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use nyar_language::{
-    SumTypeLayout, ValkyrieCompiler, compute_nominal_layouts,
+    ValkyrieCompiler,
     types::{
         Identifier, NamePath, SourceID,
         hir::{
@@ -542,7 +542,7 @@ fn core_result_file_is_nominal_unite_with_correct_variants() {
 #[test]
 fn core_option_sum_layout_tags_match_source_annotations() {
     let Some(module) = compile_core_type_file("Option.v") else { return };
-    let (sum_layouts, _) = compute_nominal_layouts(&module);
+    let sum_layouts = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
 
     let option_layout = find_sum_layout(&sum_layouts, "Option");
 
@@ -562,7 +562,7 @@ fn core_option_sum_layout_tags_match_source_annotations() {
 #[test]
 fn core_result_sum_layout_tags_match_source_annotations() {
     let Some(module) = compile_core_type_file("Result.v") else { return };
-    let (sum_layouts, _) = compute_nominal_layouts(&module);
+    let sum_layouts = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
 
     let result_layout = find_sum_layout(&sum_layouts, "Result");
 
@@ -713,7 +713,7 @@ enums Status {
             }],
         )
         .expect("consumer with imported enums");
-    let (sum_types, _) = compute_nominal_layouts(&consumer);
+    let sum_types = nyar_language::MirLowerer::lower_module_semantic(&consumer).sum_types;
     let status = find_sum_layout(&sum_types, "Status");
     assert_eq!(status.variants[0].tag, 2);
     assert_eq!(status.variants[1].tag, 3);
@@ -747,7 +747,7 @@ unite Choice {
             }],
         )
         .expect("consumer with imported unite");
-    let (sum_types, _) = compute_nominal_layouts(&consumer);
+    let sum_types = nyar_language::MirLowerer::lower_module_semantic(&consumer).sum_types;
     let choice = find_sum_layout(&sum_types, "Choice");
     assert!(choice.is_unite);
     assert_eq!(choice.variants[0].tag, 2);

@@ -11,7 +11,6 @@ use std_data::text::valkyrie::{ParseError, ValkyrieRoot};
 
 use crate::{hir::ValkyrieCompiler, types::hir::HirModule, validation::ControlFlowScheduler};
 
-pub use crate::valkyrie::hir::lowering::compute_nominal_layouts;
 pub use singleton::{
     SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR,
     SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, SingletonWitnessEntries, collect_aggregate_field_map, collect_singleton_instance_plans,

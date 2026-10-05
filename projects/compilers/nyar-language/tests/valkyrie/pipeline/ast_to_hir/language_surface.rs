@@ -701,7 +701,7 @@ flags FilePerm {
     assert_eq!(module.flags[0].name.as_str(), "FilePerm");
     assert_eq!(module.flags[0].members.len(), 2);
 
-    let (sum_types, _) = nyar_language::compute_nominal_layouts(&module);
+    let sum_types = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
     let color = sum_types.iter().find(|item| item.name == "Color").expect("Color layout");
     assert_eq!(color.variants[0].tag, 2);
     assert_eq!(color.variants[1].tag, 4);
@@ -720,7 +720,7 @@ enums Status {
 "#,
         )
         .unwrap();
-    let (sum_types, _) = nyar_language::compute_nominal_layouts(&module);
+    let sum_types = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
     let status = sum_types.iter().find(|item| item.name == "Status").expect("Status layout");
     assert_eq!(status.variants[0].tag, 0);
     assert_eq!(status.variants[1].tag, 1);
@@ -776,7 +776,7 @@ enums VonTokenKind {
 "#,
         )
         .unwrap();
-    let (sum_types, _) = nyar_language::compute_nominal_layouts(&module);
+    let sum_types = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
     let kind = sum_types.iter().find(|item| item.name == "VonTokenKind").expect("VonTokenKind layout");
     assert_eq!(kind.variants[0].tag, 0);
     assert_eq!(kind.variants[1].tag, 1);

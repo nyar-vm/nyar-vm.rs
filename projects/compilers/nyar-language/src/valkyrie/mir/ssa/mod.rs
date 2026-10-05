@@ -747,6 +747,7 @@ impl MirLowerer {
         let mut struct_is_value_type = collect_struct_is_value_type(&module.structs);
         merge_imported_struct_is_value_type(module, &mut struct_is_value_type);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
+        let mut diagnostics = Vec::new();
         let (mut sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let effectful_resume_map = collect_effectful_resume_map(module);
@@ -764,7 +765,6 @@ impl MirLowerer {
         let external_calls = collect_external_call_contracts(module);
         let (exports, entries) = collect_surface_contracts(module);
         let mut functions = Vec::new();
-        let mut diagnostics = Vec::new();
         for function in module.functions.iter().filter(|function| !function.is_abstract) {
             functions.push(lower_function_semantic(
                 module,

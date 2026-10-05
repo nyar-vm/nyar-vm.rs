@@ -78,6 +78,8 @@ pub struct AggregateLayoutPlan {
     pub value_type_names: BTreeSet<String>,
     /// Map from layout key / type name to layout id.
     pub type_name_to_layout: BTreeMap<String, LayoutId>,
+    /// 结构声明到布局的稳定绑定；语义消费者不得从名称反查布局。
+    pub declaration_to_layout: BTreeMap<crate::ItemId, LayoutId>,
 }
 
 /// Sum type variant layout for nominal lowering.

@@ -41,7 +41,7 @@ pub use valkyrie::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy,
         concretize_type, concretize_type_lossy,
     },
-    hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, ValkyrieCompiler, compute_nominal_layouts},
+    hir::{AstToHir, CaptureAnalyzer, CompilerSourceGroup, ValkyrieCompiler},
     mir,
     mir::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,

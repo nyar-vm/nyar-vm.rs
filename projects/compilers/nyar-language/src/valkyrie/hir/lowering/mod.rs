@@ -6,7 +6,7 @@ use crate::{
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
-    mir::{FlagsLayout, MirLowerer, MirSumDeclaration, MirSumVariant, SumTypeLayout},
+    mir::{FlagsLayout, MirLowerer, MirSumDeclaration, MirSumVariant},
     types::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
@@ -512,11 +512,6 @@ pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<
     let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
         .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))?;
     Ok(compiled_program)
-}
-
-/// Collect sum-type and flags layouts from a lowered HIR module.
-pub fn compute_nominal_layouts(module: &HirModule) -> Result<(Vec<SumTypeLayout>, Vec<FlagsLayout>), crate::frontend_contract::ConcretizeError> {
-    Ok((collect_sum_declarations(module).iter().map(MirSumDeclaration::physical_layout).collect::<Result<_, _>>()?, collect_flags_layouts(module)))
 }
 
 pub(crate) fn compute_nominal_declarations(module: &HirModule) -> (Vec<MirSumDeclaration>, Vec<FlagsLayout>) {
@@ -1956,7 +1951,7 @@ fn with_source(span: &Range<usize>, source_id: SourceID) -> SourceSpan {
 
 #[cfg(test)]
 mod sum_discriminator_tests {
-    use super::{compute_nominal_layouts, validate_enum_discriminators, *};
+    use super::{validate_enum_discriminators, *};
     use crate::{
         SourceID, ValkyrieCompiler,
         types::{Identifier, NamePath, SourceSpan},
@@ -1982,14 +1977,14 @@ mod sum_discriminator_tests {
         let module = ValkyrieCompiler::default()
             .compile_source("enums Option { Declared = 7 } enums Result { Actual = 11 }")
             .expect("sum 声明必须来自当前源码");
-        let (sums, _) = compute_nominal_layouts(&module);
+        let sums = MirLowerer::lower_module_semantic(&module).sum_types;
         assert_eq!(sums.len(), 2);
         for (name, variant, tag) in [("Option", "Declared", 7), ("Result", "Actual", 11)] {
             let sum = sums.iter().find(|sum| sum.name == name).expect("声明 owner");
             assert_eq!(sum.variants.len(), 1);
             assert_eq!(sum.variants[0].name, variant);
             assert_eq!(sum.variants[0].tag, tag);
-            assert!(sum.variants[0].payload_type.is_none());
+            assert!(sum.variants[0].payload_type().is_none());
         }
     }
 
@@ -2148,7 +2143,7 @@ unite Choice {
 "#,
             )
             .expect("compile unite with default tags");
-        let (sum_types, _) = compute_nominal_layouts(&module);
+        let sum_types = MirLowerer::lower_module_semantic(&module).sum_types;
         let choice = sum_types.iter().find(|layout| layout.name == "Choice").expect("Choice layout");
         assert_eq!(choice.variants[0].tag, 0);
         assert_eq!(choice.variants[1].tag, 1);
@@ -2183,7 +2178,7 @@ enums Status {
 "#,
             )
             .expect("compile enums with gap auto-increment");
-        let (sum_types, _) = compute_nominal_layouts(&module);
+        let sum_types = MirLowerer::lower_module_semantic(&module).sum_types;
         let status = sum_types.iter().find(|layout| layout.name == "Status").expect("Status layout");
         assert_eq!(status.variants[0].tag, 2);
         assert_eq!(status.variants[1].tag, 3);
@@ -2231,7 +2226,7 @@ enums Status {
                 }],
             )
             .expect("consumer with imported enums");
-        let (sum_types, _) = compute_nominal_layouts(&consumer);
+        let sum_types = MirLowerer::lower_module_semantic(&consumer).sum_types;
         let status = sum_types.iter().find(|layout| layout.name == "Status").expect("Status layout");
         assert_eq!(status.variants[0].tag, 2);
         assert_eq!(status.variants[1].tag, 3);
@@ -2314,7 +2309,7 @@ unite Choice {
                 }],
             )
             .expect("consumer with imported unite");
-        let (sum_types, _) = compute_nominal_layouts(&consumer);
+        let sum_types = MirLowerer::lower_module_semantic(&consumer).sum_types;
         let choice = sum_types.iter().find(|layout| layout.name == "Choice").expect("Choice layout");
         assert!(choice.is_unite);
         assert_eq!(choice.variants[0].tag, 2);

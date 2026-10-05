@@ -40,16 +40,18 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         }
     }
     for aggregate in &module.structs {
-        let qualified = if aggregate.namespace.is_empty() { aggregate.name.clone() } else { format!("{}.{}", aggregate.namespace, aggregate.name) };
-        let Some(layout_id) = linked.aggregate_layouts.type_name_to_layout.get(&qualified).copied() else {
-            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 缺少布局绑定")));
+        let Some(declaration) = aggregate.declaration else {
+            return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少 declaration identity", aggregate.qualified_name())));
+        };
+        let Some(layout_id) = linked.aggregate_layouts.declaration_to_layout.get(&declaration).copied() else {
+            return Err(error_without_module("CAN023", format!("聚合 `{}` 缺少布局绑定", aggregate.qualified_name())));
         };
         linked.aggregate_layout_by_nominal.insert(aggregate.nominal, layout_id);
         let Some(layout) = linked.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id) else {
-            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 的布局记录缺失")));
+            return Err(error_without_module("CAN023", format!("聚合 `{}` 的布局记录缺失", aggregate.qualified_name())));
         };
         if layout.fields.len() != aggregate.fields.len() {
-            return Err(error_without_module("CAN023", format!("聚合 `{qualified}` 的字段布局数量不一致")));
+            return Err(error_without_module("CAN023", format!("聚合 `{}` 的字段布局数量不一致", aggregate.qualified_name())));
         }
         for (index, field) in aggregate.fields.iter().enumerate() {
             linked.aggregate_layout_by_field.insert(field.id, (layout_id, index as u32));
