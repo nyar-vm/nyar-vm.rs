@@ -1,7 +1,7 @@
 pub(crate) use crate::lowering::{
     features::{pattern_matching_contract, singleton},
     sanitize_jvm_method_symbol, sanitize_operation_symbol, sanitize_symbol,
-    shared::{executable, interop, intrinsic_opcode, nullable, suspend_sm, suspend_witness, witness_abi},
+    shared::{executable, interop, intrinsic_opcode, nullable, witness_abi},
 };
 
 #[cfg(feature = "nyar-vm-lane")]

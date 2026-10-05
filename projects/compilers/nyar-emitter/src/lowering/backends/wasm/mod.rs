@@ -8,7 +8,6 @@ mod cabi;
 mod gc;
 pub(crate) mod mir;
 mod sections;
-mod suspend;
 
 pub(crate) use cabi::{
     CABI_HEAP_DEFAULT_BASE, CABI_HEAP_GLOBAL_INDEX, LINEAR_HEAP_MIN_BASE, align_up_u32, cabi_heap_base_after_data, cabi_heap_global_section,
@@ -22,11 +21,9 @@ pub(crate) use sections::{
     global_section_with_i32_inits, import_section_bytes, insert_wasm_section, memory_section_bytes, type_section_bytes, wasm_function_body,
     wasm_function_type,
 };
-pub(crate) use suspend::suspend_run_loop_with_witness_wasm_bytes;
 
 use crate::{
     FragmentSubmission,
-    artifacts::suspend_sidecar::serialize_control_flow_payload,
     backend_plan_views::ExecutableConstant,
     nyar_backend_wasi::{WasmPackageKind, WasiPreview, WasmBinaryModule, WasmSection},
 };
@@ -70,9 +67,6 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
     let has_executable = !submission.backend_plan.instances().is_empty();
     if !has_executable {
         return Err(miette!("WASM requires Compiler-owned executable functions; call-edge replay and empty entry synthesis are not valid inputs"));
-    }
-    if !submission.witness_calls.is_empty() {
-        return Err(miette!("WASM witness calls require Compiler-resolved executable dispatch; witness summaries cannot supply method bodies"));
     }
     let executable = &submission.backend_plan;
     for operation in submission.backend_plan.wasm_export_names().keys().chain(submission.backend_plan.entry_operation().iter()) {
@@ -178,9 +172,6 @@ fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, submission: &Frag
     }
     if let Some(entry) = submission.backend_plan.entry_operation() {
         customs.push(("nyar.entry".to_string(), entry.to_string().into_bytes()));
-    }
-    if let Some(payload) = &submission.control_flow {
-        customs.push(("nyar.control_flow".to_string(), serialize_control_flow_payload(payload).into_bytes()));
     }
     customs.push(("nyar.theory.rules".to_string(), merged_theory.rules.len().to_string().into_bytes()));
     customs.push(("nyar.theory.equations".to_string(), merged_theory.equations.len().to_string().into_bytes()));

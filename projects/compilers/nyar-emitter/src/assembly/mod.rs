@@ -17,10 +17,6 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
     if partition.exported_operations != fragment.exported_operations || partition.entry_operation != fragment.entry_operation {
         return Err(miette!("分区 `{}` 的根与 Canonical 片段不一致", partition.name));
     }
-    if fragment.required_capabilities.iter().any(|capability| matches!(capability.as_str(), "suspend" | "trait-witness" | "open-witness" | "witness-dispatch")) {
-        return Err(miette!("片段 `{}` 缺少已验证的 Canonical 控制流或 witness 合同", partition.fragment));
-    }
-
     let mut roots = partition.exported_operations.clone();
     if let Some(entry) = partition.entry_operation {
         if !roots.contains(&entry) {
@@ -35,10 +31,6 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
     )?;
 
     Ok(FragmentSubmission {
-        witness_tables: Vec::new(),
-        witness_calls: Vec::new(),
-        control_flow: None,
-        suspend_runtime: None,
         backend_plan: std::sync::Arc::new(backend_plan),
     })
 }

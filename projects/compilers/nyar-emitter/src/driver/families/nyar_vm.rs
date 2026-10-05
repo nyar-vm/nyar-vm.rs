@@ -8,7 +8,6 @@ use nyar_bytecode::{NyarExportKind, NyarModuleData};
 use super::BundledBackendCompiler;
 use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract,
-    artifacts::suspend_sidecar::{serialize_control_flow_payload, serialize_suspend_runtime_payload},
     bundled_backend_capability_descriptor,
 };
 
@@ -32,40 +31,6 @@ impl BundledBackendCompiler for NyarVmFamilyCompiler {
         fs::create_dir_all(&input.output_dir)
             .into_diagnostic()
             .wrap_err_with(|| format!("创建输出目录失败：{}", input.output_dir.display()))?;
-
-        if let Some(payload) = input.suspend_runtime.as_ref() {
-            let sidecar_name = format!("{}.suspend_runtime.json", request.artifact_name);
-            let sidecar_path = input.output_dir.join(&sidecar_name);
-            let body = serialize_suspend_runtime_payload(payload);
-            fs::write(&sidecar_path, body)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("写入 suspend_runtime sidecar 失败：{}", sidecar_path.display()))?;
-            artifacts.push(ArtifactDescriptor {
-                name: sidecar_name,
-                path: format!("{}.suspend_runtime.json", request.artifact_name),
-                kind: ArtifactKind::AssemblyListing,
-                format: ArtifactFormat::RawBinary,
-                target: request.options.target.clone(),
-                lane: TargetLane::Vm,
-            });
-        }
-
-        if let Some(payload) = input.control_flow.as_ref() {
-            let sidecar_name = format!("{}.control_flow.json", request.artifact_name);
-            let sidecar_path = input.output_dir.join(&sidecar_name);
-            let body = serialize_control_flow_payload(payload);
-            fs::write(&sidecar_path, body)
-                .into_diagnostic()
-                .wrap_err_with(|| format!("写入 control_flow sidecar 失败：{}", sidecar_path.display()))?;
-            artifacts.push(ArtifactDescriptor {
-                name: sidecar_name,
-                path: format!("{}.control_flow.json", request.artifact_name),
-                kind: ArtifactKind::AssemblyListing,
-                format: ArtifactFormat::RawBinary,
-                target: request.options.target.clone(),
-                lane: TargetLane::Vm,
-            });
-        }
 
         if let Some(module) = input.nyar_module.as_ref() {
             let entries = resolve_entry_symbols(module, &input.library_public_exports)?;

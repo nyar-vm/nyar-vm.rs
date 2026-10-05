@@ -29,9 +29,8 @@ use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
     ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge, PartitionBackendRequirement, ProjectionPolicy,
-    QualifiedName, ReferenceManagement, SuspendConsumptionModel, SuspendRuntimePayload, TargetBackendFamily, TargetFamily, TargetLane,
-    TargetProfile, TheoryBundle, VmSuspendStrategy, WitnessCallEdge, WitnessSubmission, backends::CompilationOptions, packaging::ArtifactSet,
-    suspend_consumption_model_for_lane,
+    QualifiedName, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, TheoryBundle,
+    backends::CompilationOptions, packaging::ArtifactSet,
 };
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,7 +57,6 @@ pub mod testing {
 
     use super::{
         DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput,
-        artifacts::suspend_sidecar::{serialize_control_flow_payload, serialize_suspend_runtime_payload},
         compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
@@ -113,18 +111,6 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
     }
 
-    /// Serialize a control-flow payload using the production sidecar wire format.
-    pub fn serialize_control_flow_sidecar(payload: &nyar::ControlFlowPayload) -> String {
-        serialize_control_flow_payload(payload)
-    }
-
-    /// Serialize a suspend-runtime payload using the production sidecar wire format.
-    pub fn serialize_suspend_runtime_sidecar(payload: &nyar::SuspendRuntimePayload) -> String {
-        serialize_suspend_runtime_payload(payload)
-    }
-
-
-
     /// Lower a fragment submission to a Nyar VM module.
     #[cfg(feature = "nyar-vm-lane")]
     pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData, miette::Report> {
@@ -142,36 +128,12 @@ pub mod testing {
 
 
 
-    /// Shared suspend dispatch-case expansion helper.
-    pub fn dispatch_case_keys(artifact: &nyar::SuspendFunctionArtifact) -> Vec<u32> {
-        super::lowering::testing_dispatch_case_keys(artifact)
-    }
-
     /// Lower a fragment submission to a host-boundary-specific WASM module.
     pub fn lower_fragment_to_wasm_module(
         submission: &FragmentSubmission,
         host_boundary: nyar::HostProjectionBoundary,
     ) -> Result<(WasmBinaryModule, Vec<(String, String)>), miette::Report> {
         super::lowering::testing_lower_fragment_to_wasm_module(submission, host_boundary).map_err(|error| miette::miette!("{error}"))
-    }
-
-    /// Build suspend run-loop bytes with witness dispatch for one WASM state-machine artifact.
-    pub fn suspend_run_loop_with_witness_wasm_bytes(
-        artifact: &nyar::SuspendFunctionArtifact,
-        witness_offset: u32,
-        witness_type_index: u32,
-        method_index: u32,
-        function_index: u32,
-        returns_i32: bool,
-    ) -> Vec<u8> {
-        super::lowering::testing_suspend_run_loop_with_witness_wasm_bytes(
-            artifact,
-            witness_offset,
-            witness_type_index,
-            method_index,
-            function_index,
-            returns_i32,
-        )
     }
 
 
@@ -434,72 +396,6 @@ pub fn validate_dispatch_for_route(route: BackendRoute, dispatch: BackendDispatc
 }
 
 /// 从片段能力标签推断 backend 分发形态。
-pub fn infer_dispatch_kind(submission: &FragmentSubmission) -> BackendDispatchKind {
-    if submission.backend_plan.required_capabilities().iter().any(|cap| cap.as_str().contains("effect-handler")) {
-        return BackendDispatchKind::EffectHandler;
-    }
-    if !submission.witness_calls.is_empty()
-        || submission.backend_plan.required_capabilities().iter().any(|cap| matches!(cap.as_str(), "trait-witness" | "open-witness" | "witness-dispatch"))
-    {
-        return BackendDispatchKind::Witness;
-    }
-    BackendDispatchKind::Static
-}
-
-fn submission_has_resolved_witness(submission: &FragmentSubmission) -> bool {
-    submission
-        .control_flow
-        .as_ref()
-        .is_some_and(|payload| payload.functions.iter().flat_map(|function| &function.states).any(|state| !state.witness_bindings.is_empty()))
-        || !submission.witness_calls.is_empty()
-        || !submission.witness_tables.is_empty()
-}
-
-/// Validate suspend fragment shape matches the target lane consumption model.
-fn validate_suspend_submission(
-    submission: &FragmentSubmission,
-    lane: TargetLane,
-    clr_strategy: ClrSuspendStrategy,
-    vm_strategy: VmSuspendStrategy,
-) -> Result<()> {
-    for capability in submission.backend_plan.required_capabilities() {
-        let tag = capability.as_str();
-        if tag.contains("open-witness") || tag.contains("effect-handler") {
-            return Err(miette!("CLR lane 拒绝未静态化的开放 witness/effect 能力 `{tag}`；请在 MIR 阶段完成静态化"));
-        }
-        if tag.contains("trait-witness")
-            && submission.witness_tables.is_empty()
-            && submission.witness_calls.is_empty()
-            && !submission_has_resolved_witness(submission)
-        {
-            return Err(miette!("CLR lane 拒绝未静态化的开放 witness/effect 能力 `{tag}`；请在 MIR 阶段完成静态化"));
-        }
-    }
-
-    let model = suspend_consumption_model_for_lane(lane, clr_strategy, vm_strategy);
-    match model {
-        SuspendConsumptionModel::FirstClass => {
-            if submission.control_flow.is_some() {
-                return Err(miette!(
-                    "first-class suspend lane `{lane:?}` 拒绝 state-machine `control_flow` 载荷（片段 `{fragment}`）；请提交 `suspend_runtime`",
-                    fragment = submission.backend_plan.fragment_id(),
-                    lane = lane
-                ));
-            }
-        }
-        SuspendConsumptionModel::StateMachine => {
-            if submission.suspend_runtime.is_some() {
-                return Err(miette!(
-                    "state-machine lane `{lane:?}` 拒绝 first-class `suspend_runtime` 载荷（片段 `{fragment}`）；请提交 `control_flow`",
-                    fragment = submission.backend_plan.fragment_id(),
-                    lane = lane
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// 驱动层可消费的已规划分区视图。
 pub trait PlannedArtifactPartitionsView {
     /// 返回主分区名。
@@ -537,14 +433,6 @@ pub trait FrontendBuildBundle {
 /// 前端提交给驱动层的语义片段。
 #[derive(Clone)]
 pub struct FragmentSubmission {
-    /// 具名 trait 见证表载荷。
-    pub witness_tables: Vec<WitnessSubmission>,
-    /// 入口 witness 动态调用边。
-    pub witness_calls: Vec<WitnessCallEdge>,
-    /// suspend 分区携带的控制流 rewrite 载荷（state-machine 后端）。
-    pub control_flow: Option<nyar::ControlFlowPayload>,
-    /// suspend 分区携带的 first-class runtime 载荷（nyar-vm / 原生 continuation 后端）。
-    pub suspend_runtime: Option<SuspendRuntimePayload>,
     /// 已完成语义闭包与表示合同的目标私有计划。
     pub(crate) backend_plan: Arc<BackendPrivatePlan>,
 }
@@ -560,10 +448,6 @@ impl std::fmt::Debug for FragmentSubmission {
 impl Default for FragmentSubmission {
     fn default() -> Self {
         Self {
-            witness_tables: Vec::new(),
-            witness_calls: Vec::new(),
-            control_flow: None,
-            suspend_runtime: None,
             backend_plan: Arc::new(BackendPrivatePlan::default()),
         }
     }
@@ -572,10 +456,6 @@ impl Default for FragmentSubmission {
 /// First-class suspend backend input (nyar-vm / native continuation runtime).
 #[derive(Debug, Clone)]
 pub struct NyarVmBackendInput {
-    /// Suspend runtime continuation artifacts (semantic MIR boundary).
-    pub suspend_runtime: Option<SuspendRuntimePayload>,
-    /// State-machine suspend artifacts when `VmSuspendStrategy::StateMachine`.
-    pub control_flow: Option<nyar::ControlFlowPayload>,
     /// Optional Nyar module payload to emit as `.nyar`.
     pub nyar_module: Option<nyar_bytecode::NyarModuleData>,
     /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
@@ -642,9 +522,6 @@ impl LoweredBackendInput {
         backend_family: TargetBackendFamily,
         host_boundary: HostProjectionBoundary,
         output_dir: &Path,
-        lane: TargetLane,
-        clr_suspend_strategy: ClrSuspendStrategy,
-        vm_suspend_strategy: VmSuspendStrategy,
         host_flavor: &str,
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
@@ -652,11 +529,8 @@ impl LoweredBackendInput {
         let backend_route = bundled_backend_capability_descriptor(backend_family)
             .map(|descriptor| descriptor.backend_route)
             .unwrap_or(BackendRoute::StaticOnly);
-        let dispatch = infer_dispatch_kind(submission);
-        validate_dispatch_for_route(backend_route, dispatch).map_err(|error| miette!("backend boundary 分发形态不合法: {error:?}"))?;
-        if backend_family == TargetBackendFamily::Clr || submission.control_flow.is_some() || submission.suspend_runtime.is_some() {
-            validate_suspend_submission(submission, lane, clr_suspend_strategy, vm_suspend_strategy)?;
-        }
+        validate_dispatch_for_route(backend_route, BackendDispatchKind::Static)
+            .map_err(|error| miette!("backend boundary 分发形态不合法: {error:?}"))?;
         Ok(Self {
             input: lower_fragment_to_driver_input(
                 submission,
@@ -676,9 +550,6 @@ impl LoweredBackendInput {
         backend_family: TargetBackendFamily,
         host_boundary: HostProjectionBoundary,
         output_dir: &Path,
-        lane: TargetLane,
-        clr_suspend_strategy: ClrSuspendStrategy,
-        vm_suspend_strategy: VmSuspendStrategy,
         host_flavor: &str,
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
@@ -689,9 +560,6 @@ impl LoweredBackendInput {
             backend_family,
             host_boundary,
             output_dir,
-            lane,
-            clr_suspend_strategy,
-            vm_suspend_strategy,
             host_flavor,
             wasm_package_kind,
         )
@@ -822,9 +690,6 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             backend_family_for_partition(partition),
             partition.host_boundary,
             request.output_dir,
-            partition.lane,
-            partition.clr_suspend_strategy,
-            VmSuspendStrategy::default(),
             &host_flavor,
             request.bundle.wasm_package_kind(),
         )?;

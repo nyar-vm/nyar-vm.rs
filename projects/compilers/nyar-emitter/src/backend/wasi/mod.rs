@@ -12,7 +12,7 @@ use std::{collections::BTreeSet, path::PathBuf};
 
 use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar::{
-    ControlFlowPayload, HostProjectionBoundary,
+    HostProjectionBoundary,
     abstractions::{ArtifactFormat, BackendInputKind, BinaryTarget},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
@@ -67,8 +67,6 @@ pub struct WasmBinaryBackendInput {
     pub host_boundary: HostProjectionBoundary,
     /// 导入声明列表（`(module, field)` 对），由宿主绑定生成器消费以生成对应的 `import` 实现。
     pub imports: Vec<(String, String)>,
-    /// 可选的挂起产物，用于驱动层线路；二进制后端忽略此字段。
-    pub control_flow: Option<ControlFlowPayload>,
     /// Whether this fragment's entry matches WASI command `run: func()` (nullary).
     ///
     /// Param-taking entries stay as core wasm only; command components are reserved

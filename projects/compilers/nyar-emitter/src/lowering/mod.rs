@@ -44,26 +44,11 @@ pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 
 
 
 
-pub(crate) fn testing_dispatch_case_keys(artifact: &nyar::SuspendFunctionArtifact) -> Vec<u32> {
-    shared::suspend_sm::dispatch_case_keys(artifact)
-}
-
 pub(crate) fn testing_lower_fragment_to_wasm_module(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
     wasm::lower_fragment_to_wasm_module(submission, host_boundary)
-}
-
-pub(crate) fn testing_suspend_run_loop_with_witness_wasm_bytes(
-    artifact: &nyar::SuspendFunctionArtifact,
-    witness_offset: u32,
-    witness_type_index: u32,
-    method_index: u32,
-    function_index: u32,
-    returns_i32: bool,
-) -> Vec<u8> {
-    wasm::suspend_run_loop_with_witness_wasm_bytes(artifact, witness_offset, witness_type_index, method_index, function_index, returns_i32)
 }
 
 
@@ -115,7 +100,6 @@ pub(crate) fn lower_fragment_to_driver_input(
                 output_dir,
                 host_boundary,
                 imports,
-                control_flow: submission.control_flow.clone(),
                 package_as_wasi_command,
                 wasi_preview,
                 library_wasm_exports: submission.backend_plan.wasm_export_names().values().cloned().collect(),
@@ -124,15 +108,8 @@ pub(crate) fn lower_fragment_to_driver_input(
         }
         #[cfg(feature = "nyar-vm-lane")]
         TargetBackendFamily::NyarVm => {
-            let nyar_module = if submission.suspend_runtime.is_some() && submission.backend_plan.exported_operations().is_empty() {
-                None
-            }
-            else {
-                Some(nyar_vm::lower_fragment_to_nyar_module(submission)?)
-            };
+            let nyar_module = Some(nyar_vm::lower_fragment_to_nyar_module(submission)?);
             Ok(DriverBackendInput::NyarVm(NyarVmBackendInput {
-                suspend_runtime: submission.suspend_runtime.clone(),
-                control_flow: submission.control_flow.clone(),
                 nyar_module,
                 library_public_exports: submission
                     .backend_plan.exported_operations()
