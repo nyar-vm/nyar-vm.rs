@@ -253,7 +253,7 @@ impl MirBuilder {
             // tag 比较 + payload 提取，否则 `type_pattern_matches(WitDefinition, Include)`
             // → Bool(false)，绑定落到 unsupported_pattern → JVM `iconst_0; getfield`。
             HirPattern::Object { name: Some(name), fields, rest: None } => {
-                if let Some((condition, payload)) = self.try_lower_sum_object_tag_match(name, fields, value.clone()) {
+                if let Some((condition, payload)) = self.try_lower_sum_object_tag_match(name, fields, value.clone(), None) {
                     return (condition, payload);
                 }
                 (self.lower_pattern_match_operand(pattern, value), None)
@@ -279,7 +279,7 @@ impl MirBuilder {
 
         // Nullary unite/enum arm (`case StringLiteral:`): runtime `tag` compare from
         // `sum_types` — never `plain_type_pattern_matches` → Bool(false).
-        if let Some(condition) = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone()) {
+        if let Some(condition) = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), None) {
             return condition;
         }
 
@@ -294,33 +294,16 @@ impl MirBuilder {
         actual_type: &ValkyrieType,
         pattern_name: &NamePath,
         value: MirOperand,
+        resolved: Option<&HirResolvedCall>,
     ) -> Option<MirOperand> {
-        let type_name = match actual_type {
-            ValkyrieType::Nullable(_) => Some("Option"),
-            _ => named_type_name(actual_type),
-        }?;
-        let variant_name = pattern_name.parts().last()?.as_str();
-        if pattern_name.parts().len() >= 2 {
-            let owner = pattern_name.parts().first()?.as_str();
-            if !sum_type_name_matches(type_name, owner) {
-                return None;
-            }
-        }
-
-        let sum = self.sum_types.iter().find(|sum| sum_type_name_matches(&sum.name, type_name))?.clone();
-        let variant = sum.variants.iter().find(|variant| variant.name == variant_name)?;
-        let _ = variant.tag;
-        let sum_name = sum.name.clone();
-        let (nominal, variant_id) = self.sum_identity(&sum_name, variant_name)?;
+        let _ = (actual_type, pattern_name);
+        let resolved = resolved.as_ref()?;
+        let (owner, variant) = resolved.sum_owner.zip(resolved.sum_variant)?;
+        let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant)?;
         let type_args = super::expr_lowering::type_args_from_sum_shaped(actual_type);
         let condition = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
-            MirOperation::SumVariantIs {
-                nominal,
-                type_args,
-                variant: variant_id,
-                object: value,
-            },
+            MirOperation::SumVariantIs { nominal, type_args, variant: variant_id, object: value },
             vec![condition],
         );
         self.value_types.insert(condition, ValkyrieType::Boolean);
@@ -371,29 +354,20 @@ impl MirBuilder {
             return None;
         };
         let actual_type = infer_builder_operand_type(&value, &self.value_types)?;
-        let type_name = match &actual_type {
-            ValkyrieType::Nullable(_) => Some("Option"),
-            _ => named_type_name(&actual_type),
-        }?;
-        if !self.sum_types.iter().any(|sum| sum_type_name_matches(&sum.name, type_name)) {
-            return None;
-        }
-        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone())?;
+        let resolved = resolved.as_ref()?;
+        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), Some(resolved))?;
         if fields.is_empty() {
             return Some((condition, None));
         }
         // Prefer sum-layout payload typing (substitutes Result Apply args). HIR-resolved
         // extractor metadata often still carries unbound `T`/`E` and must not win.
         // Never fall through to FieldGet `payload` against a payload-struct layout.
-        let payload = if let Some(payload) = self.lower_sum_payload_operand(&actual_type, name, value.clone()) {
+        let payload = if let Some(payload) = self.lower_sum_payload_operand(&actual_type, name, value.clone(), Some(resolved)) {
             payload
         }
-        else if let Some(resolved) = resolved.as_ref() {
-            self.try_lower_result_option_extractor(resolved, value.clone())
-                .or_else(|| self.lower_sum_payload_operand(&actual_type, name, value.clone()))?
-        }
         else {
-            return None;
+            self.try_lower_result_option_extractor(resolved, value.clone())
+                .or_else(|| self.lower_sum_payload_operand(&actual_type, name, value.clone(), Some(resolved)))?
         };
         Some((condition, Some(payload)))
     }
@@ -404,36 +378,24 @@ impl MirBuilder {
         name: &NamePath,
         fields: &[(Identifier, HirPattern)],
         value: MirOperand,
+        resolved: Option<&HirResolvedCall>,
     ) -> Option<(MirOperand, Option<MirOperand>)> {
         let actual_type = infer_builder_operand_type(&value, &self.value_types)?;
-        let type_name = match &actual_type {
-            ValkyrieType::Nullable(_) => Some("Option"),
-            _ => named_type_name(&actual_type),
-        }?;
-        if !self.sum_types.iter().any(|sum| sum_type_name_matches(&sum.name, type_name)) {
-            return None;
-        }
-        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone())?;
+        let condition = self.try_lower_sum_variant_tag_match(&actual_type, name, value.clone(), resolved)?;
         if fields.is_empty() {
             return Some((condition, None));
         }
-        let payload = self.lower_sum_payload_operand(&actual_type, name, value)?;
+        let payload = self.lower_sum_payload_operand(&actual_type, name, value, resolved)?;
         Some((condition, Some(payload)))
     }
 
     /// Emit `SumPayloadGet` for a sum scrutinee and register the variant payload type.
-    fn lower_sum_payload_operand(&mut self, actual_type: &ValkyrieType, variant_name: &NamePath, value: MirOperand) -> Option<MirOperand> {
-        let type_name = named_type_name(actual_type)?;
-        let variant_simple = variant_name.parts().last()?.as_str();
-        let (canonical_sum_name, payload_ty) = self.sum_types.iter().find_map(|sum| {
-            if !sum_type_name_matches(&sum.name, type_name) {
-                return None;
-            }
-            let variant = sum.variants.iter().find(|variant| variant.name == variant_simple)?;
-            let payload_ty = sum.instantiate_payload(variant, &super::expr_lowering::type_args_from_sum_shaped(actual_type))??;
-            Some((sum.name.clone(), payload_ty))
-        })?;
-        let (nominal, variant_id) = self.sum_identity(&canonical_sum_name, variant_simple)?;
+    fn lower_sum_payload_operand(&mut self, actual_type: &ValkyrieType, variant_name: &NamePath, value: MirOperand, resolved: Option<&HirResolvedCall>) -> Option<MirOperand> {
+        let _ = variant_name;
+        let resolved = resolved?;
+        let (owner, variant) = resolved.sum_owner.zip(resolved.sum_variant)?;
+        let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant)?;
+        let payload_ty = resolved.extractor_payload_type.clone()?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {
@@ -453,25 +415,10 @@ impl MirBuilder {
     /// `case Fine(x)` / `Fail(e)` / `Some(v)` must use SumPayloadGet — never FieldGet
     /// against a payload structure layout (that caused SMIR010 on LegionSourceClosurePlan).
     fn try_lower_result_option_extractor(&mut self, resolved: &HirResolvedCall, value: MirOperand) -> Option<MirOperand> {
-        let variant = resolved.symbol.parts().last()?.as_str();
-        if !matches!(variant, "Fine" | "Fail" | "Some" | "None" | "Ok" | "Err") {
-            return None;
-        }
+        let (owner, variant_declaration) = resolved.sum_owner.zip(resolved.sum_variant)?;
+        let (nominal, variant_id) = self.sum_identity_by_declarations(owner, variant_declaration)?;
         let object_ty = infer_builder_operand_type(&value, &self.value_types)?;
-        let sum_type = match &object_ty {
-            ValkyrieType::Named(name) if name.as_str() == "Result" || name.as_str().ends_with("Result") => "Result".to_string(),
-            ValkyrieType::Apply(base, _) => match base.as_ref() {
-                ValkyrieType::Named(name) if name.as_str() == "Result" || name.as_str().ends_with("Result") => "Result".to_string(),
-                ValkyrieType::Named(name) if matches!(name.as_str(), "Option" | "Nullable") => "Option".to_string(),
-                _ => return None,
-            },
-            ValkyrieType::Named(name) if matches!(name.as_str(), "Option" | "Nullable") => "Option".to_string(),
-            ValkyrieType::Nullable(_) => "Option".to_string(),
-            _ => return None,
-        };
-        if variant == "None" {
-            return Some(MirOperand::Constant(MirConstant::Unit));
-        }
+        let variant = resolved.symbol.parts().last()?.as_str();
         // Prefer the concrete Apply substitution on the scrutinee. HIR often keeps
         // `extractor_payload_type = Named("T"|"E")` from the generic unite definition,
         // which must not override `Result<i32, VonDiagnostic>` → VonDiagnostic.
@@ -488,7 +435,6 @@ impl MirBuilder {
             (ValkyrieType::Nullable(inner), "Some") => Some((**inner).clone()),
             _ => resolved.extractor_payload_type.clone(),
         }?;
-        let (nominal, variant_id) = self.sum_identity(&sum_type, variant)?;
         let output = self.next_value(MirValueOrigin::Temporary);
         self.push_instruction(
             MirOperation::SumPayloadGet {
@@ -745,7 +691,7 @@ impl MirBuilder {
                         || matches!(type_name, "Option" | "Nullable")
                     {
                         let variant = resolved.symbol.parts().last().map(|part| part.as_str()).unwrap_or("");
-                        if let Some(payload) = self.lower_sum_payload_operand(ty, &NamePath::new(vec![Identifier::new(variant)]), value.clone())
+                        if let Some(payload) = self.lower_sum_payload_operand(ty, &NamePath::new(vec![Identifier::new(variant)]), value.clone(), Some(resolved))
                         {
                             return payload;
                         }

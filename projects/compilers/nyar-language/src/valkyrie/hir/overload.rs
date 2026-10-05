@@ -414,7 +414,7 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
         variadic: HirVariadicKind::None,
     };
 
-    OverloadCandidate::new_method(
+    let mut candidate = OverloadCandidate::new_method(
         variant.name.clone(),
         NamePath::new(vec![Identifier::new("extractor")]),
         OverloadDomain::Function,
@@ -422,7 +422,10 @@ fn build_unite_variant_extractor_candidate(enum_def: &HirEnum, variant: &HirVari
         return_type,
         OverloadMatchKind::NominalSubtype { distance: 0 },
     )
-    .with_param_specs(vec![self_param])
+    .with_param_specs(vec![self_param]);
+    candidate.sum_owner = enum_def.declaration;
+    candidate.sum_variant = variant.declaration;
+    candidate
 }
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction) -> OverloadCandidate {
@@ -895,8 +898,7 @@ fn resolve_pattern_calls(
         }
         HirPattern::Extractor(HirExtractorPattern::Constructor { fields, canonical_callee, resolved, .. }) => {
             if let Some(actual_type) = scrutinee_type {
-                *resolved = try_resolve_pattern_extractor(canonical_callee, actual_type, candidates, type_relations)
-                    .or_else(|| synthesize_builtin_result_extractor(canonical_callee, actual_type));
+                *resolved = try_resolve_pattern_extractor(canonical_callee, actual_type, candidates, type_relations);
             }
             let field_scrutinee_types = resolved
                 .as_ref()
@@ -2548,40 +2550,6 @@ fn is_builtin_von_value_pattern(canonical_callee: &NamePath, actual_type: &Valky
         return false;
     }
     matches!(actual_type, ValkyrieType::Named(name) if name.as_str() == "VonValue")
-}
-
-/// Soft SMIR003 accepts Fine/Fail without a registered extractor method. Still attach a
-/// synthetic resolved call so MIR can bind `Fine(plan)` with `extractor_payload_type = T`.
-fn synthesize_builtin_result_extractor(canonical_callee: &NamePath, actual_type: &ValkyrieType) -> Option<HirResolvedCall> {
-    if !is_builtin_result_pattern(canonical_callee, actual_type) {
-        return None;
-    }
-    let head = canonical_callee.parts().first()?.as_str();
-    let payload = match (head, actual_type) {
-        ("Fine", ValkyrieType::Apply(_, args)) => args.first().cloned(),
-        ("Fail", ValkyrieType::Apply(_, args)) => {
-            if args.len() >= 2 {
-                args.get(1).cloned()
-            }
-            else {
-                // `VonParseResult<T>` alias may appear as one-arg apply; Fail payload is diagnostic.
-                Some(ValkyrieType::Named(Identifier::new("VonDiagnostic")))
-            }
-        }
-        _ => None,
-    };
-    Some(HirResolvedCall {
-        declaration: None,
-        instance: None,
-        sum_owner: None,
-        sum_variant: None,
-        symbol: NamePath::new(vec![Identifier::new(head), Identifier::new("extractor")]),
-        domain: HirCallableDomain::Extractor,
-        return_type: actual_type.clone(),
-        parameter_types: vec![actual_type.clone()],
-        has_receiver: true,
-        extractor_payload_type: payload,
-    })
 }
 
 /// 当 pattern 名（`canonical_callee` 首段）是 scrutinee 类型的严格子类时，
