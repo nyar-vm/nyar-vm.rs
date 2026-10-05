@@ -574,6 +574,8 @@ pub struct FragmentSubmission {
     pub aggregate_layout_by_nominal: BTreeMap<nyar_types::NominalInstanceId, nyar_types::LayoutId>,
     /// Compiler 已绑定的字段身份到布局槽位映射。
     pub aggregate_layout_by_field: BTreeMap<nyar_types::FieldId, (nyar_types::LayoutId, u32)>,
+    /// Compiler 已声明的 nominal variant 身份集合。
+    pub sum_variant_ids: std::collections::BTreeSet<(nyar_types::NominalInstanceId, nyar_types::VariantId)>,
     /// Sum type discriminant layouts。
     pub sum_types: Vec<SumTypeLayout>,
     /// Flags bitmask layouts。
@@ -620,6 +622,7 @@ impl Default for FragmentSubmission {
             aggregate_layouts: AggregateLayoutPlan::default(),
             aggregate_layout_by_nominal: BTreeMap::new(),
             aggregate_layout_by_field: BTreeMap::new(),
+            sum_variant_ids: std::collections::BTreeSet::new(),
             sum_types: Vec::new(),
             flags_types: Vec::new(),
             backend_plan: Arc::new(BackendPrivatePlan::default()),

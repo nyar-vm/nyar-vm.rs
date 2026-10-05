@@ -187,10 +187,10 @@ pub enum InstructionKind {
     },
     /// Construct a named aggregate / struct instance.
     StructNew {
-        /// Type name.
-        type_name: String,
-        /// Field initializers `(name, value)`.
-        fields: Vec<(String, Operand)>,
+        /// 已冻结的名义聚合身份。
+        nominal: crate::NominalInstanceId,
+        /// 已冻结的字段身份与初始化值。
+        fields: Vec<(crate::FieldId, Operand)>,
     },
     /// Construct a tuple.
     TupleNew {
@@ -208,28 +208,24 @@ pub enum InstructionKind {
     FieldGet {
         /// Object / aggregate.
         object: Operand,
-        /// Field name.
-        field: String,
+        /// 已冻结的字段身份。
+        field: crate::FieldId,
     },
     /// Write a field.
     FieldSet {
         /// Object / aggregate.
         object: Operand,
-        /// Field name.
-        field: String,
+        /// 已冻结的字段身份。
+        field: crate::FieldId,
         /// Value to write.
         value: Operand,
     },
     /// Construct a value of an explicitly declared nominal sum variant.
     SumNew {
-        /// Sum registry identity (nominal name).
-        sum_type: String,
-        /// Type arguments forming `NominalInstanceKey` with `sum_type` (empty ⇒ monomorphic).
-        type_args: Vec<NyarType>,
-        /// Declared variant identity.
-        variant: String,
-        /// Payload type declared by the variant, when it carries one.
-        payload_type: Option<NyarType>,
+        /// 已冻结的 sum 名义实例身份。
+        nominal: crate::NominalInstanceId,
+        /// 已冻结的 variant 身份。
+        variant: crate::VariantId,
         /// Payload value for a payload-bearing variant.
         payload: Option<Operand>,
     },
@@ -238,14 +234,10 @@ pub enum InstructionKind {
     /// This is distinct from aggregate field access: the sum and variant
     /// identity are semantic metadata, never inferred from field spellings.
     SumPayloadGet {
-        /// Sum registry name.
-        sum_type: String,
-        /// Type arguments forming `NominalInstanceKey` with `sum_type` (empty ⇒ monomorphic).
-        type_args: Vec<NyarType>,
-        /// Active variant known by the surrounding structured control flow.
-        variant: String,
-        /// Declared payload type for that variant.
-        payload_type: NyarType,
+        /// 已冻结的 sum 名义实例身份。
+        nominal: crate::NominalInstanceId,
+        /// 已冻结的 variant 身份。
+        variant: crate::VariantId,
         /// Sum receiver.
         object: Operand,
     },
@@ -254,12 +246,10 @@ pub enum InstructionKind {
     /// Carries the same `NominalInstanceKey` as [`Self::SumNew`] / [`Self::SumPayloadGet`].
     /// Must not be lowered as a field named `tag` discovered from a physical carrier.
     SumVariantIs {
-        /// Sum registry name.
-        sum_type: String,
-        /// Type arguments forming `NominalInstanceKey` with `sum_type`.
-        type_args: Vec<NyarType>,
-        /// Declared variant identity.
-        variant: String,
+        /// 已冻结的 sum 名义实例身份。
+        nominal: crate::NominalInstanceId,
+        /// 已冻结的 variant 身份。
+        variant: crate::VariantId,
         /// Sum receiver.
         object: Operand,
     },

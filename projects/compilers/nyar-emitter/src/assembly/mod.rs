@@ -43,6 +43,7 @@ pub(crate) fn fragment_submission_from_assembled(payload: AssembledFragment) -> 
         aggregate_layouts: linked.aggregate_layouts.clone(),
         aggregate_layout_by_nominal: linked.aggregate_layout_by_nominal.clone(),
         aggregate_layout_by_field: linked.aggregate_layout_by_field.clone(),
+        sum_variant_ids: linked.variants.keys().copied().collect(),
         sum_types: linked.sum_types.clone(),
         flags_types: linked.flags_types.clone(),
         backend_plan: std::sync::Arc::new(backend_plan),

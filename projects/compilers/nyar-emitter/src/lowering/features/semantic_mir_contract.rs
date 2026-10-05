@@ -102,16 +102,19 @@ fn validate_aggregate_layouts(submission: &FragmentSubmission) -> Result<(), Sem
 fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function: &ExecutableFunction) -> Result<(), SemanticMirContractError> {
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
-            if let ExecutableInstructionKind::StructNew { type_name, fields } = &instruction.kind {
+            if let ExecutableInstructionKind::StructNew { nominal, fields } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let layout_name = struct_new_layout_name(type_name.as_str(), function.symbol.as_str());
-                let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == layout_name)
+                let Some(layout_id) = submission.aggregate_layout_by_nominal.get(nominal).copied()
+                else {
+                    return Err(SemanticMirContractError { code: "SMIR010", function: function.symbol.clone(), location, detail: "aggregate construction references an unknown nominal identity".to_string() });
+                };
+                let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
                 else {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("aggregate construction references an unknown layout `{layout_name}`"),
+                        detail: "aggregate construction references an unknown layout identity".to_string(),
                     });
                 };
                 let output_type = crate::contracts::instruction_primary_result(instruction)
@@ -119,13 +122,11 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                     .or(Some(&function.return_type));
                 // 字段在「输出类型给出的同一 substitution」下比较，
                 // 禁止依赖 Named("Self") / 类型名单字母特判放行。
-                let substitution = output_type
-                    .map(|ty| type_args_substitution(ty, layout))
-                    .unwrap_or_default();
                 let fields_match = fields.len() == layout.fields.len()
-                    && fields.iter().all(|(name, value)| {
-                        layout.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
-                            let declared = substitute_nyar_type(&field.ty, &substitution);
+                    && fields.iter().all(|(field_id, value)| {
+                        submission.aggregate_layout_by_field.get(field_id).is_some_and(|(owner_layout, slot)| {
+                            *owner_layout == layout_id && layout.fields.get(*slot as usize).is_some_and(|field| {
+                            let declared = &field.ty;
                             matches!(
                                 value,
                                 ExecutableOperand::Value(value)
@@ -134,11 +135,10 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                                         .get(value)
                                         .is_some_and(|actual| aggregate_field_types_compatible(actual, &declared))
                             )
+                            })
                         })
                     });
-                let output_owner_matches =
-                    output_type.is_some_and(|ty| aggregate_owner_name(ty) == Some(layout_name.as_str()));
-                if !output_owner_matches || !fields_match {
+                if !fields_match {
                     return Err(SemanticMirContractError {
                         code: "SMIR010",
                         function: function.symbol.clone(),
@@ -148,95 +148,26 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 }
                 continue;
             }
-            if let ExecutableInstructionKind::SumNew { sum_type, variant, payload_type, payload, .. } = &instruction.kind {
+            if let ExecutableInstructionKind::SumNew { nominal, variant, .. } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(sum) = submission.sum_types.iter().find(|sum| sum.name == *sum_type)
-                else {
+                if !submission.sum_variant_ids.contains(&(*nominal, *variant)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: "sum construction references an undeclared sum".to_string(),
-                    });
-                };
-                let Some(declared) = sum.variants.iter().find(|candidate| candidate.name == *variant)
-                else {
-                    return Err(SemanticMirContractError {
-                        code: "SMIR006",
-                        function: function.symbol.clone(),
-                        location,
-                        detail: "sum construction references an undeclared variant".to_string(),
-                    });
-                };
-                let payload_value_type = match payload {
-                    Some(ExecutableOperand::Value(value)) => function.value_types.get(value),
-                    Some(_) => None,
-                    None => None,
-                };
-                let output_type =
-                    crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output));
-                if output_type.is_none_or(|output_ty| !type_matches_sum_owner_nyar(output_ty, sum_type))
-                    || !payload_type_compatible_nyar(payload_type.as_ref(), declared.payload_type.as_ref())
-                    || match (&declared.payload_type, payload, payload_value_type) {
-                        (None, None, _) => false,
-                        (Some(expected), Some(ExecutableOperand::Value(_)), Some(actual)) => {
-                            !aggregate_field_types_compatible(actual, expected) && !is_type_parameter(expected)
-                        }
-                        _ => true,
-                    }
-                {
-                    return Err(SemanticMirContractError {
-                        code: "SMIR006",
-                        function: function.symbol.clone(),
-                        location,
-                        detail: "sum construction contract disagrees with declared sum metadata".to_string(),
+                        detail: "sum construction references an unknown nominal variant identity".to_string(),
                     });
                 }
                 continue;
             }
-            if let ExecutableInstructionKind::SumPayloadGet { sum_type, variant, payload_type, object, .. } = &instruction.kind {
+            if let ExecutableInstructionKind::SumPayloadGet { nominal, variant, object } = &instruction.kind {
                 let location = format!("block {} instruction {index}", block.id.0);
-                let Some(sum) = submission.sum_types.iter().find(|sum| sum.name == *sum_type)
-                else {
+                if !submission.sum_variant_ids.contains(&(*nominal, *variant)) {
                     return Err(SemanticMirContractError {
                         code: "SMIR006",
                         function: function.symbol.clone(),
                         location,
-                        detail: format!("sum payload extraction references undeclared sum `{sum_type}`"),
-                    });
-                };
-                let Some(declared) =
-                    sum.variants.iter().find(|candidate| candidate.name == *variant).and_then(|candidate| candidate.payload_type.as_ref())
-                else {
-                    return Err(SemanticMirContractError {
-                        code: "SMIR006",
-                        function: function.symbol.clone(),
-                        location,
-                        detail: format!("sum `{sum_type}` has no payload-bearing variant `{variant}`"),
-                    });
-                };
-                let output_type =
-                    crate::contracts::instruction_primary_result(instruction).and_then(|output| function.value_types.get(&output));
-                let receiver_type = match object {
-                    ExecutableOperand::Value(value) => function.value_types.get(value),
-                    _ => None,
-                };
-                let primary = crate::contracts::instruction_primary_result(instruction);
-                let payload_ok = aggregate_field_types_compatible(payload_type, declared) || is_type_parameter(declared);
-                let output_ok = output_type == Some(payload_type);
-                let receiver_ok = receiver_type.is_some_and(|ty| type_matches_sum_owner_nyar(ty, sum_type));
-                if !payload_ok || !output_ok || !receiver_ok {
-                    return Err(SemanticMirContractError {
-                        code: "SMIR006",
-                        function: function.symbol.clone(),
-                        location,
-                        detail: format!(
-                            "sum payload extraction contract disagrees with declared sum metadata \
-                             (payload_ok={payload_ok} output_ok={output_ok} receiver_ok={receiver_ok}; \
-                             payload={payload_type:?} declared={declared:?} output={output_type:?} \
-                             primary={primary:?} results={:?} receiver={receiver_type:?})",
-                            instruction.results
-                        ),
+                        detail: "sum payload extraction references an unknown nominal variant identity".to_string(),
                     });
                 }
                 continue;
@@ -247,35 +178,31 @@ fn validate_aggregate_field_contracts(submission: &FragmentSubmission, function:
                 _ => continue,
             };
             let location = format!("block {} instruction {index}", block.id.0);
-            let object_ty = match object {
-                ExecutableOperand::Value(v) => function.value_types.get(v),
-                _ => None,
-            };
-            let Some(name) = aggregate_field_layout_name(object, object_ty, &function)
+            let Some((layout_id, slot)) = submission.aggregate_layout_by_field.get(field).copied()
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
                     function: function.symbol.clone(),
                     location,
-                    detail: "aggregate field access requires a nominal object type".to_string(),
+                    detail: "aggregate field access references an unknown field identity".to_string(),
                 });
             };
-            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.name == name.as_str())
+            let Some(layout) = submission.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
                     function: function.symbol.clone(),
                     location,
-                    detail: format!("aggregate field access references unknown layout `{name}`"),
+                    detail: "aggregate field access references an unknown layout identity".to_string(),
                 });
             };
-            let Some(declared) = layout.fields.iter().find(|candidate| candidate.name == *field)
+            let Some(declared) = layout.fields.get(slot as usize)
             else {
                 return Err(SemanticMirContractError {
                     code: "SMIR010",
                     function: function.symbol.clone(),
                     location,
-                    detail: format!("aggregate layout {} has no field `{field}`", layout.name),
+                    detail: "aggregate field identity is outside its layout".to_string(),
                 });
             };
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {

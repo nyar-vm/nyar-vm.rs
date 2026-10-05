@@ -35,8 +35,8 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
         for block in &view.function.blocks {
             for instruction in &block.instructions {
                 match &instruction.kind {
-                    MirInstructionKind::StructNew { type_name, .. } => {
-                        if let Some(layout) = ctx.layout_by_type_name(type_name) {
+                    MirInstructionKind::StructNew { nominal, .. } => {
+                        if let Some(layout) = ctx.layout_by_nominal(*nominal) {
                             if layout.storage == StorageKind::Reference {
                                 ids.insert(layout.id);
                             }

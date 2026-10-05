@@ -1052,10 +1052,10 @@ fn append_wasm_spy_metadata_sections(
                         gc_payload.push_str(&format!("mir_use\t{layout_id}\t{type_name}\t{site}\t{symbol}\n"));
                     };
                     match &instruction.kind {
-                        MirInstructionKind::StructNew { type_name, .. } => {
-                            if let Some(layout) = ctx.layout_by_type_name(type_name) {
+                        MirInstructionKind::StructNew { nominal, .. } => {
+                            if let Some(layout) = ctx.layout_by_nominal(*nominal) {
                                 if layout.storage == StorageKind::Reference {
-                                    record_missing(layout.id, type_name.as_str(), "StructNew");
+                                    record_missing(layout.id, &layout.name, "StructNew");
                                 }
                             }
                         }
@@ -1461,13 +1461,13 @@ impl<'a> WasmMirLowerer<'a> {
                     WasmOpcode::Drop.encode(&mut self.code);
                 }
             }
-            MirInstructionKind::StructNew { fields, type_name, .. } => {
+            MirInstructionKind::StructNew { fields, nominal } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
                     return;
                 };
-                let layout = self.resolve_layout(None, type_name);
-                let use_gc_struct = self.struct_new_uses_gc_struct(type_name);
+                let layout = self.resolve_layout(*nominal);
+                let use_gc_struct = self.struct_new_uses_gc_struct(&layout);
                 if use_gc_struct {
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
@@ -1478,12 +1478,10 @@ impl<'a> WasmMirLowerer<'a> {
                     let local = self.planned_value_local(output);
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
-                    for (field_name, value) in fields {
-                        let Some(field_index) = layout.fields.iter().position(|item| item.name == *field_name)
-                        else {
-                            continue;
-                        };
-                        let field = &layout.fields[field_index];
+                    for (field_id, value) in fields {
+                        let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field_id)
+                        else { continue; };
+                        let field = field_layout;
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
                         self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field));
@@ -1497,11 +1495,8 @@ impl<'a> WasmMirLowerer<'a> {
                     };
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
-                    for (field_name, value) in fields {
-                        let Some(field) = layout.fields.iter().find(|item| item.name == *field_name)
-                        else {
-                            continue;
-                        };
+                    for (field_id, value) in fields {
+                        let Some((_, field, _)) = self.ctx.field_layout_by_id(*field_id) else { continue; };
                         self.emit_local_get(local);
                         self.emit_i32_const(field.offset as i32);
                         self.emit_i32_add();
@@ -1521,12 +1516,9 @@ impl<'a> WasmMirLowerer<'a> {
                     };
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
-                    for (field_name, value) in fields {
-                        let Some(field_index) = layout.fields.iter().position(|item| item.name == *field_name)
-                        else {
-                            continue;
-                        };
-                        let field = &layout.fields[field_index];
+                    for (field_id, value) in fields {
+                        let Some((_, field, field_index)) = self.ctx.field_layout_by_id(*field_id)
+                        else { continue; };
                         self.emit_local_get(local);
                         self.emit_ref_cast_struct(type_index);
                         self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field));
@@ -1732,25 +1724,19 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::FieldGet { object, field } => {
                 let output = instruction_primary_result(instruction);
-                if self.try_emit_unite_field_get(object, field, None, output) {
-                    return;
-                }
                 let Some(layout) = self.infer_aggregate_layout_for_operand(object).cloned()
                 else {
                     eprintln!("[wasm::mir] FieldGet missing layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
                     return;
                 };
-                let use_gc_struct = self.struct_new_uses_gc_struct(&layout.name);
+                let use_gc_struct = self.struct_new_uses_gc_struct(&layout);
                 if use_gc_struct && self.operand_reference_local(object).is_some() {
                     let Some(object_local) = self.operand_reference_local(object)
                     else {
                         return;
                     };
-                    let Some(field_index) = layout.fields.iter().position(|item| item.name == *field)
-                    else {
-                        return;
-                    };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
@@ -1760,7 +1746,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_ref_cast_struct(type_index);
                     self.emit_struct_get(type_index, field_index as u32);
                     if let Some(output) = output {
-                        let field_ty = &layout.fields[field_index].ty;
+                        let field_ty = &layout.fields[field_index as usize].ty;
                         let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref);
                         self.validate_output_slot_type(output, stack_ty);
                         self.assign_output_local(output);
@@ -1770,7 +1756,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
-                    let field_layout = self.resolve_field_layout(field, Some(layout.id));
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
@@ -1800,10 +1786,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
-                    let Some(field_index) = layout.fields.iter().position(|item| item.name == *field)
-                    else {
-                        return;
-                    };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
@@ -1813,7 +1796,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_ref_cast_struct(type_index);
                     self.emit_struct_get(type_index, field_index as u32);
                     if let Some(output) = output {
-                        let field_ty = &layout.fields[field_index].ty;
+                        let field_ty = &layout.fields[field_index as usize].ty;
                         let stack_ty = wasm_gc_field_type_byte_for_glue(field_ty, self.js_glue_utf8_as_anyref);
                         self.validate_output_slot_type(output, stack_ty);
                         self.assign_output_local(output);
@@ -1834,7 +1817,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return;
                 };
                 if let Some(object_local) = self.operand_address_local(object) {
-                    let field_layout = self.resolve_field_layout(field, Some(layout.id));
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
@@ -1842,16 +1825,13 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_store_at_field(&field_layout);
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
-                    let Some(field_index) = layout.fields.iter().position(|item| item.name == *field)
-                    else {
-                        return;
-                    };
+                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field) else { return; };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldSet");
                         return;
                     };
-                    let field_layout = self.resolve_field_layout(field, Some(layout.id));
+                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field) else { return; };
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
                     self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout));
@@ -2182,11 +2162,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(self.stack_ptr_local);
     }
 
-    fn struct_new_uses_gc_struct(&self, type_name: &str) -> bool {
-        let Some(layout) = self.ctx.layout_by_type_name(type_name)
-        else {
-            return false;
-        };
+    fn struct_new_uses_gc_struct(&self, layout: &AggregateLayout) -> bool {
         if !self.gc_struct_type_indices.contains_key(&layout.id) {
             return false;
         }
@@ -2204,24 +2180,10 @@ impl<'a> WasmMirLowerer<'a> {
         })
     }
 
-    fn resolve_layout(&self, layout_id: Option<LayoutId>, type_name: &str) -> AggregateLayout {
-        if let Some(id) = layout_id {
-            if let Some(layout) = self.ctx.layout_by_id(id) {
-                return layout.clone();
-            }
-        }
-        if let Some(layout) = self.ctx.layout_by_type_name(type_name).cloned() {
-            return layout;
-        }
-        panic!(
-            "WASM semantic MIR contract violation: missing aggregate layout for type `{type_name}` (layout_id={layout_id:?}) in `{}`",
-            self.mir_fn.symbol
-        );
-    }
-
-    fn resolve_field_layout(&self, field: &str, layout_id: Option<LayoutId>) -> FieldLayout {
-        let layout_id = layout_id.expect("WASM 字段操作缺少明确布局");
-        self.ctx.field_layout(layout_id, field).cloned().expect("WASM 字段不在声明布局中")
+    fn resolve_layout(&self, nominal: nyar_types::NominalInstanceId) -> AggregateLayout {
+        self.ctx.layout_by_nominal(nominal).cloned().unwrap_or_else(|| {
+            panic!("WASM semantic MIR contract violation: missing aggregate layout identity in `{}`", self.mir_fn.symbol)
+        })
     }
 
     fn emit_operand(&mut self, operand: &MirOperand) {

@@ -311,22 +311,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::StructNew { type_name, fields } => {
-                // executable InstructionKind 不携带 layout_id；从 type_name / 字段数闭合 layouts。
-                let layout = self.resolve_layout(None, type_name);
+            MirInstructionKind::StructNew { nominal, fields } => {
+                let layout = self.ctx.layout_by_nominal(*nominal).cloned().unwrap_or_else(|| panic!("Nyar 聚合身份缺少布局合同: {nominal:?}"));
                 let layout_index = match &layout {
-                    Some(aggregate) => self.ensure_nyar_layout(aggregate),
-                    None => self.ensure_nyar_layout_count(fields.len() as i32),
+                    aggregate => self.ensure_nyar_layout(aggregate),
                 };
                 self.emitter.emit_imm1(NyarHeadCode::ObjectNew, layout_index);
                 let output = output.expect("StructNew must produce an output");
                 self.store_to_local(output);
                 let output_operand = MirOperand::Value(output);
-                for (index, (field_name, value)) in fields.iter().enumerate() {
-                    let slot = layout
-                        .as_ref()
-                        .and_then(|aggregate| aggregate.fields.iter().position(|entry| entry.name == *field_name))
-                        .unwrap_or(index) as i32;
+                for (field, value) in fields.iter() {
+                    let slot = self.nyar_field_slot(*field);
                     self.emit_field_set_slot(&output_operand, slot, value);
                     self.emitter.emit_plain(NyarHeadCode::Pop);
                 }
@@ -383,7 +378,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldGet { object, field } => {
-                let slot = self.nyar_field_slot(field);
+                let slot = self.nyar_field_slot(*field);
                 self.emit_operand(object);
                 self.emitter.emit_imm1(NyarHeadCode::FieldGet, slot);
                 if let Some(output) = output {
@@ -395,7 +390,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
             }
             MirInstructionKind::FieldSet { object, field, value } => {
-                let slot = self.nyar_field_slot(field);
+                let slot = self.nyar_field_slot(*field);
                 self.emit_field_set_slot(object, slot, value);
                 self.emitter.emit_plain(NyarHeadCode::Pop);
             }
@@ -444,10 +439,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::SumNew { variant, payload, .. } => {
                 // Option / 名义 sum 的最小 ABI：Some(payload) 直接传 payload；None → Null（Const 0 占位，由后续 SumVariantIs 区分前需扩展）。
                 // 与 SumPayloadGet 成对：先保证 unwrap 链可读，再演进带 tag 的布局。
-                let is_none = variant == "None" || variant.ends_with(".None") || variant.ends_with("::None");
-                if is_none {
-                    self.emitter.emit_const_i32(0);
-                } else if let Some(payload) = payload {
+                if let Some(payload) = payload {
                     self.emit_call_operand(payload);
                 } else {
                     self.emitter.emit_const_i32(0);
@@ -465,16 +457,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
-            MirInstructionKind::SumVariantIs { variant, object, .. } => {
+            MirInstructionKind::SumVariantIs { object, .. } => {
                 // 直通 ABI：None 为 i32(0)；Some 为非 0 / 对象。`is_some` ≈ 非零。
-                let is_none = variant == "None" || variant.ends_with(".None") || variant.ends_with("::None");
                 self.emit_call_operand(object);
                 self.emitter.emit_const_i32(0);
-                if is_none {
-                    self.emitter.emit_plain(NyarHeadCode::I32Eq);
-                } else {
-                    self.emitter.emit_plain(NyarHeadCode::I32Ne);
-                }
+                self.emitter.emit_plain(NyarHeadCode::I32Ne);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 } else {
@@ -653,8 +640,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
-    fn nyar_field_slot(&self, _field: &str) -> ! {
-        panic!("Nyar 结构字段缺少 Canonical FieldId/RepresentationPlan 合同")
+    fn nyar_field_slot(&self, field: nyar_types::FieldId) -> i32 {
+        self.ctx.submission.aggregate_layout_by_field.get(&field).map(|(_, slot)| *slot as i32).unwrap_or_else(|| panic!("Nyar 字段身份缺少布局槽位合同: {field:?}"))
     }
 
     fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {

@@ -196,6 +196,23 @@ fn lower_operation(program: &CanonicalProgram, instruction: &nyar_types::Canonic
         },
         CanonicalOperation::ArrayFromElements { array_type, elements } => InstructionKind::ArrayFromElements { array_type: lower_type(program, *array_type)?, elements: elements.iter().map(|id| value(*id)).collect() },
         CanonicalOperation::TupleNew { fields, .. } => InstructionKind::TupleNew { fields: fields.iter().map(|id| value(*id)).collect() },
+        CanonicalOperation::StructNew { nominal, fields } => InstructionKind::StructNew {
+            nominal: *nominal,
+            fields: fields.iter().map(|(field, id)| (*field, value(*id))).collect(),
+        },
+        CanonicalOperation::FieldGet { object, field } => InstructionKind::FieldGet { object: value(*object), field: *field },
+        CanonicalOperation::FieldSet { object, field, value: stored } => InstructionKind::FieldSet {
+            object: value(*object), field: *field, value: value(*stored),
+        },
+        CanonicalOperation::SumNew { nominal, variant, payload } => InstructionKind::SumNew {
+            nominal: *nominal, variant: *variant, payload: payload.map(value),
+        },
+        CanonicalOperation::SumPayloadGet { nominal, variant, object } => InstructionKind::SumPayloadGet {
+            nominal: *nominal, variant: *variant, object: value(*object),
+        },
+        CanonicalOperation::SumVariantIs { nominal, variant, object } => InstructionKind::SumVariantIs {
+            nominal: *nominal, variant: *variant, object: value(*object),
+        },
         unsupported => return Err(miette!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
 }
