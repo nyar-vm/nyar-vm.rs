@@ -275,74 +275,14 @@ impl MirBuilder {
 
     fn try_lower_array_get_on_array(
         &mut self,
-        array: MirOperand,
-        ordinal: MirOperand,
-        resolved: Option<&HirResolvedCall>,
-        expected_type: Option<&ValkyrieType>,
-        wraps_option: bool,
+        _array: MirOperand,
+        _ordinal: MirOperand,
+        _resolved: Option<&HirResolvedCall>,
+        _expected_type: Option<&ValkyrieType>,
+        _wraps_option: bool,
     ) -> Option<MirOperand> {
-        let array_element_type = self.infer_array_element_type(&array);
-        let one = MirOperand::Constant(MirConstant::Int(1));
-        let index_value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(
-            MirOperation::Call {
-                callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("infix -")])),
-                arguments: vec![ordinal, one],
-            },
-            vec![index_value],
-        );
-        self.value_types.insert(index_value, ValkyrieType::Integer32 { signed: true });
-        let element_value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(
-            MirOperation::ArrayGet { array, index: MirOperand::Value(index_value) },
-            vec![element_value],
-        );
-        let element_type = array_element_type
-            .clone()
-            .or_else(|| expected_type.and_then(|ty| Self::option_payload_type(ty)));
-        if let Some(element_type) = element_type.clone() {
-            self.value_types.insert(element_value, element_type);
-        }
-        if wraps_option {
-            let payload_type = element_type
-                .clone()
-                .or(array_element_type.clone())
-                .or_else(|| resolved.and_then(|call| Self::option_payload_type(&call.return_type)));
-            let return_type = expected_type
-                .cloned()
-                .filter(|ty| Self::option_sum_name(ty).is_some())
-                .or_else(|| {
-                    resolved
-                        .map(|call| call.return_type.clone())
-                        .filter(|ty| Self::option_sum_name(ty).is_some() && !Self::option_uses_generic_payload(ty))
-                })
-                .or_else(|| {
-                    payload_type.clone().map(|payload| {
-                        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![payload])
-                    })
-                })?;
-            let option_value = self.next_value(MirValueOrigin::CallResult);
-            let variant = self.variant_id("Option", "Some")?;
-            self.push_instruction(
-                MirOperation::SumNew {
-                    sum_type: "Option".to_string(),
-                    type_args: type_args_from_sum_shaped(&return_type),
-                    variant,
-                    payload_type,
-                    payload: Some(MirOperand::Value(element_value)),
-                },
-                vec![option_value],
-            );
-            self.value_types.insert(option_value, return_type);
-            return Some(MirOperand::Value(option_value));
-        }
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .or(element_type)
-            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("i32")));
-        self.value_types.insert(element_value, return_type);
-        Some(MirOperand::Value(element_value))
+        return None;
+
     }
 
     fn try_lower_array_get_intrinsic(

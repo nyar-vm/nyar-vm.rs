@@ -1,22 +1,14 @@
-use crate::types::{
-    Identifier, NamePath, SourceID, SourceSpan,
-    hir::{
-        HirBlock, HirCallArgument, HirExpr, HirExprKind, HirIdentifier, HirLiteral, HirPattern, HirStatement, HirStatementKind, ValkyrieType,
-    },
-};
+use crate::types::{SourceID, SourceSpan, hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType}};
 
 use crate::valkyrie::control_flow::TryScopeData;
 use nyar_types::builtin_operator;
 
 use super::{
-    MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, control_flow_context::MirLoopContext,
-    infer_builder_operand_type,
+    MirBuilder, MirConstant, MirOperand, MirTerminator, control_flow_context::MirLoopContext, infer_builder_operand_type,
 };
 
 impl MirBuilder {
-    /// `loop pat in coll` → 用语言 `ArrayLength` / `ArrayGet` 做下标 while。
-    ///
-    /// 比较 / 自增走运算符 `Call`（`infix <` / `infix +`），不得经 IntrinsicOpcode 表。
+    /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
     pub(super) fn lower_for_in_as_indexed_while(
         &mut self,
         _label: &Option<crate::types::Identifier>,
@@ -33,153 +25,6 @@ impl MirBuilder {
         });
         return MirOperand::Constant(MirConstant::Unit);
 
-        #[cfg(any())]
-        {
-        let pre_loop_bindings = self.bindings.clone();
-        let outer_block_id = self.current_block;
-        let outer_label = self.current_label.clone();
-
-        let collection = self.lower_expr_to_operand(iterator_expr);
-        let element_ty = Self::loop_bind_type_hint(&collection, &self.value_types);
-
-        let len_value = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::ArrayLength { array: collection.clone() }, vec![len_value]);
-        self.value_types.insert(len_value, ValkyrieType::Integer32 { signed: true });
-        let len_operand = MirOperand::Value(len_value);
-
-        let zero = MirOperand::Constant(MirConstant::Int(0));
-        let one = MirOperand::Constant(MirConstant::Int(1));
-
-        let loop_header_id = super::MirBlockRef(self.blocks.len() as u32);
-        self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: vec![zero.clone()] });
-        self.flush_block(&outer_label);
-        self.terminator = None;
-
-        self.new_block("for_in_header");
-        debug_assert_eq!(self.current_block, loop_header_id);
-        let index_param = self.next_value(MirValueOrigin::BlockParameter { block: loop_header_id, name: "__for_in_i".to_string() });
-        self.value_types.insert(index_param, ValkyrieType::Integer32 { signed: true });
-        self.blocks[loop_header_id.0 as usize].parameters.push(index_param);
-        let index_operand = MirOperand::Value(index_param);
-
-        let loop_body_id = self.new_block("for_in_body");
-        let loop_exit_id = self.new_block("for_in_exit");
-
-        // Header: while i < len [&& user condition]
-        self.current_block = loop_header_id;
-        self.current_label = "for_in_header".to_string();
-        self.instructions.clear();
-        self.terminator = None;
-        self.bindings = pre_loop_bindings.clone();
-
-        let cmp_value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(
-            MirOperation::Call {
-                callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("infix <")])),
-                arguments: vec![index_operand.clone(), len_operand.clone()],
-            },
-            vec![cmp_value],
-        );
-        self.value_types.insert(cmp_value, ValkyrieType::Boolean);
-        let bounds_ok = MirOperand::Value(cmp_value);
-
-        // Optional `while` filter on for-in: nest as a second branch (no `infix &&` Call —
-        // `&&` is short-circuit control flow in HIR, not an operator method).
-        let then_target = if condition.is_some() {
-            let filter_id = self.new_block("for_in_filter");
-            self.current_block = loop_header_id;
-            self.current_label = "for_in_header".to_string();
-            self.terminate(MirTerminator::Branch { condition: bounds_ok, then_target: filter_id, else_target: loop_exit_id });
-            self.flush_block("for_in_header");
-            self.terminator = None;
-
-            self.current_block = filter_id;
-            self.current_label = "for_in_filter".to_string();
-            self.instructions.clear();
-            self.bindings = pre_loop_bindings.clone();
-            let extra_val =
-                self.lower_expr_to_operand_with_hint(condition.as_ref().unwrap(), Some(&ValkyrieType::Boolean));
-            self.terminate(MirTerminator::Branch { condition: extra_val, then_target: loop_body_id, else_target: loop_exit_id });
-            self.flush_block("for_in_filter");
-            self.terminator = None;
-            loop_body_id
-        }
-        else {
-            self.terminate(MirTerminator::Branch { condition: bounds_ok, then_target: loop_body_id, else_target: loop_exit_id });
-            self.flush_block("for_in_header");
-            self.terminator = None;
-            loop_body_id
-        };
-        let _ = then_target;
-
-        self.control_flow.push_loop(
-            label.as_ref().map(|value| value.to_string()),
-            MirLoopContext {
-                header: loop_header_id,
-                exit: loop_exit_id,
-                exit_value: None,
-                exit_reached_by_break: false,
-                carried_values: vec!["__for_in_i".to_string()],
-                carried_value_refs: std::collections::BTreeMap::from([("__for_in_i".to_string(), index_param)]),
-            },
-        );
-
-        // Body: elem = coll[i]; bind; statements; i = i + 1; continue
-        self.current_block = loop_body_id;
-        self.current_label = "for_in_body".to_string();
-        if let Some(loop_body) = self.blocks.get_mut(loop_body_id.0 as usize) {
-            loop_body.instructions.clear();
-            loop_body.terminator = MirTerminator::Unreachable;
-        }
-        self.instructions.clear();
-        self.terminator = None;
-        self.bindings = pre_loop_bindings.clone();
-
-        let elem_value = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(MirOperation::ArrayGet { array: collection, index: index_operand.clone() }, vec![elem_value]);
-        if let Some(ty) = element_ty.clone() {
-            self.value_types.insert(elem_value, ty);
-        }
-        self.bind_pattern_from_operand_with_payload(loop_pattern, MirOperand::Value(elem_value), element_ty, None);
-
-        for statement in &body.statements {
-            self.lower_statement(statement);
-            if self.terminator.is_some() {
-                break;
-            }
-        }
-        if self.terminator.is_none() {
-            if let Some(tail) = &body.expr {
-                let _ = self.lower_expr_to_operand(tail);
-            }
-        }
-
-        let _loop_context = self.control_flow.pop_loop();
-
-        if self.terminator.is_none() {
-            let next_index = self.next_value(MirValueOrigin::CallResult);
-            self.push_instruction(
-                MirOperation::Call {
-                    callee: MirOperand::Symbol(NamePath::new(vec![Identifier::new("infix +")])),
-                    arguments: vec![index_operand, one],
-                },
-                vec![next_index],
-            );
-            self.value_types.insert(next_index, ValkyrieType::Integer32 { signed: true });
-            self.terminate(MirTerminator::Jump { target: loop_header_id, arguments: vec![MirOperand::Value(next_index)] });
-        }
-        let body_label = self.current_label.clone();
-        self.flush_block(&body_label);
-
-        self.current_block = loop_exit_id;
-        self.current_label = "for_in_exit".to_string();
-        self.instructions.clear();
-        self.terminator = None;
-        self.bindings = pre_loop_bindings;
-        // Keep CFG well-formed; caller may terminate later.
-        let _ = outer_block_id;
-        MirOperand::Constant(MirConstant::Unit)
-        }
     }
 
     fn branch_merge_type(
