@@ -19,19 +19,15 @@ fn collect_rs_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn vcc_data_imports_are_confined_to_transitional_modules() {
+fn nyar_emitter_must_not_import_vcc_data() {
     let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     collect_rs_files(&src_root, &mut files);
     for path in files {
-        let rel = path.strip_prefix(&src_root).unwrap().to_string_lossy();
-        if rel.starts_with("transitional") {
-            continue;
-        }
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert!(
             !source.contains("vcc_data::"),
-            "{} must not import `vcc_data` directly (use `crate::transitional`)",
+            "{} must not import `vcc_data` (`nyar-emitter` binary formats route through `acorn-*`)",
             path.display()
         );
     }

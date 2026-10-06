@@ -1,3 +1,3 @@
-//! MSIL 文本与 method body 编码（过渡 `vcc-data`，待 `oak-msil` / Acorn CLR）。
+//! MSIL 文本与 method body 编码（`acorn-pe`，待 `oak-msil` 正式命名）。
 
-pub use vcc_data::text::msil::*;
+pub use acorn_pe::msil::*;

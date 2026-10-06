@@ -1,11 +1,11 @@
-//! 过渡层：仍在等待 Acorn 替代的 `vcc-data` 入口。
+//! 过渡层：仍在等待 Oak 替代的 `vcc-data` 入口。
 //!
-//! 新代码不得在此扩展格式规则。只做 re-export 与桥接，便于逐后端迁入 `acorn-*`。
+//! 新代码不得在此扩展格式规则。只做 re-export 与桥接，便于逐后端迁入 `acorn-*` / `oak-*`。
 //!
-//! | 模块 | 待迁入 |
-//! |------|--------|
-//! | `binary` | `acorn-jvm`（`class`/`jar` 已迁入）· `acorn-pe`（`coff`/`elf`/原生 `PE` 已迁入，`CLR` `PE` 写入待迁入） |
-//! | `msil` | `oak-msil` / Acorn CLR |
+//! | 模块 | 状态 |
+//! |------|------|
+//! | `binary` | `acorn-jvm` + `acorn-pe` 已覆盖；`nyar-emitter` 不再直接依赖 `vcc-data` |
+//! | `msil` | 经 `acorn-pe::msil` 过渡，待 `oak-msil` |
 
 pub mod binary;
 pub mod msil;
