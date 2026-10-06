@@ -80,20 +80,6 @@ base64 = "0.23.1"
 ed25519-dalek = "3.0.0"
 thiserror = "2.0.17"
 
-# Nyar 的中性格式层只依赖 Nyar 公共类型；valkyrie.rs 作为装配层向下消费。
-[patch.'https://github.com/nyar-vm/nyar-vm.rs']
-nyar = { path = "projects/compilers/nyar" }
-nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
-nyar-emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
-nyar-bytecode = { path = "projects/formats/nyar-bytecode" }
-nyar-language = { path = "projects/compilers/nyar-language" }
-nyar-optimizer = { path = "projects/compilers/nyar-optimizer" }
-nyar-package-manager = { path = "projects/compilers/nyar-package-manager" }
-nyar-package-registry = { path = "projects/compilers/nyar-package-registry" }
-nyar-runner = { path = "projects/compilers/nyar-runner" }
-nyar-types = { path = "projects/compilers/nyar-types" }
-nyar-workspace = { path = "projects/compilers/nyar-workspace" }
-
 [profile.release]
 lto = false
 opt-level = "s"
