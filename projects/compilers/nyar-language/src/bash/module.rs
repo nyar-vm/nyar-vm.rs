@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use std_data::text::bash::BashScript;
+use vcc_data::text::bash::BashScript;
 
 /// `Bash` host script module.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use std_data::text::bash::{BashError, BashRedirect, BashScript, BashStmt};
+use vcc_data::text::bash::{BashError, BashRedirect, BashScript, BashStmt};
 
 /// Runtime value for the Bash tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

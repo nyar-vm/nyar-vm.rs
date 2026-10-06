@@ -1,4 +1,4 @@
-//! GPU lane backend placeholders（SPIR-V / DXIL emit 委托 C# std-data）。
+//! GPU lane backend placeholders（SPIR-V / DXIL emit 委托 C# vcc-data）。
 
 use miette::Result;
 

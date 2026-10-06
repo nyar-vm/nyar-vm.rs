@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use std_data::text::lua::LuaScript;
+use vcc_data::text::lua::LuaScript;
 
 /// `Lua` host script module.
 #[derive(Debug, Clone, PartialEq, Default)]

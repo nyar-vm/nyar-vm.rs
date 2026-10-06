@@ -1,6 +1,6 @@
 //! AWSL 诊断与 widget 语义接入
 
-use std_data::text::awsl::{
+use vcc_data::text::awsl::{
     extract_component_abi_from_script, AbiSeverity, ComponentAbiIndex,
 };
 
@@ -57,7 +57,7 @@ pub fn compile_awsl_document(
                         if !should_emit_abi_issue(issue) {
                             continue;
                         }
-                        if issue.kind == std_data::text::awsl::AbiIssueKind::NotSnakeCase {
+                        if issue.kind == vcc_data::text::awsl::AbiIssueKind::NotSnakeCase {
                             continue;
                         }
                         diagnostics.push(abi_issue_to_diagnostic(issue, source_id, script_range.start));
@@ -111,7 +111,7 @@ pub fn compile_awsl_document(
                 let mut diag = abi_issue_to_diagnostic(&issue, source_id, 0);
                 if let Some(span) = issue.span {
                     if let Some(label) = diag.labels.first_mut() {
-                        label.key = Some(if issue.kind == std_data::text::awsl::AbiIssueKind::NotSnakeCase {
+                        label.key = Some(if issue.kind == vcc_data::text::awsl::AbiIssueKind::NotSnakeCase {
                             "AWSL ABI lint".into()
                         } else {
                             "AWSL ABI cross-file".into()
@@ -128,8 +128,8 @@ pub fn compile_awsl_document(
     diagnostics
 }
 
-fn should_emit_abi_issue(issue: &std_data::text::awsl::AbiIssue) -> bool {
-    use std_data::text::awsl::AbiIssueKind;
+fn should_emit_abi_issue(issue: &vcc_data::text::awsl::AbiIssue) -> bool {
+    use vcc_data::text::awsl::AbiIssueKind;
     match issue.kind {
         AbiIssueKind::NotSnakeCase => true,
         _ => issue.severity == AbiSeverity::Error,
@@ -137,7 +137,7 @@ fn should_emit_abi_issue(issue: &std_data::text::awsl::AbiIssue) -> bool {
 }
 
 fn map_script_diagnostic_to_file(
-    root: &std_data::text::awsl::AwslRoot,
+    root: &vcc_data::text::awsl::AwslRoot,
     text: &str,
     mut diag: ValkyrieError,
 ) -> ValkyrieError {

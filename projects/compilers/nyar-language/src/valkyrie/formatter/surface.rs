@@ -1,6 +1,6 @@
 //! 可格式化源码扩展名（与根 `.editorconfig` glob 一致）。
 //!
-//! | 语言面 | 扩展名 | `SourceKind` | std-data |
+//! | 语言面 | 扩展名 | `SourceKind` | vcc-data |
 //! |:---|:---|:---|:---|
 //! | Valkyrie 核心 | `.v`, `.valkyrie` | `V` | `text::valkyrie` |
 //! | Valkyrie + X-Grammar | `.vx` | `Vx` | `text::valkyrie` |

@@ -3,8 +3,8 @@
 use std::sync::OnceLock;
 
 use katex::{KatexContext, Settings, render_to_string};
-use std_data::text::markdown;
-use std_data::text::notedown::{MathType, NotedownBlock, NotedownDocument, NotedownInline, QuoteType};
+use vcc_data::text::markdown;
+use vcc_data::text::notedown::{MathType, NotedownBlock, NotedownDocument, NotedownInline, QuoteType};
 
 use crate::notedown::highlight::highlight_code_block;
 
@@ -148,7 +148,7 @@ impl<'a> HtmlRenderer<'a> {
         }
     }
 
-    fn render_header(&mut self, level: u8, inlines: &[NotedownInline], _attr: &std_data::text::notedown::Attr) {
+    fn render_header(&mut self, level: u8, inlines: &[NotedownInline], _attr: &vcc_data::text::notedown::Attr) {
         let level = level.clamp(1, 6);
         let text = inlines_to_plain(inlines);
         let id_attr = if self.options.generate_heading_ids {
@@ -184,9 +184,9 @@ impl<'a> HtmlRenderer<'a> {
 
     fn render_table(
         &mut self,
-        head: &std_data::text::notedown::TableHead,
-        bodies: &[std_data::text::notedown::TableBody],
-        caption: Option<&std_data::text::notedown::Caption>,
+        head: &vcc_data::text::notedown::TableHead,
+        bodies: &[vcc_data::text::notedown::TableBody],
+        caption: Option<&vcc_data::text::notedown::Caption>,
     ) {
         if let Some(caption) = caption {
             self.out.push_str("<p><em>");
@@ -213,7 +213,7 @@ impl<'a> HtmlRenderer<'a> {
         self.out.push_str("</tbody></table></div>\n");
     }
 
-    fn render_table_row(&mut self, row: &std_data::text::notedown::TableRow, header: bool) {
+    fn render_table_row(&mut self, row: &vcc_data::text::notedown::TableRow, header: bool) {
         self.out.push_str("<tr>\n");
         let tag = if header { "th" } else { "td" };
         for cell in &row.cells {
@@ -352,7 +352,7 @@ impl<'a> HtmlRenderer<'a> {
         }
     }
 
-    fn write_attr(&mut self, attr: &std_data::text::notedown::Attr) {
+    fn write_attr(&mut self, attr: &vcc_data::text::notedown::Attr) {
         if !attr.id.is_empty() {
             self.out.push_str(&format!(" id=\"{}\"", escape_html_attr(&attr.id)));
         }
@@ -370,7 +370,7 @@ fn render_katex(math_type: MathType, latex: &str) -> Result<String, katex::Parse
     render_to_string(katex_ctx(), latex, &settings)
 }
 
-fn is_table_separator_row(row: &std_data::text::notedown::TableRow) -> bool {
+fn is_table_separator_row(row: &vcc_data::text::notedown::TableRow) -> bool {
     row.cells.iter().all(|cell| {
         let text: String = cell
             .iter()

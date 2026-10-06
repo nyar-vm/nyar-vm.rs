@@ -1,4 +1,4 @@
-//! 文本格式化能力（`std-data` 负责 lexer/parser，本模块负责输出文本）。
+//! 文本格式化能力（`vcc-data` 负责 lexer/parser，本模块负责输出文本）。
 
 pub mod awsl;
 pub mod format_syntax;

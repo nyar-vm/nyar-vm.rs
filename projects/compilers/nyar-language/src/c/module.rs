@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use std_data::text::c::CScript;
+use vcc_data::text::c::CScript;
 
 /// `C` host script module.
 #[derive(Debug, Clone, PartialEq, Default)]

@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use oak_lsp::types::LocationRange;
-use std_data::text::awsl::{
+use vcc_data::text::awsl::{
     abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, collect_abi_references,
     collect_template_bindings, find_template_binding_at, AbiSymbolKind, ComponentAbiIndex, TemplateBindingKind,
 };
@@ -55,7 +55,7 @@ impl AwslReferencesHandler {
 
     async fn references_for_template_binding(
         state: &ServerState,
-        binding: &std_data::text::awsl::TemplateBinding,
+        binding: &vcc_data::text::awsl::TemplateBinding,
     ) -> Vec<LocationRange> {
         let widget = awsl_stem_from_component_tag(&binding.component_tag);
         let Some(entry) = state.awsl_abi_for_widget(&widget) else {
@@ -74,7 +74,7 @@ impl AwslReferencesHandler {
     async fn references_for_abi_symbol(
         state: &ServerState,
         owner_uri: &str,
-        abi: &std_data::text::awsl::ComponentAbi,
+        abi: &vcc_data::text::awsl::ComponentAbi,
         kind: AbiSymbolKind,
         name: &str,
     ) -> Vec<LocationRange> {

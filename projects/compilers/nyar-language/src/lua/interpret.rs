@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use std_data::text::lua::{LuaError, LuaExpr, LuaLValue, LuaScript, LuaStmt, LuaTableField};
+use vcc_data::text::lua::{LuaError, LuaExpr, LuaLValue, LuaScript, LuaStmt, LuaTableField};
 
 /// Runtime table (array part + string-keyed map).
 #[derive(Debug, Clone, Default, PartialEq)]

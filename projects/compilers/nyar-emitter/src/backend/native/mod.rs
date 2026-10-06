@@ -11,7 +11,7 @@ use nyar::{
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
-use std_data::binary::{
+use vcc_data::binary::{
     coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
     pe::extract_pe_section,
 };

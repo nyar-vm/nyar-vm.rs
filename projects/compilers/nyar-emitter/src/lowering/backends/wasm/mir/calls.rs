@@ -320,7 +320,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(pair);
         WasmOpcode::I64Const.encode(&mut self.code);
         encode_sleb128_i64(32, &mut self.code);
-        self.code.push(0x88); // i64.shr_u（std-data opcode 枚举暂未收录?
+        self.code.push(0x88); // i64.shr_u（vcc-data opcode 枚举暂未收录?
         WasmOpcode::I32WrapI64.encode(&mut self.code);
         self.emit_local_set(writer);
 

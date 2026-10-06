@@ -1,6 +1,6 @@
 //! Valkyrie (`.v` / `.vx`) source formatter.
 
-use std_data::text::valkyrie::{
+use vcc_data::text::valkyrie::{
     Annotations, BinaryOperator, ClassDeclaration, ClassLikeKind, DeclarationBody, FlagsDeclaration, FunctionDeclKind, FunctionDeclaration,
     FunctionParameter, FunctionStatement, GenericParameterDeclaration, ImplyDeclaration, InheritanceItem, LetStatement, LiteralExpression,
     NamePath, ObjectBody, ObjectFieldDeclaration, ObjectMethodDeclaration, PatternExpression, RootStatement, StringLiteral, StringSegment,

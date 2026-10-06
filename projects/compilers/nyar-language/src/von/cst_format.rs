@@ -4,7 +4,7 @@
 //! 待落地的 `oak-von::formatter`。
 
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
-use std_data::text::von::{VonCstElement, VonCstParser, VonCstRoot, VonValue};
+use vcc_data::text::von::{VonCstElement, VonCstParser, VonCstRoot, VonValue};
 
 use crate::text::{FormatSyntax, ToDocument};
 

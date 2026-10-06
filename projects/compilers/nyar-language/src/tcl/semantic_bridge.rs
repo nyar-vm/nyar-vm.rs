@@ -1,6 +1,6 @@
 //! Tcl host script semantic bridge.
 
-use std_data::text::tcl::{TclCommand, TclScript};
+use vcc_data::text::tcl::{TclCommand, TclScript};
 
 /// Tcl module semantic bridge result.
 #[derive(Debug, Clone, PartialEq)]

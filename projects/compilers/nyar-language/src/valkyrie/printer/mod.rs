@@ -13,7 +13,7 @@ use std::{any::Any, sync::OnceLock};
 use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
 use oak_core::source::{SourceBuffer, ToSource};
 use oak_von::{VonValue, language::value::to_ast};
-use std_data::text::msil::MsilModule;
+use vcc_data::text::msil::MsilModule;
 
 use crate::{wat::WatDocument, wit::WitPackage};
 use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};

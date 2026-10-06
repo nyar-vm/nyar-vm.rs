@@ -1,7 +1,7 @@
 //! `JVM` 后端容器入口。
 //!
 //! 这里按 `class / jar` 两个输出边界收口，
-//! 相关格式模型与编解码统一由 `std-data` 提供。
+//! 相关格式模型与编解码统一由 `vcc-data` 提供。
 
 #![warn(missing_docs)]
 
@@ -14,7 +14,7 @@ use nyar::{
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
 
-pub use std_data::binary::{
+pub use vcc_data::binary::{
     class::{
         ConstantPoolBuilder, JvmClassError, JvmClassFile, JvmCodeBody, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef,
         JvmMethodSignature, JvmTypeDescriptor, decode_instructions, encode_instructions,

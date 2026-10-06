@@ -1,7 +1,7 @@
 //! `CLR` 二进制后端。
 //!
 //! 直接写入 `PE/COFF` 二进制，不依赖 `ilasm`，保证跨平台可用。
-//! `MSIL / PE / COFF` 格式模型与编解码统一由 `std-data` 提供。
+//! `MSIL / PE / COFF` 格式模型与编解码统一由 `vcc-data` 提供。
 
 #![warn(missing_docs)]
 
@@ -10,7 +10,7 @@ mod msil_text_writer;
 
 pub use hosting::{DotNetFramework, DotNetRuntimeConfig, DotNetRuntimeOptions, write_dotnet_deps_json, write_dotnet_runtime_config};
 pub use msil_text_writer::MsilTextWriter;
-pub use std_data::{
+pub use vcc_data::{
     binary::{
         coff::{CoffHeader, CoffMachine, CoffObject, CoffRelocation, CoffRelocationKind, CoffSection, CoffSymbol},
         pe::{ClrMetadataBuilder, ClrMetadataError, PeWriter, PeWriterError, PeWriterOptions},

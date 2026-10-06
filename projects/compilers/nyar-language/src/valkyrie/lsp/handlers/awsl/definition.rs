@@ -3,7 +3,7 @@
 use crate::{state::ServerState, types::Position};
 use oak_lsp::types::LocationRange;
 use std::path::{Path, PathBuf};
-use std_data::text::awsl::{
+use vcc_data::text::awsl::{
     abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, find_template_binding_at, AbiSymbolKind,
     TemplateBindingKind,
 };

@@ -1,6 +1,6 @@
 //! Lua host script semantic bridge skeleton.
 
-use std_data::text::lua::LuaScript;
+use vcc_data::text::lua::LuaScript;
 
 /// Lua module semantic bridge result.
 #[derive(Debug, Clone, PartialEq)]

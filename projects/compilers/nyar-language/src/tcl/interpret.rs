@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use std_data::text::tcl::{TclCommand, TclError, TclScript, TclWord, split_tcl_list};
+use vcc_data::text::tcl::{TclCommand, TclError, TclScript, TclWord, split_tcl_list};
 
 /// Runtime value for the Tcl tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

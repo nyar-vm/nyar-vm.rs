@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use std_data::text::lua::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
+use vcc_data::text::lua::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
 
 use crate::pe::ResidualSink;
 

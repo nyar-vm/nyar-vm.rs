@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use std_data::text::c::{CError, CExpr, CFunction, CItem, CScript, CStmt, CVarDecl};
+use vcc_data::text::c::{CError, CExpr, CFunction, CItem, CScript, CStmt, CVarDecl};
 
 /// Runtime value for the C tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

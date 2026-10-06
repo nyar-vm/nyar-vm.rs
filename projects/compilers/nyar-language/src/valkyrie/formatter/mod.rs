@@ -41,13 +41,13 @@ pub use nyar_analyzer::format::FormatBuffer;
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（std-data `text::valkyrie`，无 X-Grammar）。
+    /// 核心 Valkyrie：`.v` / `.valkyrie`（vcc-data `text::valkyrie`，无 X-Grammar）。
     V,
     /// Valkyrie + X-Grammar：`.vx`（widget / markup，仍走 valkyrie CST，独立 `.editorconfig` 段）。
     Vx,
-    /// VON 数据：`.von`（std-data `text::von`）。
+    /// VON 数据：`.von`（vcc-data `text::von`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（std-data `text::awsl`，与 V/Vx 不同引擎）。
+    /// Asgard AWSL 模板：`.awsl`（vcc-data `text::awsl`，与 V/Vx 不同引擎）。
     Awsl,
 }
 

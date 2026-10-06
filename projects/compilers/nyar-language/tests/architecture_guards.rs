@@ -1,6 +1,6 @@
 //! Architecture guards for language crate boundaries.
 //!
-//! Expected crate layering: `nyar-language` → `nyar-emitter` → `std-data`.
+//! Expected crate layering: `nyar-language` → `nyar-emitter` → transitional `vcc-data` (external, shrinking).
 //!
 //! Concrete language/framework frontends (guests) may live here; shared
 //! `host_script` / `HostScript*` trait layers do **not** belong in this crate.
@@ -82,7 +82,7 @@ fn nyar_emitter_is_a_direct_dependency() {
             return;
         }
     }
-    panic!("nyar-emitter must be listed under [dependencies] (language → nyar-emitter → std-data)");
+    panic!("nyar-emitter must be listed under [dependencies] (language → nyar-emitter → vcc-data)");
 }
 
 #[test]
@@ -101,8 +101,28 @@ fn nyar_emitter_crate_does_not_depend_on_language() {
             continue;
         }
         if in_dependencies && trimmed.starts_with("nyar-language") {
-            panic!("nyar-emitter [dependencies] must not include nyar-language (layering: language → nyar-emitter → std-data)");
+            panic!("nyar-emitter [dependencies] must not include nyar-language (layering: language → nyar-emitter → vcc-data)");
         }
+    }
+}
+
+#[test]
+fn workspace_must_not_alias_vcc_data_as_std_data() {
+    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Cargo.toml");
+    let cargo = fs::read_to_string(&cargo_path).unwrap_or_else(|error| panic!("failed to read {}: {error}", cargo_path.display()));
+    for line in cargo.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("std-data") {
+            panic!("workspace must not alias transitional `vcc-data` as `std-data` (ADR-0018)");
+        }
+    }
+    let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&src_root, &mut files);
+    for path in files {
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        assert!(!source.contains("std_data::"), "{} must not import `std_data`", path.display());
+        assert!(!source.contains("use std_data"), "{} must not import `std_data`", path.display());
     }
 }
 

@@ -1,7 +1,7 @@
 //! Valkyrie CST → [`Document`]（正规源码格式化）。
 
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
-use std_data::text::valkyrie::{ValCstElement, ValCstParser, ValCstRoot};
+use vcc_data::text::valkyrie::{ValCstElement, ValCstParser, ValCstRoot};
 
 use crate::{text::FormatSyntax, valkyrie::source_format};
 

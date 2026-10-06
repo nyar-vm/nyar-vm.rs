@@ -147,10 +147,10 @@ fn preprocess_target_templates(source: &str, arch: &str) -> String {
         };
         let abs = pos + rel;
         result.push_str(&source[pos..abs]);
-        match std_data::text::valkyrie::tgrammar::parse_tgrammar_fragment(&source[abs..]) {
+        match vcc_data::text::valkyrie::tgrammar::parse_tgrammar_fragment(&source[abs..]) {
             Ok((nodes, consumed)) if nodes.len() == 1 => {
                 let fragment = &source[abs..abs + consumed];
-                if let std_data::text::valkyrie::tgrammar::TgNode::Match(match_node) = &nodes[0]
+                if let vcc_data::text::valkyrie::tgrammar::TgNode::Match(match_node) = &nodes[0]
                     && match_node.scrutinee.trim() == "arch"
                 {
                     let selected = select_arch_match_body(match_node, arch);
@@ -171,9 +171,9 @@ fn preprocess_target_templates(source: &str, arch: &str) -> String {
 }
 
 fn select_arch_match_body<'a>(
-    match_node: &'a std_data::text::valkyrie::tgrammar::TgMatch,
+    match_node: &'a vcc_data::text::valkyrie::tgrammar::TgMatch,
     arch: &str,
-) -> &'a [std_data::text::valkyrie::tgrammar::TgNode] {
+) -> &'a [vcc_data::text::valkyrie::tgrammar::TgNode] {
     for arm in &match_node.arms {
         if arm.pattern.as_deref().map(normalize_case_pattern).as_deref() == Some(arch) {
             return &arm.body;
@@ -192,12 +192,12 @@ fn normalize_case_pattern(pattern: &str) -> String {
     }
 }
 
-fn tg_root_to_source(nodes: &[std_data::text::valkyrie::tgrammar::TgNode], fragment: &str) -> String {
+fn tg_root_to_source(nodes: &[vcc_data::text::valkyrie::tgrammar::TgNode], fragment: &str) -> String {
     nodes.iter().map(|node| node_to_source(node, fragment)).collect()
 }
 
-fn node_to_source(node: &std_data::text::valkyrie::tgrammar::TgNode, fragment: &str) -> String {
-    use std_data::text::valkyrie::tgrammar::{TgIf, TgLoop, TgMatch, TgNode};
+fn node_to_source(node: &vcc_data::text::valkyrie::tgrammar::TgNode, fragment: &str) -> String {
+    use vcc_data::text::valkyrie::tgrammar::{TgIf, TgLoop, TgMatch, TgNode};
     let span = match node {
         TgNode::Text { span, .. } | TgNode::Stmt { span, .. } | TgNode::Comment { span, .. } => span.clone(),
         TgNode::If(TgIf { span, .. }) | TgNode::Loop(TgLoop { span, .. }) | TgNode::Match(TgMatch { span, .. }) => span.clone(),

@@ -36,15 +36,15 @@ impl AwslCompletionHandler {
         let text_before = if offset > 0 { &doc.text[..offset] } else { "" };
         let mut items = Vec::new();
 
-        if let Some(binding) = std_data::text::awsl::find_template_binding_at(&root, offset) {
-            if let Some(entry) = state.awsl_abi_for_widget(&std_data::text::awsl::awsl_stem_from_component_tag(
+        if let Some(binding) = vcc_data::text::awsl::find_template_binding_at(&root, offset) {
+            if let Some(entry) = state.awsl_abi_for_widget(&vcc_data::text::awsl::awsl_stem_from_component_tag(
                 &binding.component_tag,
             )) {
                 let names: Vec<&str> = match binding.kind {
-                    std_data::text::awsl::TemplateBindingKind::Property => {
+                    vcc_data::text::awsl::TemplateBindingKind::Property => {
                         entry.abi.properties.iter().map(|p| p.name.as_str()).collect()
                     }
-                    std_data::text::awsl::TemplateBindingKind::Event => {
+                    vcc_data::text::awsl::TemplateBindingKind::Event => {
                         entry.abi.events.iter().map(|e| e.name.as_str()).collect()
                     }
                 };
@@ -52,7 +52,7 @@ impl AwslCompletionHandler {
                     items.push(CompletionItem {
                         label: format!(
                             "{}{}",
-                            if matches!(binding.kind, std_data::text::awsl::TemplateBindingKind::Property) {
+                            if matches!(binding.kind, vcc_data::text::awsl::TemplateBindingKind::Property) {
                                 ":"
                             } else {
                                 "@"

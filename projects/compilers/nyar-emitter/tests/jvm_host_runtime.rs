@@ -1,6 +1,6 @@
 //! 真实 JVM 宿主冒烟：emitter → `.class`/`.jar` → `java -jar`。
 //!
-//! 不经临时 mjs / `javap`；二进制检查走 `std-data`（与 `legion spy jvm` 同源）。
+//! 不经临时 mjs / `javap`；二进制检查走 `vcc-data`（与 `legion spy jvm` 同源）。
 
 mod support;
 

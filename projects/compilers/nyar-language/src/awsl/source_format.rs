@@ -1,6 +1,6 @@
 //! AWSL source formatter.
 
-use std_data::text::awsl::{
+use vcc_data::text::awsl::{
     AwslAttribute, AwslAttributeValue, AwslDirective, AwslDirectiveKind, AwslElement, AwslImport, AwslRoot, AwslTemplateNode, AwslTextPart,
 };
 
