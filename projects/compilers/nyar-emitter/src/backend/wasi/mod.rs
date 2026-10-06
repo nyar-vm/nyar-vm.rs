@@ -1,7 +1,7 @@
 //! `WebAssembly` 二进制后端容器入口，覆盖 `WasmJsGlue` 与 `WasiComponent` 两种宿主边界。
 //!
 //! 这里按 `wasm / wat / wit` 三个输出格式收口。
-//! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；`WAT`/`WIT` 文本仍待迁入 Oak。
+//! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；组件 `WIT` 文本由本模块直接生成。
 
 #![warn(missing_docs)]
 
@@ -28,10 +28,6 @@ pub(crate) use component::{
     write_component_wit_package, write_component_wit_package_for,
 };
 pub use acorn_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
-pub use std_data::text::{
-    wat::{WatDocument, WatError},
-    wit::{WitError, WitInterface, WitPackage},
-};
 pub use witness_dispatch::{
     WasmTraitFatPointer, WitnessMethodSlot, WitnessTableLayout, materialize_witness_bytes, plan_witness_table_layout, resolve_witness_call,
 };

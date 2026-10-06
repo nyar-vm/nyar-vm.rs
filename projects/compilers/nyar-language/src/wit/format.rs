@@ -1,6 +1,6 @@
 //! WIT 文本格式化。
 
-use std_data::text::wit::WitPackage;
+use super::model::WitPackage;
 
 pub fn format_wit_package(package: &WitPackage) -> String {
     let mut result = format!("package {};\n", package.package_name);

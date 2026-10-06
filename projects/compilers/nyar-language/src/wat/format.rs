@@ -1,6 +1,6 @@
 //! WAT 文本格式化。
 
-use std_data::text::wat::WatDocument;
+use super::model::WatDocument;
 
 pub fn format_wat_document(document: &WatDocument) -> String {
     let mut result = String::from("(module");

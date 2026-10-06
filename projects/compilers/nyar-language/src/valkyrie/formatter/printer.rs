@@ -5,7 +5,9 @@
 
 use std::{any::Any, sync::OnceLock};
 
-use std_data::text::{msil::MsilModule, von::VonValue, wat::WatDocument, wit::WitPackage};
+use std_data::text::{msil::MsilModule, von::VonValue};
+
+use crate::{wat::WatDocument, wit::WitPackage};
 
 use super::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
 use crate::text::{
