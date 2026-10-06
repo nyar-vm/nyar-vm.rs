@@ -53,7 +53,7 @@ fn compile_source_groups_to_backend_bundle(
 ) -> Result<CompilerBuildBundle> {
     reject_unexpanded_target_templates(groups)?;
     let compiled_program = compiler
-        .compile_source_groups_to_program(groups)
+        .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers)
         .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
@@ -161,7 +161,8 @@ mod tests {
         }];
         let context = CompilerBuildContext::new("wasm32", CanonicalTarget::parse("node").expect("node"), ClrSuspendStrategy::default(), WasmPackageKind::Binary);
         let error = compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context)
-            .expect_err("未展开模板必须在语义编译前失败");
+            .err()
+            .expect("未展开模板必须在语义编译前失败");
         assert!(error.to_string().contains("未展开的目标模板"));
     }
 }

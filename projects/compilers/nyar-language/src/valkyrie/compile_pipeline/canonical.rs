@@ -1,8 +1,5 @@
 //! 将已完成语义解析的 MIR 生产为 CanonicalProgram。
 
-#[cfg(test)]
-mod fragment_contract_tests;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{

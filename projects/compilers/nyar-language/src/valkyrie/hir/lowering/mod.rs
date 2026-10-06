@@ -788,6 +788,15 @@ impl ValkyrieCompiler {
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
+        self.compile_source_groups_to_program_with_host_bindings(groups, &[])
+    }
+
+    /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
+    pub(crate) fn compile_source_groups_to_program_with_host_bindings(
+        &self,
+        groups: &[CompilerSourceGroup],
+        host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+    ) -> Result<nyar_types::CompiledProgram, ParseError> {
         let mut hir_groups = self.resolve_source_groups(groups)?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let mut mir_groups = hir_groups.iter().map(crate::valkyrie::mir::MirLowerer::lower_module_semantic).collect::<Vec<_>>();
@@ -804,6 +813,7 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
+        crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, host_bindings)?;
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }

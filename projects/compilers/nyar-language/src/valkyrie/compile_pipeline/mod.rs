@@ -16,8 +16,12 @@ mod context;
 mod diagnostics;
 mod driver;
 mod envelope_checks;
+mod host_bindings;
 mod link;
 mod representation;
+
+#[cfg(test)]
+mod fragment_contract_tests;
 
 pub use backend_bundle::compile_source_groups_to_artifacts;
 pub use context::{CompilerBuildContext, CompilerHostProviderBinding};
@@ -25,6 +29,7 @@ pub use canonical::canonical_program_from_semantic_mir;
 pub use diagnostics::{diagnostic, fail_stage};
 pub(crate) use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
+pub(crate) use host_bindings::apply_host_provider_bindings;
 pub(crate) use link::link_reachable_dependency_mir;
 pub use representation::CanonicalRepresentationPlanner;
 
