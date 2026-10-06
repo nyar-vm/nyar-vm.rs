@@ -1,4 +1,7 @@
+pub use nyar_language::valkyrie;
+
 mod control_flow;
+mod support;
 mod derive;
 mod frontend_contract;
 mod highlight;

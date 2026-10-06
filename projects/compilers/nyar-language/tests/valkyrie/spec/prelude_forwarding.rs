@@ -9,8 +9,7 @@ use std::path::{Path, PathBuf};
 
 use nyar_language::{MirFunction, MirModule, MirOperand, MirOperation, ValkyrieCompiler, types::hir::HirModule};
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn prelude_option_path(projects: &Path) -> PathBuf {
     projects.join("std/source/_prelude/Option.v")

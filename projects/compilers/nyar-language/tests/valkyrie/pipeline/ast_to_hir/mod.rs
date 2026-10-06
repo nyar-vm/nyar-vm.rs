@@ -1,4 +1,4 @@
-use nyar_language::{
+﻿use nyar_language::{
     AstToHir, CaptureAnalyzer, MirEffectKind, MirOperation, MirValueOrigin, ValkyrieCompiler,
     types::{
         SourceID,
@@ -6,13 +6,9 @@ use nyar_language::{
     },
 };
 
-#[path = "ast_to_hir/core_syntax.rs"]
 mod core_syntax;
-#[path = "ast_to_hir/language_surface.rs"]
 mod language_surface;
-#[path = "ast_to_hir/param_binding.rs"]
 mod param_binding;
-#[path = "ast_to_hir/syntax_sugar_phase2.rs"]
 mod syntax_sugar_phase2;
 
 fn block_expr_or_single_statement(block: &HirBlock) -> Option<&HirExpr> {
@@ -196,9 +192,9 @@ fn test_compile_source_to_mir_and_build_output() {
     assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     let fragments = &build_output.compiled_program().canonical().linked.fragments;
     assert_eq!(fragments.len(), 1);
-    let fragment = fragments.values().next().expect("Canonical 片段");
+    let fragment = fragments.values().next().expect("Canonical 鐗囨");
     assert_eq!(fragment.exported_operations.len(), 1);
-    let entry = fragment.entry_operation.expect("Canonical 入口");
+    let entry = fragment.entry_operation.expect("Canonical 鍏ュ彛");
     assert_eq!(build_output.compiled_program().canonical().linked.callable_names[&entry].to_string(), "main::main");
 }
 
@@ -220,7 +216,7 @@ micro main() {
         .unwrap();
 
     let linked = &build_output.compiled_program().canonical().linked;
-    let entry = linked.fragments.values().next().and_then(|fragment| fragment.entry_operation).expect("Canonical 入口");
+    let entry = linked.fragments.values().next().and_then(|fragment| fragment.entry_operation).expect("Canonical 鍏ュ彛");
     assert_eq!(linked.callable_names[&entry].to_string(), "main::helper_entry");
 }
 
@@ -350,3 +346,4 @@ fn lowers_array_literal_to_builtin_array_literal_in_mir_and_build_output() {
     assert_eq!(build_output.canonical_program().mir.functions.len(), 1);
     assert_eq!(build_output.compiled_program().canonical().linked.fragments.len(), 1);
 }
+

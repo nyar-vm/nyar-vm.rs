@@ -45,6 +45,11 @@ path = "tests/valkyrie/mod.rs"
 harness = true
 
 [[test]]
+name = "valkyrie_lsp"
+path = "tests/valkyrie-lsp/diagnostics.rs"
+harness = true
+
+[[test]]
 name = "call_parameter_types_probe"
 path = "tests/call_parameter_types_probe.rs"
 harness = true

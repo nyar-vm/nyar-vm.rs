@@ -12,9 +12,7 @@ use nyar_language::{
 };
 use ordered_float::OrderedFloat;
 
-#[path = "control_flow_scheduler/hir_validation.rs"]
 mod hir_validation;
-#[path = "control_flow_scheduler/pipeline_consistency.rs"]
 mod pipeline_consistency;
 
 fn span() -> SourceSpan {

@@ -2,8 +2,7 @@
 
 pub mod awsl;
 pub mod format_syntax;
-#[path = "../../notedown/highlight/mod.rs"]
-pub mod highlight;
+pub use crate::notedown::highlight;
 pub mod msil;
 pub mod to_document;
 pub mod valkyrie;

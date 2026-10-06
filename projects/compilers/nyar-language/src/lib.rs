@@ -1,21 +1,13 @@
 #![doc = include_str!("../readme.md")]
 #![warn(missing_docs)]
 
-#[path = "valkyrie/formatter/mod.rs"]
-pub mod formatter;
-#[path = "valkyrie/printer/mod.rs"]
-pub mod printer;
-#[path = "valkyrie/text/mod.rs"]
-pub mod text;
-
 pub mod awsl;
 pub mod bash;
 pub mod c;
 pub mod javascript;
 pub mod lua;
 pub mod msil;
-#[path = "valkyrie/optimizer/mod.rs"]
-pub mod optimizer;
+pub mod notedown;
 pub mod pe;
 pub mod powershell;
 pub mod python;
@@ -24,6 +16,8 @@ pub mod valkyrie;
 pub mod von;
 pub mod wat;
 pub mod wit;
+
+pub use valkyrie::{formatter, optimizer, printer, text};
 
 pub use bash::{BashModule, BashSemanticBridge, BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use c::{CModule, CSemanticBridge, CValue, evaluate_c_script, evaluate_c_source};

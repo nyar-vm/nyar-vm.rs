@@ -5,8 +5,7 @@ use nyar_language::{
     types::{Identifier, hir::HirModule},
 };
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn core_types_dir() -> Option<PathBuf> {
     valkyrie_v::projects().map(|projects| projects.join("core/source/types")).filter(|path| path.is_dir())

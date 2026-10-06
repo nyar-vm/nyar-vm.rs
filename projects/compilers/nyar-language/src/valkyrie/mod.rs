@@ -3,6 +3,10 @@
 
 pub mod assembly;
 pub(crate) mod backend_contract;
+pub mod formatter;
+pub mod optimizer;
+pub mod printer;
+pub mod text;
 /// 单向分析 / 处理编译流。
 pub mod compile_pipeline;
 pub mod control_flow;
@@ -21,7 +25,6 @@ pub mod parser;
 pub(crate) mod source_format;
 pub(crate) mod symbols;
 pub mod type_checker;
-#[path = "types/lib.rs"]
 pub mod types;
 /// Typing helpers such as linearization and semantic inheritance analysis.
 pub mod typing;

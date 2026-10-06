@@ -454,8 +454,7 @@ fn int32() -> ValkyrieType {
 //   4. is_unity 不变：源码使用 `unite` 关键字，HIR 中 is_unity=true。
 // ---------------------------------------------------------------------------
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn core_types_dir() -> Option<PathBuf> {
     valkyrie_v::projects().map(|projects| projects.join("core/source/types")).filter(|path| path.is_dir())

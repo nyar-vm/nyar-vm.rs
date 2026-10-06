@@ -4,7 +4,7 @@
 //! 语言实现在 `nyar_language::{lang}::highlight`。
 
 mod html;
-mod highlight;
+pub mod highlight;
 mod options;
 
 pub use html::{NotedownHtmlResult, render, render_markdown};

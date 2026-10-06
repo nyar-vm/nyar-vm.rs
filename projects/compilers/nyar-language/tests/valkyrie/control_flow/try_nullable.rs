@@ -6,8 +6,7 @@ use nyar_language::{
     },
 };
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn compile(source: &str) -> nyar_language::types::hir::HirModule {
     ValkyrieCompiler::new(SourceID { version_id: 9300 }).compile_source(source).expect("compile")
