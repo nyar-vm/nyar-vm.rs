@@ -1,3 +1,3 @@
-//! MSIL 文本模型（过渡 `vcc-data`，待 `oak-msil` / Acorn CLR 格式）。
+//! MSIL 文本模型（`acorn-pe::msil` 过渡，待 `oak-msil`）。
 
-pub use vcc_data::text::msil::*;
+pub use acorn_pe::msil::*;

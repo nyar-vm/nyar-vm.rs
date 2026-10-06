@@ -1376,6 +1376,7 @@ dependencies = [
 name = "nyar-language"
 version = "0.1.0"
 dependencies = [
+ "acorn-pe",
  "katex-rs",
  "miette",
  "nyar 0.1.0",
