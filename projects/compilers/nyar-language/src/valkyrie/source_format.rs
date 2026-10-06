@@ -15,10 +15,7 @@ use crate::transitional::cst::valkyrie::{
 
 use crate::formatter::{FormatBuffer, FormatError, FormatOptions, FormattedOutput};
 
-pub(crate) fn format_valkyrie(source: &str, options: &FormatOptions, vx: bool) -> Result<FormattedOutput, FormatError> {
-    if vx {
-        return crate::valkyrie::cst_format::format_valkyrie_cst(source, options, true);
-    }
+pub(crate) fn format_valkyrie(source: &str, options: &FormatOptions, _vx: bool) -> Result<FormattedOutput, FormatError> {
     format_valkyrie_with_oak(source, options)
 }
 

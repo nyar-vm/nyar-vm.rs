@@ -44,9 +44,9 @@ pub use nyar_analyzer::format::FormatBuffer;
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（过渡 `transitional::cst::valkyrie`，待 `oak-valkyrie::formatter`）。
+    /// 核心 Valkyrie：`.v` / `.valkyrie`（`oak-valkyrie::formatter`）。
     V,
-    /// Valkyrie + X-Grammar：`.vx`（过渡 CST，待 `oak-valkyrie::formatter`）。
+    /// Valkyrie + X-Grammar：`.vx`（`oak-valkyrie::formatter`）。
     Vx,
     /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
