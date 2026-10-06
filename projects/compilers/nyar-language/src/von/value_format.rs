@@ -1,7 +1,9 @@
 //! 过渡：`vcc-data` 值模型的紧凑/缩进文本，仅供 CST formatter 在 Oak `formatter` 落地前使用。
-//! 模型 printer 与 serde 已走 `oak-von::to_string` / `ToSource`。
+//!
+//! 源码正规格式化属于 Oak 上游（对齐 `oak-typescript::formatter`），不在此扩展规则。
+//! 模型 printer 与 serde 走 `oak-von::ToSource` / [`oak_von::to_string`]，见 [`crate::formatter::printer`]。
 
-use std_data::text::von::{VonError, VonValue, to_value};
+use std_data::text::von::VonValue;
 
 pub fn format_von_compact(value: &VonValue) -> String {
     match value {
@@ -53,21 +55,20 @@ pub fn format_von_pretty(value: &VonValue, indent: usize) -> String {
 }
 
 #[cfg(feature = "serde")]
-pub fn to_string<T>(value: &T) -> Result<String, VonError>
+pub fn to_string<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    let von_value = to_value(value)?;
-    Ok(format_von_compact(&von_value))
+    oak_von::to_string(value)
 }
 
 #[cfg(feature = "serde")]
-pub fn to_string_pretty<T>(value: &T) -> Result<String, VonError>
+pub fn to_string_pretty<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    let von_value = to_value(value)?;
-    Ok(format_von_pretty(&von_value, 0))
+    // 缩进排版待 `oak-von::formatter` 落地；当前与紧凑序列化相同。
+    oak_von::to_string(value)
 }
 
 fn format_key(key: &str) -> String {
