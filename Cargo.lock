@@ -1356,6 +1356,7 @@ dependencies = [
  "nyar-emitter",
  "nyar-types",
  "nyar-vm",
+ "oak-awsl",
  "oak-core",
  "oak-valkyrie",
  "oak-von",
@@ -1466,6 +1467,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oak-awsl"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?branch=dev#b54a9270254ef089c8a06d4a8ef8c06287309d17"
+dependencies = [
+ "oak-core",
+ "oak-formatter 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?branch=dev)",
+]
+
+[[package]]
 name = "oak-core"
 version = "0.0.12"
 dependencies = [
@@ -1498,6 +1508,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oak-formatter"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?branch=dev#b54a9270254ef089c8a06d4a8ef8c06287309d17"
+dependencies = [
+ "oak-core",
+]
+
+[[package]]
 name = "oak-macros"
 version = "0.0.12"
 dependencies = [
@@ -1512,7 +1530,7 @@ version = "0.0.12"
 dependencies = [
  "oak-core",
  "oak-dejavu",
- "oak-formatter",
+ "oak-formatter 0.0.12",
  "serde",
  "unicode-ident",
 ]
@@ -1522,7 +1540,7 @@ name = "oak-von"
 version = "0.0.12"
 dependencies = [
  "oak-core",
- "oak-formatter",
+ "oak-formatter 0.0.12",
  "serde",
 ]
 

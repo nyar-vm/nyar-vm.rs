@@ -8,6 +8,7 @@ protocol = "sparse"
 oak-core = { path = "../oaks/projects/oak-core" }
 oak-valkyrie = { path = "../oaks/examples/oak-valkyrie" }
 oak-von = { path = "../oaks/examples/oak-von" }
+oak-awsl = { path = "../oaks/examples/oak-awsl" }
 
 [patch."https://github.com/yggdrasil-language/acorn.rs"]
 acorn-wasm = { path = "../acorn.rs/examples/acorn-wasm" }

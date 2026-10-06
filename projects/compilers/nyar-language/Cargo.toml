@@ -19,6 +19,7 @@ acorn-pe = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-core = { workspace = true }
 oak-von = { workspace = true, features = ["serde"] }
+oak-awsl = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }

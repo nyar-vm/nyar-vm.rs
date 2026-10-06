@@ -1,4 +1,7 @@
-//! AWSL source formatter.
+//! AWSL **源码**格式化（CST 路径；与 AST printer 分离）。
+//!
+//! `.awsl` 正规格式化委托 `oak_awsl::formatter`。legacy `format_awsl_cst` 仍经
+//! [`crate::awsl::cst_format`] 供过渡测试与显式 CST 路径。
 
 use crate::transitional::cst::awsl::{
     AwslAttribute, AwslAttributeValue, AwslDirective, AwslDirectiveKind, AwslElement, AwslImport, AwslRoot, AwslTemplateNode, AwslTextPart,
@@ -7,7 +10,21 @@ use crate::transitional::cst::awsl::{
 use crate::formatter::{FormatBuffer, FormatError, FormatOptions, FormattedOutput};
 
 pub(crate) fn format_awsl(source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
-    crate::text::awsl::format_awsl_cst(source, options)
+    format_awsl_with_oak(source, options)
+}
+
+fn format_awsl_with_oak(source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
+    let oak_options = oak_awsl::formatter::FormatOptions {
+        indent_width: options.indent_width.min(255) as u8,
+        line_width: options.max_width,
+    };
+    let text = oak_awsl::formatter::format_source(source, &oak_options)
+        .map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
+    let mut out = text;
+    if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(FormattedOutput::text_only(out))
 }
 
 /// 基于已解析的 AWSL 根节点走 CST formatter 路径。

@@ -6,7 +6,7 @@
 //!
 //! | 模块 | 状态 |
 //! |------|------|
-//! | `cst` | 内联 legacy CST，待 `oak-valkyrie` / `oak-von` / `oak-awsl` formatter |
+//! | `cst` | 内联 legacy CST；`.v`/`.von`/`.awsl` 已接 Oak formatter，`.vx` 仍 legacy |
 //! | `guest_scripts` | 内联 guest parser，待 `oak-bash` 等正式前端 |
 //! | `msil` | `acorn-pe::msil`，待 `oak-msil` |
 //! | `notedown` | 内联，待 `oak-notedown` |

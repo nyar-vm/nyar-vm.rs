@@ -35,6 +35,7 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
 oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", features = ["serde"] }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }

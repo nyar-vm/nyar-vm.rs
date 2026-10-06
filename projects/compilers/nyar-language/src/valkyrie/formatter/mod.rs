@@ -48,9 +48,9 @@ pub enum SourceKind {
     V,
     /// Valkyrie + X-Grammar：`.vx`（过渡 CST，待 `oak-valkyrie::formatter`）。
     Vx,
-    /// VON 数据：`.von`（过渡 `transitional::cst::von`，待 `oak-von::formatter`）。
+    /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（过渡 `transitional::cst::awsl`，待 `oak-awsl::formatter`）。
+    /// Asgard AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
     Awsl,
 }
 
