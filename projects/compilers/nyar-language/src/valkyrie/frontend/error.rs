@@ -31,6 +31,17 @@ impl ParseError {
     pub fn invalid_at(message: impl Into<String>, span: Range<usize>) -> Self {
         Self::Invalid { message: message.into(), span: Some(span) }
     }
+
+    /// 将 Oak 解析错误映射为前端 `ParseError`（保留 `source_offset`）。
+    pub fn from_oak(error: oak_core::OakError) -> Self {
+        let message = error.to_string();
+        if let Some(start) = error.source_offset() {
+            Self::invalid_at(message, start..start.saturating_add(1))
+        }
+        else {
+            Self::invalid(message)
+        }
+    }
 }
 
 impl Display for ParseError {
@@ -77,5 +88,30 @@ impl Diagnostic for ParseError {
 impl From<std::io::Error> for ParseError {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
+    }
+}
+
+impl From<oak_core::OakError> for ParseError {
+    fn from(value: oak_core::OakError) -> Self {
+        Self::from_oak(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_oak_preserves_source_offset_as_span() {
+        let error = oak_core::OakError::new(oak_core::OakErrorKind::SyntaxError {
+            message: "expected identifier".to_string(),
+            offset: 12,
+            source_id: None,
+        });
+        let parsed = ParseError::from_oak(error);
+        match parsed {
+            ParseError::Invalid { span: Some(span), .. } => assert_eq!(span, 12..13),
+            other => panic!("expected invalid span, got {other:?}"),
+        }
     }
 }

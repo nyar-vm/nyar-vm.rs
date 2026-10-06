@@ -30,5 +30,5 @@ pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
     let text = SourceText::new(source);
     let mut session = ParseSession::<ValkyrieLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
-    output.result.map_err(|error| ParseError::invalid(error.to_string()))
+    output.result.map_err(ParseError::from_oak)
 }
