@@ -1,7 +1,5 @@
 //! VON 文本格式化。
 
-#[cfg(test)]
-mod cst_format;
 pub(crate) mod source_format;
 mod value_format;
 #[cfg(feature = "serde")]
