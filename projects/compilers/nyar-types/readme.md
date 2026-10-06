@@ -1,16 +1,40 @@
 # nyar-types
 
-`nyar-types` 是 `nyar` 平台的底层共享类型包。
+Shared foundational types for the Nyar platform.
 
-## 职责
-- 提供跨前端、跨分析层、跨 backend 都稳定成立的基础类型。
-- 提供通用名类型、能力标签、逻辑符号标识、最小错误载体。
-- 提供最小外部导入链接描述，例如 `ExternalImportLink` 这类跨层稳定契约。
-- 提供 backend-private `executable` / `layout` 契约（lowering 视图，不是语言主链 IR）。
-- 不承载语言级 `HIR / MIR / LIR`，也不承载目标专属容器模型。
+## Overview
 
-## 禁止
-- 不在这里扩张成新的 `god object` 类型仓库。
-- 不把后端容器、语言语义和运行时状态全塞进来。
-- 不为了兼容旧遗产而引入大而全历史模型。
-- 不把 executable 视图宣传成跨语言 god IR / 语义总线。
+`nyar-types` holds cross-frontend, cross-analyzer, and cross-backend contracts that must stay stable without importing language compilers or runtimes. It is intentionally **not** a god-object IR crate.
+
+## Major modules
+
+| Module | Purpose |
+|:---|:---|
+| `semantic_ids` | Parameterized MIR identities (`TypeId`, `ItemId`, `OperatorId`, …) |
+| `canonical_program` | Canonical MIR/program pipeline types and staged compile results |
+| `executable` | **Backend-private** lowering view (`Instruction`, `Terminator`, suspend plans) |
+| `layout` | Aggregate / singleton / sum-type layout plans for codegen |
+| `neutral_contract` | Auditable artifact contracts, evidence, provenance |
+| `external_import` | Stable host import/call edge descriptions |
+| `registries` | Extensible attribute and operator registration |
+| `ty` / `symbols` / `source` | Core type, naming, and source-span primitives |
+| `witness_submission` | Witness call edges and method slot submissions |
+| `contract_versions` | Identity / MIR / layout schema version fingerprints |
+
+## `CapabilityTag`
+
+Lightweight string tags attached to `ProgramFacts` and backend requirements so planners can gate lanes (`gpu.shader`, reference management, etc.).
+
+## Usage
+
+```rust
+use nyar_types::{CapabilityTag, ExternalImportLink, QualifiedName};
+
+let cap = CapabilityTag::new("reference.gc");
+```
+
+## Boundaries
+
+- Does **not** define language-level HIR / MIR / LIR branded to Valkyrie.
+- Does **not** embed PE/COFF/MSIL containers or VM interpreter state.
+- `executable` is a lowering view, not a public semantic bus across languages.

@@ -1,20 +1,25 @@
 # interpreter src
 
-这里是运行时调度源码。
+Runtime dispatch source for `nyar-runner` (rustdoc module doc).
 
-## 职责
-- 组织各目标 runtime descriptor。
-- 提供 `effects`、`ffi`、registry 与运行时分发。
-- 为 `legion run` 维护宿主侧目标映射。
-- 让各目标运行时各管各的，不共享混乱宿主逻辑。
+## Responsibilities
 
-## 目标映射
-- `jvm` -> `java`
-- `clr` -> `dotnet`
-- `wasm` -> `node`
-- `windows` -> `exe`
-- `wasi` -> `wasmtime`
+- Organize per-target runtime descriptors.
+- Provide effects, FFI, registry, and runtime dispatch.
+- Maintain host-side target mapping for `legion run`.
+- Keep each target runtime isolated; no shared messy host logic.
 
-## 禁止
-- 不在这里替编译器补 lowering。
-- 不让单个目标目录长成跨平台总入口。
+## Target mapping
+
+| Module | Runs as |
+|:---|:---|
+| `jvm` | Java |
+| `clr` | .NET |
+| `wasm` | Node |
+| `windows` | native `.exe` |
+| `wasi` | Wasmtime |
+
+## Forbidden
+
+- Do not compensate for missing compiler lowering here.
+- Do not let one target directory become the cross-platform mega-entry.

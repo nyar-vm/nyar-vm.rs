@@ -1,4 +1,4 @@
-//! Multi-registry adapters for the Nyar package ecosystem.
+//! Pluggable registry adapters for the Nyar package manager.
 
 mod conda;
 pub mod credentials;

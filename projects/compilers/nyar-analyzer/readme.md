@@ -1,15 +1,43 @@
 # nyar-analyzer
 
-`nyar-analyzer` 提供面向 `nyar` 平台的前端无关分析契约。
+Frontend-neutral analysis contracts for the Nyar platform.
 
-## 职责
-- 承接下游前端已经闭合好的程序事实。
-- 表达入口、导入导出、运行时需求、能力标签等中性分析结果。
-- 为 `nyar` 的分区、lane 选择和 backend 规划提供统一输入。
-- 提供前端无关的 **highlight** / **format**（source formatter + printer + Document 引擎）平台契约。
+## Overview
 
-## 禁止
-- 不依赖具体前端包。
-- 不定义语言专属 `AST / HIR / MIR / LIR`。
-- 不在本 crate 实现具体语言的高亮器 / 格式化器 / printer。
-- 不承担目标容器编码和产物打包职责。
+`nyar-analyzer` consumes **already-closed** facts from language frontends and expresses them in a target-agnostic shape for `nyar` planning, lane selection, and packaging. It does not own Valkyrie `HIR` / `MIR` / `LIR` and does not parse source text.
+
+## Core types
+
+| Type | Role |
+|:---|:---|
+| `ProgramFacts` | Module-level summary: entries, imports/exports, functions, nominal types, capabilities |
+| `EntryContract` / `ImportContract` / `ExportContract` | Neutral linking conventions |
+| `FunctionAnalysis` | Suspend/async/host-interop flags, external import links, reference-management hints |
+| `TypeDefinitionFact` | Enum / unite / flags layout facts for downstream backends |
+| `RuntimeRequirement` | Declared runtime needs (re-exported from `nyar-types`) |
+
+Helper methods on `ProgramFacts` include `primary_entry`, `requires_capability`, and reference-management aggregation across functions.
+
+## Subsystems
+
+- **`highlight`** — platform contract for syntax highlighting (implementations live in frontends).
+- **`format`** — source formatter + printer + `Document` engine contract.
+- **`report`** — SSG / hydrate island specs (`ColSeriesItem`, `HydratedChartSpec`, …) for AWSL tooling.
+
+## Usage
+
+```rust
+use nyar_analyzer::ProgramFacts;
+
+if facts.requires_capability("gpu.shader") {
+    // route to GPU lane in nyar planning
+}
+```
+
+Frontends populate `ProgramFacts` after semantic closure; `nyar` reads it to build `ArtifactPartitionPlan`.
+
+## Boundaries
+
+- No dependency on concrete guest-language parser crates.
+- No backend container encoding or tarball packaging.
+- No language-specific highlighter / formatter implementations in this crate.

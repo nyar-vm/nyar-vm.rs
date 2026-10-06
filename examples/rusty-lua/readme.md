@@ -4,33 +4,33 @@ A Lua language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-lua` is a high-performance Lua frontend for the Nyar VM. It provides full lexical and syntactic analysis of Lua source code and translates it into Gaia IR. By targeting the Nyar VM, Lua scripts can benefit from advanced features like algebraic effects and multi-tier JIT compilation.
+`rusty-lua` provides full lexical and syntactic analysis, compiling Lua source into Gaia IR. Lua scripts benefit from algebraic effects and multi-tier JIT.
 
 ## Features
 
-- **Lua 5.4 Compatibility**: Aims for high compatibility with the latest Lua specifications.
-- **Fast Execution**: Translates Lua's register-based conceptual model into Nyar's stack-based execution, optimized by `nyar-jit`.
-- **First-Class Closures**: Full support for Lua's powerful closure and upvalue system.
-- **Table Support**: Efficient implementation of Lua tables using the VM's native object and dictionary support.
-- **Coroutine Support**: Implements Lua coroutines using Nyar VM's native algebraic effects and delimited continuations.
-- **Metatable System**: Integrated with the VM's virtual call and dynamic dispatch mechanisms.
+- **Lua 5.4 compatibility**: high-compatibility target aligned with the latest Lua specification.
+- **Fast execution**: maps the Lua register conceptual model to Nyar stack execution, optimized via `nyar-jit`.
+- **First-class closures**: full closure and upvalue support.
+- **Table support**: Lua tables via VM objects and dictionaries.
+- **Coroutines**: Lua coroutines via algebraic effects and delimited continuations.
+- **Metatables**: integrated with VM virtual dispatch and dynamic dispatch.
 
-## Supported Constructs
+## Supported constructs
 
-- **All standard Lua statements**: `if`, `while`, `repeat`, `for` (numeric and generic).
-- **Functional Features**: Anonymous functions, multiple return values, proper tail calls.
-- **Table Operations**: Literal construction, indexing, and iteration.
-- **Environment Management**: Global (`_G`) and local variable management.
+- **Standard statements**: `if`, `while`, `repeat`, `for` (numeric and generic).
+- **Functional**: anonymous functions, multiple return values, proper tail calls.
+- **Table operations**: literal construction, indexing, and iteration.
+- **Environment**: global `_G` and local variable management.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.lua
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_lua::RustyLuaFrontend;

@@ -1,7 +1,4 @@
-//! Workspace-level disk cache mechanism.
-//!
-//! Provides content-addressed bucket storage under a cache root. Compilation-stage
-//! semantics (token / staging / ir keys) live in consumers such as `legion`.
+//! Workspace-level content-addressed disk cache for Nyar tooling.
 
 mod error;
 mod hash;

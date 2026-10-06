@@ -1,18 +1,21 @@
-# nyar-optimizer
+# nyar-optimizer (src)
 
-`nyar-optimizer` 提供 `nyar` 平台的 `Object Algebraic`、`E-Graph` 和 `Futamura projection` 优化骨架。
+Object-algebraic optimization skeleton for the Nyar platform (rustdoc source).
 
-## 职责
-- 承接已经完成语义闭合的 `Object Algebraic` 程序边界。
-- 维护等价重写规则、`E-Graph` 会话和提取策略。
-- 为不同目标族选择对应的 `futa_*` 投影家族，而不是输出一份闭合的统一 `IR`。
+## Responsibilities
 
-## 当前边界
-- 当前实现先固定组合接口、规则理论和投影边界。
-- 当前实现明确拒绝把 `Object Algebraic` 简化成单一节点枚举。
-- 当前实现把 `Futamura projection` 视为目标家族投影，而不是 emit 前的小别名步骤。
+- Accept object-algebraic program boundaries after upstream semantic closure.
+- Maintain equivalence rewrite rules, E-Graph sessions, and extraction strategies.
+- Select `futa_*` projection families per target family instead of emitting one closed unified IR.
 
-## 禁止
-- 不复制 `nyar-analyzer` 的 `ProgramFacts` 事实层结构。
-- 不把所有后端重新糊成单一 `god ir`。
-- 不把目标特定编码层误叫成统一后端表示。
+## Current boundaries
+
+- Combination interfaces, rule theories, and projection edges are fixed first.
+- Object algebra is **not** collapsed into a single node enum.
+- Futamura projection is a target-family transform, not a pre-emit alias step.
+
+## Forbidden
+
+- Do not duplicate `nyar-analyzer::ProgramFacts` structures.
+- Do not merge all backends into one god IR.
+- Do not mislabel target-specific encoders as a unified backend representation.

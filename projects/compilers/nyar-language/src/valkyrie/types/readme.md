@@ -1,11 +1,13 @@
 ﻿# types src
 
-这里放共享类型定义与编译期公共数据结构。
+Shared type definitions and compile-time data structures for Valkyrie.
 
-## 职责
-- 维护 `SourceSpan`、错误类型、`HIR` 与 witness 相关基础结构。
-- 作为 parser、compiler、interpreter 之间的共享契约层。
+## Responsibilities
 
-## 禁止
-- 不在这里塞入具体编译流程。
-- 不把共享类型层扩成包含行为和流程的上帝模块。
+- Maintain `SourceSpan`, error types, HIR structures, and witness-related foundations.
+- Act as the shared contract between parser, compiler, and interpreter paths.
+
+## Forbidden
+
+- No concrete compile pipelines in this layer.
+- Do not expand shared types into a god module of behavior and control flow.

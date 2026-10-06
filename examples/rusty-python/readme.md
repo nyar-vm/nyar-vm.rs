@@ -4,33 +4,33 @@ A Python language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-python` is a compiler frontend that allows Python source code to be executed on the Nyar VM. It leverages the `oak-python` parser to generate an Abstract Syntax Tree (AST), which is then lowered into Gaia Intermediate Representation (Gaia IR) for high-performance execution.
+`rusty-python` parses Python 3 source (via `oak-python`) into an AST, then lowers to unified IR for optimized execution on Nyar.
 
 ## Features
 
-- **Python 3 Compatibility**: Support for a significant subset of Python 3 syntax and features.
-- **Efficient Variable Scoping**: Correct handling of local, global, and nonlocal scopes.
-- **Object Model Mapping**: Maps Python's dynamic object model (attributes, methods) to the Nyar VM's object system.
-- **Nyar Integration**: Seamlessly compiles to Gaia IR, enabling JIT optimization via `nyar-jit`.
-- **Interoperability**: Ability to call functions and use objects defined in other Nyar-supported languages.
+- **Python 3 subset**: common syntax and runtime features.
+- **Scoping**: local, global, and nonlocal name rules.
+- **Object model**: attributes and methods on Nyar VM objects.
+- **Nyar integration**: IR output consumable by `nyar-jit`.
+- **Interop**: call functions and objects defined in other Nyar frontends.
 
-## Supported Constructs
+## Supported constructs
 
-- **Control Flow**: `if`, `for`, `while`, `try-except`, `with`.
-- **Data Structures**: Lists, Dictionaries, Sets, Tuples.
-- **Functions**: Support for closures, decorators, and generator functions (via algebraic effects).
-- **Classes**: Full support for class definitions, inheritance, and magic methods.
-- **Assignments**: Multiple assignments, augmented assignments (`+=`, `-=`, etc.).
+- **Control flow**: `if`, `for`, `while`, `try-except`, `with`.
+- **Data structures**: list, dict, set, tuple.
+- **Functions**: closures, decorators, generators (via algebraic effects).
+- **Classes**: inheritance and dunder methods.
+- **Assignment**: multiple and augmented assignment (`+=`, …).
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run example.py
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_python::RustyPythonFrontend;
@@ -38,12 +38,11 @@ use nyar_types::NyarFrontend;
 
 let frontend = RustyPythonFrontend::new();
 let ast = frontend.parse("print('Hello from Nyar!')").unwrap();
-// Lower and execute via NyarVM
 ```
 
 ## Status
 
-`rusty-python` is currently in active development. While it supports many core Python features, some parts of the standard library and advanced language features (like metaclasses) are still being implemented.
+Active development: core syntax is largely covered; stdlib surface and metaclasses remain incomplete.
 
 ## License
 

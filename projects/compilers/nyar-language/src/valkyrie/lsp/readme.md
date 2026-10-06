@@ -1,11 +1,13 @@
 ﻿# lsp src
 
-这里是 LSP 服务实现。
+Language Server Protocol implementation for Valkyrie.
 
-## 职责
-- 组织协议入口、handlers、状态缓存与诊断转换。
-- 复用编译器事实为 IDE 提供查询能力。
+## Responsibilities
 
-## 禁止
-- 不把 LSP 需要的临时结构反向变成编译主表示。
-- 不在这里复制一套编译管线。
+- Organize protocol entry, handlers, state cache, and diagnostic conversion.
+- Reuse compiler facts to power IDE queries.
+
+## Forbidden
+
+- Do not promote LSP-only temporary structures into compiler main representations.
+- Do not duplicate the full compile pipeline inside LSP handlers.

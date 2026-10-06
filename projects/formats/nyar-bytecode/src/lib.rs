@@ -1,4 +1,4 @@
-//! Nyar .nyar / .legion 外码格式合同（储存码）。
+//! Nyar `.nyar` / `.legion` 外码格式合同（储存码）。
 //!
 //! 本 crate 是 opcode、section、encode/decode 与纯格式结构的唯一所有者。
 //! 内码、解释器、GC 与 JIT 不得在此定义运行时执行表示。

@@ -1,3 +1,6 @@
+#![doc = include_str!("../readme.md")]
+#![warn(missing_docs)]
+
 #[path = "valkyrie/formatter/mod.rs"]
 pub mod formatter;
 #[path = "valkyrie/text/mod.rs"]

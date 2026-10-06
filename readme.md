@@ -3,9 +3,9 @@
 [![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Status](https://img.shields.io/badge/status-active-success.svg)](#)
 
-**NyarVM** 是一款专为现代编程语言设计的高性能、跨平台虚拟机关编译器基础设施。它通过统一的 **Nyar IR** 层，实现了静态语言与动态语言在同一运行时底座上的无缝协作。
+## 💡 NyarVM 是什么？
 
----
+**NyarVM** 是一款专为现代编程语言设计的高性能、跨平台虚拟机关编译器基础设施。它通过统一的 **Nyar IR** 层，实现了静态语言与动态语言在同一运行时底座上的无缝协作。
 
 ## 🏗️ 核心架构：三位一体的执行语言
 
@@ -153,10 +153,13 @@ graph LR
 | 模块 | 路径 | 功能描述 |
 | :--- | :--- | :--- |
 | **虚拟机核心** | [`nyar-vm`](./projects/runtimes/nyar-vm) | 字节码解释器、异步运行时及驱动 |
-| **类型系统** | [`nyar-types`](./projects/nyar-types) | NaN-Boxing 实现与核心类型定义 |
+| **类型系统** | [`nyar-types`](./projects/compilers/nyar-types) | NaN-Boxing 实现与核心类型定义 |
 | **垃圾回收** | [`nyar-gc`](./projects/runtimes/nyar-gc) | 高性能分块式垃圾回收器 |
 | **加速引擎** | [`nyar-jit`](./projects/runtimes/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链 |
 | **示例前端** | [`examples/`](./examples) | C, Java, Go, TS 等多种语言的 Nyar 实现 |
+| **语言主链** | [`nyar-language`](./projects/compilers/nyar-language) | Valkyrie `HIR` / `MIR` 与多宿主脚本前端 |
+
+Per-crate docs live in each directory's `readme.md` (for example [`nyar-vm/readme.md`](./projects/runtimes/nyar-vm/readme.md)).
 
 ---
 

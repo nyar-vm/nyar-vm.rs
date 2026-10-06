@@ -1,11 +1,13 @@
 ﻿# lsp handlers
 
-这里放 LSP 请求处理器。
+LSP request handlers.
 
-## 职责
-- 把协议请求映射到编译器查询和文档状态。
-- 保持每个 handler 聚焦单一能力。
+## Responsibilities
 
-## 禁止
-- 不在 handler 内重建编译语义。
-- 不把协议分支写成难以维护的巨型入口。
+- Map protocol requests to compiler queries and document state.
+- Keep each handler focused on a single capability.
+
+## Forbidden
+
+- Do not rebuild compile semantics inside handlers.
+- Do not grow protocol routing into unmaintainable mega-entry functions.

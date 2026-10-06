@@ -1,21 +1,21 @@
 # highlight
 
-前端无关的语法高亮契约层（对齐 JetBrains IDE platform + C# `Nyar.Analyzer.Highlight`）。
+Frontend-neutral syntax highlighting contracts (aligned with JetBrains IDE platform + C# `Nyar.Analyzer.Highlight`).
 
-## 层级
+## Layers
 
-| 层 | 位置 | 职责 |
+| Layer | Location | Role |
 |:---|:---|:---|
-| Platform | `nyar-analyzer::highlight` | `HighlightKind` / `HighlightSpan` / `Highlighter` trait / `HighlighterKind` / `Registry` / `hl-*` HTML |
-| Language plugin | `nyar-language::{lang}::highlight` | 同一语言多个 pass：`Lexical`（词法）+ `Semantic`（语义） |
+| Platform | `nyar-analyzer::highlight` | `HighlightKind`, `HighlightSpan`, `Highlighter` trait, `HighlighterKind`, `Registry`, `hl-*` HTML |
+| Language plugin | `nyar-language::{lang}::highlight` | Multiple passes per language: `Lexical` + `Semantic` |
 
-## 多 pass
+## Multi-pass highlighting
 
-同一 `language_id` 可注册多种高亮器：
+One `language_id` may register several highlighters:
 
-- **Lexical**：仅需源文本，同步、便宜（文档 SSG / 输入过程）
-- **Semantic**：依赖 `AnalysisContext`，可把标识符升级为类型 / 函数等（IDE / LSP）
+- **Lexical** — source text only, synchronous and cheap (SSG docs, typing)
+- **Semantic** — uses `AnalysisContext` to upgrade identifiers to types, functions, etc. (IDE / LSP)
 
-`HighlighterRegistry::highlight_merged` 先词法后语义 overlay。
+`HighlighterRegistry::highlight_merged` applies lexical first, then semantic overlay.
 
-具体语言**不得**在 analyzer 内实现；analyzer 也不依赖 `std-data` 词法器。
+Concrete languages **must not** be implemented inside `nyar-analyzer`; the analyzer also does not depend on `std-data` lexers directly.

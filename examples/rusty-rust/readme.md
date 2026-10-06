@@ -4,33 +4,33 @@ A Rust language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-rust` (also known as Mini Rust) is a compiler frontend that allows a subset of the Rust programming language to be executed on the Nyar VM. It provides a robust parsing and lowering pipeline that transforms Rust source code into Gaia IR, benefiting from Nyar's advanced runtime optimizations.
+`rusty-rust` (Mini Rust) executes a subset of Rust on the Nyar VM. The parse and lowering pipeline transforms Rust source into unified IR, benefiting from Nyar runtime optimizations (JIT, AOT, GC).
 
 ## Features
 
-- **Safe subset of Rust**: Supports core Rust features including ownership concepts, pattern matching, and traits.
-- **Advanced AOT Compilation**: Utilizes `nyar-aot` and E-Graph optimization to generate highly optimized bytecode modules.
-- **Type-Safe Lowering**: Leverages `chomsky-uir` for constraint analysis during the lowering process.
-- **Algebraic Effects Integration**: Maps Rust's future/async system to Nyar's native algebraic effects.
-- **Zero-Cost Abstractions**: Aims to maintain Rust's promise of high performance even when running on a virtual machine.
+- **Safe subset**: ownership concepts, pattern matching, and traits.
+- **Advanced AOT**: integrates with `nyar-aot` and E-Graph optimization for bytecode modules.
+- **Type-safe lowering**: uses `chomsky-uir` for constraint analysis during lowering.
+- **Algebraic effects**: maps Rust async/future models to Nyar native effects.
+- **Zero-cost abstractions**: aims to preserve Rust performance characteristics on the VM.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `let` bindings, `fn` definitions, `struct`, `enum`, `impl`.
-- **Control Flow**: `if`, `loop`, `while`, `for`, `match`.
-- **Ownership**: Support for references and basic borrow checking logic during compilation.
-- **Traits**: Implementation of trait-based polymorphism via Nyar's witness tables.
-- **Macros**: Support for basic declarative macros.
+- **Core syntax**: `let`, `fn`, `struct`, `enum`, `impl`.
+- **Control flow**: `if`, `loop`, `while`, `for`, `match`.
+- **Ownership**: references and compile-time borrow checking during lowering.
+- **Traits**: trait polymorphism via witness tables.
+- **Macros**: basic declarative macro support.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.rs
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_rust::MiniRustFrontend;

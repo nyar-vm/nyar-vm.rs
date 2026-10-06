@@ -1,24 +1,23 @@
 # mir
 
-这里承载 `MIR (SSA)`。
+Home of **MIR (SSA)** in the Valkyrie compiler.
 
-## 职责
-- 以 `SSA` 形式表达目标无关的中层语义。
-- 显式建模值、块参数、指令产值与 terminator。
-- 为优化和后续 artifact 分区提供稳定输入。
-- 控制流统一待办已并入工作区 `projects/readme.md`。
+## Responsibilities
 
-## 禁止
-- 不退回语句列表式伪 `MIR`。
-- 不塞入 `CLR / JVM / WASM / native` 专属指令。
-- 不把 `MIR` 演化成新的全能总线对象。
+- Express target-neutral mid-level semantics in SSA form.
+- Model values, block parameters, instruction results, and terminators explicitly.
+- Provide stable input for optimization and downstream artifact partitioning.
+- Control-flow unification work is tracked at the workspace level (see [`projects/readme.md`](../../../../readme.md)).
 
-## 分析入口与生产边界
+## Forbidden
 
-- `compile_source_to_mir` 消费 `compile_source` 的正式 HIR 展开和调用验证结果，
-  不单独解析源码，不绕过 HIR 合同。
-- `lower_root_to_mir` 接受 AST，但同样先验证 HIR 语义合同，再降低和验证控制流。
-- 分析接口只返回阶段数据，不证明依赖闭包、Canonical 校验、表示规划或产物成功。
-  正式产物入口消费 Resolver 提供的有序源码组，由 Compiler 完成依赖链接和全部后续阶段。
-- 单源码到 `CompiledProgram` 的辅助方法和 HIR 直连生产器仅用于单元测试；
-  不存在按文件路径或预制依赖 HIR 导出直接生产 `CompiledProgram` 的生产方法。
+- No statement-list pseudo-MIR rollback.
+- No CLR / JVM / WASM / native-specific opcodes in this layer.
+- Do not evolve MIR into another omnibus bus type.
+
+## Analysis entry points vs production
+
+- `compile_source_to_mir` consumes the formal HIR expansion and call validation from `compile_source`; it does not parse source on its own or bypass the HIR contract.
+- `lower_root_to_mir` accepts AST input but still validates the HIR semantic contract before lowering and control-flow verification.
+- Analysis APIs return stage data only; they do not prove dependency closure, canonical validation, representation planning, or artifact success. Production artifact entry consumes ordered source groups from the Resolver; the Compiler performs dependency linking and all later stages.
+- Single-source→`CompiledProgram` helpers and HIR-direct producers exist for unit tests only. There is no production method that emits `CompiledProgram` from a file path or prebuilt dependency HIR export.

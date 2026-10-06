@@ -1,10 +1,9 @@
 # compiler tests pipeline
 
-这里验证 parser 输出进入 `HIR / MIR / LIR` 的链路，不允许重新发明统一伪 `IR`。
+Validates parser output flowing into `HIR / MIR / LIR` without inventing a unified pseudo-IR.
 
-## 重点
+## Focus
 
-- 保证 `row` 在进入 `MIR` 前已经闭合为成员调用，而不是开放 evidence。
-- 保证 `trait / effect` 的开放调度不会被过早伪装成静态调用。
-- 保证 `ArtifactPartitionPlan` 之后进入的是 target-specific input，而不是跨端统一壳。
-
+- `row` must close to member calls before entering MIR, not remain open evidence.
+- Open `trait` / `effect` dispatch must not be disguised as static calls too early.
+- After `ArtifactPartitionPlan`, inputs must be target-specific, not a cross-target compatibility shell.

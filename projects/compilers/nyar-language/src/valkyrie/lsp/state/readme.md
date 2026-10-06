@@ -1,11 +1,13 @@
 ﻿# lsp state
 
-这里维护 LSP 侧缓存、文档状态与查询辅助结构。
+LSP-side caches, document state, and query helper structures.
 
-## 职责
-- 保存与 IDE 会话相关的轻量状态。
-- 为 handlers 提供一致的查询入口。
+## Responsibilities
 
-## 禁止
-- 不让缓存结构变成新的真相来源。
-- 不把语言主链事实从编译器拷贝一份长期维护。
+- Track open documents, version stamps, and incremental invalidation.
+- Cache compiler snapshots reused by multiple handlers.
+
+## Forbidden
+
+- Do not store alternate semantic representations that diverge from the compiler main chain.
+- Do not duplicate full pipeline state when a query snapshot suffices.

@@ -1,6 +1,7 @@
 ﻿# types tests
 
-这里验证共享类型结构和 witness 契约。
+Validates shared type structures and witness contracts.
 
-## 职责
-- 覆盖序列化、基础一致性和公共类型不变量。
+## Responsibilities
+
+- Cover serialization, basic consistency, and public type invariants.

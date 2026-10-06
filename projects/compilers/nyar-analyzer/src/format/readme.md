@@ -1,33 +1,33 @@
 # format
 
-前端无关的源码格式化 / printer 契约层（对齐 `highlight` 分层）。
+Frontend-neutral source formatting and printer contracts (same layering as `highlight`).
 
-## 层级
+## Layers
 
-| 层 | 位置 | 职责 |
+| Layer | Location | Role |
 |:---|:---|:---|
-| Platform | `nyar-analyzer::format` | `FormatOptions` / `FormatError` / **`Document` 布局引擎** / **`syntax` CST** / `SourceMap` / `SourceFormatter` / `Printer` / Registry |
-| Language plugin | `nyar-language` | `FormatSyntax`（CST → `Document`）+ `ToDocument`（模型 printer）+ 各语言 `SourceFormatter` |
+| Platform | `nyar-analyzer::format` | `FormatOptions`, `FormatError`, **`Document` layout engine**, **`syntax` CST**, `SourceMap`, `SourceFormatter`, `Printer`, Registry |
+| Language plugin | `nyar-language` | `FormatSyntax` (CST → `Document`), `ToDocument` (model printer), per-language `SourceFormatter` |
 
-## 两类写出（必须分离）
+## Two write paths (must stay separate)
 
-| 契约 | 输入 | 输出 | 用途 |
+| Contract | Input | Output | Use |
 |:---|:---|:---|:---|
-| **SourceFormatter** | 源码文本 | `FormattedOutput`（文本 + `SourceMap`） | **正规格式化**；保留 trivia；`legion fmt` / LSP |
-| **Printer** | 已解析**数据模型** | 文本 | 序列化 / 调试；**不保证**注释与空白保留 |
+| **SourceFormatter** | Source text | `FormattedOutput` (text + `SourceMap`) | **Canonical formatting**; preserves trivia; `legion fmt` / LSP |
+| **Printer** | Parsed **data model** | Text | Serialization / debug; **does not** guarantee comment or whitespace preservation |
 
-## 正规格式化管线
+## Canonical formatting pipeline
 
 ```text
 source → lossless lexer → CST → FormatSyntax::format_document → Document::render_with_map
 ```
 
-## Document 引擎
+## Document engine
 
-Wadler 风格文档代数：`text` / `trivia` / `append` / `nest` / `line` / `softline` / `hardline` / `group` / `fill`。
+Wadler-style document algebra: `text`, `trivia`, `append`, `nest`, `line`, `softline`, `hardline`, `group`, `fill`.
 
-语言侧实现 `FormatSyntax::format_document(&self, options)`（CST）与 `ToDocument::to_document`（模型 printer，orphan 规则下 trait 在 `nyar-language`）。
+Language plugins implement `FormatSyntax::format_document(&self, options)` (CST) and `ToDocument::to_document` (model printer; trait lives in `nyar-language` under orphan rules).
 
-## 遗留
+## Legacy
 
-`FormatBuffer` 已弃用，仅供 V/Awsl 过渡；迁移完成后移除。
+`FormatBuffer` is deprecated and kept only for V/AWSL transition; remove after migration.

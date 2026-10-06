@@ -1,17 +1,20 @@
 # packaging
 
-这里放目标 lane 与产物交付协议。
+Target lanes and artifact delivery protocol.
 
-## 职责
-- 描述 `OutputSpec`、`ArtifactSet`、`TargetLane`。
-- 统一编排协议，不统一物理 `IR`。
+## Responsibilities
 
-## 架构含义
-- 这里对应 `ArtifactPartitionPlan -> target lane -> backend input -> artifact set` 之间的承接层。
-- `packaging` 只负责“送去哪条路线、打成什么产物”，不负责重新解释语言语义。
-- 每条 lane 进入的都应是该目标真正支持的低层输入；不合法输入必须在进入后端前被拒绝。
+- Describe `OutputSpec`, `ArtifactSet`, and `TargetLane`.
+- Unify orchestration protocol, not physical IR.
 
-## 与 Assembler 文档对齐
-- 这里对应旧文档里 `Assembler` 保留的那一层：选择、验证、调用后端、交付产物。
-- 它不负责 trait resolve，不负责 row 判定，不负责 effect handler 选择，也不负责把开放 witness 改写成静态函数。
-- `OutputSpec` 与 `ArtifactSet` 只描述交付结果，不承载语言级真相。
+## Architecture
+
+- Bridges `ArtifactPartitionPlan → target lane → backend input → artifact set`.
+- Packaging answers “which route” and “what artifacts,” not “what does this call mean in the language.”
+- Each lane must receive low-level input the target actually supports; invalid input must be rejected before backends run.
+
+## Alignment with assembler docs
+
+- Corresponds to the layer legacy docs called `Assembler`: select, validate, invoke backend, deliver artifacts.
+- Does not perform trait resolve, row decisions, effect handler selection, or rewrite open witness into static functions.
+- `OutputSpec` and `ArtifactSet` describe delivery results only; they are not carriers of language truth.

@@ -1,11 +1,13 @@
 ﻿# hir
 
-这里放 `HIR` 结构定义。
+HIR structure definitions.
 
-## 职责
-- 表达已经完成基础语义整理后的高层表示。
-- 为 `MIR (SSA)` lowering 和类型相关分析提供稳定输入。
+## Responsibilities
 
-## 禁止
-- 不在这里编码目标相关细节。
-- 不把 `HIR` 做成跨编译阶段的万能承载体。
+- Represent high-level program shape after basic semantic organization.
+- Provide stable input for MIR (SSA) lowering and type-related analysis.
+
+## Forbidden
+
+- No target-specific encoding here.
+- Do not turn HIR into an omnibus carrier across all compile phases.

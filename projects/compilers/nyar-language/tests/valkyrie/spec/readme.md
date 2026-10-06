@@ -1,25 +1,25 @@
 # compiler tests spec
 
-这里放语义规范测试。
+Semantic specification tests.
 
-## 目标
+## Goals
 
-- 把 `row / trait / class / sealed class / unite / effect` 的边界先写成可执行护栏。
-- 即便当前实现还不完整，也先把场景、命名和预期结果立起来。
-- 防止 `HIR`、`MIR`、`nyar` 或某条后端路线把语义悄悄改掉。
+- Encode executable guardrails for `row`, `trait`, `class`, `sealed class`, `unite`, and `effect` boundaries first.
+- Establish scenarios, naming, and expected outcomes even when implementation is incomplete.
+- Prevent `HIR`, `MIR`, `nyar`, or any backend route from silently changing semantics.
 
-## 分组
+## Groups
 
-- `row.rs`: 匿名 `trait` 只做方法行判定，不支持 associated type。
-- `trait_system.rs`: 具名 trait 满足必须落到具名 witness。
-- `nominal.rs`: `class / sealed class` 只走名义子类型，`unite` 只认已声明 variant 集合。
-- `overload.rs`: 固定重载优先级与二义性规则。
-- `associated_types.rs`: 关联类型只属于具名 trait，且必须唯一可解。
-- `diagnostics.rs`: 报错必须区分 nominal、row、trait、effect。
-- `backend_boundary.rs`: 后端不得重新做 row/nominal 判定。
+- `row.rs` — anonymous `trait` row methods only; no associated types.
+- `trait_system.rs` — named trait satisfaction must land on named witness.
+- `nominal.rs` — `class` / `sealed class` use nominal subtyping only; `unite` accepts only declared variant sets.
+- `overload.rs` — fixed overload priority and ambiguity rules.
+- `associated_types.rs` — associated types belong to named traits only and must resolve uniquely.
+- `diagnostics.rs` — errors must distinguish nominal, row, trait, and effect failures.
+- `backend_boundary.rs` — backends must not re-run row/nominal decisions.
 
-## 策略
+## Strategy
 
-- 优先写规范测试，再补实现测试。
-- 可以先用 `#[ignore = "..."]` 保留尚未补齐的场景。
-- 不允许因为“现在过不了”就把关键语义点留成口头约定。
+- Prefer spec tests before implementation tests.
+- Use `#[ignore = "..."]` for scenarios not yet implemented.
+- Do not leave critical semantics as oral convention because tests fail today.

@@ -1,22 +1,20 @@
-# Witness Table
+# Witness table
 
-该模块定义 Witness Table 的核心数据结构。
+Core witness-table data structures for Valkyrie dynamic dispatch.
 
-## 术语区分
+## Terminology
 
-| 术语 | 范围 | 说明 |
+| Term | Scope | Notes |
 | :--- | :--- | :--- |
-| **witness table** | 本模块 / `trait`·`imply` | Valkyrie 动态派发；胖指针 `(data, witness_table)` |
-| **COM vtable** | Windows FFI | `[com]` 互操作专用，不属于本模块 |
-| **传统 OOP vtable** | 外部对比 | 文档对比用，非 Valkyrie 实现 |
+| **witness table** | This module / `trait` · `imply` | Valkyrie dynamic dispatch; fat pointer `(data, witness_table)` |
+| **COM vtable** | Windows FFI | `[com]` interop only; not part of this module |
+| **classic OOP vtable** | External comparison | Documentation contrast only; not Valkyrie's model |
 
-## 概述
+## Overview
 
-Witness Table 是 trait 实现的运行时表示，
-用于动态方法分发。每个 `impl Trait for Type` 
-都会生成一个 Witness Table。
+A witness table is the runtime representation of a trait implementation used for dynamic method dispatch. Each `impl Trait for Type` generates a witness table.
 
-## 数据结构
+## Data shape
 
 ```text
 struct WitnessTable {
@@ -27,9 +25,7 @@ struct WitnessTable {
 }
 ```
 
-## 方法分发
+## Dispatch modes
 
-Witness Table 支持以下分发方式：
-
-- **静态分发**: 编译时已知具体类型
-- **动态分发**: 通过 witness table 运行时查找
+- **Static dispatch** — concrete type known at compile time
+- **Dynamic dispatch** — runtime lookup through a witness table

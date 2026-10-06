@@ -1,4 +1,3 @@
 ﻿# compiler tests optimizer
 
-这里验证优化是否保持语义等价，避免优化层偷偷承担 lowering 修补工作。见证消除（witness elimination）针对封闭类的 trait 动态派发。
-
+Validates optimizations preserve semantics and do not silently patch lowering gaps. Witness elimination targets trait dynamic dispatch on sealed classes.

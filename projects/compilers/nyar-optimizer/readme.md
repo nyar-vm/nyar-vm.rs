@@ -1,19 +1,26 @@
 # nyar-optimizer
 
-`nyar-optimizer` 提供 `nyar` 平台的 `Object Algebraic`、`E-Graph` 和 `Futamura projection` 优化骨架。
+Object-algebraic optimization skeleton for the Nyar platform.
 
-## 职责
-- 承接已经完成语义闭合的 `Object Algebraic` 程序边界。
-- 维护等价重写规则、`E-Graph` 会话和提取策略。
-- 为不同目标族选择对应的 `futa_*` 投影家族，而不是输出一份闭合的统一 `IR`。
-- 将宿主边界与引用对象管理策略分开建模；`js glue` / `wasi component` 可共享 `GC` 引用语义，但不共享宿主绑定边界。
+## Overview
 
-## 当前边界
-- 当前实现先固定组合接口、规则理论和投影边界。
-- 当前实现明确拒绝把 `Object Algebraic` 简化成单一节点枚举。
-- 当前实现把 `Futamura projection` 视为目标家族投影，而不是 emit 前的小别名步骤。
+`nyar-optimizer` provides **E-Graph** sessions, rewrite rules, and **Futamura projection** families over object-algebraic programs. It sits between closed semantic input and `nyar` artifact planning—not a single unified IR enum.
 
-## 禁止
-- 不复制 `nyar-analyzer` 的 `ProgramFacts` 事实层结构。
-- 不把所有后端重新糊成单一 `god ir`。
-- 不把目标特定编码层误叫成统一后端表示。
+## Responsibilities
+
+- Accept object-algebraic program boundaries after upstream semantic closure.
+- Run equivalence rewriting and extraction strategies inside an E-Graph session.
+- Select `futa_*` projection families per target family instead of emitting one closed IR shape.
+- Model host boundaries separately from reference-object management (JS glue / WASI components may share GC reference semantics but not host binding rules).
+
+## Current status
+
+- Combination interfaces, rule theories, and projection edges are fixed first.
+- Object algebra is **not** collapsed into a single node enum.
+- Futamura projection is a target-family transform, not a pre-emit alias step.
+
+## Boundaries
+
+- Does not duplicate `nyar-analyzer::ProgramFacts` structures.
+- Does not merge all backends into one god IR.
+- Target-specific encoders (MSIL, SPIR-V, …) live in `nyar` / `nyar-emitter`, not here.

@@ -1,20 +1,31 @@
-# valkyrie-interpreter
+# nyar-runner
 
-`nyar-runner` 为 `legion run` 提供宿主支持，负责目标运行时调度与宿主接口，不承担语言主链设计。
+Host runtime dispatch for `legion run` and native/Wasm/Node embedding.
 
-## 职责
-- 为 `CLR / JVM / WASI / WASM / Windows` 提供独立运行时入口。
-- 维护运行时注册表、FFI、effects 与目标描述。
-- 消费编译器产物并调度到对应目标。
+## Overview
 
-## 目标映射
-- `src/jvm` 跑 `java`。
-- `src/clr` 跑 `dotnet`。
-- `src/wasm` 跑 `node`。
-- `src/windows` 跑 `exe`。
-- `src/wasi` 跑 `wasmtime`。
+`nyar-runner` schedules **compiled artifacts** to target runtimes. It owns FFI, effect hooks, runner registration, and target descriptors—not the Valkyrie language main chain.
 
-## 禁止
-- 不在这里重新定义 `HIR / MIR / LIR`。
-- 不把类型检查和语言语义闭合逻辑塞回运行时。
-- 不通过 runtime host bridge 规避 `CLR` 源头自举问题。
+## Target modules
+
+| Module | Runs |
+|:---|:---|
+| `src/jvm` | Java / JVM artifacts |
+| `src/clr` | .NET / CLR |
+| `src/wasm` | Node + Wasm JS glue |
+| `src/wasi` | Wasmtime / WASI |
+| `src/windows` | Native `.exe` |
+
+`nyar-wasm` and `nyar-napi` re-export this crate as the shared host surface for platform packages.
+
+## Responsibilities
+
+- Runtime registry and runner selection (`RunnerFamily`, `RunnerSelector` from `nyar`).
+- Load compiler output and invoke the correct OS/process/embedder.
+- Surface host interop required by suspended functions and imports.
+
+## Boundaries
+
+- No HIR / MIR / type checking.
+- No bypass of CLR bootstrap requirements via ad-hoc host bridges.
+- Compilation stays in `nyar-language` + `nyar-emitter`; this crate executes results.

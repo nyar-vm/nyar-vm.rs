@@ -1,4 +1,4 @@
-//! 前端无关的报告 / SSG / hydrate 岛契约（平台层）。
+#![doc = include_str!("readme.md")]
 
 mod island;
 mod literal;
