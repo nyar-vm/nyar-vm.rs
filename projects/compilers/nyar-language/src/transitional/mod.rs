@@ -8,7 +8,7 @@
 //! | `guest_scripts` | `oak-bash` 等 + 解释器重写 |
 //! | `msil` | `acorn-pe::msil` 已迁入，待 `oak-msil` 正式命名 |
 //! | `notedown` | `oak-notedown` / `oak-markdown` |
-//! | `tgrammar` | `oak-valkyrie` 模板前端 |
+//! | `tgrammar` | 已自 vcc-data 迁入 `transitional::tgrammar`，待 Oak 模板前端 |
 pub mod cst;
 pub mod guest_scripts;
 pub mod msil;

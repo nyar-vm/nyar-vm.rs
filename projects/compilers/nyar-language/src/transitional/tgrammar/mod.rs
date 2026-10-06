@@ -1,9 +1,14 @@
-//! `tgrammar` 模板预处理（过渡 `vcc-data`）。
+//! `tgrammar` 模板预处理（自 vcc-data 迁入，待 Oak `oak-valkyrie` 模板前端）。
 //!
-//! 目标模板中的 `<% match arch %>` 片段在 Compiler 内展开；长期应迁入 Oak
-//! `oak-valkyrie` 或独立模板前端，不在此扩展语法。
+//! 目标模板中的 `<% match arch %>` 片段在 Compiler 内展开。
 
-use vcc_data::text::valkyrie::tgrammar::{TgIf, TgLoop, TgMatch, TgNode};
+mod ast;
+mod lexer;
+mod parser;
+
+pub use ast::{TgIf, TgIfArm, TgKeyword, TgLoop, TgMatch, TgMatchArm, TgNode, TgRoot, TgTextPart};
+pub use lexer::{Lexer, Token, TokenKind};
+pub use parser::{TgParseError, parse_tgrammar_fragment, parse_tgrammar_template};
 
 /// 按目标架构展开源码中的 `tgrammar` 模板片段。
 pub fn preprocess_target_templates(source: &str, arch: &str) -> String {
@@ -17,7 +22,7 @@ pub fn preprocess_target_templates(source: &str, arch: &str) -> String {
         };
         let abs = pos + rel;
         result.push_str(&source[pos..abs]);
-        match vcc_data::text::valkyrie::tgrammar::parse_tgrammar_fragment(&source[abs..]) {
+        match parse_tgrammar_fragment(&source[abs..]) {
             Ok((nodes, consumed)) if nodes.len() == 1 => {
                 let fragment = &source[abs..abs + consumed];
                 if let TgNode::Match(match_node) = &nodes[0]
