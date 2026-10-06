@@ -11,7 +11,6 @@
 //! 目标 preparation 与旧装配成功链的替换尚未完成。
 
 mod backend_bundle;
-mod tgrammar_bridge;
 mod canonical;
 mod diagnostics;
 mod driver;

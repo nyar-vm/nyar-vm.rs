@@ -127,13 +127,13 @@ fn vcc_data_imports_are_confined_to_transitional_modules() {
     for path in files {
         let rel = path.strip_prefix(&src_root).unwrap();
         let rel = rel.to_string_lossy();
-        if rel.starts_with("transitional") || rel.ends_with("tgrammar_bridge.rs") {
+        if rel.starts_with("transitional") {
             continue;
         }
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert!(
             !source.contains("vcc_data::"),
-            "{} must not import `vcc_data` directly (use `crate::transitional` or `tgrammar_bridge`)",
+            "{} must not import `vcc_data` directly (use `crate::transitional`)",
             path.display()
         );
     }

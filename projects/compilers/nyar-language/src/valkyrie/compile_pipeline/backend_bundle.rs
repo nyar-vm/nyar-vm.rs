@@ -41,7 +41,7 @@ fn compile_source_groups_to_backend_bundle(
         .iter()
         .cloned()
         .map(|mut group| {
-            group.source = super::tgrammar_bridge::preprocess_target_templates(&group.source, arch);
+            group.source = crate::transitional::tgrammar::preprocess_target_templates(&group.source, arch);
             group
         })
         .collect::<Vec<_>>();

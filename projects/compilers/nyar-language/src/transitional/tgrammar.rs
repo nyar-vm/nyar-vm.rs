@@ -1,4 +1,4 @@
-//! `tgrammar` 模板预处理（过渡：`vcc-data`）。
+//! `tgrammar` 模板预处理（过渡 `vcc-data`）。
 //!
 //! 目标模板中的 `<% match arch %>` 片段在 Compiler 内展开；长期应迁入 Oak
 //! `oak-valkyrie` 或独立模板前端，不在此扩展语法。

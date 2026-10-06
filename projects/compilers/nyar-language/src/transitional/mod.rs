@@ -6,3 +6,4 @@ pub mod cst;
 pub mod guest_scripts;
 pub mod msil;
 pub mod notedown;
+pub mod tgrammar;
