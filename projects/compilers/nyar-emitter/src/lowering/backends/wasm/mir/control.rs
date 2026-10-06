@@ -2,7 +2,7 @@
 
 use super::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef, WasmMirLowerer};
 use crate::lowering::backends::wasm::sections::encode_uleb128;
-use std_data::binary::wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
+use acorn_wasm::{BLOCKTYPE_EMPTY, VALTYPE_I32, WasmOpcode, encode_return, encode_unreachable};
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_function_body(&mut self) {

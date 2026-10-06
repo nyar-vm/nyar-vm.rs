@@ -11,7 +11,7 @@ use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, Ny
 use crate::lowering::backends::wasm::gc::wasm_gc_field_type_byte;
 use nyar_types::AggregateLayout;
 use std::collections::BTreeMap;
-use std_data::binary::wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
+use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 
 pub(super) fn is_js_glue_host_string_type(ty: &NyarType) -> bool {
     // Only the explicit language encoding reaches the JS glue ABI. Nominal

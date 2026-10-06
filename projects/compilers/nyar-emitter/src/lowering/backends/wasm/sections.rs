@@ -1,6 +1,6 @@
 //! Wasm binary section codecs and module mutation helpers.
 use crate::nyar_backend_wasi::{WasmBinaryModule, WasmSection};
-use std_data::binary::wasm::{
+use acorn_wasm::{
     FIELD_MUTABLE, LIMITS_HAS_MAX, LIMITS_MIN_ONLY, TYPE_FORM_FUNC, VALTYPE_FUNCREF, VALTYPE_I32, WasmExternalKind, WasmOpcode,
     encode_functype_raw, encode_i32_const, encode_uleb128 as std_encode_uleb128, write_sleb128_i32,
 };
@@ -98,7 +98,7 @@ pub(crate) fn encode_sleb128_i32(value: i32, bytes: &mut Vec<u8>) {
 
 /// 将 `i64` 编码为 `SLEB128` 字节序列并追加到 `bytes`。
 pub(crate) fn encode_sleb128_i64(value: i64, bytes: &mut Vec<u8>) {
-    std_data::binary::wasm::encode_sleb128_i64(value, bytes);
+    acorn_wasm::encode_sleb128_i64(value, bytes);
 }
 
 /// 从字节切片解码 `ULEB128` 值，推进读取位置。

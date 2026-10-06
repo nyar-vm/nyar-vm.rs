@@ -8,7 +8,7 @@
     use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout};
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use std_data::binary::wasm::{TYPE_FORM_ARRAY, TYPE_FORM_STRUCT, VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_REF, WasmGcOpcode, WasmMiscOpcode, WasmOpcode};
+    use acorn_wasm::{TYPE_FORM_ARRAY, TYPE_FORM_STRUCT, VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_REF, WasmGcOpcode, WasmMiscOpcode, WasmOpcode};
 
     #[test]
     fn mir_wasm_module_includes_memory_and_copy_for_aggregate_copy() {

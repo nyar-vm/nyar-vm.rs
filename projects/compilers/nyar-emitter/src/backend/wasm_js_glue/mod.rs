@@ -11,7 +11,7 @@ use nyar::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
 };
-use std_data::binary::wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
+use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 
 use crate::{
     backend::binding_builders::{BindingGenerationContext, HostBindingBuilder},

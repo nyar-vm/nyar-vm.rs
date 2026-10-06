@@ -1,6 +1,6 @@
 //! Canonical ABI linear heap: shared bump cursor for `cabi_realloc` and MIR allocations.
 use crate::nyar_backend_wasi::WasmSection;
-use std_data::binary::wasm::{
+use acorn_wasm::{
     VALTYPE_I32, WasmOpcode, encode_i32_and, encode_i32_const, encode_if_empty, encode_local_get, encode_local_set, encode_local_tee,
     encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_return, encode_unreachable,
 };
@@ -152,7 +152,7 @@ mod cabi_realloc_tests {
         CABI_HEAP_DEFAULT_BASE, LINEAR_HEAP_MIN_BASE, align_up_u32, cabi_heap_base_after_data, cabi_heap_global_section,
         memory_min_pages_for_heap_base, wasm_cabi_realloc_bump_body,
     };
-    use std_data::binary::wasm::{WasmMiscOpcode, WasmOpcode};
+    use acorn_wasm::{WasmMiscOpcode, WasmOpcode};
 
     #[test]
     fn bump_body_is_not_null_stub() {

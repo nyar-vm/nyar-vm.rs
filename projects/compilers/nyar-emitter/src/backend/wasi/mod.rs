@@ -1,7 +1,7 @@
 //! `WebAssembly` 二进制后端容器入口，覆盖 `WasmJsGlue` 与 `WasiComponent` 两种宿主边界。
 //!
-//! 这里按 `wasm / wat / wit` 三个输出格式收口，
-//! 相关格式模型与编解码统一由 `std-data` 提供。
+//! 这里按 `wasm / wat / wit` 三个输出格式收口。
+//! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；`WAT`/`WIT` 文本仍待迁入 Oak。
 
 #![warn(missing_docs)]
 
@@ -19,7 +19,7 @@ use nyar::{
 };
 
 use crate::backend::binding_builders::{BindingGenerationContext, generate_host_binding_artifacts};
-use std_data::binary::wasm::{parse_export_section, parse_import_section};
+use acorn_wasm::{parse_export_section, parse_import_section};
 
 pub use component::WasiPreview;
 pub(crate) use component::{
@@ -27,12 +27,10 @@ pub(crate) use component::{
     wasi_cli_run_export_name, wasi_cli_run_export_name_for, wasi_versioned_import_module, wasi_versioned_import_module_for,
     write_component_wit_package, write_component_wit_package_for,
 };
-pub use std_data::{
-    binary::wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection},
-    text::{
-        wat::{WatDocument, WatError},
-        wit::{WitError, WitInterface, WitPackage},
-    },
+pub use acorn_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
+pub use std_data::text::{
+    wat::{WatDocument, WatError},
+    wit::{WitError, WitInterface, WitPackage},
 };
 pub use witness_dispatch::{
     WasmTraitFatPointer, WitnessMethodSlot, WitnessTableLayout, materialize_witness_bytes, plan_witness_table_layout, resolve_witness_call,

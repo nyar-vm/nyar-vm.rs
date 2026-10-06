@@ -9,7 +9,7 @@ use crate::{
 };
 use nyar::{NyarType, QualifiedName};
 use std::{process::Command, sync::Arc};
-use std_data::binary::wasm::{WasmBinaryModule, WasmOpcode};
+use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 
 fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
     ExecutableFunction {

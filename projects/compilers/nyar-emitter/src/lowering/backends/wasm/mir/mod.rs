@@ -58,7 +58,7 @@ use crate::{
     FragmentSubmission,
     contracts::{ArrayInitialization, instruction_primary_result},
 };
-use std_data::binary::wasm::{
+use acorn_wasm::{
     BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF, VALTYPE_REF_NULL, WasmExternalKind,
     WasmOpcode, encode_array_copy, encode_array_get, encode_array_len, encode_array_new_default, encode_array_new_fixed, encode_array_set,
     encode_block_empty, encode_br, encode_br_if, encode_call, encode_call_indirect, encode_drop, encode_f64_const, encode_f64_load,
@@ -417,7 +417,7 @@ fn build_wasi_string_data_section(literals: &[String]) -> Vec<u8> {
 }
 
 fn wasm_function_type_param_bytes(type_bytes: &[u8]) -> Vec<u8> {
-    if type_bytes.first() != Some(&std_data::binary::wasm::TYPE_FORM_FUNC) {
+    if type_bytes.first() != Some(&acorn_wasm::TYPE_FORM_FUNC) {
         return Vec::new();
     }
     let mut offset = 1usize;
@@ -427,7 +427,7 @@ fn wasm_function_type_param_bytes(type_bytes: &[u8]) -> Vec<u8> {
 }
 
 fn wasm_function_type_result_byte(type_bytes: &[u8]) -> Option<u8> {
-    if type_bytes.first() != Some(&std_data::binary::wasm::TYPE_FORM_FUNC) {
+    if type_bytes.first() != Some(&acorn_wasm::TYPE_FORM_FUNC) {
         return None;
     }
     let mut offset = 1usize;
@@ -2539,7 +2539,7 @@ mod cfg_dispatch_tests {
     };
     use nyar::{NyarType, QualifiedName};
     use std::{collections::BTreeMap, process::Command, sync::Arc};
-    use std_data::binary::wasm::{WasmBinaryModule, WasmOpcode};
+    use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 
     fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         ExecutableFunction {
