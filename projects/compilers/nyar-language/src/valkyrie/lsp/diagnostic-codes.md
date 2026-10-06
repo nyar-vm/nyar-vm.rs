@@ -14,4 +14,4 @@ Naming violations are **lint warnings**. They do not block parsing or compilatio
 
 ## Authority
 
-Lint rules are enforced in the LSP / IDE layer via `std_data::text::valkyrie::naming::validate_snake_case` and `std_data::text::awsl::is_snake_case`. The parser and formatter do not reject non-`snake_case` identifiers. IDEs and VSCode consume these lint diagnostics; do not duplicate regex rules client-side.
+Lint rules are enforced in the LSP / IDE layer via `valkyrie::frontend::validate_snake_case` and `std_data::text::awsl::is_snake_case`. The parser and formatter do not reject non-`snake_case` identifiers. IDEs and VSCode consume these lint diagnostics; do not duplicate regex rules client-side.

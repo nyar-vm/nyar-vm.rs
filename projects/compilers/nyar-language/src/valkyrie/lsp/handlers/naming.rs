@@ -77,20 +77,13 @@ fn extract_name_from_abi_message(message: &str) -> Option<String> {
 /// Collect naming diagnostics from parsed vx/v source.
 pub fn collect_naming_diagnostics(
     source_text: &str,
-    is_vx: bool,
+    _is_vx: bool,
     source: SourceID,
     offset: usize,
 ) -> Vec<ValkyrieError> {
-    use std_data::text::valkyrie::naming::validate_snake_case;
-    use std_data::text::valkyrie::parser::AstParser;
+    use crate::valkyrie::frontend::{parse_source, validate_snake_case};
 
-    let parsed = if is_vx {
-        AstParser::parse_vx_root(source_text)
-    }
-    else {
-        AstParser::parse_root(source_text)
-    };
-    let Ok(root) = parsed else {
+    let Ok(root) = parse_source(source_text) else {
         return Vec::new();
     };
     validate_snake_case(&root)

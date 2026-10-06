@@ -1,11 +1,12 @@
 //! AWSL `<script>` 按 **vx**（Valkyrie + X-Grammar）解析
 
 use crate::types::{LabeledSpan, SourceID, SourceSpan, ValkyrieError};
-use std_data::text::valkyrie::parser::{AstParser, ParseError};
+use crate::valkyrie::frontend::parse_source;
+use std_data::text::valkyrie::ParseError;
 
-/// 将 AWSL `<script>` 正文作为 `.vx` 源解析（`parse_vx_root`）。
+/// 将 AWSL `<script>` 正文作为 `.vx` 源解析（Oak 前端）。
 pub fn parse_awsl_script_vx(source: &str) -> Result<(), ValkyrieError> {
-    AstParser::parse_vx_root(source).map_err(parse_error_to_valkyrie)
+    parse_source(source).map_err(parse_error_to_valkyrie)
 }
 
 fn parse_error_to_valkyrie(err: ParseError) -> ValkyrieError {

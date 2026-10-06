@@ -262,7 +262,7 @@ micro main() -> i64 {
     return 0;
 }
 "#;
-    let root = std_data::text::valkyrie::AstParser::parse_root(source).unwrap();
+    let root = nyar_language::valkyrie::frontend::parse_source(source).unwrap();
     let module = AstToHir::new(SourceID { version_id: 7 }).lower_root(&root).unwrap();
     assert_eq!(module.name.to_string(), "demo");
     assert_eq!(module.imports.len(), 1);
