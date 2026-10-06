@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use dashmap::DashMap;
 use oak_lsp::types::LocationRange;
-use crate::transitional::cst::awsl::{AbiIssue, ComponentAbi};
+use oak_awsl::{AbiIssue, ComponentAbi};
 
 use super::cache::SemanticCache;
 use super::document::DocumentState;
@@ -113,7 +113,7 @@ impl ServerState {
 
     /// Re-validate cross-file ABI bindings for all open AWSL documents.
     pub fn refresh_awsl_cross_file_abi_diagnostics(&self) {
-        use crate::transitional::cst::awsl::ComponentAbiIndex;
+        use oak_awsl::ComponentAbiIndex;
 
         let mut index = ComponentAbiIndex::new();
         for entry in self.awsl_abi_index.iter() {
@@ -134,15 +134,15 @@ impl ServerState {
                     matches!(l.key.as_deref(), Some("AWSL ABI cross-file") | Some("AWSL ABI lint"))
                 }));
             for issue in cross_issues {
-                let emit = matches!(issue.kind, crate::transitional::cst::awsl::AbiIssueKind::NotSnakeCase)
-                    || issue.severity == crate::transitional::cst::awsl::AbiSeverity::Error;
+                let emit = matches!(issue.kind, oak_awsl::AbiIssueKind::NotSnakeCase)
+                    || issue.severity == oak_awsl::AbiSeverity::Error;
                 if !emit {
                     continue;
                 }
                 let source = doc_ref.file_id.unwrap_or_default();
                 let mut diag = crate::handlers::naming::abi_issue_to_diagnostic(&issue, source, 0);
                 if let Some(label) = diag.labels.first_mut() {
-                    label.key = Some(if issue.kind == crate::transitional::cst::awsl::AbiIssueKind::NotSnakeCase {
+                    label.key = Some(if issue.kind == oak_awsl::AbiIssueKind::NotSnakeCase {
                         "AWSL ABI lint".into()
                     } else {
                         "AWSL ABI cross-file".into()

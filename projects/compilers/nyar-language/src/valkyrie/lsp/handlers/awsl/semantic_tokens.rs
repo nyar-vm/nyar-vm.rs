@@ -1,6 +1,6 @@
 //! AWSL semantic tokens (`:prop`, `@event`, ABI script markers).
 
-use crate::transitional::cst::awsl::collect_template_bindings;
+use oak_awsl::collect_template_bindings;
 
 use crate::state::{DocumentState, ServerState};
 use oak_lsp::types::SemanticToken;
@@ -22,8 +22,8 @@ impl AwslSemanticTokensHandler {
 
         for binding in collect_template_bindings(root) {
             let (token_type, len) = match binding.kind {
-                crate::transitional::cst::awsl::TemplateBindingKind::Property => (TOKEN_ABI_PROPERTY, binding.name.len() + 1),
-                crate::transitional::cst::awsl::TemplateBindingKind::Event => (TOKEN_ABI_EVENT, binding.name.len() + 1),
+                oak_awsl::TemplateBindingKind::Property => (TOKEN_ABI_PROPERTY, binding.name.len() + 1),
+                oak_awsl::TemplateBindingKind::Event => (TOKEN_ABI_EVENT, binding.name.len() + 1),
             };
             push_token(doc, tokens, binding.key_span.start, len, token_type);
         }

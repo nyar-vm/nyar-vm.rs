@@ -142,15 +142,60 @@ fn nyar_language_cargo_must_not_list_vcc_data() {
     }
 }
 
+const LEGACY_VALKYRIE_PARSER_TOKENS: &[&str] = &["AstParser::", "ValCstParser::", "transitional::cst::valkyrie::parser"];
+const LEGACY_AWSL_PARSER_TOKENS: &[&str] = &["transitional::cst::awsl", "AwslCstParser::"];
+
 /// Legacy CST formatter glue（`#[cfg(test)]` 对照路径；生产格式化在 `oak-<language>/src/formatter`）。
 const LEGACY_CST_FORMATTER_GLUE: &[&str] = &[
     "valkyrie/cst_format.rs",
     "valkyrie/legacy_cst_print.rs",
-    "awsl/cst_format.rs",
-    "awsl/legacy_cst_print.rs",
     "von/cst_format.rs",
     "valkyrie/formatter/mod.rs",
 ];
+
+#[test]
+fn production_code_must_not_use_legacy_valkyrie_parser() {
+    let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&src_root, &mut files);
+    for path in files {
+        let rel = path.strip_prefix(&src_root).unwrap().to_string_lossy().replace('\\', "/");
+        if rel.starts_with("transitional/cst/valkyrie/") || LEGACY_CST_FORMATTER_GLUE.iter().any(|allowed| rel == *allowed) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for token in LEGACY_VALKYRIE_PARSER_TOKENS {
+            assert!(
+                !source.contains(token),
+                "{} must not use legacy Valkyrie parser `{}` (use `valkyrie::frontend::parse_source` / `oak-valkyrie`)",
+                path.display(),
+                token
+            );
+        }
+    }
+}
+
+#[test]
+fn production_code_must_not_use_legacy_awsl_parser() {
+    let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&src_root, &mut files);
+    for path in files {
+        let rel = path.strip_prefix(&src_root).unwrap().to_string_lossy().replace('\\', "/");
+        if rel.starts_with("transitional/cst/") || LEGACY_CST_FORMATTER_GLUE.iter().any(|allowed| rel == *allowed) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for token in LEGACY_AWSL_PARSER_TOKENS {
+            assert!(
+                !source.contains(token),
+                "{} must not use legacy AWSL parser `{}` (use `oak_awsl::parse_root` / `oak-awsl`)",
+                path.display(),
+                token
+            );
+        }
+    }
+}
 
 #[test]
 fn cst_formatter_rules_must_not_spread_beyond_legacy_glue() {

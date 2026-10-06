@@ -6,7 +6,7 @@
 //!
 //! | 模块 | 状态 |
 //! |------|------|
-//! | `cst` | 内联 legacy CST（`#[cfg(test)]` 对照）；生产格式化在 Oak `formatter/` |
+//! | `cst` | legacy Valkyrie/VON CST 仅 `#[cfg(test)]`；AWSL 生产解析在 `oak-awsl` |
 //! | `guest_scripts` | 内联 guest parser，待 `oak-bash` 等正式前端 |
 //! | `msil` | `acorn-pe::msil`，待 `oak-msil` |
 //! | `notedown` | 内联，待 `oak-notedown` |
