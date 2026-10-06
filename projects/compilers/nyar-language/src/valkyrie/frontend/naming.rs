@@ -149,7 +149,7 @@ fn walk_block(block: &Block, violations: &mut Vec<NamingViolation>) {
 fn walk_statement(statement: &Statement, violations: &mut Vec<NamingViolation>) {
     match statement {
         Statement::Let(let_stmt) => walk_let_binding(let_stmt, violations),
-        Statement::ExprStmt(_) => {}
+        Statement::Expression(_) | Statement::Template(_) => {}
     }
 }
 

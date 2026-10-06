@@ -14,18 +14,7 @@ use crate::{
     valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
 };
 
-use crate::valkyrie::frontend;
-
 use super::context::CompilerBuildContext;
-
-/// 在语义编译前拒绝未展开的目标模板。
-fn reject_unexpanded_target_templates(groups: &[CompilerSourceGroup]) -> Result<()> {
-    for group in groups {
-        frontend::reject_unexpanded_target_templates(&group.source)
-            .map_err(|error| miette!("源码组 `{}`: {}", group.name, error))?;
-    }
-    Ok(())
-}
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
@@ -47,9 +36,8 @@ fn compile_source_groups_to_backend_bundle(
     groups: &[CompilerSourceGroup],
     context: &CompilerBuildContext,
 ) -> Result<CompilerBuildBundle> {
-    reject_unexpanded_target_templates(groups)?;
     let compiled_program = compiler
-        .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers)
+        .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)
         .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
@@ -148,17 +136,21 @@ mod tests {
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
     #[test]
-    fn unexpanded_target_templates_fail_before_semantic_compile() {
+    fn structured_target_templates_compile_with_arch_context() {
         let groups = [CompilerSourceGroup {
             dependency_key: "app".to_string(),
             name: "app".to_string(),
-            source: "micro main() -> i32 { <% match arch %> return 1 }".to_string(),
+            source: r#"<% match arch %>
+<% case "wasm32" %>
+[main] micro main() -> i32 { return 23 }
+<% else %>
+[main] micro main() -> i32 { return 0 }
+<% end %>"#
+                .to_string(),
             direct_dependencies: Vec::new(),
         }];
         let context = CompilerBuildContext::new("wasm32", CanonicalTarget::parse("node").expect("node"), ClrSuspendStrategy::default(), WasmPackageKind::Binary);
-        let error = compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context)
-            .err()
-            .expect("未展开模板必须在语义编译前失败");
-        assert!(error.to_string().contains("未展开的目标模板"));
+        let bundle = compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context).expect("structured TGrammar must compile");
+        assert_eq!(bundle.surface_counts(), (0, 1));
     }
 }

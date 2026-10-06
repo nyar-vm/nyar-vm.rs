@@ -12,7 +12,7 @@ use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
 pub use error::ParseError;
 pub use naming::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation, validate_snake_case};
-pub use staging::{reject_unexpanded_target_templates, reject_unsupported_template_source};
+pub use staging::reject_unsupported_template_source;
 
 /// Oak 前端 AST 类型别名，供 lowering 直接引用。
 pub use oak_valkyrie::ast;
@@ -42,9 +42,6 @@ pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
 pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> Result<ValkyrieRoot, ParseError> {
     if !language.support_t_grammar {
         reject_unsupported_template_source(source)?;
-    }
-    else {
-        reject_unexpanded_target_templates(source)?;
     }
     let builder = ValkyrieBuilder::new(language);
     let text = SourceText::new(source);

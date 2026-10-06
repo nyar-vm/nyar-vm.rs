@@ -1469,10 +1469,10 @@ dependencies = [
 [[package]]
 name = "oak-awsl"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs?branch=dev#b54a9270254ef089c8a06d4a8ef8c06287309d17"
 dependencies = [
  "oak-core",
- "oak-formatter 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?branch=dev)",
+ "oak-formatter",
+ "oak-valkyrie",
 ]
 
 [[package]]
@@ -1508,14 +1508,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oak-formatter"
-version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs?branch=dev#b54a9270254ef089c8a06d4a8ef8c06287309d17"
-dependencies = [
- "oak-core",
-]
-
-[[package]]
 name = "oak-macros"
 version = "0.0.12"
 dependencies = [
@@ -1525,12 +1517,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "oak-pretty-print"
+version = "0.0.12"
+dependencies = [
+ "oak-core",
+ "oak-macros",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "oak-valkyrie"
 version = "0.0.12"
 dependencies = [
  "oak-core",
  "oak-dejavu",
- "oak-formatter 0.0.12",
+ "oak-formatter",
  "serde",
  "unicode-ident",
 ]
@@ -1540,7 +1542,8 @@ name = "oak-von"
 version = "0.0.12"
 dependencies = [
  "oak-core",
- "oak-formatter 0.0.12",
+ "oak-formatter",
+ "oak-pretty-print",
  "serde",
 ]
 

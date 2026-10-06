@@ -43,7 +43,7 @@ thread_local! {
 
 #[cfg(test)]
 mod source_group_tests {
-    use super::{CompilerSourceGroup, ValkyrieCompiler};
+    use super::{CompilerSourceGroup, ValkyrieCompiler, template_expand::DEFAULT_COMPILE_ARCH};
 
     fn first_call(function: &super::HirFunction) -> &crate::types::hir::HirResolvedCall {
         let super::HirStatementKind::Let { initializer: Some(expression), .. } = &function.body.statements[0].kind
@@ -73,7 +73,7 @@ mod source_group_tests {
                 direct_dependencies: vec!["library".into()],
             },
         ];
-        let modules = ValkyrieCompiler::default().resolve_source_groups(&groups).expect("完整源码闭包的 HIR");
+        let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("完整源码闭包的 HIR");
         let declaration = modules[0].functions[0].declaration.expect("依赖声明身份");
         assert_eq!(modules[1].imported_semantic_exports[0].functions[0].declaration, Some(declaration));
         assert_eq!(first_call(&modules[1].functions[0]).declaration, Some(declaration));
@@ -110,7 +110,9 @@ mod source_group_tests {
     fn materialized_hir_requires_call_resolution_before_semantic_success() {
         let compiler = ValkyrieCompiler::default();
         let source = "micro answer() -> i32 { return 1 } micro main() -> i32 { return answer() }";
-        let hir = compiler.parse_source_group_without_call_resolution(source, &[], None).expect("物化阶段不绑定调用");
+        let hir = compiler
+            .parse_source_group_without_call_resolution(source, &[], None, DEFAULT_COMPILE_ARCH)
+            .expect("物化阶段不绑定调用");
         let error = compiler.validate_hir_semantic_contract(&hir).expect_err("未绑定 HIR 不能越过语义边界");
         assert!(error.to_string().contains("SMIR003"), "{error}");
         compiler.compile_source(source).expect("分析入口必须执行解析和验证");
@@ -493,11 +495,13 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
 
 mod expr_lowering;
 mod macro_expand;
+mod template_expand;
 mod vx;
 
 pub use super::CaptureAnalyzer;
 use expr_lowering::{extract_name_path, lower_block, lower_term_expression};
 use macro_expand::expand_macros_in_root;
+use template_expand::{DEFAULT_COMPILE_ARCH, expand_templates_in_root};
 use vx::enhance_vx_widgets;
 
 /// Minimal compiler facade that lowers parser output into HIR.
@@ -733,6 +737,7 @@ impl ValkyrieCompiler {
     ) -> Result<HirModule, ParseError> {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
+        expand_templates_in_root(&mut root, source, DEFAULT_COMPILE_ARCH)?;
         let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
         self.validate_hir_semantic_contract(&hir)?;
         Ok(hir)
@@ -747,9 +752,11 @@ impl ValkyrieCompiler {
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
+        arch: &str,
     ) -> Result<HirModule, ParseError> {
         let mut root = frontend::parse_source(source)?;
         expand_macros_in_root(&mut root);
+        expand_templates_in_root(&mut root, source, arch)?;
         let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
         validate_interop_surface(&hir)?;
         Ok(hir)
@@ -784,7 +791,7 @@ impl ValkyrieCompiler {
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
-        self.compile_source_groups_to_program_with_host_bindings(groups, &[])
+        self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
     }
 
     /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
@@ -792,8 +799,9 @@ impl ValkyrieCompiler {
         &self,
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
+        arch: &str,
     ) -> Result<nyar_types::CompiledProgram, ParseError> {
-        let mut hir_groups = self.resolve_source_groups(groups)?;
+        let mut hir_groups = self.resolve_source_groups(groups, arch)?;
         let final_hir = hir_groups.pop().ok_or_else(|| ParseError::invalid("semantic source group plan is empty"))?;
         let mut mir_groups = hir_groups.iter().map(crate::valkyrie::mir::MirLowerer::lower_module_semantic).collect::<Vec<_>>();
         let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&final_hir);
@@ -814,7 +822,7 @@ impl ValkyrieCompiler {
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }
 
-    fn resolve_source_groups(&self, groups: &[CompilerSourceGroup]) -> Result<Vec<HirModule>, ParseError> {
+    fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, ParseError> {
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
@@ -834,6 +842,7 @@ impl ValkyrieCompiler {
                 &group.source,
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
+                arch,
             )?;
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             let export = HirDependencySemanticExport {
@@ -1290,6 +1299,7 @@ impl AstToHir {
             | StatementNode::Let(_)
             | StatementNode::ExprStmt(_)
             | StatementNode::Statement(_) => Ok(()),
+            StatementNode::Template(_) => Err(ParseError::invalid("未展开的 TGrammar 模板节点进入 HIR lowering")),
             unsupported => Err(ParseError::invalid(format!("unsupported Oak root item is not yet lowered: {unsupported:?}"))),
         }
     }

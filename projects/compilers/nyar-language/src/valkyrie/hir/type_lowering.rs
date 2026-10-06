@@ -185,7 +185,7 @@ pub(crate) fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
             _ => lower_type_expression(&node.lhs),
         },
         TypeExpression::Unary(node) => match node.operator {
-            ValkyrieTokenType::LeftBracket => ValkyrieType::Array(Box::new(lower_type_expression(&node.base))),
+            ValkyrieTokenType::BracketL => ValkyrieType::Array(Box::new(lower_type_expression(&node.base))),
             _ => lower_type_expression(&node.base),
         },
     }
@@ -237,7 +237,7 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
             format!("{}{}{}", render_type_expression(&node.lhs), op, render_type_expression(&node.rhs))
         }
         TypeExpression::Unary(node) => match node.operator {
-            ValkyrieTokenType::LeftBracket => format!("[{}]", render_type_expression(&node.base)),
+            ValkyrieTokenType::BracketL => format!("[{}]", render_type_expression(&node.base)),
             _ => render_type_expression(&node.base),
         },
     }
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn bracket_sugar_lowers_to_array() {
         let sugar = TypeExpression::Unary(Box::new(TypeUnaryNode {
-            operator: ValkyrieTokenType::LeftBracket,
+            operator: ValkyrieTokenType::BracketL,
             base: path_type("i32"),
             span: oak_span(0),
         }));

@@ -32,10 +32,10 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
 [workspace.dependencies]
 # Oak / Acorn：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", features = ["serde"] }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "57a56f14" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "57a56f14" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "57a56f14", features = ["serde"] }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "57a56f14" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }

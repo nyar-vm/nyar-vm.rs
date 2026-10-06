@@ -28,8 +28,8 @@ fn map_von_print_style(style: PrintStyle) -> VonPrintStyle {
     }
 }
 
-fn map_von_print_options(options: &FormatOptions) -> VonPrintOptions {
-    VonPrintOptions { indent_width: options.indent_width }
+fn map_von_print_options(style: PrintStyle, options: &FormatOptions) -> VonPrintOptions {
+    VonPrintOptions { style: map_von_print_style(style), indent_width: options.indent_width, max_width: options.max_width }
 }
 
 fn map_valkyrie_print_style(style: PrintStyle) -> ValkyriePrintStyle {
@@ -44,7 +44,7 @@ fn map_valkyrie_print_options(options: &FormatOptions) -> ValkyriePrintOptions {
 }
 
 fn print_von_value(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> String {
-    print_value(value, map_von_print_style(style), &map_von_print_options(options))
+    print_value(value, &map_von_print_options(style, options))
 }
 
 /// Valkyrie 源码 AST print（`oak-valkyrie::printer`；非 CST formatter）。

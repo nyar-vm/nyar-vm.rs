@@ -22,7 +22,7 @@ fn split_block_tail(statements: &[Statement], source_id: SourceID, fallback_span
         return (Vec::new(), None);
     }
     let mut lowered = statements.iter().map(|statement| lower_statement(statement, source_id, fallback_span.clone())).collect::<Vec<_>>();
-    if let Some(Statement::ExprStmt(expr_stmt)) = statements.last() {
+    if let Some(Statement::Expression(expr_stmt)) = statements.last() {
         if !expr_stmt.semi {
             lowered.pop();
             return (lowered, Some(expr_stmt.expr.clone()));
@@ -46,11 +46,14 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                 span,
             }
         }
-        Statement::ExprStmt(expr_stmt) => {
+        Statement::Expression(expr_stmt) => {
             let span_range = if expr_stmt.span.is_empty() { fallback_span } else { frontend::std_range(&expr_stmt.span) };
             let span = with_source(&span_range, source_id);
             let expr = lower_statement_expression(&expr_stmt.expr, source_id, span_range, span.clone());
             HirStatement { kind: HirStatementKind::Expr(Box::new(expr)), span }
+        }
+        Statement::Template(_) => {
+            panic!("TGrammar 模板必须在 HIR lowering 前按 arch 展开")
         }
     }
 }

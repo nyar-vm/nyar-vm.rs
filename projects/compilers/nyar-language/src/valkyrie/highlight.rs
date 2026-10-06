@@ -194,16 +194,19 @@ fn classify_token_kind(kind: &ValkyrieTokenType) -> HighlightKind {
         ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral => HighlightKind::String,
         ValkyrieTokenType::IntegerLiteral | ValkyrieTokenType::FloatLiteral | ValkyrieTokenType::BoolLiteral => HighlightKind::Number,
         ValkyrieTokenType::Identifier | ValkyrieTokenType::Label | ValkyrieTokenType::StringPrefix => HighlightKind::Identifier,
-        ValkyrieTokenType::LeftParen
-        | ValkyrieTokenType::RightParen
-        | ValkyrieTokenType::LeftBrace
-        | ValkyrieTokenType::RightBrace
-        | ValkyrieTokenType::LeftBracket
-        | ValkyrieTokenType::RightBracket
-        | ValkyrieTokenType::LeftAngle
-        | ValkyrieTokenType::RightAngle
-        | ValkyrieTokenType::LeftOffset
-        | ValkyrieTokenType::RightOffset
+        ValkyrieTokenType::ParenthesisL
+        | ValkyrieTokenType::ParenthesisR
+        | ValkyrieTokenType::BraceL
+        | ValkyrieTokenType::BraceR
+        | ValkyrieTokenType::BracketL
+        | ValkyrieTokenType::BracketR
+        | ValkyrieTokenType::AngleL
+        | ValkyrieTokenType::AngleR
+        | ValkyrieTokenType::OffsetL
+        | ValkyrieTokenType::OffsetR
+        | ValkyrieTokenType::TemplateL
+        | ValkyrieTokenType::TemplateR
+        | ValkyrieTokenType::TemplateText
         | ValkyrieTokenType::Comma
         | ValkyrieTokenType::Semicolon
         | ValkyrieTokenType::Colon
