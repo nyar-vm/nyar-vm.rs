@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
+use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 use miette::{Result, miette};
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, TargetBackendFamily};
 
@@ -18,7 +18,7 @@ use crate::{
 struct CompilerBuildBundle {
     compiled_program: nyar_types::CompiledProgram,
     artifact_plan: ArtifactPartitionPlan,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
 }
 
 impl CompilerBuildBundle {
@@ -35,7 +35,7 @@ fn compile_source_groups_to_backend_bundle(
     arch: &str,
     target: CanonicalTarget,
     clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
 ) -> Result<CompilerBuildBundle> {
     let groups = groups
         .iter()
@@ -61,26 +61,26 @@ pub fn compile_source_groups_to_artifacts(
     arch: &str,
     target: CanonicalTarget,
     clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
     output_dir: &Path,
     project_name: &str,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
-) -> Result<emitter::DriverCompileReport> {
+) -> Result<nyar_emitter::DriverCompileReport> {
     let bundle = compile_source_groups_to_backend_bundle(compiler, groups, arch, target, clr_suspend_strategy, wasm_package_kind)?;
-    emitter::compile_frontend_bundle_with_bundled_backends(&bundle, output_dir, project_name, emit_wat_sidecar, generate_runtime_config)
+    nyar_emitter::compile_frontend_bundle_with_bundled_backends(&bundle, output_dir, project_name, emit_wat_sidecar, generate_runtime_config)
 }
 
-fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
+fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
     if bundle.artifact_plan.target.to_profile(None).backend_family != TargetBackendFamily::Wasm {
         return Ok(());
     }
     let (export_count, entry_count) = bundle.surface_counts();
     match wasm_package_kind {
-        emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
             Err(miette!("`artifact: library` requires at least one resolved export"))
         }
-        emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
             Err(miette!("`artifact: binary` requires a resolved main entry"))
         }
         _ => Ok(()),
@@ -92,7 +92,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         self
     }
 
-    fn wasm_package_kind(&self) -> emitter::nyar_backend_wasi::WasmPackageKind {
+    fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
         self.wasm_package_kind
     }
 

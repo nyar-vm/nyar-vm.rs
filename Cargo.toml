@@ -52,7 +52,6 @@ nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
-emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
 
 nyar-bytecode = { path = "projects/formats/nyar-bytecode" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }

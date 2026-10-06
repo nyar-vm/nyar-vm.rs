@@ -16,6 +16,6 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 [dev-dependencies]
-emitter = { workspace = true }
+nyar-emitter = { workspace = true }
 nyar-language = { workspace = true }
 tempfile = { workspace = true }

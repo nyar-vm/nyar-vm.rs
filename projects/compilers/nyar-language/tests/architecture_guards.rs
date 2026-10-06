@@ -1,6 +1,6 @@
 //! Architecture guards for language crate boundaries.
 //!
-//! Expected crate layering: `nyar-language` → `emitter` → `std-data`.
+//! Expected crate layering: `nyar-language` → `nyar-emitter` → `std-data`.
 //!
 //! Concrete language/framework frontends (guests) may live here; shared
 //! `host_script` / `HostScript*` trait layers do **not** belong in this crate.
@@ -12,7 +12,7 @@ use std::{
 
 /// Concrete frontend dirs that must stay free of Valkyrie MIR / driver imports.
 const CONCRETE_FRONTEND_DIRS: &[&str] = &["bash", "lua", "tcl", "powershell", "c", "javascript", "python"];
-const FORBIDDEN_TOKENS: &[&str] = &["valkyrie::mir", "MirFunction", "MirInstruction", "nyar_emitter", "use emitter", "MirModule", "MirLowerer"];
+const FORBIDDEN_TOKENS: &[&str] = &["valkyrie::mir", "MirFunction", "MirInstruction", "nyar_emitter", "use nyar_emitter", "MirModule", "MirLowerer"];
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     if !dir.is_dir() {
@@ -64,7 +64,7 @@ fn concrete_frontends_do_not_import_valkyrie() {
 }
 
 #[test]
-fn emitter_is_a_direct_dependency() {
+fn nyar_emitter_is_a_direct_dependency() {
     let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let cargo = fs::read_to_string(&cargo_path).unwrap_or_else(|error| panic!("failed to read Cargo.toml: {error}"));
     let mut in_dependencies = false;
@@ -78,17 +78,16 @@ fn emitter_is_a_direct_dependency() {
             in_dependencies = false;
             continue;
         }
-        if in_dependencies && trimmed.starts_with("emitter") {
+        if in_dependencies && trimmed.starts_with("nyar-emitter") {
             return;
         }
     }
-    panic!("emitter must be listed under [dependencies] (language → driver → std-data)");
+    panic!("nyar-emitter must be listed under [dependencies] (language → nyar-emitter → std-data)");
 }
 
 #[test]
-fn emitter_crate_does_not_depend_on_language() {
-    // Package lives in projects/emitter; crate name is emitter.
-    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../emitter/Cargo.toml");
+fn nyar_emitter_crate_does_not_depend_on_language() {
+    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../nyar-emitter/Cargo.toml");
     let cargo = fs::read_to_string(&cargo_path).unwrap_or_else(|error| panic!("failed to read {}: {error}", cargo_path.display()));
     let mut in_dependencies = false;
     for line in cargo.lines() {
@@ -102,7 +101,7 @@ fn emitter_crate_does_not_depend_on_language() {
             continue;
         }
         if in_dependencies && trimmed.starts_with("nyar-language") {
-            panic!("emitter [dependencies] must not include nyar-language (layering: language → driver → std-data)");
+            panic!("nyar-emitter [dependencies] must not include nyar-language (layering: language → nyar-emitter → std-data)");
         }
     }
 }

@@ -26,7 +26,7 @@ pub(crate) fn plan_artifacts_from_compiled_program(
         detail: format!("目标 projection 合同失败: {error:?}"),
     })?;
     let linked = &compiled_program.canonical().linked;
-    let backend_registry = emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
+    let backend_registry = nyar_emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
     ArtifactPartitionPlan::from_canonical_program(
         compiled_program.canonical(),
         target,

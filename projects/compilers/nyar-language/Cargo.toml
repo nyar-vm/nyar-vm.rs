@@ -11,7 +11,7 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 default = []
 serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
 # NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
-nyar-vm-lane = ["emitter/nyar-vm-lane"]
+nyar-vm-lane = ["nyar-emitter/nyar-vm-lane"]
 
 [dependencies]
 # 分层：Oak 文本前端 → language 语义层；`std-data` 不能再承担 Valkyrie 文本解析。
@@ -20,7 +20,7 @@ oak-core = { workspace = true }
 oak-von = { workspace = true, features = ["serde"] }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
-emitter = { workspace = true }
+nyar-emitter = { workspace = true }
 nyar-types = { workspace = true }
 std-data = { workspace = true }
 ordered-float = { workspace = true }
