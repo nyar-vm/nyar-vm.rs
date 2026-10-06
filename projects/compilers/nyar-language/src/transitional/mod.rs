@@ -1,7 +1,14 @@
 //! 过渡层：仍在等待 Oak / Acorn 替代的 `vcc-data` 入口。
 //!
 //! 新代码不得在此扩展排版或语义规则。只做 re-export 与桥接，便于逐模块删除 `vcc-data`。
-
+//!
+//! | 模块 | 待迁入 |
+//! |------|--------|
+//! | `cst` | `oak-von` / `oak-valkyrie` / `oak-awsl` formatter |
+//! | `guest_scripts` | `oak-bash` 等 + 解释器重写 |
+//! | `msil` | `oak-msil` / Acorn CLR |
+//! | `notedown` | `oak-notedown` / `oak-markdown` |
+//! | `tgrammar` | `oak-valkyrie` 模板前端 |
 pub mod cst;
 pub mod guest_scripts;
 pub mod msil;

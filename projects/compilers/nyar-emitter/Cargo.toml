@@ -12,7 +12,7 @@ default = []
 nyar-vm-lane = []
 
 [dependencies]
-# Layering: language → emitter → acorn-wasm (Wasm bytes) + vcc-data (pe/jvm/…) + nyar-bytecode.
+# Layering: language → emitter → acorn-wasm (Wasm bytes + opcodes) + transitional vcc-data (PE/JVM/MSIL) + nyar-bytecode.
 # Emitter must not depend on nyar-language.
 acorn-wasm = { workspace = true }
 miette = { workspace = true }
