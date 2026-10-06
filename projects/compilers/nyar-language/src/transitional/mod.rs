@@ -5,7 +5,7 @@
 //! | 模块 | 待迁入 |
 //! |------|--------|
 //! | `cst` | `von` 已迁入；`awsl` / `valkyrie` 仍经 `vcc-data`，待 Oak formatter |
-//! | `guest_scripts` | `tcl` 已迁入；`bash` / `c` / `lua` / `powershell` 仍经 `vcc-data` |
+//! | `guest_scripts` | `tcl` / `c` 已迁入；`bash` / `lua` / `powershell` 仍经 `vcc-data` |
 //! | `msil` | `acorn-pe::msil` 已迁入，待 `oak-msil` 正式命名 |
 //! | `notedown` | 已自 vcc-data 迁入 `transitional::notedown`，待 `oak-notedown` |
 //! | `tgrammar` | 已自 vcc-data 迁入 `transitional::tgrammar`，待 Oak 模板前端 |

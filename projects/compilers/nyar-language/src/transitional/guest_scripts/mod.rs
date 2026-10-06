@@ -5,10 +5,8 @@ pub mod bash {
     pub use vcc_data::text::bash::*;
 }
 
-/// C script model and parser.
-pub mod c {
-    pub use vcc_data::text::c::*;
-}
+/// C script model and parser（已自 vcc-data 迁入）。
+pub mod c;
 
 /// Lua script model and parser.
 pub mod lua {
