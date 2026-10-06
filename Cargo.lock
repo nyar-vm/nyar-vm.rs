@@ -1273,11 +1273,11 @@ name = "nyar"
 version = "0.1.0"
 dependencies = [
  "miette",
- "nyar-analyzer",
+ "nyar-analyzer 0.1.0",
  "nyar-emitter",
  "nyar-language",
- "nyar-optimizer",
- "nyar-types",
+ "nyar-optimizer 0.1.0",
+ "nyar-types 0.1.0",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1285,11 +1285,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "nyar"
+version = "0.1.0"
+source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c347269f6453a6460b529e3304af7"
+dependencies = [
+ "miette",
+ "nyar-analyzer 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "nyar-optimizer 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "nyar-types 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "nyar-analyzer"
 version = "0.1.0"
 dependencies = [
- "nyar-optimizer",
- "nyar-types",
+ "nyar-optimizer 0.1.0",
+ "nyar-types 0.1.0",
+ "serde",
+]
+
+[[package]]
+name = "nyar-analyzer"
+version = "0.1.0"
+source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c347269f6453a6460b529e3304af7"
+dependencies = [
+ "nyar-optimizer 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "nyar-types 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
  "serde",
 ]
 
@@ -1298,15 +1322,20 @@ name = "nyar-bytecode"
 version = "0.1.0"
 
 [[package]]
+name = "nyar-bytecode"
+version = "0.1.0"
+source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c347269f6453a6460b529e3304af7"
+
+[[package]]
 name = "nyar-emitter"
 version = "0.1.0"
 dependencies = [
  "acorn-wasm",
  "miette",
- "nyar",
- "nyar-bytecode",
+ "nyar 0.1.0",
+ "nyar-bytecode 0.1.0",
  "nyar-language",
- "nyar-types",
+ "nyar-types 0.1.0",
  "ordered-float",
  "serde",
  "serde_json",
@@ -1323,7 +1352,7 @@ version = "0.1.0"
 name = "nyar-jit"
 version = "0.1.0"
 dependencies = [
- "nyar-bytecode",
+ "nyar-bytecode 0.1.0",
 ]
 
 [[package]]
@@ -1332,11 +1361,11 @@ version = "0.1.0"
 dependencies = [
  "katex-rs",
  "miette",
- "nyar",
- "nyar-analyzer",
- "nyar-bytecode",
+ "nyar 0.1.0",
+ "nyar-analyzer 0.1.0",
+ "nyar-bytecode 0.1.0",
  "nyar-emitter",
- "nyar-types",
+ "nyar-types 0.1.0",
  "nyar-vm",
  "oak-core",
  "oak-valkyrie",
@@ -1360,7 +1389,16 @@ dependencies = [
 name = "nyar-optimizer"
 version = "0.1.0"
 dependencies = [
- "nyar-types",
+ "nyar-types 0.1.0",
+ "serde",
+]
+
+[[package]]
+name = "nyar-optimizer"
+version = "0.1.0"
+source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c347269f6453a6460b529e3304af7"
+dependencies = [
+ "nyar-types 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
  "serde",
 ]
 
@@ -1420,12 +1458,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "nyar-types"
+version = "0.1.0"
+source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c347269f6453a6460b529e3304af7"
+dependencies = [
+ "ordered-float",
+ "serde",
+ "sha2",
+ "url",
+]
+
+[[package]]
 name = "nyar-vm"
 version = "0.1.0"
 dependencies = [
  "clap",
  "miette",
- "nyar-bytecode",
+ "nyar-bytecode 0.1.0",
  "nyar-gc",
  "nyar-jit",
  "serde_json",
@@ -1442,7 +1491,7 @@ dependencies = [
 name = "nyar-workspace"
 version = "0.1.0"
 dependencies = [
- "nyar-bytecode",
+ "nyar-bytecode 0.1.0",
  "sha2",
  "tempfile",
  "thiserror",
@@ -2655,9 +2704,9 @@ name = "vcc-data"
 version = "0.0.1"
 dependencies = [
  "miette",
- "nyar",
- "nyar-bytecode",
- "nyar-types",
+ "nyar 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "nyar-bytecode 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
+ "nyar-types 0.1.0 (git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev)",
  "serde",
  "zip",
 ]

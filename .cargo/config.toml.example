@@ -1,11 +1,16 @@
-# 复制到 `.cargo/config.toml`（该目录已在 .gitignore 中）。
-# CI 与未配置 patch 的环境直接使用根 `Cargo.toml` 里的 git 依赖。
+# 复制为 `.cargo/config.toml`（已 gitignore）。CI 不读此文件，直接用根 `Cargo.toml` 的 git 依赖。
+# 按本机 monorepo 布局调整 path；示例假设与 `nyar-vm.rs` 同级的兄弟检出。
 
 [registries.crates-io]
 protocol = "sparse"
 
 [patch."https://github.com/yggdrasil-language/oak.rs"]
 oak-core = { path = "../oaks/projects/oak-core" }
-oak-dejavu = { path = "../oaks/examples/oak-dejavu" }
-oak-macros = { path = "../oaks/projects/oak-macros" }
 oak-valkyrie = { path = "../oaks/examples/oak-valkyrie" }
+oak-von = { path = "../oaks/examples/oak-von" }
+
+[patch."https://github.com/yggdrasil-language/acorn.rs"]
+acorn-wasm = { path = "../acorn.rs/examples/acorn-wasm" }
+
+[patch."https://github.com/valkyrie-language/valkyrie.rs"]
+vcc-data = { path = "../valkyrie.rs/projects/compilers/vcc-data" }
