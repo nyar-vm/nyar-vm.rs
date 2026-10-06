@@ -67,8 +67,7 @@ pub fn to_string_pretty<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    // 缩进样式待 `oak-von::printer` 落地；当前与紧凑序列化相同。
-    oak_von::to_string(value)
+    oak_von::to_string_indented(value, 4)
 }
 
 fn format_key(key: &str) -> String {

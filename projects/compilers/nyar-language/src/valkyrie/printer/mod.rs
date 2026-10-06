@@ -6,23 +6,31 @@
 //! - **Printer**：已解析 AST / 值模型 → 文本；不保留注释与空白。
 //! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
 //!
-//! VON 打印当前委托 `oak-von` AST `ToSource`；待 `oak-von::printer` 落地后改为一行转发。
+//! VON 打印委托 `oak-von::printer`（AST pretty print，非 CST formatter）。
 
 use std::{any::Any, sync::OnceLock};
 
 use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
-use oak_core::source::{SourceBuffer, ToSource};
-use oak_von::{VonValue, language::value::to_ast};
+use oak_von::printer::{PrintOptions as OakPrintOptions, PrintStyle as OakPrintStyle, print_value};
+use oak_von::VonValue;
 use crate::transitional::msil::MsilModule;
 
 use crate::{wat::WatDocument, wit::WitPackage};
 use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};
 
-fn print_von_value(value: &VonValue, _style: PrintStyle, _options: &FormatOptions) -> String {
-    let ast = to_ast(value);
-    let mut buffer = SourceBuffer::new();
-    ast.to_source(&mut buffer);
-    buffer.to_string()
+fn map_print_style(style: PrintStyle) -> OakPrintStyle {
+    match style {
+        PrintStyle::Compact => OakPrintStyle::Compact,
+        PrintStyle::Indented => OakPrintStyle::Indented,
+    }
+}
+
+fn map_print_options(options: &FormatOptions) -> OakPrintOptions {
+    OakPrintOptions { indent_width: options.indent_width }
+}
+
+fn print_von_value(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> String {
+    print_value(value, map_print_style(style), &map_print_options(options))
 }
 
 struct VonPrinter;
@@ -122,15 +130,13 @@ where
     oak_von::to_string(value)
 }
 
-/// 经 Oak VON AST printer 将 `value` 写出为文本。
-///
-/// 缩进样式仍待 `oak-von::printer` 落地；当前与 [`to_string`] 同样输出紧凑文本。
+/// 经 `oak-von::printer` 将 `value` 写出为缩进 VON 文本。
 #[cfg(feature = "serde")]
 pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    oak_von::to_string(value)
+    oak_von::to_string_indented(value, FormatOptions::default().indent_width)
 }
 
 #[cfg(test)]
