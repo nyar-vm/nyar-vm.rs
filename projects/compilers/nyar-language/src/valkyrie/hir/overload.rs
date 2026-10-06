@@ -2215,7 +2215,7 @@ fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut BTree
 }
 
 /// Validates that unresolved pattern extractors fail for explicit contract reasons (`mut self`, non-nullable return).
-pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), std_data::text::valkyrie::ParseError> {
+pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::valkyrie::frontend::ParseError> {
     let candidates = collect_module_candidates(module);
     let type_relations = TypeRelationContext::from_module(module);
     let struct_fields = module.structs.iter().map(|item| (item.name.clone(), item.fields.clone())).collect::<BTreeMap<_, _>>();
@@ -2235,7 +2235,7 @@ fn validate_function_extractor_patterns(
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     let mut locals = BTreeMap::new();
     for param in &function.params {
         locals.insert(param.name.name.to_string(), param.ty.clone());
@@ -2249,7 +2249,7 @@ fn validate_block_extractor_patterns(
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     let mut locals = locals.clone();
     for statement in &block.statements {
         match &statement.kind {
@@ -2290,7 +2290,7 @@ fn validate_expr_extractor_patterns(
     type_relations: &TypeRelationContext,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     match &expr.kind {
         HirExprKind::Call { callee, args, .. } => {
             validate_expr_extractor_patterns(callee, candidates, type_relations, locals, struct_fields)?;
@@ -2418,7 +2418,7 @@ fn validate_pattern_extractor_contract(
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
     struct_fields: &BTreeMap<Identifier, Vec<HirField>>,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     match pattern {
         HirPattern::Extractor(extractor) => match extractor {
             HirExtractorPattern::Constructor { canonical_callee, resolved, fields, .. } => {
@@ -2558,8 +2558,8 @@ fn diagnose_pattern_extractor_failure(
     actual_type: &ValkyrieType,
     candidates: &[OverloadCandidate],
     type_relations: &TypeRelationContext,
-) -> Option<std_data::text::valkyrie::ParseError> {
-    use std_data::text::valkyrie::ParseError;
+) -> Option<crate::valkyrie::frontend::ParseError> {
+    use crate::valkyrie::frontend::ParseError;
 
     if is_builtin_pattern_extractor(canonical_callee) {
         return None;
@@ -2612,8 +2612,8 @@ fn diagnose_pattern_extractor_failure(
 fn diagnose_unresolved_extractor_without_scrutinee_type(
     canonical_callee: &NamePath,
     candidates: &[OverloadCandidate],
-) -> Option<std_data::text::valkyrie::ParseError> {
-    use std_data::text::valkyrie::ParseError;
+) -> Option<crate::valkyrie::frontend::ParseError> {
+    use crate::valkyrie::frontend::ParseError;
 
     // Language Result/Option arms do not require a resolved scrutinee type —
     // MIR match lowering already keys Fine/Fail/Some/None by variant name.
@@ -2643,7 +2643,7 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
     Some(ParseError::invalid(format!("cannot validate pattern extractor `{extractor_name}` without a known scrutinee type")))
 }
 
-fn diagnose_unresolved_arm_extractor(pattern: &HirPattern, candidates: &[OverloadCandidate]) -> Option<std_data::text::valkyrie::ParseError> {
+fn diagnose_unresolved_arm_extractor(pattern: &HirPattern, candidates: &[OverloadCandidate]) -> Option<crate::valkyrie::frontend::ParseError> {
     match pattern {
         HirPattern::Extractor(HirExtractorPattern::Constructor { canonical_callee, resolved, .. })
         | HirPattern::Extractor(HirExtractorPattern::Array { canonical_callee, resolved, .. })

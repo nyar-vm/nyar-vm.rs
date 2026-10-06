@@ -14,7 +14,7 @@ use crate::{
         hir::{HirModule, ValkyrieType},
     },
 };
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 /// 语义层校验：sealed match 穷尽性、值类型 copy 纪律、字面量穷尽性等，并复用控制流校验。
 ///

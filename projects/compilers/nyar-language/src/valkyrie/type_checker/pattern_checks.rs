@@ -5,7 +5,7 @@ use crate::{
     },
     valkyrie::hir::PatternRefutability,
 };
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 pub fn check_pattern_refutability(module: &HirModule) -> Result<(), ParseError> {
     for function in &module.functions {

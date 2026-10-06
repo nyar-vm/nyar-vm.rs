@@ -13,7 +13,7 @@ use crate::{
         hir::{is_nullable_type, is_option_apply_type, is_result_apply_type, nullable_payload_type},
     },
 };
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct HirValidationState {

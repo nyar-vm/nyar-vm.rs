@@ -32,7 +32,7 @@ fn block_expr_or_single_statement(block: &HirBlock) -> Option<&HirExpr> {
 fn compile_source_to_legacy_lir(
     compiler: &ValkyrieCompiler,
     source: &str,
-) -> Result<nyar_language::lir::LirModule, std_data::text::valkyrie::ParseError> {
+) -> Result<nyar_language::lir::LirModule, crate::valkyrie::frontend::ParseError> {
     let hir = compiler.compile_source(source)?;
     let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
     let lir = nyar_language::lir::LirLowerer::lower_mir_module(&hir, &mir);

@@ -5,7 +5,7 @@ use crate::{
     types::{NamePath, hir::ValkyrieType},
 };
 use nyar_types::builtin_operator;
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 use crate::mir::{
     MirBlock, MirBlockRef, MirConstant, MirDiagnostic, MirEffectKind, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator,

@@ -35,7 +35,7 @@ use crate::{
 };
 use nyar_types::NyarType;
 use ordered_float::OrderedFloat;
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 thread_local! {
     static COMPILE_WARNINGS: RefCell<Vec<HirCompileWarning>> = const { RefCell::new(Vec::new()) };

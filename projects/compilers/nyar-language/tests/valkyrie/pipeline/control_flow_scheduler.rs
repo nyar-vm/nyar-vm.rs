@@ -25,19 +25,19 @@ fn expr(kind: HirExprKind) -> HirExpr {
     HirExpr { kind, span: span() }
 }
 
-fn semantic_mir(compiler: &ValkyrieCompiler, source: &str) -> Result<nyar_language::mir::MirModule, std_data::text::valkyrie::ParseError> {
+fn semantic_mir(compiler: &ValkyrieCompiler, source: &str) -> Result<nyar_language::mir::MirModule, crate::valkyrie::frontend::ParseError> {
     let hir = compiler.compile_source(source)?;
     Ok(MirLowerer::lower_module_semantic(&hir))
 }
 
-fn semantic_lir(compiler: &ValkyrieCompiler, source: &str) -> Result<nyar_language::lir::LirModule, std_data::text::valkyrie::ParseError> {
+fn semantic_lir(compiler: &ValkyrieCompiler, source: &str) -> Result<nyar_language::lir::LirModule, crate::valkyrie::frontend::ParseError> {
     use nyar_language::lir::LirLowerer;
     let hir = compiler.compile_source(source)?;
     let mir = MirLowerer::lower_module_semantic(&hir);
     Ok(LirLowerer::lower_mir_module(&hir, &mir))
 }
 
-fn validate_legacy_lir(module: &nyar_language::lir::LirModule) -> Result<(), std_data::text::valkyrie::ParseError> {
+fn validate_legacy_lir(module: &nyar_language::lir::LirModule) -> Result<(), crate::valkyrie::frontend::ParseError> {
     nyar_language::lir::validation::validate_module(module)
 }
 
@@ -45,7 +45,7 @@ fn validate_legacy_pipeline(
     hir: &HirModule,
     mir: &nyar_language::mir::MirModule,
     lir: &nyar_language::lir::LirModule,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     ControlFlowScheduler::validate_hir_module(hir)?;
     ControlFlowScheduler::validate_mir_module(mir)?;
     compare_mir_lir_modules(mir, lir)?;
@@ -56,11 +56,11 @@ fn validate_legacy_pipeline(
 fn compare_mir_lir_modules(
     mir: &nyar_language::mir::MirModule,
     lir: &nyar_language::lir::LirModule,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     for mir_function in &mir.functions {
         let Some(lir_function) = lir.functions.iter().find(|function| function.symbol == mir_function.symbol)
         else {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{}` 在 `LIR` 中缺失",
                 mir_function.symbol
             )));
@@ -79,9 +79,9 @@ fn compare_suspend_points(
     function_name: &str,
     mir_suspend_points: &[nyar_language::mir::ssa::MirSuspendPoint],
     lir_suspend_points: &[nyar_language::lir::LirSuspendPoint],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if mir_suspend_points.len() != lir_suspend_points.len() {
-        return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+        return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
             "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的 suspend 点数量不一致"
         )));
     }
@@ -95,7 +95,7 @@ fn compare_suspend_points(
             || mir_suspend_point.spill_candidates != lir_suspend_point.spill_candidates
             || mir_suspend_point.continuation_index != lir_suspend_point.continuation_index
         {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 suspend 点元数据不一致",
                 index + 1
             )));
@@ -108,9 +108,9 @@ fn compare_frame_layouts(
     function_name: &str,
     mir_frame_layouts: &[nyar_language::mir::ssa::MirFrameLayout],
     lir_frame_layouts: &[nyar_language::lir::LirFrameLayout],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if mir_frame_layouts.len() != lir_frame_layouts.len() {
-        return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+        return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
             "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的 frame layout 数量不一致"
         )));
     }
@@ -120,14 +120,14 @@ fn compare_frame_layouts(
             || mir_layout.resume_target != lir_layout.resume_target
             || mir_layout.slots.len() != lir_layout.slots.len()
         {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 frame layout 元数据不一致",
                 index + 1
             )));
         }
         for (slot_index, (mir_slot, lir_slot)) in mir_layout.slots.iter().zip(lir_layout.slots.iter()).enumerate() {
             if mir_slot.slot_index != lir_slot.slot_index || mir_slot.value != lir_slot.value || mir_slot.value_type != lir_slot.value_type {
-                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                     "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 frame layout 的第 {} 个槽位不一致",
                     index + 1,
                     slot_index + 1
@@ -142,9 +142,9 @@ fn compare_continuations(
     function_name: &str,
     mir_continuations: &[nyar_language::mir::ssa::MirContinuation],
     lir_continuations: &[nyar_language::lir::LirContinuation],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if mir_continuations.len() != lir_continuations.len() {
-        return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+        return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
             "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的 continuation 数量不一致"
         )));
     }
@@ -154,13 +154,13 @@ fn compare_continuations(
             || mir_continuation.resume_parameter != lir_continuation.resume_parameter
             || mir_continuation.handler_exit != lir_continuation.handler_exit
         {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 continuation 元数据不一致",
                 index + 1
             )));
         }
         if mir_continuation.resume_parameter_type != lir_continuation.resume_parameter_type {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 continuation 恢复类型为 `{}`，但 `LIR` 记录为 `{}`",
                 index + 1,
                 display_optional_type(mir_continuation.resume_parameter_type.as_ref()),
@@ -175,9 +175,9 @@ fn compare_case_chains(
     function_name: &str,
     mir_case_chains: &[nyar_language::mir::ssa::MirCaseChain],
     lir_case_chains: &[nyar_language::lir::LirCaseChain],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if mir_case_chains.len() != lir_case_chains.len() {
-        return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+        return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
             "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的 case chain 数量不一致"
         )));
     }
@@ -189,7 +189,7 @@ fn compare_case_chains(
             || mir_chain.produce_value != lir_chain.produce_value
             || mir_chain.arms.len() != lir_chain.arms.len()
         {
-            return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+            return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                 "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 case chain 元数据不一致",
                 index + 1
             )));
@@ -203,7 +203,7 @@ fn compare_case_chains(
                 || mir_arm.exit_target != lir_arm.exit_target
                 || mir_arm.fallthrough_target != lir_arm.fallthrough_target
             {
-                return Err(std_data::text::valkyrie::ParseError::invalid(format!(
+                return Err(crate::valkyrie::frontend::ParseError::invalid(format!(
                     "控制流调度校验失败：`MIR / LIR` 函数 `{function_name}` 的第 {} 个 case chain 的第 {} 个 arm 不一致",
                     index + 1,
                     arm_index + 1
@@ -217,7 +217,7 @@ fn compare_case_chains(
 fn compare_state_machines(
     _function_name: &str,
     _lir_state_machine: Option<&nyar_language::lir::LirStateMachineDescriptor>,
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     // SuspendLoweringPlan lived on legacy MIR; LIR state machines are validated separately.
     Ok(())
 }

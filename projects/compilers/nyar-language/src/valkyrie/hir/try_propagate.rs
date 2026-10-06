@@ -6,7 +6,7 @@ use crate::types::{
     Identifier, NamePath,
     hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
 };
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 /// `?` 操作数形态。
 #[derive(Debug, Clone, PartialEq, Eq)]

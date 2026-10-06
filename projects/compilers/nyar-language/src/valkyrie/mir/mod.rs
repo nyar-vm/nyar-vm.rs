@@ -8,7 +8,7 @@ pub mod validation;
 pub use sum::{MirSumDeclaration, MirSumVariant};
 
 use crate::{hir::ValkyrieCompiler, types::hir::HirModule, validation::ControlFlowScheduler, valkyrie::frontend::ValkyrieRoot};
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 pub use singleton::{
     SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR,

@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use std_data::text::awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
-use std_data::text::valkyrie::naming::{NamingViolation, DIAG_ABI_BINDING_NOT_SNAKE_CASE};
+use crate::valkyrie::frontend::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, NamingViolation};
 
 use crate::types::{SourceID, SourceSpan, ValkyrieError};
 

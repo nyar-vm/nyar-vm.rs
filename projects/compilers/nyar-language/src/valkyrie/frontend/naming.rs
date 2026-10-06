@@ -6,10 +6,43 @@ use oak_valkyrie::ast::{
     Block, ClassDeclaration, ImplyDeclaration, Let, MethodDeclaration, MicroDeclaration, NamespaceDeclaration, Param, Pattern,
     Property, SingletonDeclaration, Statement, StatementNode, Trait, TypeFunction, ValkyrieRoot, WidgetDeclaration,
 };
-use std_data::text::{
-    awsl::is_snake_case,
-    valkyrie::naming::{DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation},
-};
+/// Diagnostic code: identifier must be `snake_case` (`E0301`).
+pub const DIAG_IDENTIFIER_NOT_SNAKE_CASE: u32 = 0x0301;
+
+/// Diagnostic code: AWSL ABI template binding must be `snake_case` (`E0302`).
+pub const DIAG_ABI_BINDING_NOT_SNAKE_CASE: u32 = 0x0302;
+
+/// One naming violation with source span of the identifier token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamingViolation {
+    /// LSP / compiler diagnostic code (`E0301` or `E0302`).
+    pub code: u32,
+    /// Offending identifier text.
+    pub name: String,
+    /// Span of the identifier in the parsed source buffer.
+    pub name_span: Range<usize>,
+}
+
+fn is_snake_case(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut prev_underscore = false;
+    for ch in name.chars() {
+        if ch == '_' {
+            if prev_underscore {
+                return false;
+            }
+            prev_underscore = true;
+            continue;
+        }
+        if !ch.is_ascii_lowercase() && !ch.is_ascii_digit() {
+            return false;
+        }
+        prev_underscore = false;
+    }
+    !name.starts_with('_') && !name.ends_with('_')
+}
 
 /// Validate `let` bindings, `micro`/`method` declarations, and parameters on Oak AST.
 pub fn validate_snake_case(root: &ValkyrieRoot) -> Vec<NamingViolation> {
@@ -157,7 +190,7 @@ fn std_range(span: &oak_core::Range<usize>) -> Range<usize> {
 mod tests {
     use super::*;
     use crate::valkyrie::frontend::parse_source;
-    use std_data::text::valkyrie::naming::DIAG_IDENTIFIER_NOT_SNAKE_CASE;
+    use super::DIAG_IDENTIFIER_NOT_SNAKE_CASE;
 
     #[test]
     fn rejects_camel_case_let_micro_and_param() {

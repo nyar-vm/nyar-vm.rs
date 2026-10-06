@@ -1,5 +1,5 @@
 use nyar::{CapabilityTag, ExternalImportLink, Identifier, QualifiedName, RuntimeRequirement};
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 use crate::valkyrie::types::{
     NamePath,

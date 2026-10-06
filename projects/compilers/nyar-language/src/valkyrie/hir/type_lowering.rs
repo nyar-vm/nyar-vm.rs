@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 thread_local! {
     static SHADOWED_BUILTIN_TYPE_ALIASES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());

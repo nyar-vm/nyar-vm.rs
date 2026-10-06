@@ -9,13 +9,13 @@ use nyar_types::{
     FieldId, NominalInstanceId,
     layout::{AggregateLayout, AggregateLayoutPlan},
 };
-use std_data::text::valkyrie::ParseError;
+use crate::valkyrie::frontend::ParseError;
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
 pub(crate) fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
-) -> Result<(), std_data::text::valkyrie::ParseError> {
+) -> Result<(), crate::valkyrie::frontend::ParseError> {
     if dependency_mirs.is_empty() {
         return Ok(());
     }
