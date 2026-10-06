@@ -1,23 +1,34 @@
 #![doc = include_str!("readme.md")]
 #![warn(missing_docs)]
 
+//! Legacy Valkyrie CST / parser（仅 `#[cfg(test)]` 对照；生产解析在 `oak-valkyrie`）。
+
 /// Parser-facing AST node family.
+#[cfg(test)]
 pub mod ast;
 /// Concrete syntax tree (lossless, for formatter).
+#[cfg(test)]
 pub mod cst;
 /// Lexical analysis entry points and token definitions.
+#[cfg(test)]
 pub mod lexer;
 /// Semantic naming validation (`snake_case` enforcement).
+#[cfg(test)]
 pub mod naming;
 /// Layered parser tree text snapshots.
+#[cfg(test)]
 pub mod parse_dump;
 /// Source-to-AST parsing entry points.
+#[cfg(test)]
 pub mod parser;
 /// T-Grammar / `<% %>` meta-level templates (Valkyrie language extension).
+#[cfg(test)]
 pub mod tgrammar;
 /// X-Grammar / XML inline markup (Valkyrie language extension).
+#[cfg(test)]
 pub mod xml;
 
+#[cfg(test)]
 pub use self::{
     ast::{
         Annotations, AttributeArgument, AttributeDeclaration, AttributeItem, AttributeList, BinaryOperator, ClassDeclaration, ClassLikeKind,

@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use crate::transitional::cst::awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
+use oak_awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
 use crate::valkyrie::frontend::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, NamingViolation};
 
 use crate::types::{SourceID, SourceSpan, ValkyrieError};

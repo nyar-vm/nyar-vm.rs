@@ -3,7 +3,7 @@
 //! AWSL 是 Valkyrie widget 机制的 Vue 风格表面语法：`<widget>` + `<script>` 等价于
 //! `widget Name { … }`，模板经 asgard 前置降级后汇入同一 HIR/MIR 主线，不是平行语言。
 
-use crate::transitional::cst::awsl::{AwslRoot, widget_name_from_stem};
+use oak_awsl::{AwslRoot, widget_name_from_stem};
 
 /// 从 AWSL 根节点与文件名推导 widget 名（snake_case）。
 pub fn widget_name_from_root(root: &AwslRoot, fallback_stem: &str) -> String {

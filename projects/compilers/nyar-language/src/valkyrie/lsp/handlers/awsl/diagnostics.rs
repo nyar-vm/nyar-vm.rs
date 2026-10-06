@@ -1,6 +1,6 @@
 //! AWSL 诊断与 widget 语义接入
 
-use crate::transitional::cst::awsl::{
+use oak_awsl::{
     extract_component_abi_from_script, AbiSeverity, ComponentAbiIndex,
 };
 
@@ -57,7 +57,7 @@ pub fn compile_awsl_document(
                         if !should_emit_abi_issue(issue) {
                             continue;
                         }
-                        if issue.kind == crate::transitional::cst::awsl::AbiIssueKind::NotSnakeCase {
+                        if issue.kind == oak_awsl::AbiIssueKind::NotSnakeCase {
                             continue;
                         }
                         diagnostics.push(abi_issue_to_diagnostic(issue, source_id, script_range.start));
@@ -111,7 +111,7 @@ pub fn compile_awsl_document(
                 let mut diag = abi_issue_to_diagnostic(&issue, source_id, 0);
                 if let Some(span) = issue.span {
                     if let Some(label) = diag.labels.first_mut() {
-                        label.key = Some(if issue.kind == crate::transitional::cst::awsl::AbiIssueKind::NotSnakeCase {
+                        label.key = Some(if issue.kind == oak_awsl::AbiIssueKind::NotSnakeCase {
                             "AWSL ABI lint".into()
                         } else {
                             "AWSL ABI cross-file".into()
@@ -128,8 +128,8 @@ pub fn compile_awsl_document(
     diagnostics
 }
 
-fn should_emit_abi_issue(issue: &crate::transitional::cst::awsl::AbiIssue) -> bool {
-    use crate::transitional::cst::awsl::AbiIssueKind;
+fn should_emit_abi_issue(issue: &oak_awsl::AbiIssue) -> bool {
+    use oak_awsl::AbiIssueKind;
     match issue.kind {
         AbiIssueKind::NotSnakeCase => true,
         _ => issue.severity == AbiSeverity::Error,
@@ -137,7 +137,7 @@ fn should_emit_abi_issue(issue: &crate::transitional::cst::awsl::AbiIssue) -> bo
 }
 
 fn map_script_diagnostic_to_file(
-    root: &crate::transitional::cst::awsl::AwslRoot,
+    root: &oak_awsl::AwslRoot,
     text: &str,
     mut diag: ValkyrieError,
 ) -> ValkyrieError {

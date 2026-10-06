@@ -1,6 +1,6 @@
 //! AWSL 文档解析辅助
 
-use crate::transitional::cst::awsl::{AwslParser, AwslRoot};
+use oak_awsl::{AwslRoot, parse_root};
 
 /// 判断 URI 是否为 AWSL 文件
 pub fn is_awsl_uri(uri: &str) -> bool {
@@ -9,7 +9,7 @@ pub fn is_awsl_uri(uri: &str) -> bool {
 
 /// 解析 AWSL 源文件
 pub fn parse_awsl(text: &str) -> Result<AwslRoot, String> {
-    AwslParser::parse_root(text).map_err(|e| e.message)
+    parse_root(text).map_err(|error| error.message)
 }
 
 /// 若 `offset` 落在 `<script>` 块内，返回块范围及块内相对偏移
