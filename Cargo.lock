@@ -11,6 +11,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "acorn-pe"
+version = "0.0.1"
+dependencies = [
+ "miette",
+ "serde",
+]
+
+[[package]]
 name = "acorn-wasm"
 version = "0.0.1"
 dependencies = [
@@ -1339,6 +1347,7 @@ name = "nyar-emitter"
 version = "0.1.0"
 dependencies = [
  "acorn-jvm",
+ "acorn-pe",
  "acorn-wasm",
  "miette",
  "nyar 0.1.0",

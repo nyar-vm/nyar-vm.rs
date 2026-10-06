@@ -37,6 +37,7 @@ oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", features = ["serde"] }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
+acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 vcc-data = { git = "https://github.com/valkyrie-language/valkyrie.rs", branch = "dev", package = "vcc-data" }
 
 nyar = { path = "projects/compilers/nyar" }
