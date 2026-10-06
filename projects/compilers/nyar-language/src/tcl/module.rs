@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use vcc_data::text::tcl::TclScript;
+use crate::transitional::guest_scripts::tcl::TclScript;
 
 /// `Tcl` host script module.
 #[derive(Debug, Clone, PartialEq, Default)]

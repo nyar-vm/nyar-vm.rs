@@ -9,4 +9,4 @@ pub mod semantic_bridge;
 pub use interpret::{PowerShellValue, evaluate_powershell_script, evaluate_powershell_source};
 pub use module::PowerShellModule;
 pub use semantic_bridge::PowerShellSemanticBridge;
-pub use vcc_data::text::powershell::{PowerShellError, PowerShellScript, PsExpr, PsStmt};
+pub use crate::transitional::guest_scripts::powershell::{PowerShellError, PowerShellScript, PsExpr, PsStmt};

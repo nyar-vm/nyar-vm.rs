@@ -1,6 +1,6 @@
 //! PowerShell host-script semantic bridge.
 
-use vcc_data::text::powershell::{PowerShellScript, PsStmt};
+use crate::transitional::guest_scripts::powershell::{PowerShellScript, PsStmt};
 
 /// Bridge over a parsed PowerShell script.
 #[derive(Debug, Clone, PartialEq)]

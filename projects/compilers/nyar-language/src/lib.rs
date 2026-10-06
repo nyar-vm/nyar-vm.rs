@@ -1,6 +1,8 @@
 #![doc = include_str!("../readme.md")]
 #![warn(missing_docs)]
 
+pub mod transitional;
+
 pub mod awsl;
 pub mod bash;
 pub mod c;

@@ -1,6 +1,6 @@
 //! Bash host-script semantic bridge.
 
-use vcc_data::text::bash::{BashScript, BashStmt};
+use crate::transitional::guest_scripts::bash::{BashScript, BashStmt};
 
 /// Bridge over a parsed Bash script.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +34,7 @@ impl BashSemanticBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vcc_data::text::bash::BashScript;
+    use crate::transitional::guest_scripts::bash::BashScript;
 
     #[test]
     fn collects_top_level_functions() {

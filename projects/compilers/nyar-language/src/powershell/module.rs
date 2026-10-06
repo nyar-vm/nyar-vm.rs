@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use vcc_data::text::powershell::PowerShellScript;
+use crate::transitional::guest_scripts::powershell::PowerShellScript;
 
 /// PowerShell host-script module.
 #[derive(Debug, Clone, PartialEq, Default)]

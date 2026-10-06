@@ -6,7 +6,7 @@ use nyar_language::{
     evaluate_tcl_source,
 };
 use std::collections::HashMap;
-use vcc_data::text::{bash::BashScript, c::CScript, lua::LuaScript, powershell::PowerShellScript, tcl::TclScript};
+use nyar_language::transitional::guest_scripts::{bash::BashScript, c::CScript, lua::LuaScript, powershell::PowerShellScript, tcl::TclScript};
 
 #[test]
 fn lua_adapter_builds_from_script_without_mir() {

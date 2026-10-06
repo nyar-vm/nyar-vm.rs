@@ -9,4 +9,4 @@ pub mod semantic_bridge;
 pub use interpret::{BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use module::BashModule;
 pub use semantic_bridge::BashSemanticBridge;
-pub use vcc_data::text::bash::{BashError, BashScript};
+pub use crate::transitional::guest_scripts::bash::{BashError, BashScript};

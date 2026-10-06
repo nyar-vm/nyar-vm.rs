@@ -46,6 +46,19 @@ fn concrete_frontends_do_not_reference_valkyrie_ir() {
 }
 
 #[test]
+fn concrete_guest_frontends_must_not_import_vcc_data_directly() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    for dir in CONCRETE_FRONTEND_DIRS {
+        let mut files = Vec::new();
+        collect_rs_files(&root.join(dir), &mut files);
+        for path in files {
+            let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+            assert!(!source.contains("vcc_data::"), "{} must route `vcc-data` through `crate::transitional`", path.display());
+        }
+    }
+}
+
+#[test]
 fn concrete_frontends_do_not_import_valkyrie() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     for dir in CONCRETE_FRONTEND_DIRS {
