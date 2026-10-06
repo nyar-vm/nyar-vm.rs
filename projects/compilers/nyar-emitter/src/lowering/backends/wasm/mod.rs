@@ -6,6 +6,7 @@
 
 mod cabi;
 mod gc;
+mod leaf_opcodes;
 pub(crate) mod mir;
 mod sections;
 
@@ -14,6 +15,7 @@ pub(crate) use cabi::{
     memory_min_pages_for_heap_base, wasm_cabi_realloc_bump_body,
 };
 pub(crate) use gc::{WASM_GC_ANYREF, wasm_gc_array_type, wasm_gc_field_type_byte, wasm_gc_struct_type};
+pub(crate) use leaf_opcodes::{I64_EXTEND_I32_S, I64_SHR_U};
 pub(crate) use sections::{
     append_wasm_code_bodies, append_wasm_exports, append_wasm_function_decls, append_wasm_i32_globals, append_wasm_types, code_section_bytes,
     count_wasm_function_decls, count_wasm_function_imports, count_wasm_globals, count_wasm_types, data_section_bytes, decode_uleb128,

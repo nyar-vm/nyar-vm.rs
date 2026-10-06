@@ -166,8 +166,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
             self.emit_operand(operand);
-            // i64.extend_i32_s (0xAC) -?WasmOpcode 枚举尚未收录该变体?
-            self.code.push(0xAC);
+            self.code.push(I64_EXTEND_I32_S);
             return;
         }
         if expected == VALTYPE_I32 && actual == VALTYPE_I64 {
@@ -320,7 +319,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(pair);
         WasmOpcode::I64Const.encode(&mut self.code);
         encode_sleb128_i64(32, &mut self.code);
-        self.code.push(0x88); // i64.shr_u（vcc-data opcode 枚举暂未收录?
+        self.code.push(I64_SHR_U);
         WasmOpcode::I32WrapI64.encode(&mut self.code);
         self.emit_local_set(writer);
 
