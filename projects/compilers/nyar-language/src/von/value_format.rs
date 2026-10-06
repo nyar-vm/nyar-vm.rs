@@ -1,3 +1,6 @@
+//! 过渡：`vcc-data` 值模型的紧凑/缩进文本，仅供 CST formatter 在 Oak `formatter` 落地前使用。
+//! 模型 printer 与 serde 已走 `oak-von::to_string` / `ToSource`。
+
 use std_data::text::von::{VonError, VonValue, to_value};
 
 pub fn format_von_compact(value: &VonValue) -> String {

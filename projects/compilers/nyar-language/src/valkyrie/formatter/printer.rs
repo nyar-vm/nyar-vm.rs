@@ -5,17 +5,21 @@
 
 use std::{any::Any, sync::OnceLock};
 
-use std_data::text::{msil::MsilModule, von::VonValue};
+use oak_core::source::{SourceBuffer, ToSource};
+use oak_von::{VonValue, language::value::to_ast};
+use std_data::text::msil::MsilModule;
 
 use crate::{wat::WatDocument, wit::WitPackage};
 
 use super::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
-use crate::text::{
-    msil::MsilTextWriter,
-    von::{format_von_compact, format_von_pretty},
-    wat::format_wat_document,
-    wit::format_wit_package,
-};
+use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};
+
+fn print_von_value(_value: &VonValue, _style: PrintStyle, _options: &FormatOptions) -> String {
+    let ast = to_ast(_value);
+    let mut buffer = SourceBuffer::new();
+    ast.to_source(&mut buffer);
+    buffer.to_string()
+}
 
 struct VonPrinter;
 
@@ -26,11 +30,7 @@ impl super::Printer for VonPrinter {
 
     fn print(&self, document: &dyn Any, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
         let value = document.downcast_ref::<VonValue>().ok_or_else(|| FormatError::WrongDocument { expected: "VonValue".into() })?;
-        let out = match style {
-            PrintStyle::Compact => format_von_compact(value),
-            PrintStyle::Indented => format_von_pretty(value, options.indent_width),
-        };
-        Ok(out)
+        Ok(print_von_value(value, style, options))
     }
 }
 
@@ -131,17 +131,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use oak_von::language::value::{VonField, VonObject};
 
     use super::*;
 
     #[test]
     fn von_print_via_registry() {
-        let mut fields = BTreeMap::new();
-        fields.insert("x".into(), VonValue::Number(1));
-        let value = VonValue::Object(fields);
+        let value = VonValue::Object(VonObject { fields: vec![VonField { name: "x".into(), value: VonValue::Number(1.0) }] });
         let out = print_von(&value, PrintStyle::Compact, &FormatOptions::default()).unwrap();
-        assert_eq!(out, "{x: 1}");
+        assert_eq!(out, "{x=1}");
         let pretty = print_von(&value, PrintStyle::Indented, &FormatOptions::default()).unwrap();
         assert!(pretty.contains('x'));
     }

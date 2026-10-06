@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acorn-wasm"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
 ]
@@ -1495,7 +1495,6 @@ dependencies = [
 [[package]]
 name = "oak-von"
 version = "0.0.12"
-source = "git+https://github.com/yggdrasil-language/oak.rs?branch=dev#bb804f10d98a768693b893665bf6b9ea12a4c057"
 dependencies = [
  "oak-core",
  "serde",

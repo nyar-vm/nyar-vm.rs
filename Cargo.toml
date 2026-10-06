@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "projects/formats/nyar-bytecode",
-    "projects/formats/acorn-wasm",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
     "projects/runtimes/nyar-vm",
@@ -32,10 +31,12 @@ license = "MIT"
 repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
 [workspace.dependencies]
-# Valkyrie 文本解析的唯一生产来源；AST/CST 由 Oak 负责，语言语义层不得再拥有文本解析器。
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-valkyrie" }
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-core" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-von" }
+# 文本前端：本地 `oaks` 仓（禁止在 `nyar-vm.rs` 内复制 Oak crate）。
+oak-valkyrie = { path = "../../dxo 深度学习/oaks/examples/oak-valkyrie" }
+oak-core = { path = "../../dxo 深度学习/oaks/projects/oak-core" }
+oak-von = { path = "../../dxo 深度学习/oaks/examples/oak-von", features = ["serde"] }
+# 二进制格式：本地 `acorn.rs` 仓（禁止在 `nyar-vm.rs` 内复制 Acorn crate）。
+acorn-wasm = { path = "../../dxo 深度学习/acorn.rs/examples/acorn-wasm" }
 # 过渡：`vcc-data` 仅服务尚未迁入 Oak/Acorn 的非主线消费者；随 ADR-0018 逐步删除。
 std-data = { path = "../valkyrie.rs/projects/compilers/vcc-data", package = "vcc-data" }
 
@@ -53,7 +54,6 @@ nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
 
 nyar-bytecode = { path = "projects/formats/nyar-bytecode" }
-acorn-wasm = { path = "projects/formats/acorn-wasm" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
 nyar-vm = { path = "projects/runtimes/nyar-vm" }

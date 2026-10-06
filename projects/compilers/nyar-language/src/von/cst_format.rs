@@ -1,4 +1,7 @@
 //! VON CST → Document（源码正规格式化）。
+//!
+//! 过渡实现：CST 仍由 `vcc-data` 提供。Oak 侧 formatter 见 `oak-typescript` /
+//! 待落地的 `oak-von::formatter`。
 
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
 use std_data::text::von::{VonCstElement, VonCstParser, VonCstRoot, VonValue};

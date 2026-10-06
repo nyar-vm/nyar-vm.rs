@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use nyar_analyzer::highlight::{
     HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, render_spans_html,
 };
-use std_data::text::valkyrie::lexer::{Lexer as ValkyrieLexer, TokenKind};
+use oak_core::{Lexer, NoLexerCache, SourceText, Token, TokenType};
+use oak_valkyrie::{ValkyrieLanguage, ValkyrieLexer};
+use oak_valkyrie::lexer::ValkyrieTokenType;
 
 /// 兼容别名：默认指词法高亮器。
 pub type ValkyrieHighlighter = ValkyrieLexicalHighlighter;
@@ -35,18 +37,14 @@ impl Highlighter for ValkyrieLexicalHighlighter {
     }
 
     fn highlight(&self, request: &HighlightRequest<'_>) -> Vec<HighlightSpan> {
-        let Ok(tokens) = ValkyrieLexer::tokenize(request.source)
-        else {
-            return Vec::new();
-        };
-        tokens
+        lex_highlight_tokens(request.source)
             .into_iter()
             .filter_map(|token| {
-                if matches!(token.kind, TokenKind::Eof) {
+                if matches!(token.kind, ValkyrieTokenType::Eof) {
                     return None;
                 }
                 let kind = classify_token_kind(&token.kind);
-                (kind != HighlightKind::None).then(|| HighlightSpan::new(kind, token.span.clone()))
+                (kind != HighlightKind::None).then(|| HighlightSpan::new(kind, token.span.start..token.span.end))
             })
             .collect()
     }
@@ -143,19 +141,15 @@ impl Highlighter for ValkyrieSemanticHighlighter {
         // 应从中获取类型符号 span 并映射到 HighlightKind，使高亮与名字解析共享同一套事实源。
         // 当前平台 AnalysisContext 仅为 as_any 占位，无具体实现，故走核心类型名表方案。
         let _ = request.analysis;
-        let Ok(tokens) = ValkyrieLexer::tokenize(request.source)
-        else {
-            return Vec::new();
-        };
-        tokens
+        lex_highlight_tokens(request.source)
             .into_iter()
             .filter_map(|token| {
-                if token.kind.is_trivia() || matches!(token.kind, TokenKind::Eof) {
+                if token.kind.is_ignored() || matches!(token.kind, ValkyrieTokenType::Eof) {
                     return None;
                 }
-                let text = &request.source[token.span.clone()];
+                let text = &request.source[token.span.start..token.span.end];
                 let kind = self.table.classify(text)?;
-                Some(HighlightSpan::new(kind, token.span))
+                Some(HighlightSpan::new(kind, token.span.start..token.span.end))
             })
             .collect()
     }
@@ -182,28 +176,43 @@ pub fn highlight_html(source: &str) -> String {
     render_spans_html(source, &spans)
 }
 
-fn classify_token_kind(kind: &TokenKind) -> HighlightKind {
+fn lex_highlight_tokens(source: &str) -> Vec<Token<ValkyrieTokenType>> {
+    let language = ValkyrieLanguage::default();
+    let lexer = ValkyrieLexer::new(&language);
+    let text = SourceText::new(source);
+    let mut cache = NoLexerCache::default();
+    let output = lexer.lex(&text, &[], &mut cache);
+    match output.result {
+        Ok(tokens) => tokens.iter().cloned().collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn classify_token_kind(kind: &ValkyrieTokenType) -> HighlightKind {
     match kind {
-        TokenKind::Keyword(_) => HighlightKind::Keyword,
-        TokenKind::StringLiteral => HighlightKind::String,
-        TokenKind::IntegerLiteral | TokenKind::FloatLiteral => HighlightKind::Number,
-        TokenKind::Identifier => HighlightKind::Identifier,
-        TokenKind::LParen
-        | TokenKind::RParen
-        | TokenKind::LBrace
-        | TokenKind::RBrace
-        | TokenKind::LBracket
-        | TokenKind::RBracket
-        | TokenKind::LOffsetBracket
-        | TokenKind::ROffsetBracket
-        | TokenKind::LAngle
-        | TokenKind::RAngle
-        | TokenKind::Comma
-        | TokenKind::Semicolon
-        | TokenKind::Colon
-        | TokenKind::Dot
-        | TokenKind::Apostrophe => HighlightKind::Punctuation,
-        TokenKind::Eof => HighlightKind::None,
+        ValkyrieTokenType::Keyword(_) => HighlightKind::Keyword,
+        ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral => HighlightKind::String,
+        ValkyrieTokenType::IntegerLiteral | ValkyrieTokenType::FloatLiteral | ValkyrieTokenType::BoolLiteral => HighlightKind::Number,
+        ValkyrieTokenType::Identifier | ValkyrieTokenType::Label | ValkyrieTokenType::StringPrefix => HighlightKind::Identifier,
+        ValkyrieTokenType::LeftParen
+        | ValkyrieTokenType::RightParen
+        | ValkyrieTokenType::LeftBrace
+        | ValkyrieTokenType::RightBrace
+        | ValkyrieTokenType::LeftBracket
+        | ValkyrieTokenType::RightBracket
+        | ValkyrieTokenType::LeftAngle
+        | ValkyrieTokenType::RightAngle
+        | ValkyrieTokenType::LeftOffset
+        | ValkyrieTokenType::RightOffset
+        | ValkyrieTokenType::Comma
+        | ValkyrieTokenType::Semicolon
+        | ValkyrieTokenType::Colon
+        | ValkyrieTokenType::Dot
+        | ValkyrieTokenType::Underscore => HighlightKind::Punctuation,
+        ValkyrieTokenType::Eof => HighlightKind::None,
+        ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => {
+            HighlightKind::None
+        }
         _ => HighlightKind::Operator,
     }
 }
