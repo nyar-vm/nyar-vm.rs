@@ -1,6 +1,8 @@
 #![doc = include_str!("readme.md")]
 #![warn(missing_docs)]
 
+pub mod transitional;
+
 mod artifacts;
 mod assembly;
 mod backend;

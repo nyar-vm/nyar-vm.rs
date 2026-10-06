@@ -1,6 +1,6 @@
 use std::fmt;
 
-use vcc_data::binary::{
+use crate::transitional::binary::{
     elf::{Elf64ParseError, parse_elf64},
     pe::{Pe64ParseError, parse_pe64},
 };
