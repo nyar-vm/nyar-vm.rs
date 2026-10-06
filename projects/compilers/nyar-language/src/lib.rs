@@ -3,6 +3,8 @@
 
 #[path = "valkyrie/formatter/mod.rs"]
 pub mod formatter;
+#[path = "valkyrie/printer/mod.rs"]
+pub mod printer;
 #[path = "valkyrie/text/mod.rs"]
 pub mod text;
 

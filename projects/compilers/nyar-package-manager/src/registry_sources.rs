@@ -129,7 +129,7 @@ impl RegistrySourceManager {
             std::fs::create_dir_all(parent)?;
         }
         let file = SourcesFile { sources: self.sources.clone() };
-        let rendered = nyar_language::formatter::to_string_indented(&file)?;
+        let rendered = nyar_language::printer::to_string_indented(&file)?;
         std::fs::write(&self.path, rendered)?;
         Ok(())
     }

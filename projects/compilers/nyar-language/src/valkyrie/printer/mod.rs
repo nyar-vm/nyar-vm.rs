@@ -1,21 +1,25 @@
-//! Printer 语言插件（平台契约见 `nyar_analyzer::format`）。
+//! AST **pretty printer** 注册表（平台契约见 `nyar_analyzer::format`）。
 //!
-//! **数据模型** → 文本（序列化 / 调试）。**不是**源码正规格式化；
-//! 不保证注释与空白保留。源码 fmt 请用 [`crate::formatter::format_source`]。
+//! 与 [`crate::formatter`]（CST 源码正规格式化）是两套完全不同的概念，对齐 Oak 各语言 crate 的
+//! `printer/` 与 `formatter/` 并列目录（见 `oak-typescript`）。
+//!
+//! - **Printer**：已解析 AST / 值模型 → 文本；不保留注释与空白。
+//! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
+//!
+//! VON 打印当前委托 `oak-von` AST `ToSource`；待 `oak-von::printer` 落地后改为一行转发。
 
 use std::{any::Any, sync::OnceLock};
 
+use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
 use oak_core::source::{SourceBuffer, ToSource};
 use oak_von::{VonValue, language::value::to_ast};
 use std_data::text::msil::MsilModule;
 
 use crate::{wat::WatDocument, wit::WitPackage};
-
-use super::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
 use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};
 
-fn print_von_value(_value: &VonValue, _style: PrintStyle, _options: &FormatOptions) -> String {
-    let ast = to_ast(_value);
+fn print_von_value(value: &VonValue, _style: PrintStyle, _options: &FormatOptions) -> String {
+    let ast = to_ast(value);
     let mut buffer = SourceBuffer::new();
     ast.to_source(&mut buffer);
     buffer.to_string()
@@ -23,7 +27,7 @@ fn print_von_value(_value: &VonValue, _style: PrintStyle, _options: &FormatOptio
 
 struct VonPrinter;
 
-impl super::Printer for VonPrinter {
+impl Printer for VonPrinter {
     fn language_id(&self) -> &str {
         "von"
     }
@@ -35,31 +39,31 @@ impl super::Printer for VonPrinter {
 }
 
 struct WatPrinter;
-impl super::Printer for WatPrinter {
+impl Printer for WatPrinter {
     fn language_id(&self) -> &str {
         "wat"
     }
 
-    fn print(&self, document: &dyn Any, _style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+    fn print(&self, document: &dyn Any, _style: PrintStyle, _options: &FormatOptions) -> Result<String, FormatError> {
         let document = document.downcast_ref::<WatDocument>().ok_or_else(|| FormatError::WrongDocument { expected: "WatDocument".into() })?;
         Ok(format_wat_document(document))
     }
 }
 
 struct WitPrinter;
-impl super::Printer for WitPrinter {
+impl Printer for WitPrinter {
     fn language_id(&self) -> &str {
         "wit"
     }
 
-    fn print(&self, document: &dyn Any, _style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+    fn print(&self, document: &dyn Any, _style: PrintStyle, _options: &FormatOptions) -> Result<String, FormatError> {
         let package = document.downcast_ref::<WitPackage>().ok_or_else(|| FormatError::WrongDocument { expected: "WitPackage".into() })?;
         Ok(format_wit_package(package))
     }
 }
 
 struct MsilPrinter;
-impl super::Printer for MsilPrinter {
+impl Printer for MsilPrinter {
     fn language_id(&self) -> &str {
         "msil"
     }
@@ -89,7 +93,7 @@ pub fn print_document(language_id: &str, document: &dyn Any, style: PrintStyle, 
     printer_registry().print(language_id, document, style, options)
 }
 
-/// 打印 `VonValue`。
+/// 打印 `VonValue`（AST pretty print，非 CST formatter）。
 pub fn print_von(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
     print_document("von", value, style, options)
 }
@@ -109,7 +113,7 @@ pub fn print_msil_module(module: &MsilModule, options: &FormatOptions) -> Result
     print_document("msil", module, PrintStyle::Indented, options)
 }
 
-/// 通过 serde 将 `value` 序列化为紧凑 VON 文本（走 printer 注册表）。
+/// 通过 serde 将 `value` 序列化为紧凑 VON 文本（AST print 路径）。
 #[cfg(feature = "serde")]
 pub fn to_string<T>(value: &T) -> Result<String, oak_core::OakError>
 where
@@ -118,9 +122,9 @@ where
     oak_von::to_string(value)
 }
 
-/// 经 Oak VON 前端将 `value` 序列化为 VON 文本。
+/// 经 Oak VON AST printer 将 `value` 写出为文本。
 ///
-/// 缩进排版仍待 Oak formatter 落地，当前与 `to_string` 同样输出紧凑文本。
+/// 缩进样式仍待 `oak-von::printer` 落地；当前与 [`to_string`] 同样输出紧凑文本。
 #[cfg(feature = "serde")]
 pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::OakError>
 where

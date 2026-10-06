@@ -1,7 +1,7 @@
 //! 过渡：`vcc-data` 值模型的紧凑/缩进文本，仅供 CST formatter 在 Oak `formatter` 落地前使用。
 //!
 //! 源码正规格式化属于 Oak 上游（对齐 `oak-typescript::formatter`），不在此扩展规则。
-//! 模型 printer 与 serde 走 `oak-von::ToSource` / [`oak_von::to_string`]，见 [`crate::formatter::printer`]。
+//! AST pretty print 与 serde 走 [`crate::printer`] / `oak-von::ToSource`（非本模块职责）。
 
 use std_data::text::von::VonValue;
 
@@ -67,7 +67,7 @@ pub fn to_string_pretty<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    // 缩进排版待 `oak-von::formatter` 落地；当前与紧凑序列化相同。
+    // 缩进样式待 `oak-von::printer` 落地；当前与紧凑序列化相同。
     oak_von::to_string(value)
 }
 

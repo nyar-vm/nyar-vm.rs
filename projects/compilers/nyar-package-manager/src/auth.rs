@@ -107,7 +107,7 @@ impl VendorAuthStore {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = nyar_language::formatter::to_string_indented(self)?;
+        let content = nyar_language::printer::to_string_indented(self)?;
         std::fs::write(&self.path, content)?;
         Ok(())
     }
