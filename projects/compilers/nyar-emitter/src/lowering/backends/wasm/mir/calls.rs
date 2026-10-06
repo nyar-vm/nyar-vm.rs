@@ -166,7 +166,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         if expected == VALTYPE_I64 && actual == VALTYPE_I32 {
             self.emit_operand(operand);
-            self.code.push(I64_EXTEND_I32_S);
+            WasmOpcode::I64ExtendI32S.encode(&mut self.code);
             return;
         }
         if expected == VALTYPE_I32 && actual == VALTYPE_I64 {
@@ -236,14 +236,14 @@ impl<'a> WasmMirLowerer<'a> {
         let tmp = self.alloc_anyref_local();
         self.emit_local_tee(tmp);
         WasmOpcode::RefIsNull.encode(&mut self.code);
-        self.code.push(0x04);
+        WasmOpcode::If.encode(&mut self.code);
         self.code.push(VALTYPE_I64);
         self.emit_i64_const(0);
-        self.code.push(0x05);
+        WasmOpcode::Else.encode(&mut self.code);
         self.emit_local_get(tmp);
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
-        self.code.push(0x0B);
+        WasmOpcode::End.encode(&mut self.code);
     }
 
     /// p3 `write-via-stream`：utf8 线性句?→?`stream.new` / write / drop →?宿主?
@@ -319,7 +319,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(pair);
         WasmOpcode::I64Const.encode(&mut self.code);
         encode_sleb128_i64(32, &mut self.code);
-        self.code.push(I64_SHR_U);
+        WasmOpcode::I64ShrU.encode(&mut self.code);
         WasmOpcode::I32WrapI64.encode(&mut self.code);
         self.emit_local_set(writer);
 

@@ -40,7 +40,6 @@ use super::{
         wasm_cabi_realloc_bump_body,
     },
     gc::{WASM_GC_ANYREF, wasm_gc_array_type, wasm_gc_field_type_byte, wasm_gc_struct_type},
-    leaf_opcodes::{I64_EXTEND_I32_S, I64_SHR_U},
     sections::{
         code_section_bytes, data_section_bytes, decode_uleb128, encode_sleb128_i32, encode_sleb128_i64, encode_uleb128, export_section_bytes,
         function_section_bytes, import_section_bytes, memory_section_bytes, type_section_bytes, wasm_function_body, wasm_function_type,
