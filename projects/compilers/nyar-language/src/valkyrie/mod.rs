@@ -21,6 +21,8 @@ pub mod mir;
 pub mod module;
 /// Valkyrie 文本解析入口（委托 `frontend`）。
 pub mod parser;
+/// Resolver 侧目标模板展开；Compiler 不得调用。
+pub mod resolver_staging;
 pub(crate) mod source_format;
 pub(crate) mod symbols;
 pub mod type_checker;
