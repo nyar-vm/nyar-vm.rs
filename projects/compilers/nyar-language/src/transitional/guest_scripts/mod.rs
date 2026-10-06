@@ -11,10 +11,8 @@ pub mod c;
 /// Lua script model and parser（已自 vcc-data 迁入）。
 pub mod lua;
 
-/// PowerShell script model and parser.
-pub mod powershell {
-    pub use vcc_data::text::powershell::*;
-}
+/// PowerShell script model and parser（已自 vcc-data 迁入）。
+pub mod powershell;
 
 /// Tcl script model and parser（已自 vcc-data 迁入）。
 pub mod tcl;
