@@ -6,31 +6,52 @@
 //! - **Printer**：已解析 AST / 值模型 → 文本；不保留注释与空白。
 //! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
 //!
-//! VON 打印委托 `oak-von::printer`（AST pretty print，非 CST formatter）。
+//! VON 打印委托 `oak-von::printer`；Valkyrie 源码 AST print 委托 `oak-valkyrie::printer`（均非 CST formatter）。
 
 use std::{any::Any, sync::OnceLock};
 
 use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
-use oak_von::printer::{PrintOptions as OakPrintOptions, PrintStyle as OakPrintStyle, print_value};
+use oak_valkyrie::printer::{
+    PrintOptions as ValkyriePrintOptions, PrintStyle as ValkyriePrintStyle, print_source as print_valkyrie_ast_source,
+};
+use oak_von::printer::{PrintOptions as VonPrintOptions, PrintStyle as VonPrintStyle, print_value};
 use oak_von::VonValue;
 use crate::transitional::msil::MsilModule;
 
 use crate::{wat::WatDocument, wit::WitPackage};
 use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};
 
-fn map_print_style(style: PrintStyle) -> OakPrintStyle {
+fn map_von_print_style(style: PrintStyle) -> VonPrintStyle {
     match style {
-        PrintStyle::Compact => OakPrintStyle::Compact,
-        PrintStyle::Indented => OakPrintStyle::Indented,
+        PrintStyle::Compact => VonPrintStyle::Compact,
+        PrintStyle::Indented => VonPrintStyle::Indented,
     }
 }
 
-fn map_print_options(options: &FormatOptions) -> OakPrintOptions {
-    OakPrintOptions { indent_width: options.indent_width }
+fn map_von_print_options(options: &FormatOptions) -> VonPrintOptions {
+    VonPrintOptions { indent_width: options.indent_width }
+}
+
+fn map_valkyrie_print_style(style: PrintStyle) -> ValkyriePrintStyle {
+    match style {
+        PrintStyle::Compact => ValkyriePrintStyle::Compact,
+        PrintStyle::Indented => ValkyriePrintStyle::Indented,
+    }
+}
+
+fn map_valkyrie_print_options(options: &FormatOptions) -> ValkyriePrintOptions {
+    ValkyriePrintOptions { indent_width: options.indent_width }
 }
 
 fn print_von_value(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> String {
-    print_value(value, map_print_style(style), &map_print_options(options))
+    print_value(value, map_von_print_style(style), &map_von_print_options(options))
+}
+
+/// Valkyrie 源码 AST print（`oak-valkyrie::printer`；非 CST formatter）。
+pub fn print_valkyrie_source(source: &str, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+    print_valkyrie_ast_source(source, map_valkyrie_print_style(style), &map_valkyrie_print_options(options)).map_err(|error| {
+        FormatError::Parse { path: None, message: error.to_string() }
+    })
 }
 
 struct VonPrinter;
@@ -152,6 +173,13 @@ mod tests {
         assert_eq!(out, "{x=1}");
         let pretty = print_von(&value, PrintStyle::Indented, &FormatOptions::default()).unwrap();
         assert!(pretty.contains('x'));
+    }
+
+    #[test]
+    fn valkyrie_source_print_via_oak() {
+        let out = print_valkyrie_source("micro main(){let x=1}", PrintStyle::Compact, &FormatOptions::default()).unwrap();
+        assert!(out.contains("micro main()"));
+        assert!(out.contains("let x=1"));
     }
 
     #[test]
