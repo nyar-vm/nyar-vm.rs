@@ -209,16 +209,29 @@ fn workspace_must_not_alias_vcc_data_as_std_data() {
 
 #[test]
 fn production_compile_pipeline_must_not_preprocess_tgrammar_text() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/backend_bundle.rs");
-    let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    assert!(
-        !source.contains("transitional::tgrammar"),
-        "production compile pipeline must not call transitional tgrammar text preprocessing"
-    );
-    assert!(
-        !source.contains("preprocess_target_templates"),
-        "production compile pipeline must not expand `<% match arch %>` inside Compiler"
-    );
+    let pipeline_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie");
+    let mut files = Vec::new();
+    collect_rs_files(&pipeline_root.join("compile_pipeline"), &mut files);
+    collect_rs_files(&pipeline_root.join("hir/lowering"), &mut files);
+    collect_rs_files(&pipeline_root.join("frontend"), &mut files);
+    for path in files {
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        assert!(
+            !source.contains("transitional::tgrammar"),
+            "{} must not call transitional tgrammar text preprocessing",
+            path.display()
+        );
+        assert!(
+            !source.contains("preprocess_target_templates"),
+            "{} must not expand `<% match arch %>` inside Compiler",
+            path.display()
+        );
+        assert!(
+            !source.contains("expand_tgrammar_in_root"),
+            "{} must not expand tgrammar inside Oak AST lowering",
+            path.display()
+        );
+    }
 }
 
 #[test]

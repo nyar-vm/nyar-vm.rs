@@ -493,13 +493,11 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
 
 mod expr_lowering;
 mod macro_expand;
-mod tgrammar;
 mod vx;
 
 pub use super::CaptureAnalyzer;
 use expr_lowering::{extract_name_path, lower_block, lower_term_expression};
 use macro_expand::expand_macros_in_root;
-use tgrammar::expand_tgrammar_in_root;
 use vx::enhance_vx_widgets;
 
 /// Minimal compiler facade that lowers parser output into HIR.
@@ -734,7 +732,6 @@ impl ValkyrieCompiler {
         module_name: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
         let mut root = frontend::parse_source(source)?;
-        expand_tgrammar_in_root(&mut root);
         expand_macros_in_root(&mut root);
         let hir = self.lower_root_with_semantic_exports_and_name(&root, imported_semantic_exports, module_name)?;
         self.validate_hir_semantic_contract(&hir)?;
@@ -752,7 +749,6 @@ impl ValkyrieCompiler {
         module_name: Option<NamePath>,
     ) -> Result<HirModule, ParseError> {
         let mut root = frontend::parse_source(source)?;
-        expand_tgrammar_in_root(&mut root);
         expand_macros_in_root(&mut root);
         let hir = AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)?;
         validate_interop_surface(&hir)?;

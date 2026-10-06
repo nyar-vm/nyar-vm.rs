@@ -5,12 +5,14 @@
 
 mod error;
 mod naming;
+mod staging;
 
 use oak_core::{Builder, ParseSession, SourceText};
 use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
 pub use error::ParseError;
 pub use naming::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation, validate_snake_case};
+pub use staging::reject_unexpanded_target_templates;
 
 /// Oak 前端 AST 类型别名，供 lowering 直接引用。
 pub use oak_valkyrie::ast;
@@ -25,6 +27,7 @@ pub fn std_range(span: &oak_core::Range<usize>) -> std::ops::Range<usize> {
 
 /// 使用 Oak 解析源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
 pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
+    reject_unexpanded_target_templates(source)?;
     let language = ValkyrieLanguage::default();
     let builder = ValkyrieBuilder::new(&language);
     let text = SourceText::new(source);
@@ -32,3 +35,6 @@ pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
     let output = builder.build(&text, &[], &mut session);
     output.result.map_err(ParseError::from_oak)
 }
+
+#[cfg(test)]
+mod staging_tests;

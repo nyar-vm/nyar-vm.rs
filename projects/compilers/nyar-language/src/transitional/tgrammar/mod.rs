@@ -1,6 +1,7 @@
-//! `tgrammar` 模板预处理（自 vcc-data 迁入，待 Oak `oak-valkyrie` 模板前端）。
+//! `tgrammar` 过渡解析器（自 `vcc-data` 迁入，仅供单元测试与迁移对照）。
 //!
-//! 目标模板中的 `<% match arch %>` 片段在 Compiler 内展开。
+//! 生产 Compiler 不得调用本模块；`<% match arch %>` 必须由 Resolver 或 Oak 模板前端
+//! 在源码进入 `frontend::parse_source` 之前展开。
 
 mod ast;
 mod lexer;

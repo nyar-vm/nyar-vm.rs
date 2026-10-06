@@ -14,19 +14,15 @@ use crate::{
     valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
 };
 
+use crate::valkyrie::frontend;
+
 use super::context::CompilerBuildContext;
 
-/// 拒绝 Compiler 内对 `<% match arch %>` 模板片段的文本重解析。
-///
-/// 目标模板必须由 Oak 前端或 Resolver 预处理为结构化源码；Compiler 只消费最终文本。
+/// 在语义编译前拒绝未展开的目标模板。
 fn reject_unexpanded_target_templates(groups: &[CompilerSourceGroup]) -> Result<()> {
     for group in groups {
-        if group.source.contains("<% match ") {
-            return Err(miette!(
-                "源码组 `{}` 含有未展开的目标模板 `<% match ... %>`。模板必须由 Oak 前端或 Resolver 预处理，Compiler 不再执行文本展开",
-                group.name
-            ));
-        }
+        frontend::reject_unexpanded_target_templates(&group.source)
+            .map_err(|error| miette!("源码组 `{}`: {}", group.name, error))?;
     }
     Ok(())
 }
