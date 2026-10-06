@@ -4,7 +4,7 @@
 //!
 //! | 模块 | 待迁入 |
 //! |------|--------|
-//! | `cst` | `oak-von` / `oak-valkyrie` / `oak-awsl` formatter |
+//! | `cst` | `von` 已迁入；`awsl` / `valkyrie` 仍经 `vcc-data`，待 Oak formatter |
 //! | `guest_scripts` | `oak-bash` 等 + 解释器重写 |
 //! | `msil` | `acorn-pe::msil` 已迁入，待 `oak-msil` 正式命名 |
 //! | `notedown` | 已自 vcc-data 迁入 `transitional::notedown`，待 `oak-notedown` |

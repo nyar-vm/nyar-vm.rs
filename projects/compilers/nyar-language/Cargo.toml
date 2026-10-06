@@ -9,7 +9,7 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 
 [features]
 default = []
-serde = ["dep:serde", "nyar-types/serde", "ordered-float/serde"]
+serde = ["nyar-types/serde", "ordered-float/serde"]
 # NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
 nyar-vm-lane = ["nyar-emitter/nyar-vm-lane"]
 
@@ -26,7 +26,7 @@ nyar-types = { workspace = true }
 vcc-data = { workspace = true }
 ordered-float = { workspace = true }
 miette = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 syntect = { workspace = true }
 katex-rs = { workspace = true }
