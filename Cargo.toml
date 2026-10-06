@@ -31,14 +31,13 @@ license = "MIT"
 repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
 [workspace.dependencies]
-# Oak / Acorn / vcc-data：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。
+# Oak / Acorn：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
 oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev" }
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", features = ["serde"] }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", branch = "dev" }
-vcc-data = { git = "https://github.com/valkyrie-language/valkyrie.rs", branch = "dev", package = "vcc-data" }
 
 nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }

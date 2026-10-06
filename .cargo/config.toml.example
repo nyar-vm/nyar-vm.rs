@@ -13,6 +13,3 @@ oak-von = { path = "../oaks/examples/oak-von" }
 acorn-wasm = { path = "../acorn.rs/examples/acorn-wasm" }
 acorn-jvm = { path = "../acorn.rs/examples/acorn-jvm" }
 acorn-pe = { path = "../acorn.rs/examples/acorn-pe" }
-
-[patch."https://github.com/valkyrie-language/valkyrie.rs"]
-vcc-data = { path = "../valkyrie.rs/projects/compilers/vcc-data" }

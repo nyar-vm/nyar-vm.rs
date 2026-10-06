@@ -14,7 +14,7 @@ serde = ["nyar-types/serde", "ordered-float/serde"]
 nyar-vm-lane = ["nyar-emitter/nyar-vm-lane"]
 
 [dependencies]
-# 分层：Oak 文本前端 → language 语义层；`vcc-data` 不能再承担 Valkyrie 文本解析。
+# 分层：Oak 文本前端 → language 语义层；过渡 CST 在 `transitional/` 内联，不再依赖 `vcc-data`。
 acorn-pe = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-core = { workspace = true }
@@ -23,7 +23,6 @@ nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
 nyar-types = { workspace = true }
-vcc-data = { workspace = true }
 ordered-float = { workspace = true }
 miette = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

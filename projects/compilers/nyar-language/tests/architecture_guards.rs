@@ -1,6 +1,6 @@
 //! Architecture guards for language crate boundaries.
 //!
-//! Expected crate layering: `nyar-language` → `nyar-emitter` → transitional `vcc-data` (external, shrinking).
+//! Expected crate layering: `nyar-language` → `nyar-emitter` → `acorn-*` binary formats. Text CST 过渡层在 `transitional/` 内联。
 //!
 //! Concrete language/framework frontends (guests) may live here; shared
 //! `host_script` / `HostScript*` trait layers do **not** belong in this crate.
@@ -53,7 +53,7 @@ fn concrete_guest_frontends_must_not_import_vcc_data_directly() {
         collect_rs_files(&root.join(dir), &mut files);
         for path in files {
             let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-            assert!(!source.contains("vcc_data::"), "{} must route `vcc-data` through `crate::transitional`", path.display());
+            assert!(!source.contains("vcc_data::"), "{} must not import `vcc-data`", path.display());
         }
     }
 }
@@ -95,7 +95,7 @@ fn nyar_emitter_is_a_direct_dependency() {
             return;
         }
     }
-    panic!("nyar-emitter must be listed under [dependencies] (language → nyar-emitter → vcc-data)");
+    panic!("nyar-emitter must be listed under [dependencies] (language → nyar-emitter → acorn-*)");
 }
 
 #[test]
@@ -114,26 +114,59 @@ fn nyar_emitter_crate_does_not_depend_on_language() {
             continue;
         }
         if in_dependencies && trimmed.starts_with("nyar-language") {
-            panic!("nyar-emitter [dependencies] must not include nyar-language (layering: language → nyar-emitter → vcc-data)");
+            panic!("nyar-emitter [dependencies] must not include nyar-language (layering: language → nyar-emitter → acorn-*)");
         }
     }
 }
 
 #[test]
-fn vcc_data_imports_are_confined_to_transitional_modules() {
+fn nyar_language_must_not_import_vcc_data() {
     let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     collect_rs_files(&src_root, &mut files);
     for path in files {
-        let rel = path.strip_prefix(&src_root).unwrap();
-        let rel = rel.to_string_lossy();
-        if rel.starts_with("transitional") {
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        assert!(!source.contains("vcc_data::"), "{} must not import `vcc-data`", path.display());
+    }
+}
+
+#[test]
+fn nyar_language_cargo_must_not_list_vcc_data() {
+    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let cargo = fs::read_to_string(&cargo_path).unwrap_or_else(|error| panic!("failed to read Cargo.toml: {error}"));
+    for line in cargo.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("vcc-data") {
+            panic!("nyar-language must not depend on `vcc-data` (transitional CST is inlined under `src/transitional/`)");
+        }
+    }
+}
+
+/// Legacy CST formatter glue until `oak-<language>/src/formatter` owns source formatting.
+const LEGACY_CST_FORMATTER_GLUE: &[&str] = &[
+    "valkyrie/cst_format.rs",
+    "valkyrie/source_format.rs",
+    "awsl/cst_format.rs",
+    "awsl/source_format.rs",
+    "von/cst_format.rs",
+    "von/source_format.rs",
+    "valkyrie/formatter/mod.rs",
+];
+
+#[test]
+fn cst_formatter_rules_must_not_spread_beyond_legacy_glue() {
+    let src_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&src_root, &mut files);
+    for path in files {
+        let rel = path.strip_prefix(&src_root).unwrap().to_string_lossy().replace('\\', "/");
+        if rel.starts_with("transitional/") || LEGACY_CST_FORMATTER_GLUE.iter().any(|allowed| rel == *allowed) {
             continue;
         }
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert!(
-            !source.contains("vcc_data::"),
-            "{} must not import `vcc_data` directly (use `crate::transitional`)",
+            !source.contains("FormatBuffer::new"),
+            "{} must not add CST formatter rules. Source formatting belongs in `oak-<language>/src/formatter/` (see `oak-typescript`).",
             path.display()
         );
     }
