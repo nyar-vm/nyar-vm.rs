@@ -1,7 +1,10 @@
-//! 语言侧 **CST 源码格式化**（平台契约见 `nyar_analyzer::format`）。
+//! LSP / CLI **格式化注册表**（契约见 `nyar_analyzer::format::SourceFormatterRegistry`）。
 //!
-//! 与 [`crate::printer`]（AST pretty print）是两套完全不同的概念，对齐 Oak 各语言 crate 的
-//! `formatter/` 与 `printer/` 并列目录（见 `oak-typescript`）。
+//! **实现不在此 crate**：合法 formatter 只能由上游 `oak-<language>/src/formatter/` 提供
+//!（见 `oak-typescript::formatter`）。本模块当前把请求转发到 `transitional::cst` 的 legacy
+//! CST 路径，属于过渡 shim，不得在此新增排版规则。
+//!
+//! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`。
 //!
 //! - **SourceFormatter**：源码 → CST token-gap → 文本（保留 trivia）
 //! - **配置**：默认从各文件路径的 `.editorconfig` 解析（[`FormatBatchOptions::use_editorconfig`]）
@@ -41,13 +44,13 @@ pub use nyar_analyzer::format::FormatBuffer;
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（vcc-data `text::valkyrie`，无 X-Grammar）。
+    /// 核心 Valkyrie：`.v` / `.valkyrie`（过渡 `transitional::cst::valkyrie`，待 `oak-valkyrie::formatter`）。
     V,
-    /// Valkyrie + X-Grammar：`.vx`（widget / markup，仍走 valkyrie CST，独立 `.editorconfig` 段）。
+    /// Valkyrie + X-Grammar：`.vx`（过渡 CST，待 `oak-valkyrie::formatter`）。
     Vx,
-    /// VON 数据：`.von`（vcc-data `text::von`）。
+    /// VON 数据：`.von`（过渡 `transitional::cst::von`，待 `oak-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（vcc-data `text::awsl`，与 V/Vx 不同引擎）。
+    /// Asgard AWSL 模板：`.awsl`（过渡 `transitional::cst::awsl`，待 `oak-awsl::formatter`）。
     Awsl,
 }
 

@@ -1,14 +1,16 @@
-//! 过渡层：仍在等待 Oak / Acorn 替代的 `vcc-data` 入口。
+//! 过渡层：自 `vcc-data` 内联的 lexer / CST / guest 脚本，等待 Oak / Acorn 正式 crate 接管。
 //!
-//! 新代码不得在此扩展排版或语义规则。只做 re-export 与桥接，便于逐模块删除 `vcc-data`。
+//! **格式化不在此扩展**：合法 **SourceFormatter** 只能落在上游 `oak-<language>/src/formatter/`
+//!（对齐 `oak-typescript`）。`nyar-analyzer::format` 仅是注册表与 `Document` 布局契约。
+//! **Printer**（AST / 值模型 → 文本）与 formatter 严格分离，见 `valkyrie::printer`。
 //!
-//! | 模块 | 待迁入 |
-//! |------|--------|
-//! | `cst` | 已全部自 vcc-data 迁入，待 Oak formatter 正式命名 |
-//! | `guest_scripts` | 已全部自 vcc-data 迁入，待 `oak-bash` 等正式前端 |
-//! | `msil` | `acorn-pe::msil` 已迁入，待 `oak-msil` 正式命名 |
-//! | `notedown` | 已自 vcc-data 迁入 `transitional::notedown`，待 `oak-notedown` |
-//! | `tgrammar` | 已自 vcc-data 迁入 `transitional::tgrammar`，待 Oak 模板前端 |
+//! | 模块 | 状态 |
+//! |------|------|
+//! | `cst` | 内联 legacy CST，待 `oak-valkyrie` / `oak-von` / `oak-awsl` formatter |
+//! | `guest_scripts` | 内联 guest parser，待 `oak-bash` 等正式前端 |
+//! | `msil` | `acorn-pe::msil`，待 `oak-msil` |
+//! | `notedown` | 内联，待 `oak-notedown` |
+//! | `tgrammar` | 内联，待 Oak 模板前端 |
 pub mod cst;
 pub mod guest_scripts;
 pub mod msil;
