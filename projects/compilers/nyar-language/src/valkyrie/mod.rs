@@ -10,7 +10,10 @@ pub mod text;
 /// 单向分析 / 处理编译流。
 pub mod compile_pipeline;
 pub mod control_flow;
+#[cfg(test)]
 pub(crate) mod cst_format;
+#[cfg(test)]
+pub(crate) mod legacy_cst_print;
 pub mod derive;
 /// Oak 前端：唯一文本事实源与 AST 类型出口。
 pub mod frontend;

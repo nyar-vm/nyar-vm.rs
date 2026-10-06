@@ -3,7 +3,7 @@
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
 use crate::transitional::cst::valkyrie::{ValCstElement, ValCstParser, ValCstRoot};
 
-use crate::{text::FormatSyntax, valkyrie::source_format};
+use crate::{text::FormatSyntax, valkyrie::legacy_cst_print};
 
 impl FormatSyntax for ValCstRoot {
     fn format_document(&self, options: &FormatOptions) -> Document {
@@ -17,7 +17,7 @@ impl FormatSyntax for ValCstRoot {
                     if !leading.is_empty() {
                         parts.push(Document::trivia(leading.clone()));
                     }
-                    let formatted = source_format::format_statement(ast, options);
+                    let formatted = legacy_cst_print::format_statement(ast, options);
                     parts.push(Document::text(formatted));
                     if !trailing.is_empty() {
                         parts.push(Document::trivia(trailing.clone()));

@@ -142,14 +142,13 @@ fn nyar_language_cargo_must_not_list_vcc_data() {
     }
 }
 
-/// Legacy CST formatter glue until `oak-<language>/src/formatter` owns source formatting.
+/// Legacy CST formatter glue（`#[cfg(test)]` 对照路径；生产格式化在 `oak-<language>/src/formatter`）。
 const LEGACY_CST_FORMATTER_GLUE: &[&str] = &[
     "valkyrie/cst_format.rs",
-    "valkyrie/source_format.rs",
+    "valkyrie/legacy_cst_print.rs",
     "awsl/cst_format.rs",
-    "awsl/source_format.rs",
+    "awsl/legacy_cst_print.rs",
     "von/cst_format.rs",
-    "von/source_format.rs",
     "valkyrie/formatter/mod.rs",
 ];
 

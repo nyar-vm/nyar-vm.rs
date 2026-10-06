@@ -3,7 +3,7 @@
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
 use crate::transitional::cst::awsl::{AwslCstElement, AwslCstParser, AwslCstRoot};
 
-use crate::{awsl::source_format, text::FormatSyntax};
+use crate::{awsl::legacy_cst_print, text::FormatSyntax};
 
 impl FormatSyntax for AwslCstRoot {
     fn format_document(&self, options: &FormatOptions) -> Document {
@@ -17,7 +17,7 @@ impl FormatSyntax for AwslCstRoot {
                     if !leading.is_empty() {
                         parts.push(Document::trivia(leading.clone()));
                     }
-                    parts.push(Document::text(source_format::format_root(root, options)));
+                    parts.push(Document::text(legacy_cst_print::format_root(root, options)));
                     if !trailing.is_empty() {
                         parts.push(Document::trivia(trailing.clone()));
                     }
