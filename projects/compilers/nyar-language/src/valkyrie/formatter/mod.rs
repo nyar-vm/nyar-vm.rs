@@ -1,8 +1,8 @@
 //! LSP / CLI **格式化注册表**（契约见 `nyar_analyzer::format::SourceFormatterRegistry`）。
 //!
 //! **实现不在此 crate**：合法 formatter 只能由上游 `oak-<language>/src/formatter/` 提供
-//!（见 `oak-typescript::formatter`）。本模块当前把请求转发到 `transitional::cst` 的 legacy
-//! CST 路径，属于过渡 shim，不得在此新增排版规则。
+//!（见 `oak-typescript::formatter`）。Valkyrie / VON / AWSL 已转发至对应 Oak formatter；
+//! 不得在此新增 CST token-gap 排版规则。
 //!
 //! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`。
 //!
