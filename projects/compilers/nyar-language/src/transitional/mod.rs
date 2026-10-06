@@ -8,7 +8,7 @@
 //! | `guest_scripts` | 内联 guest parser，待 `oak-bash` 等正式前端 |
 //! | `msil` | `acorn-pe::msil`，待 `oak-msil` |
 //! | `notedown` | 内联，待 `oak-notedown` |
-//! | `tgrammar` | 内联，待 Oak 模板前端 |
+//! | `tgrammar` | 仅迁移对照；生产 TGrammar 由 `oak-valkyrie` + `support_t_grammar` 提供 AST 节点 |
 pub mod guest_scripts;
 pub mod msil;
 pub mod notedown;

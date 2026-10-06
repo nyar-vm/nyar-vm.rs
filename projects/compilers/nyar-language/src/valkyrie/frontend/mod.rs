@@ -12,7 +12,7 @@ use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
 pub use error::ParseError;
 pub use naming::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation, validate_snake_case};
-pub use staging::reject_unexpanded_target_templates;
+pub use staging::{reject_unexpanded_target_templates, reject_unsupported_template_source};
 
 /// Oak 前端 AST 类型别名，供 lowering 直接引用。
 pub use oak_valkyrie::ast;
@@ -25,11 +25,28 @@ pub fn std_range(span: &oak_core::Range<usize>) -> std::ops::Range<usize> {
     span.start..span.end
 }
 
+/// 生产编译使用的 Oak 语言配置。
+///
+/// `support_t_grammar` 控制 TGrammar 模板节点是否进入 AST；模板展开由
+/// Compiler 在结构化节点上按 `CompilerBuildContext.arch` 执行，禁止文本重扫。
+pub fn production_language() -> ValkyrieLanguage {
+    ValkyrieLanguage { support_t_grammar: true, ..ValkyrieLanguage::default() }
+}
+
 /// 使用 Oak 解析源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
 pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
-    reject_unexpanded_target_templates(source)?;
-    let language = ValkyrieLanguage::default();
-    let builder = ValkyrieBuilder::new(&language);
+    parse_source_with_language(source, &production_language())
+}
+
+/// 使用显式 `ValkyrieLanguage` 配置解析源码。
+pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> Result<ValkyrieRoot, ParseError> {
+    if !language.support_t_grammar {
+        reject_unsupported_template_source(source)?;
+    }
+    else {
+        reject_unexpanded_target_templates(source)?;
+    }
+    let builder = ValkyrieBuilder::new(language);
     let text = SourceText::new(source);
     let mut session = ParseSession::<ValkyrieLanguage>::default();
     let output = builder.build(&text, &[], &mut session);

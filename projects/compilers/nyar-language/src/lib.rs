@@ -37,7 +37,6 @@ pub use nyar::{
 };
 pub use valkyrie::{
     compile_pipeline::{compile_source_groups_to_artifacts, CompilerBuildContext, CompilerHostProviderBinding},
-    resolver_staging::expand_target_templates_for_arch,
     derive,
     frontend_contract::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,
