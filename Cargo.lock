@@ -1491,6 +1491,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oak-formatter"
+version = "0.0.12"
+dependencies = [
+ "oak-core",
+]
+
+[[package]]
 name = "oak-macros"
 version = "0.0.12"
 dependencies = [
@@ -1505,6 +1512,7 @@ version = "0.0.12"
 dependencies = [
  "oak-core",
  "oak-dejavu",
+ "oak-formatter",
  "serde",
  "unicode-ident",
 ]
