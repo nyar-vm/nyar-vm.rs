@@ -17,6 +17,7 @@ nyar-vm-lane = ["emitter/nyar-vm-lane"]
 # 分层：Oak 文本前端 → language 语义层；`std-data` 不能再承担 Valkyrie 文本解析。
 oak-valkyrie = { workspace = true }
 oak-core = { workspace = true }
+oak-von = { workspace = true, features = ["serde"] }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 emitter = { workspace = true }

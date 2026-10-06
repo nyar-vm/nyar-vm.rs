@@ -109,22 +109,22 @@ pub fn print_msil_module(module: &MsilModule, options: &FormatOptions) -> Result
 
 /// 通过 serde 将 `value` 序列化为紧凑 VON 文本（走 printer 注册表）。
 #[cfg(feature = "serde")]
-pub fn to_string<T>(value: &T) -> Result<String, std_data::text::von::VonError>
+pub fn to_string<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    let von_value = std_data::text::von::to_value(value)?;
-    Ok(print_von(&von_value, PrintStyle::Compact, &FormatOptions::default()).expect("VonValue compact print is infallible"))
+    oak_von::to_string(value)
 }
 
-/// 经 printer 引擎将 `value` 序列化为缩进 VON 文本。
+/// 经 Oak VON 前端将 `value` 序列化为 VON 文本。
+///
+/// 缩进排版仍待 Oak formatter 落地，当前与 `to_string` 同样输出紧凑文本。
 #[cfg(feature = "serde")]
-pub fn to_string_indented<T>(value: &T) -> Result<String, std_data::text::von::VonError>
+pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::OakError>
 where
     T: serde::Serialize,
 {
-    let von_value = std_data::text::von::to_value(value)?;
-    Ok(print_von(&von_value, PrintStyle::Indented, &FormatOptions::default()).expect("VonValue indented print is infallible"))
+    oak_von::to_string(value)
 }
 
 #[cfg(test)]

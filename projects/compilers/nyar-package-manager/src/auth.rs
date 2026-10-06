@@ -38,7 +38,7 @@ impl VendorAuthStore {
         let path = path.as_ref().to_path_buf();
         if path.is_file() {
             let source = std::fs::read_to_string(&path)?;
-            let mut store: VendorAuthStore = std_data::text::von::from_str(&source).unwrap_or_default();
+            let mut store: VendorAuthStore = oak_von::from_str(&source).unwrap_or_default();
             store.path = path;
             store.token_env_vars = token_env_vars;
             Ok(store)

@@ -1,6 +1,6 @@
 use miette::Diagnostic;
 use nyar_package_registry::RegistryError;
-use std_data::text::von::VonError;
+use oak_core::OakError;
 use thiserror::Error;
 
 /// Package manager errors.
@@ -11,7 +11,7 @@ pub enum PackageManagerError {
     Registry(#[from] RegistryError),
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::von))]
-    Von(#[from] VonError),
+    Von(#[from] OakError),
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::io))]
     Io(#[from] std::io::Error),

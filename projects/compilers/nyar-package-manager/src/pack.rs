@@ -8,7 +8,7 @@ use std::{
 use flate2::{Compression, write::GzEncoder};
 use nyar_package_registry::sha256_hex;
 use serde::Deserialize;
-use std_data::text::von::from_str;
+use oak_von::from_str;
 use tar::Builder;
 
 use crate::Result;

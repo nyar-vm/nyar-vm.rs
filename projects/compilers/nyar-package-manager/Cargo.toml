@@ -16,7 +16,8 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-std-data = { workspace = true }
+oak-core = { workspace = true }
+oak-von = { workspace = true, features = ["serde"] }
 tar = { workspace = true }
 thiserror = { workspace = true }
 

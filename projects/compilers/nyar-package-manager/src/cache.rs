@@ -26,7 +26,7 @@ impl PackageCache {
         let index_path = root.join("cache-index.von");
         let index = if index_path.is_file() {
             let source = std::fs::read_to_string(&index_path)?;
-            std_data::text::von::from_str(&source).unwrap_or_default()
+            oak_von::from_str(&source).unwrap_or_default()
         }
         else {
             CacheIndex::default()

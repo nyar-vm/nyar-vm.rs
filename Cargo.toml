@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "projects/formats/nyar-bytecode",
+    "projects/formats/acorn-wasm",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
     "projects/runtimes/nyar-vm",
@@ -11,7 +12,6 @@ members = [
     "projects/compilers/nyar-analyzer",
     "projects/compilers/nyar-emitter",
     "projects/compilers/nyar-language",
-    "projects/compilers/std-data",
     "projects/compilers/nyar-optimizer",
     "projects/compilers/nyar-package-manager",
     "projects/compilers/nyar-package-registry",
@@ -35,8 +35,9 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 # Valkyrie 文本解析的唯一生产来源；AST/CST 由 Oak 负责，语言语义层不得再拥有文本解析器。
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-valkyrie" }
 oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-core" }
-# 格式模型与编解码属于 Nyar 的中性基础层；不得从 valkyrie.rs 反向拉取。
-std-data = { path = "projects/compilers/std-data" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", branch = "dev", package = "oak-von" }
+# 过渡：`vcc-data` 仅服务尚未迁入 Oak/Acorn 的非主线消费者；随 ADR-0018 逐步删除。
+std-data = { path = "../valkyrie.rs/projects/compilers/vcc-data", package = "vcc-data" }
 
 nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
@@ -52,6 +53,7 @@ nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 emitter = { path = "projects/compilers/nyar-emitter", package = "nyar-emitter" }
 
 nyar-bytecode = { path = "projects/formats/nyar-bytecode" }
+acorn-wasm = { path = "projects/formats/acorn-wasm" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
 nyar-vm = { path = "projects/runtimes/nyar-vm" }
@@ -91,7 +93,6 @@ nyar-package-registry = { path = "projects/compilers/nyar-package-registry" }
 nyar-runner = { path = "projects/compilers/nyar-runner" }
 nyar-types = { path = "projects/compilers/nyar-types" }
 nyar-workspace = { path = "projects/compilers/nyar-workspace" }
-
 
 [profile.release]
 lto = false

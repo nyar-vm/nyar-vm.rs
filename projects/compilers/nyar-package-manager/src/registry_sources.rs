@@ -114,8 +114,8 @@ impl RegistrySourceManager {
             self.sources = default_sources()?;
             return Ok(());
         }
-        let file: SourcesFile = std_data::text::von::from_str(&source).unwrap_or_else(|_| {
-            std_data::text::von::from_str::<BTreeMap<String, String>>(&source).map(|sources| SourcesFile { sources }).unwrap_or_default()
+        let file: SourcesFile = oak_von::from_str(&source).unwrap_or_else(|_| {
+            oak_von::from_str::<BTreeMap<String, String>>(&source).map(|sources| SourcesFile { sources }).unwrap_or_default()
         });
         self.sources = default_sources()?;
         for (name, endpoint) in file.sources {
