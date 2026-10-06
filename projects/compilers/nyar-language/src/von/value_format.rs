@@ -3,7 +3,7 @@
 //! 源码正规格式化属于 Oak 上游（对齐 `oak-typescript::formatter`），不在此扩展规则。
 //! AST pretty print 与 serde 走 [`crate::printer`] / `oak-von::ToSource`（非本模块职责）。
 
-use vcc_data::text::von::VonValue;
+use crate::transitional::cst::von::VonValue;
 
 pub fn format_von_compact(value: &VonValue) -> String {
     match value {

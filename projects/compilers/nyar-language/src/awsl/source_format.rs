@@ -1,6 +1,6 @@
 //! AWSL source formatter.
 
-use vcc_data::text::awsl::{
+use crate::transitional::cst::awsl::{
     AwslAttribute, AwslAttributeValue, AwslDirective, AwslDirectiveKind, AwslElement, AwslImport, AwslRoot, AwslTemplateNode, AwslTextPart,
 };
 

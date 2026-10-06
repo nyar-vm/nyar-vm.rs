@@ -2,4 +2,7 @@
 //!
 //! 新代码不得在此扩展排版或语义规则。只做 re-export 与桥接，便于逐模块删除 `vcc-data`。
 
+pub mod cst;
 pub mod guest_scripts;
+pub mod msil;
+pub mod notedown;

@@ -1,6 +1,6 @@
 //! AWSL 文档解析辅助
 
-use vcc_data::text::awsl::{AwslParser, AwslRoot};
+use crate::transitional::cst::awsl::{AwslParser, AwslRoot};
 
 /// 判断 URI 是否为 AWSL 文件
 pub fn is_awsl_uri(uri: &str) -> bool {

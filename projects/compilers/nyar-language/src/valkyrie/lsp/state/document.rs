@@ -1,7 +1,7 @@
 use crate::types::Position;
 use oak_valkyrie::ast::ValkyrieRoot;
 use crate::types::{hir::HirModule, SourceID, ValkyrieError};
-use vcc_data::text::awsl::AwslRoot;
+use crate::transitional::cst::awsl::AwslRoot;
 
 /// 文档编译结果
 #[derive(Debug, Clone)]
@@ -21,9 +21,9 @@ pub struct DocumentState {
     pub diagnostics: Vec<ValkyrieError>,
     pub line_offsets: Vec<usize>,
     /// Extracted component ABI from `<script>`.
-    pub component_abi: Option<vcc_data::text::awsl::ComponentAbi>,
+    pub component_abi: Option<crate::transitional::cst::awsl::ComponentAbi>,
     /// ABI extraction / cross-file validation issues.
-    pub abi_issues: Vec<vcc_data::text::awsl::AbiIssue>,
+    pub abi_issues: Vec<crate::transitional::cst::awsl::AbiIssue>,
 }
 
 impl DocumentState {

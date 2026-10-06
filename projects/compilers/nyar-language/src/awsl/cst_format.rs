@@ -1,7 +1,7 @@
 //! AWSL CST → Document。
 
 use nyar_analyzer::format::{Document, FormatOptions, FormattedOutput};
-use vcc_data::text::awsl::{AwslCstElement, AwslCstParser, AwslCstRoot};
+use crate::transitional::cst::awsl::{AwslCstElement, AwslCstParser, AwslCstRoot};
 
 use crate::{awsl::source_format, text::FormatSyntax};
 
