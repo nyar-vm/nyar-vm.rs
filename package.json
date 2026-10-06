@@ -20,7 +20,7 @@
         "u": "cargo upgrade --incompatible"
     },
     "devDependencies": {
-        "@biomejs/biome": "^1.0.0",
+        "@biomejs/biome": "^2.5.15",
         "@doki-land/nifty": "^0.0.12",
         "typescript": "^7.0.2"
     },
