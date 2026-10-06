@@ -7,12 +7,29 @@ use std::path::Path;
 
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 use miette::{Result, miette};
-use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, TargetBackendFamily};
+use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 
 use crate::{
     CompilerSourceGroup, ValkyrieCompiler,
     valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
 };
+
+use super::context::CompilerBuildContext;
+
+/// 拒绝 Compiler 内对 `<% match arch %>` 模板片段的文本重解析。
+///
+/// 目标模板必须由 Oak 前端或 Resolver 预处理为结构化源码；Compiler 只消费最终文本。
+fn reject_unexpanded_target_templates(groups: &[CompilerSourceGroup]) -> Result<()> {
+    for group in groups {
+        if group.source.contains("<% match ") {
+            return Err(miette!(
+                "源码组 `{}` 含有未展开的目标模板 `<% match ... %>`。模板必须由 Oak 前端或 Resolver 预处理，Compiler 不再执行文本展开",
+                group.name
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
@@ -32,25 +49,20 @@ impl CompilerBuildBundle {
 fn compile_source_groups_to_backend_bundle(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
-    arch: &str,
-    target: CanonicalTarget,
-    clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
+    context: &CompilerBuildContext,
 ) -> Result<CompilerBuildBundle> {
-    let groups = groups
-        .iter()
-        .cloned()
-        .map(|mut group| {
-            group.source = crate::transitional::tgrammar::preprocess_target_templates(&group.source, arch);
-            group
-        })
-        .collect::<Vec<_>>();
-    let compiled_program =
-        compiler.compile_source_groups_to_program(&groups).map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
-    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, target, clr_suspend_strategy)
+    reject_unexpanded_target_templates(groups)?;
+    let compiled_program = compiler
+        .compile_source_groups_to_program(groups)
+        .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
+    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
-    let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind };
-    validate_artifact_surface(&bundle, wasm_package_kind)?;
+    let bundle = CompilerBuildBundle {
+        compiled_program,
+        artifact_plan,
+        wasm_package_kind: context.wasm_package_kind,
+    };
+    validate_artifact_surface(&bundle, context.wasm_package_kind)?;
     Ok(bundle)
 }
 
@@ -58,16 +70,13 @@ fn compile_source_groups_to_backend_bundle(
 pub fn compile_source_groups_to_artifacts(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
-    arch: &str,
-    target: CanonicalTarget,
-    clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
+    context: &CompilerBuildContext,
     output_dir: &Path,
     project_name: &str,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<nyar_emitter::DriverCompileReport> {
-    let bundle = compile_source_groups_to_backend_bundle(compiler, groups, arch, target, clr_suspend_strategy, wasm_package_kind)?;
+    let bundle = compile_source_groups_to_backend_bundle(compiler, groups, context)?;
     nyar_emitter::compile_frontend_bundle_with_bundled_backends(&bundle, output_dir, project_name, emit_wat_sidecar, generate_runtime_config)
 }
 
@@ -133,5 +142,26 @@ impl PlannedArtifactPartitionsView for CompilerBuildBundle {
 
     fn backend_requirement(&self, partition_index: usize) -> Option<nyar::PartitionBackendRequirement> {
         self.artifact_plan.backend_requirement(partition_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar::{CanonicalTarget, ClrSuspendStrategy};
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+
+    #[test]
+    fn unexpanded_target_templates_fail_before_semantic_compile() {
+        let groups = [CompilerSourceGroup {
+            dependency_key: "app".to_string(),
+            name: "app".to_string(),
+            source: "micro main() -> i32 { <% match arch %> return 1 }".to_string(),
+            direct_dependencies: Vec::new(),
+        }];
+        let context = CompilerBuildContext::new("wasm32", CanonicalTarget::parse("node").expect("node"), ClrSuspendStrategy::default(), WasmPackageKind::Binary);
+        let error = compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context)
+            .expect_err("未展开模板必须在语义编译前失败");
+        assert!(error.to_string().contains("未展开的目标模板"));
     }
 }

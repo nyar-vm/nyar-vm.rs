@@ -12,6 +12,7 @@
 
 mod backend_bundle;
 mod canonical;
+mod context;
 mod diagnostics;
 mod driver;
 mod envelope_checks;
@@ -19,6 +20,7 @@ mod link;
 mod representation;
 
 pub use backend_bundle::compile_source_groups_to_artifacts;
+pub use context::{CompilerBuildContext, CompilerHostProviderBinding};
 pub use canonical::canonical_program_from_semantic_mir;
 pub use diagnostics::{diagnostic, fail_stage};
 pub(crate) use driver::compile_linked_semantic_mir;
