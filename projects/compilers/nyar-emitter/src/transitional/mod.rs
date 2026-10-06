@@ -4,7 +4,7 @@
 //!
 //! | 模块 | 待迁入 |
 //! |------|--------|
-//! | `binary` | `acorn-pe` / `acorn-jvm` 等 |
+//! | `binary` | `acorn-jvm`（`class`/`jar` 已迁入）· `acorn-pe`（`pe`/`coff`/`elf` 待迁入） |
 //! | `msil` | `oak-msil` / Acorn CLR |
 
 pub mod binary;

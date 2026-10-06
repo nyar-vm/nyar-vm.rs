@@ -183,7 +183,7 @@ pub fn wasm_requirement(target: BinaryTarget, host_boundary: HostProjectionBound
     }
 }
 
-pub fn demo_jvm_input(output_dir: &Path) -> LoweredBackendInput {
+pub fn demo_jvm_backend_input(output_dir: &Path) -> nyar_emitter::nyar_backend_jvm::JvmBinaryBackendInput {
     let mut class_file = JvmClassFile::new("demo/Main");
     class_file.methods.push(JvmMethodSignature {
         name: "main".to_string(),
@@ -191,13 +191,16 @@ pub fn demo_jvm_input(output_dir: &Path) -> LoweredBackendInput {
         access_flags: 0x0001 | 0x0008,
         code: Some(JvmCodeBody { max_stack: 1, max_locals: 0, instructions: vec![JvmInstruction::IConst(1), JvmInstruction::IReturn] }),
     });
-    LoweredBackendInput::jvm(nyar_emitter::nyar_backend_jvm::JvmBinaryBackendInput {
+    nyar_emitter::nyar_backend_jvm::JvmBinaryBackendInput {
         class_file,
         output_dir: output_dir.to_path_buf(),
         emit_class_file: true,
-        control_flow: None,
         companion_classes: Vec::new(),
-    })
+    }
+}
+
+pub fn demo_jvm_input(output_dir: &Path) -> LoweredBackendInput {
+    LoweredBackendInput::jvm(demo_jvm_backend_input(output_dir))
 }
 
 pub fn demo_wasm_input(output_dir: &Path, host_boundary: HostProjectionBoundary) -> LoweredBackendInput {
@@ -220,7 +223,6 @@ pub fn demo_wasm_input_with_preview(
         output_dir: output_dir.to_path_buf(),
         host_boundary,
         imports: Vec::new(),
-        control_flow: None,
         package_as_wasi_command: matches!(host_boundary, HostProjectionBoundary::WasiComponent),
         wasi_preview,
         library_wasm_exports: Vec::new(),
@@ -258,7 +260,6 @@ pub fn demo_wasm_input_with_imports(
         output_dir: output_dir.to_path_buf(),
         host_boundary,
         imports,
-        control_flow: None,
         package_as_wasi_command: matches!(host_boundary, HostProjectionBoundary::WasiComponent),
         wasi_preview: nyar_emitter::nyar_backend_wasi::WasiPreview::Preview2,
         library_wasm_exports: Vec::new(),

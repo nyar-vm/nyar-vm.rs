@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "acorn-jvm"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "zip",
+]
+
+[[package]]
 name = "acorn-wasm"
 version = "0.0.1"
 dependencies = [
@@ -1330,6 +1338,7 @@ source = "git+https://github.com/nyar-vm/nyar-vm.rs?branch=dev#22c5b225da7c34726
 name = "nyar-emitter"
 version = "0.1.0"
 dependencies = [
+ "acorn-jvm",
  "acorn-wasm",
  "miette",
  "nyar 0.1.0",

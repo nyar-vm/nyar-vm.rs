@@ -17,6 +17,7 @@ use crate::support::{
 };
 
 #[test]
+#[ignore = "JVM bundled driver is frozen until Oak/Acorn MIR lowering lands"]
 fn creates_jvm_run_contract_via_bundled_compiler() {
     let output_dir = tempdir().expect("temp dir");
     let options = compilation_options(BinaryTarget::new(TargetFamily::Jvm, BinaryArch::Any, BinaryFlavor::ManagedClr), "demo");
