@@ -38,7 +38,7 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
             let span = with_source(&span_range, source_id);
             HirStatement {
                 kind: HirStatementKind::Let {
-                    is_mutable: binding.is_mutable,
+                    is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
                     initializer: Some(Box::new(lower_term_expression(&binding.expr, source_id, span_range.clone()))),
                     ty: binding.ty.as_ref().map(lower_type_expression),

@@ -1815,7 +1815,7 @@ fn lower_param(param: &Param, source_id: SourceID, fallback_span: Range<usize>) 
         name: HirIdentifier { name: Identifier::new(&param.name.name), shadow_index: 0, span: with_source(&span_range, source_id) },
         ty: param.ty.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::AutoType),
         binding_kind: HirParameterBindingKind::PositionalOrKeyword,
-        is_mutable: false,
+        is_mutable: has_modifier(&param.annotations, "mut"),
         default: param.default.as_ref().map(|expr| lower_term_expression(expr, source_id, span_range.clone())),
         variadic: HirVariadicKind::None,
     }
