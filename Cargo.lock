@@ -1522,6 +1522,7 @@ name = "oak-von"
 version = "0.0.12"
 dependencies = [
  "oak-core",
+ "oak-formatter",
  "serde",
 ]
 
