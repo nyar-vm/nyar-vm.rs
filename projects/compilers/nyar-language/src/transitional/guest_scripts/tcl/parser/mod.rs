@@ -100,7 +100,7 @@ fn parse_command(words: Vec<TclToken>) -> Result<TclCommand, TclError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text::tcl::TclScript;
+    use crate::transitional::guest_scripts::tcl::TclScript;
 
     #[test]
     fn parse_if_while() {
