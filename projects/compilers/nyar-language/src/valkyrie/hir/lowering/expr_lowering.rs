@@ -147,6 +147,10 @@ fn lower_term_expression_with_context(
         TermExpression::Bool { value, .. } => HirExprKind::Literal(HirLiteral::Bool(*value)),
         TermExpression::Unary(node) => lower_unary_expression(node, source_id, span_range.clone(), span.clone()),
         TermExpression::Binary(node) => lower_binary_expression(node, source_id, span_range.clone(), span.clone()),
+        TermExpression::Turbofish { expr, arguments, .. } => HirExprKind::GenericApply {
+            callee: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)),
+            arguments: arguments.iter().map(super::lower_type_expression).collect(),
+        },
         TermExpression::ApplyCall { callee, args, .. } => lower_call_expression(callee, args, source_id, span_range.clone(), span.clone()),
         TermExpression::DotCall { receiver, field, .. } => {
             let object = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false);
