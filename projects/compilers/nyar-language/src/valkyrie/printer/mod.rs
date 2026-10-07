@@ -3,23 +3,30 @@
 //! 与 [`crate::formatter`]（CST 源码正规格式化）是两套完全不同的概念，对齐 Oak 各语言 crate 的
 //! `printer/` 与 `formatter/` 并列目录（见 `oak-typescript`）。
 //!
-//! - **Printer**：已解析 AST / 值模型 → 文本；不保留注释与空白。
+//! - **Printer**：已解析 AST / 值模型 → `oak_pretty_print::Document` → 文本；不保留注释与空白。
 //! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
 //!
-//! VON 打印委托 `oak-von::printer`；Valkyrie 源码 AST print 委托 `oak-valkyrie::printer`（均非 CST formatter）。
+//! Valkyrie / VON 的 AST print 均委托对应 `oak-*::printer`；不得在此手写布局规则。
 
 use std::{any::Any, sync::OnceLock};
 
 use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
 use oak_valkyrie::printer::{
-    PrintOptions as ValkyriePrintOptions, PrintStyle as ValkyriePrintStyle, print_source as print_valkyrie_ast_source,
+    Document as PrettyDocument, PrintOptions as ValkyriePrintOptions, PrintStyle as ValkyriePrintStyle,
+    print_root as oak_print_valkyrie_root, print_source as oak_print_valkyrie_source, render_document as oak_render_valkyrie_document,
+    to_document as oak_valkyrie_to_document,
 };
 use oak_von::printer::{PrintOptions as VonPrintOptions, PrintStyle as VonPrintStyle, print_value};
 use oak_von::VonValue;
-use crate::transitional::msil::MsilModule;
 
+use crate::transitional::msil::MsilModule;
+use crate::valkyrie::frontend::ValkyrieRoot;
+use crate::valkyrie::text::ToDocument;
 use crate::{wat::WatDocument, wit::WitPackage};
 use crate::text::{msil::MsilTextWriter, wat::format_wat_document, wit::format_wit_package};
+
+/// Oak pretty-print 布局文档（AST printer 路径；非 `nyar_analyzer::format::Document`）。
+pub type Document = PrettyDocument<'static>;
 
 fn map_von_print_style(style: PrintStyle) -> VonPrintStyle {
     match style {
@@ -39,19 +46,56 @@ fn map_valkyrie_print_style(style: PrintStyle) -> ValkyriePrintStyle {
     }
 }
 
-fn map_valkyrie_print_options(options: &FormatOptions) -> ValkyriePrintOptions {
-    ValkyriePrintOptions { indent_width: options.indent_width }
+fn map_valkyrie_print_options(style: PrintStyle, options: &FormatOptions) -> ValkyriePrintOptions {
+    ValkyriePrintOptions {
+        style: map_valkyrie_print_style(style),
+        indent_width: options.indent_width,
+        max_width: options.max_width,
+    }
+}
+
+fn map_valkyrie_print_error(error: oak_valkyrie::printer::PrintError) -> FormatError {
+    match error {
+        oak_valkyrie::printer::PrintError::Parse(message) => FormatError::Parse { path: None, message },
+        oak_valkyrie::printer::PrintError::Unsupported { context } => FormatError::Parse { path: None, message: context },
+    }
 }
 
 fn print_von_value(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> String {
     print_value(value, &map_von_print_options(style, options))
 }
 
-/// Valkyrie 源码 AST print（`oak-valkyrie::printer`；非 CST formatter）。
+/// 将 `ValkyrieRoot` 转为 `oak-pretty-print` 布局文档。
+pub fn to_document(root: &ValkyrieRoot) -> Result<Document, FormatError> {
+    oak_valkyrie_to_document(root).map_err(map_valkyrie_print_error)
+}
+
+/// 渲染 Valkyrie pretty-print 文档为文本。
+pub fn render_document(doc: &Document, style: PrintStyle, options: &FormatOptions) -> String {
+    oak_render_valkyrie_document(doc, &map_valkyrie_print_options(style, options))
+}
+
+/// 将 `ValkyrieRoot` 写出为文本（AST print；非 CST formatter）。
+pub fn print_valkyrie_root(root: &ValkyrieRoot, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+    oak_print_valkyrie_root(root, &map_valkyrie_print_options(style, options)).map_err(map_valkyrie_print_error)
+}
+
+/// Valkyrie 源码 AST print（parse → `Document` → text；非 CST formatter）。
 pub fn print_valkyrie_source(source: &str, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-    print_valkyrie_ast_source(source, map_valkyrie_print_style(style), &map_valkyrie_print_options(options)).map_err(|error| {
-        FormatError::Parse { path: None, message: error.to_string() }
-    })
+    oak_print_valkyrie_source(source, &map_valkyrie_print_options(style, options)).map_err(map_valkyrie_print_error)
+}
+
+struct ValkyriePrinter;
+
+impl Printer for ValkyriePrinter {
+    fn language_id(&self) -> &str {
+        "v"
+    }
+
+    fn print(&self, document: &dyn Any, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+        let root = document.downcast_ref::<ValkyrieRoot>().ok_or_else(|| FormatError::WrongDocument { expected: "ValkyrieRoot".into() })?;
+        print_valkyrie_root(root, style, options)
+    }
 }
 
 struct VonPrinter;
@@ -109,6 +153,7 @@ pub fn printer_registry() -> &'static PrinterRegistry {
     static REGISTRY: OnceLock<PrinterRegistry> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut reg = PrinterRegistry::new();
+        reg.register(&["v", "vx", "valkyrie"], Box::new(ValkyriePrinter));
         reg.register(&["von"], Box::new(VonPrinter));
         reg.register(&["wat"], Box::new(WatPrinter));
         reg.register(&["wit"], Box::new(WitPrinter));
@@ -120,6 +165,11 @@ pub fn printer_registry() -> &'static PrinterRegistry {
 /// 按语言 id 将已解析文档写出为文本。
 pub fn print_document(language_id: &str, document: &dyn Any, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
     printer_registry().print(language_id, document, style, options)
+}
+
+/// 打印 `ValkyrieRoot`（AST pretty print，非 CST formatter）。
+pub fn print_valkyrie(root: &ValkyrieRoot, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
+    print_document("v", root, style, options)
 }
 
 /// 打印 `VonValue`（AST pretty print，非 CST formatter）。
@@ -164,6 +214,8 @@ where
 mod tests {
     use oak_von::language::value::{VonField, VonObject};
 
+    use crate::valkyrie::frontend::parse_source;
+
     use super::*;
 
     #[test]
@@ -180,6 +232,19 @@ mod tests {
         let out = print_valkyrie_source("micro main(){let x=1}", PrintStyle::Compact, &FormatOptions::default()).unwrap();
         assert!(out.contains("micro main()"));
         assert!(out.contains("let x=1"));
+    }
+
+    #[test]
+    fn valkyrie_ast_print_produces_document() {
+        let root = parse_source("micro main(){let x=1}").expect("parse");
+        let doc = to_document(&root).expect("to_document");
+        let compact = render_document(&doc, PrintStyle::Compact, &FormatOptions::default());
+        assert!(compact.contains("micro main()"));
+        let via_trait = root.to_document().expect("trait to_document");
+        let again = render_document(&via_trait, PrintStyle::Compact, &FormatOptions::default());
+        assert_eq!(compact, again);
+        let via_registry = print_valkyrie(&root, PrintStyle::Compact, &FormatOptions::default()).unwrap();
+        assert_eq!(compact, via_registry);
     }
 
     #[test]

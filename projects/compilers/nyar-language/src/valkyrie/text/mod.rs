@@ -11,4 +11,5 @@ pub mod wat;
 pub mod wit;
 
 pub use format_syntax::FormatSyntax;
+pub use oak_valkyrie::printer::Document as PrettyDocument;
 pub use to_document::ToDocument;
