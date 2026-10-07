@@ -235,6 +235,41 @@ fn production_compile_pipeline_must_not_preprocess_tgrammar_text() {
 }
 
 #[test]
+fn valkyrie_ast_printer_must_use_oak_document_path() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let printer = fs::read_to_string(manifest_dir.join("src/valkyrie/printer/mod.rs"))
+        .unwrap_or_else(|error| panic!("failed to read valkyrie printer: {error}"));
+    let to_document = fs::read_to_string(manifest_dir.join("src/valkyrie/text/to_document.rs"))
+        .unwrap_or_else(|error| panic!("failed to read valkyrie to_document: {error}"));
+
+    assert!(
+        printer.contains("oak_valkyrie::printer"),
+        "valkyrie printer must delegate to `oak_valkyrie::printer`"
+    );
+    assert!(
+        printer.contains("oak_pretty_print::Document") || printer.contains("PrettyDocument"),
+        "valkyrie printer must surface `oak_pretty_print::Document`"
+    );
+    assert!(
+        to_document.contains("oak_valkyrie::printer") && to_document.contains("to_document as oak_to_document"),
+        "valkyrie ToDocument must delegate to `oak_valkyrie::printer::to_document`"
+    );
+    for (label, source) in [("printer", &printer), ("to_document", &to_document)] {
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("//!") || trimmed.starts_with('*') {
+                continue;
+            }
+            assert!(
+                !trimmed.contains("nyar_analyzer::format::Document"),
+                "{} must not use CST formatter `nyar_analyzer::format::Document` in code",
+                label
+            );
+        }
+    }
+}
+
+#[test]
 fn host_script_shared_module_must_be_absent() {
     let host_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/host_script");
     assert!(!host_dir.exists(), "shared host_script abstraction must not live in nyar-language; use concrete src/<lang>/ modules");
