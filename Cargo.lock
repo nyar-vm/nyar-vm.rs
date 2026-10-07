@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "acorn-jvm"
 version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?branch=dev#4ece908bae8246a5be9cba98228f45aaf8a310d3"
 dependencies = [
  "serde",
  "zip",
@@ -13,6 +14,7 @@ dependencies = [
 [[package]]
 name = "acorn-pe"
 version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?branch=dev#4ece908bae8246a5be9cba98228f45aaf8a310d3"
 dependencies = [
  "miette",
  "serde",
@@ -21,6 +23,7 @@ dependencies = [
 [[package]]
 name = "acorn-wasm"
 version = "0.0.1"
+source = "git+https://github.com/yggdrasil-language/acorn.rs?branch=dev#4ece908bae8246a5be9cba98228f45aaf8a310d3"
 dependencies = [
  "serde",
 ]
@@ -1469,6 +1472,7 @@ dependencies = [
 [[package]]
 name = "oak-awsl"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "oak-core",
  "oak-formatter",
@@ -1478,6 +1482,7 @@ dependencies = [
 [[package]]
 name = "oak-core"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "serde",
  "smallvec",
@@ -1488,6 +1493,7 @@ dependencies = [
 [[package]]
 name = "oak-dejavu"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "arcstr",
  "bigdecimal",
@@ -1503,6 +1509,7 @@ dependencies = [
 [[package]]
 name = "oak-formatter"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "oak-core",
 ]
@@ -1510,6 +1517,7 @@ dependencies = [
 [[package]]
 name = "oak-macros"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1519,6 +1527,7 @@ dependencies = [
 [[package]]
 name = "oak-pretty-print"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "oak-core",
  "oak-macros",
@@ -1529,6 +1538,7 @@ dependencies = [
 [[package]]
 name = "oak-valkyrie"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "oak-core",
  "oak-dejavu",
@@ -1541,6 +1551,7 @@ dependencies = [
 [[package]]
 name = "oak-von"
 version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs?rev=57a56f14#57a56f1424691cfe301a28a1928e4fb083333889"
 dependencies = [
  "oak-core",
  "oak-formatter",
@@ -2445,18 +2456,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
