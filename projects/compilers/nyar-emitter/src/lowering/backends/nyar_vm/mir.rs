@@ -441,6 +441,16 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.store_to_local(output);
                 }
             }
+            MirInstructionKind::ArrayPush { array, value } => {
+                if !self.emit_call_operand(array) {
+                    panic!("nyar-vm ArrayPush array operand not materializable in `{}`", self.mir_fn.symbol);
+                }
+                self.emit_operand(value);
+                self.emitter.emit_call_intrinsic(IntrinsicId::ArrayPush, 2);
+                if let Some(output) = output {
+                    self.store_to_local(output);
+                }
+            }
             _ => {}
         }
     }

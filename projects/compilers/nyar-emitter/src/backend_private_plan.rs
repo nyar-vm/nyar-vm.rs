@@ -390,6 +390,9 @@ fn lower_operation(
             InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) }
         }
         CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
+        CanonicalOperation::ArrayPush { array, value: pushed } => {
+            InstructionKind::ArrayPush { array: value(*array), value: value(*pushed) }
+        }
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
             array_type: lower_type(program, *array_type)?,
             length: value(*length),

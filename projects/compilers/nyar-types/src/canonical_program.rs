@@ -501,6 +501,8 @@ pub enum CanonicalOperation {
     ArraySet { array: MirValueId, index: MirValueId, value: MirValueId },
     /// 读取数组长度。
     ArrayLength { array: MirValueId },
+    /// 向可增长数组末尾追加元素。
+    ArrayPush { array: MirValueId, value: MirValueId },
     /// 构造元组值。
     TupleNew { element_types: Vec<TypeId>, fields: Vec<MirValueId> },
 }
@@ -1317,6 +1319,42 @@ impl CanonicalSemanticMir {
                                 });
                             }
                             vec![*array]
+                        }
+                        CanonicalOperation::ArrayPush { array, value } => {
+                            let Some(array_type) = function.value_types.get(array) else {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *array,
+                                });
+                            };
+                            let Some(CanonicalTypeKind::Array { element, .. }) =
+                                linked.types.get(array_type).map(|row| &row.kind)
+                            else {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *array,
+                                });
+                            };
+                            if function.value_types.get(value) != Some(element) {
+                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
+                                    function: *key,
+                                    instruction: instruction.id,
+                                    value: *value,
+                                });
+                            }
+                            if instruction.results.len() != 1
+                                || instruction.results.first().and_then(|value| function.value_types.get(value)) != Some(array_type)
+                            {
+                                return Err(if instruction.results.len() == 1 {
+                                    CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
+                                }
+                                else {
+                                    CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id }
+                                });
+                            }
+                            vec![*array, *value]
                         }
                         CanonicalOperation::TupleNew { element_types, fields } => {
                             let Some(result) = instruction.results.first().and_then(|value| function.value_types.get(value))

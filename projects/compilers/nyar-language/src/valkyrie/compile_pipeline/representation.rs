@@ -129,6 +129,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         | CanonicalOperation::ArrayFromElements { .. }
                         | CanonicalOperation::ArraySet { .. }
                         | CanonicalOperation::ArrayLength { .. }
+                        | CanonicalOperation::ArrayPush { .. }
                         | CanonicalOperation::TupleNew { .. } => {}
                     }
                 }

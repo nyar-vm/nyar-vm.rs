@@ -294,6 +294,11 @@ pub enum InstructionKind {
     ArrayLength {
         array: Operand,
     },
+    /// Append one element to a growable array; returns the array reference.
+    ArrayPush {
+        array: Operand,
+        value: Operand,
+    },
 }
 
 /// Array slot initialization for [`InstructionKind::ArrayNew`].

@@ -650,6 +650,11 @@ pub enum MirOperation {
     ArrayLength {
         array: MirOperand,
     },
+    /// 向可增长数组末尾追加元素；返回数组引用（语言 `push` intrinsic）。
+    ArrayPush {
+        array: MirOperand,
+        value: MirOperand,
+    },
 }
 
 /// How [`MirOperation::ArrayNew`] initializes slots (must be defined by valkyrie-2020).

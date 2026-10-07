@@ -528,6 +528,9 @@ fn lower_operation(
             Ok(CanonicalOperation::ArraySet { array: value(array)?, index: value(index)?, value: value(stored)? })
         }
         MirOperation::ArrayLength { array } => Ok(CanonicalOperation::ArrayLength { array: value(array)? }),
+        MirOperation::ArrayPush { array, value: pushed } => {
+            Ok(CanonicalOperation::ArrayPush { array: value(array)?, value: value(pushed)? })
+        }
         MirOperation::ArrayNew { array_type, length, initialization } => Ok(CanonicalOperation::ArrayNew {
             array_type: type_id(ids, array_type)?,
             length: value(length)?,
@@ -742,17 +745,24 @@ mod tests {
     }
 
     fn module_with(operation: MirOperation, return_value: Option<MirValueRef>, value_types: BTreeMap<MirValueRef, ValkyrieType>) -> MirModule {
+        let return_type = return_value
+            .and_then(|value| value_types.get(&value).cloned())
+            .unwrap_or(ValkyrieType::Unit);
+        let values = value_types
+            .keys()
+            .map(|id| MirValue { id: *id, origin: MirValueOrigin::Temporary })
+            .collect();
         let mut module = MirModule {
             name: "demo".into(),
             functions: vec![MirFunction {
                 symbol: "demo::main".into(),
                 declaration: Some(ItemId::from_index(0).unwrap()),
                 instance: Some(ItemInstanceId::from_index(0).unwrap()),
-                return_type: return_value.map(|_| ValkyrieType::Boolean).unwrap_or(ValkyrieType::Unit),
+                return_type,
                 param_types: Vec::new(),
                 value_types,
                 entry: MirBlockRef(0),
-                values: return_value.into_iter().map(|id| MirValue { id, origin: MirValueOrigin::Temporary }).collect(),
+                values,
                 blocks: vec![MirBlock {
                     id: MirBlockRef(0),
                     label: "entry".into(),
@@ -775,6 +785,12 @@ mod tests {
             semantic_fragments: Vec::new(),
             diagnostics: Vec::new(),
         };
+        module.type_identities = crate::valkyrie::mir::ssa::type_identity_table(
+            &module.functions,
+            &module.external_calls,
+            &module.structs,
+            &module.sum_types,
+        );
         module
     }
 
@@ -932,6 +948,88 @@ mod tests {
                 .iter()
                 .find_map(|(id, record)| matches!(record.kind, CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Unit)).then_some(*id))
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn array_push_operation_canonicalizes_without_symbol_call() {
+        let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
+        let array = MirValueRef(0);
+        let element = MirValueRef(1);
+        let result = MirValueRef(2);
+        let value_types = BTreeMap::from([
+            (array, array_ty.clone()),
+            (element, ValkyrieType::Utf8),
+            (result, array_ty.clone()),
+        ]);
+        let module = MirModule {
+            name: "demo".into(),
+            functions: vec![MirFunction {
+                symbol: "demo::main".into(),
+                declaration: Some(ItemId::from_index(0).unwrap()),
+                instance: Some(ItemInstanceId::from_index(0).unwrap()),
+                return_type: array_ty.clone(),
+                param_types: vec![array_ty.clone(), ValkyrieType::Utf8],
+                value_types,
+                entry: MirBlockRef(0),
+                values: vec![
+                    MirValue { id: array, origin: MirValueOrigin::Parameter { index: 0, name: "array".into() } },
+                    MirValue { id: element, origin: MirValueOrigin::Parameter { index: 1, name: "element".into() } },
+                    MirValue { id: result, origin: MirValueOrigin::CallResult },
+                ],
+                blocks: vec![MirBlock {
+                    id: MirBlockRef(0),
+                    label: "entry".into(),
+                    parameters: vec![array, element],
+                    instructions: vec![MirInstruction::from_operation_with_results(
+                        MirOperation::ArrayPush {
+                            array: MirOperand::Value(array),
+                            value: MirOperand::Value(element),
+                        },
+                        vec![result],
+                    )],
+                    terminator: MirTerminator::Return { value: Some(MirOperand::Value(result)) },
+                }],
+            }],
+            structs: Vec::new(),
+            imports: Vec::new(),
+            external_calls: Vec::new(),
+            exports: Vec::new(),
+            entries: Vec::new(),
+            callable_identities: BTreeMap::from([("demo::main".to_owned(), ItemInstanceId::from_index(0).unwrap())]),
+            type_identities: BTreeMap::new(),
+            aggregate_layouts: AggregateLayoutPlan::default(),
+            sum_types: Vec::new(),
+            flags_types: Vec::new(),
+            singleton_instances: Vec::new(),
+            semantic_fragments: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let mut module = module;
+        module.type_identities = crate::valkyrie::mir::ssa::type_identity_table(
+            &module.functions,
+            &module.external_calls,
+            &module.structs,
+            &module.sum_types,
+        );
+        let program = canonical_program_from_semantic_mir(&module).expect("ArrayPush must canonicalize");
+        let has_push = program
+            .mir
+            .functions
+            .values()
+            .flat_map(|function| function.blocks.values())
+            .flat_map(|block| block.instructions.iter())
+            .any(|instruction| matches!(instruction.operation, CanonicalOperation::ArrayPush { .. }));
+        assert!(has_push, "expected CanonicalOperation::ArrayPush");
+        assert!(
+            !program
+                .mir
+                .functions
+                .values()
+                .flat_map(|function| function.blocks.values())
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| matches!(instruction.operation, CanonicalOperation::Invoke { .. })),
+            "ArrayPush must not remain as unresolved Invoke"
         );
     }
 }

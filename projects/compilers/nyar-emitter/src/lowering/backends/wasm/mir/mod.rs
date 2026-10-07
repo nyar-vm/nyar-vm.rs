@@ -1873,6 +1873,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.store_scalar(output);
                 }
             }
+            MirInstructionKind::ArrayPush { array, value } => {
+                self.emit_intrinsic_array_push(&[array.clone(), value.clone()], instruction_primary_result(instruction));
+            }
             MirInstructionKind::Call { callee, arguments } => {
                 // Slim Call has no dispatch/witness/intrinsic_opcode; route as Static.
                 self.emit_call_lowering(callee, arguments, MirDispatchKind::Static, None, None, instruction_primary_result(instruction));

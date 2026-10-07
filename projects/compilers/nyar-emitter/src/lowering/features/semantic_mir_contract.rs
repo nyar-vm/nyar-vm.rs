@@ -638,6 +638,7 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
         ArrayGet { array, index } => vec![array, index],
         ArraySet { array, index, value } => vec![array, index, value],
         ArrayLength { array } => vec![array],
+        ArrayPush { array, value } => vec![array, value],
     }
 }
 

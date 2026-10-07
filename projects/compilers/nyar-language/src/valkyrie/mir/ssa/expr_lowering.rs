@@ -293,12 +293,7 @@ impl MirBuilder {
             return None;
         }
         let value = self.next_value(MirValueOrigin::CallResult);
-        // 使用已解析合同上的符号（IntrinsicId 路径），不得再拼写表面名。
-        let callee_symbol = resolved.map(|call| call.symbol.clone()).or_else(|| match callee {
-            MirOperand::Symbol(path) => Some(path.clone()),
-            _ => None,
-        })?;
-        self.push_instruction(MirOperation::Call { callee: MirOperand::Symbol(callee_symbol), arguments: arguments.to_vec() }, vec![value]);
+        self.push_instruction(MirOperation::ArrayPush { array: arguments[0].clone(), value: arguments[1].clone() }, vec![value]);
         let return_type = resolved
             .map(|call| call.return_type.clone())
             .filter(|ty| is_array_shaped_valkyrie_type(ty))
