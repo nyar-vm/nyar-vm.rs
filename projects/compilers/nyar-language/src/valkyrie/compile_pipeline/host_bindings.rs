@@ -22,6 +22,7 @@ use super::context::CompilerHostProviderBinding;
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR。
 pub(crate) fn apply_host_provider_bindings(
     module: &mut MirModule,
+    dependency_mirs: &[MirModule],
     bindings: &[CompilerHostProviderBinding],
 ) -> Result<(), ParseError> {
     if bindings.is_empty() {
@@ -31,12 +32,15 @@ pub(crate) fn apply_host_provider_bindings(
     let mut remaps = BTreeMap::<ItemInstanceId, ItemInstanceId>::new();
 
     for binding in bindings {
-        let provider_instance = resolve_callable_instance(module, &binding.symbol).ok_or_else(|| {
+        let (provider_instance, provider_function) = resolve_callable_binding(module, dependency_mirs, &binding.symbol).ok_or_else(|| {
             ParseError::invalid(format!(
                 "host provider `{}` 未在源码闭包中解析到 callable identity",
                 binding.symbol
             ))
         })?;
+        if let Some(provider_function) = provider_function {
+            install_provider_definition(module, provider_instance, provider_function)?;
+        }
 
         let contract_keys = symbol_lookup_keys(&binding.contract);
         let contract_external = module
@@ -80,10 +84,57 @@ pub(crate) fn apply_host_provider_bindings(
     Ok(())
 }
 
-fn resolve_callable_instance(module: &MirModule, symbol: &str) -> Option<ItemInstanceId> {
+fn resolve_callable_binding(
+    module: &MirModule,
+    dependency_mirs: &[MirModule],
+    symbol: &str,
+) -> Option<(ItemInstanceId, Option<MirFunction>)> {
+    if let Some(instance) = resolve_registered_callable(module, symbol) {
+        return Some((instance, None));
+    }
+
+    for dependency in dependency_mirs {
+        for function in &dependency.functions {
+            if function.instance.is_some() && symbol_matches(&function.symbol, symbol) {
+                return function.instance.map(|instance| (instance, Some(function.clone())));
+            }
+        }
+    }
+    None
+}
+
+fn resolve_registered_callable(module: &MirModule, symbol: &str) -> Option<ItemInstanceId> {
     symbol_lookup_keys(symbol)
         .into_iter()
         .find_map(|key| module.callable_identities.get(&key).copied())
+}
+
+fn symbol_matches(candidate: &str, symbol: &str) -> bool {
+    symbol_lookup_keys(symbol).iter().any(|key| key == candidate)
+}
+
+fn install_provider_definition(
+    module: &mut MirModule,
+    provider_instance: ItemInstanceId,
+    provider_function: MirFunction,
+) -> Result<(), ParseError> {
+    if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
+        module
+            .callable_identities
+            .entry(provider_function.symbol.clone())
+            .or_insert(provider_instance);
+        return Ok(());
+    }
+    module.functions.push(provider_function.clone());
+    if let Some(previous) = module.callable_identities.insert(provider_function.symbol.clone(), provider_instance)
+        && previous != provider_instance
+    {
+        return Err(ParseError::invalid(format!(
+            "host provider `{}` 的 callable identity 冲突",
+            provider_function.symbol
+        )));
+    }
+    Ok(())
 }
 
 fn symbol_lookup_keys(symbol: &str) -> Vec<String> {
@@ -196,7 +247,7 @@ mod tests {
             symbol: "std.adaptor.clr.write".into(),
         }];
 
-        apply_host_provider_bindings(&mut module, &bindings).expect("host provider binding must close adaptor contract");
+        apply_host_provider_bindings(&mut module, &[], &bindings).expect("host provider binding must close adaptor contract");
 
         let call = module.functions[0]
             .blocks[0]
@@ -226,7 +277,7 @@ mod tests {
             symbol: "std.adaptor.clr.write".into(),
         }];
 
-        let error = apply_host_provider_bindings(&mut module, &bindings).expect_err("missing provider must fail");
+        let error = apply_host_provider_bindings(&mut module, &[], &bindings).expect_err("missing provider must fail");
         assert!(error.to_string().contains("host provider"));
     }
 }

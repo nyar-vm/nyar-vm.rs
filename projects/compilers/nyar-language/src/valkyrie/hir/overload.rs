@@ -231,6 +231,7 @@ fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
 fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     let mut candidates = Vec::new();
     candidates.extend(module.functions.iter().map(|function| build_function_candidate(&module.name, function)));
+    let local_function_names = module.functions.iter().map(|function| function.name.clone()).collect::<std::collections::BTreeSet<_>>();
     for submodule in &module.submodules {
         candidates.extend(collect_declared_candidates(submodule));
     }
@@ -266,7 +267,14 @@ fn collect_declared_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     // bodies remain owned by the exporting module and are never reparsed or
     // emitted as part of this consumer.
     for export in &module.imported_semantic_exports {
-        candidates.extend(export.functions.iter().map(|function| build_function_candidate(&export.module, function)));
+        candidates.extend(
+            export
+                .functions
+                .iter()
+                .filter(|function| !local_function_names.contains(&function.name))
+                .filter(|function| crate::valkyrie::backend_contract::interop::function_host_provider_target(function).is_none())
+                .map(|function| build_function_candidate(&export.module, function)),
+        );
         for item in &export.structs {
             candidates.push(build_struct_constructor_candidate(item));
             candidates.extend(item.methods.iter().map(|method| {

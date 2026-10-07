@@ -20,7 +20,7 @@ use crate::{
     },
     validation::{ControlFlowScheduler, validate_semantic_module},
     valkyrie::{
-        backend_contract::interop::validate_interop_surface,
+        backend_contract::interop::{function_host_provider_target, validate_interop_surface},
         frontend::{
             self, ValkyrieRoot,
             ast::{
@@ -818,7 +818,7 @@ impl ValkyrieCompiler {
         if !mir_groups.is_empty() {
             crate::valkyrie::compile_pipeline::link_reachable_dependency_mir(&mut final_mir, &mir_groups)?;
         }
-        crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, host_bindings)?;
+        crate::valkyrie::compile_pipeline::apply_host_provider_bindings(&mut final_mir, &mir_groups, host_bindings)?;
         crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&final_mir)
             .map_err(|error| ParseError::invalid(format!("Compiler 成功载荷生产失败: {error:?}")))
     }
@@ -848,7 +848,7 @@ impl ValkyrieCompiler {
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
             let export = HirDependencySemanticExport {
                 module: NamePath::new(vec![Identifier::new(&group.name)]),
-                functions: hir_module.functions.clone(),
+                functions: exportable_dependency_functions(&hir_module.functions),
                 structs: hir_module.structs.clone(),
                 enums: hir_module.enums.clone(),
                 traits: hir_module.traits.clone(),
@@ -1321,7 +1321,9 @@ impl AstToHir {
             body: lower_block(&function.body, self.source_id, span.clone()),
             span: with_source(&span, self.source_id),
             visibility: lower_visibility(&function.annotations),
-            is_abstract: function.is_abstract || has_modifier(&function.annotations, "abstract"),
+            is_abstract: function.is_abstract
+                || has_modifier(&function.annotations, "abstract")
+                || has_modifier(&function.annotations, "host_contract"),
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,
             is_override: false,
@@ -1776,6 +1778,15 @@ fn lower_visibility(annotations: &[Attribute]) -> HirVisibility {
     else {
         HirVisibility::public()
     }
+}
+
+/// `[host_provider(...)]` 实现只通过 Resolver 绑定进入 consumer，不作为依赖导出 API。
+fn exportable_dependency_functions(functions: &[HirFunction]) -> Vec<HirFunction> {
+    functions
+        .iter()
+        .filter(|function| function_host_provider_target(function).is_none())
+        .cloned()
+        .collect()
 }
 
 fn has_modifier(annotations: &[Attribute], name: &str) -> bool {

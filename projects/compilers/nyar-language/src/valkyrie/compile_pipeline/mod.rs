@@ -23,6 +23,9 @@ mod representation;
 #[cfg(test)]
 mod fragment_contract_tests;
 
+#[cfg(test)]
+mod host_binding_pipeline_tests;
+
 pub use backend_bundle::compile_source_groups_to_artifacts;
 pub use context::{CompilerBuildContext, CompilerHostProviderBinding};
 pub use canonical::canonical_program_from_semantic_mir;
