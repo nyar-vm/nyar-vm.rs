@@ -16,6 +16,7 @@ mod context;
 mod diagnostics;
 mod driver;
 mod envelope_checks;
+mod evidence;
 mod host_bindings;
 mod link;
 mod representation;
@@ -26,7 +27,8 @@ mod fragment_contract_tests;
 #[cfg(test)]
 mod host_binding_pipeline_tests;
 
-pub use backend_bundle::compile_source_groups_to_artifacts;
+pub use backend_bundle::{compile_source_groups_to_artifacts, CompilerArtifactReport};
+pub use evidence::CompilerCompileEvidence;
 pub use context::{CompilerBuildContext, CompilerHostProviderBinding};
 pub use canonical::canonical_program_from_semantic_mir;
 pub use diagnostics::{diagnostic, fail_stage};

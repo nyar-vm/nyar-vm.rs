@@ -15,6 +15,16 @@ use crate::{
 };
 
 use super::context::CompilerBuildContext;
+use super::evidence::CompilerCompileEvidence;
+
+/// 完整目标产物与编译证据。
+#[derive(Debug)]
+pub struct CompilerArtifactReport {
+    /// 驱动层产物报告。
+    pub driver: nyar_emitter::DriverCompileReport,
+    /// 可复现的编译证据。
+    pub evidence: CompilerCompileEvidence,
+}
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
@@ -59,9 +69,17 @@ pub fn compile_source_groups_to_artifacts(
     project_name: &str,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
-) -> Result<nyar_emitter::DriverCompileReport> {
+) -> Result<CompilerArtifactReport> {
     let bundle = compile_source_groups_to_backend_bundle(compiler, groups, context)?;
-    nyar_emitter::compile_frontend_bundle_with_bundled_backends(&bundle, output_dir, project_name, emit_wat_sidecar, generate_runtime_config)
+    let evidence = CompilerCompileEvidence::from_success(groups, &bundle.compiled_program, &context.selected_host_providers);
+    let driver = nyar_emitter::compile_frontend_bundle_with_bundled_backends(
+        &bundle,
+        output_dir,
+        project_name,
+        emit_wat_sidecar,
+        generate_runtime_config,
+    )?;
+    Ok(CompilerArtifactReport { driver, evidence })
 }
 
 fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {

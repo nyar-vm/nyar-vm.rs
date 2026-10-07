@@ -1605,6 +1605,23 @@ impl CompiledProgram {
     pub fn representation(&self) -> &RepresentationPlan {
         &self.representation
     }
+
+    /// 已链接导出、入口与函数实例的稳定表面摘要（不含字节码）。
+    pub fn surface_digest(&self) -> String {
+        let canonical = self.canonical();
+        let mut parts = vec![canonical.mir.module_name.clone(), "surface-v1".to_string()];
+        for (instance, export) in canonical.linked.exports.iter() {
+            parts.push(format!("export:{}:{}", export.exported_name, instance.index()));
+        }
+        for instance in canonical.linked.entries.keys() {
+            parts.push(format!("entry:{}", instance.index()));
+        }
+        for instance in canonical.mir.functions.keys() {
+            parts.push(format!("fn:{}", instance.index()));
+        }
+        let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        crate::digest::combined_content_hash(&borrowed)
+    }
 }
 
 /// One-way compile stream orchestration points (no God parallel authorities).

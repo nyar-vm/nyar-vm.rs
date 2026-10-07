@@ -36,7 +36,9 @@ pub use nyar::{
     PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
 };
 pub use valkyrie::{
-    compile_pipeline::{compile_source_groups_to_artifacts, CompilerBuildContext, CompilerHostProviderBinding},
+    compile_pipeline::{
+        compile_source_groups_to_artifacts, CompilerArtifactReport, CompilerBuildContext, CompilerCompileEvidence, CompilerHostProviderBinding,
+    },
     derive,
     frontend_contract::{
         ConcretizeError, concretize_mir_function_types, concretize_mir_function_types_lossy, concretize_type, concretize_type_lossy,

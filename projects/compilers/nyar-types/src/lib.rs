@@ -12,6 +12,7 @@ pub use self::{
         pipeline,
     },
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
+    digest::combined_content_hash,
     errors::{NyarError, NyarErrorKind},
     executable::{
         ArrayInitialization, Block, BlockRef, CarrierTable, CaseArm, CaseChain, Constant, Continuation, Diagnostic, EffectKind,
@@ -48,6 +49,7 @@ pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 pub mod canonical_program;
 /// 产物 / cache 合同版本（identity / MIR / layout）。
 pub mod contract_versions;
+pub mod digest;
 pub mod core_surface;
 mod errors;
 /// 后端私有的可执行视图，供 lowering 使用。
