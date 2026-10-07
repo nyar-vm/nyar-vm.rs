@@ -1533,6 +1533,7 @@ dependencies = [
  "oak-core",
  "oak-dejavu",
  "oak-formatter",
+ "oak-pretty-print",
  "serde",
  "unicode-ident",
 ]
