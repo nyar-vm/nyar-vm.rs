@@ -495,6 +495,7 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
 
 mod expr_lowering;
 mod macro_expand;
+mod template_const;
 mod template_expand;
 mod vx;
 
