@@ -2039,6 +2039,27 @@ fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &Valkyrie
         || (is_integer_type(expected) && is_integer_type(actual))
         || array_types_compatible(expected, actual)
         || nullable_return_compatible(expected, actual)
+        || nominal_apply_types_compatible(expected, actual)
+}
+
+fn nominal_apply_types_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    match (expected, actual) {
+        (ValkyrieType::Nominal { declaration: expected_decl, arguments: expected_args }, ValkyrieType::Nominal {
+            declaration: actual_decl,
+            arguments: actual_args,
+        }) if expected_decl == actual_decl && expected_args.len() == actual_args.len() => expected_args
+            .iter()
+            .zip(actual_args)
+            .all(|(expected, actual)| type_parameters_compatible(expected, actual)),
+        _ => false,
+    }
+}
+
+fn type_parameters_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+    match (expected, actual) {
+        (ValkyrieType::Generic(expected), ValkyrieType::Generic(actual)) if expected.name == actual.name => true,
+        _ => expected == actual,
+    }
 }
 
 fn nullable_return_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {

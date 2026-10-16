@@ -1032,7 +1032,7 @@ fn resolve_expr_calls(
             for arg in args.iter_mut() {
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }
-            *resolved = try_resolve_call(*call_kind, callee, args, candidates, type_relations, locals, struct_fields, singleton_names);
+            *resolved = try_resolve_call(*call_kind, callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             if let Some(resolved) = resolved.as_mut() {
                 enrich_unite_variant_constructor_facts(
                     callee,
@@ -1076,6 +1076,7 @@ fn resolve_expr_calls(
                         locals,
                         struct_fields,
                         singleton_names,
+                        contextual_type,
                     );
                     expr.kind = HirExprKind::Call { call_kind: HirCallKind::Function, callee: Box::new(callee), args, resolved };
                 }
@@ -1144,7 +1145,7 @@ fn resolve_expr_calls(
                 }
             }
             if resolved.is_none() {
-                *resolved = try_resolve_constructor(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
+                *resolved = try_resolve_constructor(path, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }
             if let Some(resolved) = resolved.as_mut() {
                 enrich_construct_unite_variant_facts(name, args, resolved, contextual_type, candidates);
@@ -1616,6 +1617,7 @@ fn try_resolve_call(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
 ) -> Option<HirResolvedCall> {
     let (explicit_generic_arguments, callee) = peel_explicit_generic_arguments(callee);
     if let HirCallKind::Operator(operator_id) = call_kind {
@@ -1815,6 +1817,21 @@ fn try_resolve_call(
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Operator | OverloadDomain::Constructor))
         .filter(|candidate| symbol_matches_callee_name(&candidate.symbol, &callee_name))
         .filter_map(|candidate| {
+            if let Some(context) = contextual_type {
+                if let Some(instantiated) = instantiate_constructor_candidate_for_context(candidate, context) {
+                    if let Some(matched) = match_call_candidate(
+                        &instantiated,
+                        args,
+                        &explicit_generic_arguments,
+                        type_relations,
+                        locals,
+                        struct_fields,
+                        singleton_names,
+                    ) {
+                        return Some(matched);
+                    }
+                }
+            }
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
@@ -2440,7 +2457,16 @@ fn try_resolve_nullary_constructor(
     if narrowed.is_empty() {
         return None;
     }
-    try_resolve_constructor(&NamePath::new(vec![name.clone()]), &[], &narrowed, type_relations, locals, struct_fields, singleton_names)
+    try_resolve_constructor(
+        &NamePath::new(vec![name.clone()]),
+        &[],
+        &narrowed,
+        type_relations,
+        locals,
+        struct_fields,
+        singleton_names,
+        contextual_type,
+    )
 }
 
 fn try_resolve_nullary_variant_expr(
@@ -2668,6 +2694,15 @@ fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_type:
     }
 }
 
+fn instantiate_constructor_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
+    let mut substitutions = BTreeMap::new();
+    unify_call_type_binders(&candidate.signature.return_type, contextual_type, &candidate.generic_binders, &mut substitutions)?;
+    let mut candidate = candidate.clone();
+    candidate.signature.return_type = substitute_type_vars(&candidate.signature.return_type, &substitutions);
+    candidate.signature.params = candidate.signature.params.iter().map(|param| substitute_type_vars(param, &substitutions)).collect();
+    Some(candidate)
+}
+
 fn try_resolve_constructor(
     path: &NamePath,
     args: &[HirExpr],
@@ -2676,6 +2711,7 @@ fn try_resolve_constructor(
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
 ) -> Option<HirResolvedCall> {
     let name = path.parts().last()?.clone();
     if singleton_names.contains(&name) {
@@ -2707,7 +2743,18 @@ fn try_resolve_constructor(
             candidate.symbol == *path
                 || (path.parts().len() == 1 && candidate.symbol.parts().last().is_some_and(|candidate_name| candidate_name == &name))
         })
-        .filter_map(|candidate| match_call_candidate(candidate, &arguments, &[], type_relations, locals, struct_fields, singleton_names))
+        .filter_map(|candidate| {
+            if let Some(context) = contextual_type {
+                if let Some(instantiated) = instantiate_constructor_candidate_for_context(candidate, context) {
+                    if let Some(matched) =
+                        match_call_candidate(&instantiated, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
+                    {
+                        return Some(matched);
+                    }
+                }
+            }
+            match_call_candidate(candidate, &arguments, &[], type_relations, locals, struct_fields, singleton_names)
+        })
         .collect::<Vec<_>>();
     let resolved = resolve_overload(&filtered).ok()?;
     if !paired_sum_identity_facts(resolved.sum_owner, resolved.sum_variant) {
@@ -3978,6 +4025,7 @@ micro caller(value: i64) -> i64 { panic(value) }
             &locals,
             &AggregateFieldIndex::default(),
             &BTreeSet::new(),
+            None,
         )
     }
 
@@ -4060,7 +4108,6 @@ imply Promise<T>: Future {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn option_none_turbofish_call_is_resolved_in_hir() {
         let source = r#"
 namespace test;
@@ -4195,7 +4242,6 @@ micro take(flag: bool) -> Option<i64> {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn turbofish_generic_call_substitutes_return_type_and_keeps_callable_instance() {
         let hir = crate::ValkyrieCompiler::default()
             .compile_source(
@@ -4356,7 +4402,6 @@ micro pick(flag: bool) -> Option<i64> {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn constructor_contract_from_source_preserves_generic_sum_signature() {
         let hir = ValkyrieCompiler::new(SourceID { version_id: 5210 })
             .compile_source(
@@ -5314,5 +5359,99 @@ imply Utf8Text {
             }
         }
         assert_eq!(push_calls, 2, "both calls must bind the declared ArrayPush identity");
+    }
+
+    #[test]
+    fn debug_ascii_alnum_key_some_construct_resolution() {
+        let source = r#"
+namespace core::types;
+unite Option<T> { Some { value: T }, None }
+namespace core::text;
+structure char { }
+imply char {
+    micro ascii_alnum_key(self) -> Option<i64> {
+        if true { return Some { value: 1 as i64 } }
+        return None
+    }
+}
+"#;
+        let root = crate::valkyrie::frontend::parse_source(source).expect("parse");
+        let hir = crate::hir::AstToHir::new(SourceID { version_id: 0 })
+            .lower_root_with_semantic_exports_and_name(&root, &[], None)
+            .expect("lower");
+        let option = hir.enums.iter().find(|item| item.name.as_str() == "Option").expect("Option");
+        eprintln!("Option generics: {:?}", option.generics);
+        eprintln!("Some variant: {:?}", option.variants.iter().find(|variant| variant.name.as_str() == "Some"));
+        let candidates = collect_module_candidates(&hir);
+        let some_candidates: Vec<_> = candidates
+            .iter()
+            .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
+            .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name.as_str() == "Some"))
+            .collect();
+        eprintln!("Some constructor candidates: {}", some_candidates.len());
+        for candidate in &some_candidates {
+            eprintln!(
+                "  symbol={:?} owner={:?} binders={} return={:?} params={:?} sum={:?}/{:?}",
+                candidate.symbol,
+                candidate.owner,
+                candidate.generic_binders.len(),
+                candidate.signature.return_type,
+                candidate.signature.params,
+                candidate.sum_owner,
+                candidate.sum_variant
+            );
+        }
+        let method = hir
+            .impls
+            .iter()
+            .flat_map(|implementation| implementation.methods.iter())
+            .find(|function| function.name.as_str() == "ascii_alnum_key")
+            .expect("method");
+        eprintln!("return_type: {:?}", method.return_type);
+        let mut constructs = Vec::new();
+        fn walk(expr: &HirExpr, out: &mut Vec<String>) {
+            match &expr.kind {
+                HirExprKind::Construct { name, resolved, .. } => {
+                    out.push(format!(
+                        "{name} => {}",
+                        resolved
+                            .as_ref()
+                            .map(|call| format!("domain={:?} sum={}/{}", call.domain, call.sum_owner.is_some(), call.sum_variant.is_some()))
+                            .unwrap_or_else(|| "unresolved".to_string())
+                    ));
+                }
+                HirExprKind::Return(Some(inner)) => walk(inner, out),
+                HirExprKind::If { condition, then_branch, else_branch, .. } => {
+                    walk(condition, out);
+                    if let Some(expr) = &then_branch.expr {
+                        walk(expr, out);
+                    }
+                    for statement in &then_branch.statements {
+                        if let HirStatementKind::Expr(expr) = &statement.kind {
+                            walk(expr, out);
+                        }
+                    }
+                    if let Some(else_branch) = else_branch {
+                        if let Some(expr) = &else_branch.expr {
+                            walk(expr, out);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for statement in &method.body.statements {
+            if let HirStatementKind::Expr(expr) = &statement.kind {
+                walk(expr, &mut constructs);
+            }
+        }
+        if let Some(expr) = &method.body.expr {
+            walk(expr, &mut constructs);
+        }
+        eprintln!("constructs: {constructs:?}");
+        assert!(
+            constructs.iter().all(|line| !line.contains("unresolved")),
+            "all constructs must resolve: {constructs:?}"
+        );
     }
 }

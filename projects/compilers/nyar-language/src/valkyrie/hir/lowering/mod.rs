@@ -10,7 +10,7 @@ use crate::{
     types::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
-            GenericType, HirArgument, HirAssociatedConst, HirAssociatedConstImpl, HirAssociatedType, HirAssociatedTypeBinding,
+            GenericBinderId, GenericType, HirArgument, HirAssociatedConst, HirAssociatedConstImpl, HirAssociatedType, HirAssociatedTypeBinding,
             HirAssociatedTypeImpl, HirAttribute, HirBlock, HirCallArgument, HirCallKind, HirCompileWarning, HirDependencySemanticExport,
             HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember, HirFlags, HirFunction, HirIdentifier, HirImpl, HirImport,
             HirImportBinding, HirKind, HirLiteral, HirMatchArm, HirModule, HirParam, HirParameterBindingKind, HirParent, HirPattern,
@@ -960,6 +960,7 @@ impl ValkyrieCompiler {
                 arch,
             )?;
             register_function_declarations(&mut hir_module, &mut next_declaration, &mut next_instance)?;
+            freeze_module_generic_binders(&mut hir_module);
             bind_declared_nominal_types(&mut hir_module)?;
             trait_binding::bind_trait_declarations(&mut hir_module)?;
             let export = HirDependencySemanticExport {
@@ -1557,6 +1558,324 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
     Ok(())
 }
 
+fn freeze_generic_binders(generics: &mut [GenericType], owner: nyar_types::ItemId) {
+    for (ordinal, generic) in generics.iter_mut().enumerate() {
+        if generic.binder.is_none() {
+            generic.binder = Some(GenericBinderId { owner, ordinal: ordinal as u32 });
+        }
+    }
+}
+
+fn propagate_declared_generic_binders(ty: &mut ValkyrieType, generics: &[GenericType]) {
+    match ty {
+        // Oak 常把 unite/struct 字段里的泛型参数落成 `Named(T)`；必须回收为
+        // 带 GenericBinderId 的 Generic，否则构造器参数无法与 `Option<i64>` 上下文统一。
+        ValkyrieType::Named(name) => {
+            if let Some(declared) = generics.iter().find(|item| item.name == *name) {
+                *ty = ValkyrieType::Generic(declared.clone());
+            }
+        }
+        ValkyrieType::Generic(generic) => {
+            if generic.binder.is_none() {
+                if let Some(declared) = generics.iter().find(|item| item.name == generic.name) {
+                    generic.binder = declared.binder;
+                    generic.bounds = declared.bounds.clone();
+                }
+            }
+        }
+        ValkyrieType::Nominal { arguments, .. } | ValkyrieType::Apply(_, arguments) | ValkyrieType::Tuple(arguments) => {
+            for argument in arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+        }
+        ValkyrieType::Array(inner) | ValkyrieType::Nullable(inner) | ValkyrieType::FixedArray { element: inner, .. } => {
+            propagate_declared_generic_binders(inner, generics);
+        }
+        ValkyrieType::Union(arguments) | ValkyrieType::Intersection(arguments) => {
+            for argument in arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+        }
+        ValkyrieType::Function(function) => {
+            for param in &mut function.params {
+                propagate_declared_generic_binders(param, generics);
+            }
+            propagate_declared_generic_binders(&mut function.return_type, generics);
+        }
+        ValkyrieType::Associated(associated) => {
+            propagate_declared_generic_binders(&mut associated.base, generics);
+            for argument in &mut associated.type_arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+        }
+        ValkyrieType::TraitObject(object) => {
+            for argument in &mut object.type_arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+        }
+        ValkyrieType::Row(row) => {
+            for method in &mut row.methods {
+                for param in &mut method.params {
+                    propagate_declared_generic_binders(param, generics);
+                }
+                propagate_declared_generic_binders(&mut method.return_type, generics);
+            }
+        }
+        ValkyrieType::TypeLambda(lambda) => propagate_declared_generic_binders(&mut lambda.body, generics),
+        _ => {}
+    }
+}
+
+fn propagate_generic_binders_in_block(block: &mut HirBlock, generics: &[GenericType]) {
+    for statement in &mut block.statements {
+        match &mut statement.kind {
+            HirStatementKind::Let { ty, initializer, .. } => {
+                if let Some(ty) = ty {
+                    propagate_declared_generic_binders(ty, generics);
+                }
+                if let Some(initializer) = initializer {
+                    propagate_generic_binders_in_expr(initializer, generics);
+                }
+            }
+            HirStatementKind::Expr(expr) => propagate_generic_binders_in_expr(expr, generics),
+        }
+    }
+    if let Some(expr) = &mut block.expr {
+        propagate_generic_binders_in_expr(expr, generics);
+    }
+}
+
+fn propagate_generic_binders_in_expr(expr: &mut HirExpr, generics: &[GenericType]) {
+    match &mut expr.kind {
+        HirExprKind::Cast { ty, expr: inner, .. } => {
+            propagate_declared_generic_binders(ty, generics);
+            propagate_generic_binders_in_expr(inner, generics);
+        }
+        HirExprKind::Lambda { params, return_type, body, .. } => {
+            for param in params {
+                propagate_declared_generic_binders(&mut param.ty, generics);
+            }
+            propagate_declared_generic_binders(return_type, generics);
+            propagate_generic_binders_in_block(body, generics);
+        }
+        HirExprKind::TryScope { result_type, body, .. } => {
+            if let Some(ty) = result_type {
+                propagate_declared_generic_binders(ty, generics);
+            }
+            propagate_generic_binders_in_block(body, generics);
+        }
+        HirExprKind::Block(block) => propagate_generic_binders_in_block(block, generics),
+        HirExprKind::If { condition, then_branch, else_branch, .. } => {
+            propagate_generic_binders_in_expr(condition, generics);
+            propagate_generic_binders_in_block(then_branch, generics);
+            if let Some(branch) = else_branch {
+                propagate_generic_binders_in_block(branch, generics);
+            }
+        }
+        HirExprKind::Return(Some(value))
+        | HirExprKind::Yield(Some(value))
+        | HirExprKind::Await(value)
+        | HirExprKind::Awake(value)
+        | HirExprKind::BlockOn(value)
+        | HirExprKind::YieldFrom(value)
+        | HirExprKind::Raise(value)
+        | HirExprKind::Resume(value) => propagate_generic_binders_in_expr(value, generics),
+        HirExprKind::TryPropagate { inner, .. } => propagate_generic_binders_in_expr(inner, generics),
+        HirExprKind::Call { callee, args, .. } => {
+            propagate_generic_binders_in_expr(callee, generics);
+            for arg in args {
+                propagate_generic_binders_in_expr(&mut arg.value, generics);
+            }
+        }
+        HirExprKind::Construct { args, .. } => {
+            for arg in args {
+                propagate_generic_binders_in_expr(arg, generics);
+            }
+        }
+        HirExprKind::FieldAccess { object, .. } | HirExprKind::FieldInit { value: object, .. } => {
+            propagate_generic_binders_in_expr(object, generics);
+        }
+        HirExprKind::StoreField { object, value, .. } => {
+            propagate_generic_binders_in_expr(object, generics);
+            propagate_generic_binders_in_expr(value, generics);
+        }
+        HirExprKind::GenericApply { callee, arguments, .. } => {
+            propagate_generic_binders_in_expr(callee, generics);
+            for argument in arguments {
+                propagate_declared_generic_binders(argument, generics);
+            }
+        }
+        HirExprKind::ArrayNew { length, .. } => propagate_generic_binders_in_expr(length, generics),
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
+            for item in items {
+                propagate_generic_binders_in_expr(item, generics);
+            }
+        }
+        HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
+            propagate_generic_binders_in_expr(scrutinee, generics);
+            propagate_generic_binders_in_block(then_branch, generics);
+            if let Some(branch) = else_branch {
+                propagate_generic_binders_in_block(branch, generics);
+            }
+        }
+        HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
+            propagate_generic_binders_in_expr(scrutinee, generics);
+            for arm in arms {
+                if let Some(guard) = &mut arm.guard {
+                    propagate_generic_binders_in_expr(guard, generics);
+                }
+                propagate_generic_binders_in_expr(&mut arm.body, generics);
+            }
+        }
+        HirExprKind::Loop { iterator, body, condition, .. } => {
+            if let Some(iterator) = iterator {
+                propagate_generic_binders_in_expr(iterator, generics);
+            }
+            if let Some(condition) = condition {
+                propagate_generic_binders_in_expr(condition, generics);
+            }
+            propagate_generic_binders_in_block(body, generics);
+        }
+        HirExprKind::Catch { expr, arms, .. } => {
+            propagate_generic_binders_in_expr(expr, generics);
+            for arm in arms {
+                if let Some(guard) = &mut arm.guard {
+                    propagate_generic_binders_in_expr(guard, generics);
+                }
+                propagate_generic_binders_in_expr(&mut arm.body, generics);
+            }
+        }
+        HirExprKind::AnonymousClass { fields, .. } => {
+            for (_, value) in fields {
+                propagate_generic_binders_in_expr(value, generics);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn freeze_function_generic_binders(function: &mut HirFunction) {
+    let Some(owner) = function.declaration else {
+        return;
+    };
+    freeze_generic_binders(&mut function.generics, owner);
+    for param in &mut function.params {
+        propagate_declared_generic_binders(&mut param.ty, &function.generics);
+    }
+    propagate_declared_generic_binders(&mut function.return_type, &function.generics);
+    for constraint in &mut function.where_constraints {
+        propagate_declared_generic_binders(&mut constraint.target, &function.generics);
+        for bound in &mut constraint.bounds {
+            for argument in &mut bound.type_arguments {
+                propagate_declared_generic_binders(argument, &function.generics);
+            }
+            for equation in &mut bound.associated_types {
+                propagate_declared_generic_binders(&mut equation.ty, &function.generics);
+            }
+        }
+    }
+    // `let empty: Option<T> = None` 等注解与返回路径必须共享同一 GenericBinderId。
+    propagate_generic_binders_in_block(&mut function.body, &function.generics);
+}
+
+fn freeze_enum_generic_binders(enum_definition: &mut HirEnum) {
+    let Some(owner) = enum_definition.declaration else {
+        return;
+    };
+    freeze_generic_binders(&mut enum_definition.generics, owner);
+    for variant in &mut enum_definition.variants {
+        for field in &mut variant.fields {
+            propagate_declared_generic_binders(&mut field.ty, &enum_definition.generics);
+        }
+        if let Some(result_type) = &mut variant.result_type {
+            propagate_declared_generic_binders(result_type, &enum_definition.generics);
+        }
+    }
+}
+
+fn freeze_struct_generic_binders(structure: &mut HirStruct) {
+    let Some(owner) = structure.constructor_declaration else {
+        return;
+    };
+    freeze_generic_binders(&mut structure.generics, owner);
+    for field in &mut structure.fields {
+        propagate_declared_generic_binders(&mut field.ty, &structure.generics);
+    }
+    for method in &mut structure.methods {
+        freeze_function_generic_binders(method);
+    }
+    for property in &mut structure.properties {
+        if let Some(getter) = &mut property.getter {
+            freeze_function_generic_binders(getter);
+        }
+        if let Some(setter) = &mut property.setter {
+            freeze_function_generic_binders(setter);
+        }
+    }
+}
+
+fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {
+    let Some(owner) = trait_definition.declaration else {
+        return;
+    };
+    freeze_generic_binders(&mut trait_definition.generics, owner);
+    for associated in &mut trait_definition.associated_types {
+        freeze_generic_binders(&mut associated.type_params, owner);
+        for bound in &mut associated.bounds {
+            propagate_declared_generic_binders(bound, &trait_definition.generics);
+        }
+        if let Some(default) = &mut associated.default {
+            propagate_declared_generic_binders(default, &trait_definition.generics);
+        }
+    }
+    for method in trait_definition.methods.iter_mut().chain(trait_definition.default_methods.iter_mut()) {
+        freeze_function_generic_binders(method);
+    }
+}
+
+fn freeze_impl_generic_binders(implementation: &mut HirImpl) {
+    propagate_declared_generic_binders(&mut implementation.target, &implementation.generics);
+    for method in &mut implementation.methods {
+        freeze_function_generic_binders(method);
+    }
+}
+
+fn freeze_module_generic_binders(module: &mut HirModule) {
+    for function in &mut module.functions {
+        freeze_function_generic_binders(function);
+    }
+    for structure in &mut module.structs {
+        freeze_struct_generic_binders(structure);
+    }
+    for enum_definition in &mut module.enums {
+        freeze_enum_generic_binders(enum_definition);
+    }
+    for singleton in &mut module.singletons {
+        for method in singleton
+            .methods
+            .iter_mut()
+            .chain(singleton.constructor.iter_mut().map(Box::as_mut))
+            .chain(singleton.finalizer.iter_mut().map(Box::as_mut))
+        {
+            freeze_function_generic_binders(method);
+        }
+    }
+    for trait_definition in &mut module.traits {
+        freeze_trait_generic_binders(trait_definition);
+    }
+    for implementation in &mut module.impls {
+        freeze_impl_generic_binders(implementation);
+    }
+    for widget in &mut module.widgets {
+        for method in &mut widget.methods {
+            freeze_function_generic_binders(method);
+        }
+    }
+    for submodule in &mut module.submodules {
+        freeze_module_generic_binders(submodule);
+    }
+}
+
 /// Trait 成员以 `;` 结束时 parser 常给出空块而非 `body: None`，需回收为纯签名。
 fn finalize_trait_method_signature(mut method: HirFunction) -> HirFunction {
     if method.body.statements.is_empty() && method.body.expr.is_none() {
@@ -1681,6 +2000,7 @@ impl AstToHir {
             return Err(ParseError::invalid("依赖声明注册必须由完整 Compiler 源码闭包拥有"));
         }
         register_function_declarations(&mut hir, &mut 0, &mut 0)?;
+        freeze_module_generic_binders(&mut hir);
         bind_declared_nominal_types(&mut hir)?;
         trait_binding::bind_trait_declarations(&mut hir)?;
         resolve_hir_calls(&mut hir);
