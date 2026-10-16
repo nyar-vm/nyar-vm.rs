@@ -1171,6 +1171,7 @@ fn extractor_resolved_call(extractor: &HirExtractorPattern) -> Option<&HirResolv
 
 fn tuple_literal_exprs(expr: &HirExpr) -> Option<Vec<HirExpr>> {
     match &expr.kind {
+        HirExprKind::TupleLiteral { items } => Some(items.clone()),
         HirExprKind::Call { callee, args, .. } if callee_name_matches(&callee.kind, "tuple") => {
             Some(args.iter().map(|arg| arg.value.clone()).collect())
         }

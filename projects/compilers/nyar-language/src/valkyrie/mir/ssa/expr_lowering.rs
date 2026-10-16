@@ -933,6 +933,34 @@ impl MirBuilder {
                 self.value_types.insert(array_value, array_type);
                 MirOperand::Value(array_value)
             }
+            HirExprKind::TupleLiteral { items } => {
+                let fields = items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let hint = expected_type.and_then(|ty| match ty {
+                            ValkyrieType::Tuple(element_types) => element_types.get(index),
+                            _ => None,
+                        });
+                        self.lower_expr_to_operand_with_hint(item, hint)
+                    })
+                    .collect::<Vec<_>>();
+                let tuple_type = match expected_type {
+                    Some(ValkyrieType::Tuple(element_types)) if element_types.len() == items.len() => {
+                        ValkyrieType::Tuple(element_types.clone())
+                    }
+                    _ => ValkyrieType::Tuple(
+                        fields
+                            .iter()
+                            .map(|operand| infer_builder_operand_type(operand, &self.value_types).unwrap_or(ValkyrieType::AutoType))
+                            .collect(),
+                    ),
+                };
+                let tuple_value = self.next_value(MirValueOrigin::Temporary);
+                self.push_instruction(MirOperation::TupleNew { fields }, vec![tuple_value]);
+                self.value_types.insert(tuple_value, tuple_type);
+                MirOperand::Value(tuple_value)
+            }
             HirExprKind::Construct { path, name, args, resolved } => {
                 let struct_type_name = self.struct_new_owner_name(name);
                 let mut fields = Vec::with_capacity(args.len());

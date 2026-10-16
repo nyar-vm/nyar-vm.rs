@@ -10,7 +10,12 @@
 # Rust
 .cargo/config.toml
 target/
+Cargo.lock
 
 # Node
 node_modules/
 dist/
+package-lock.json
+pnpm-lock.yaml
+*.node
+*.wasm

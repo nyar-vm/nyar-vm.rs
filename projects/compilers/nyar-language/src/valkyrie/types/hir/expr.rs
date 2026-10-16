@@ -210,6 +210,11 @@ pub enum HirExprKind {
         /// 数组元素列表。
         items: Vec<HirExpr>,
     },
+    /// 元组字面量表达式：`(a, b, ...)`。
+    TupleLiteral {
+        /// 元组元素列表。
+        items: Vec<HirExpr>,
+    },
     /// 字段访问表达式：`object.field`。
     ///
     /// 读取 `object` 对象的 `field` 字段值。

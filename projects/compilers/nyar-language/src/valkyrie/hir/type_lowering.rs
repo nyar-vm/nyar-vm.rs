@@ -104,7 +104,7 @@ pub(crate) fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseE
         }
         TypeExpression::Tuple(tuple) => {
             for element in &tuple.elements {
-                validate_type_expression(element)?;
+                validate_type_expression(&element.ty)?;
             }
         }
         TypeExpression::Function(function) => {
@@ -162,7 +162,7 @@ pub(crate) fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(tuple.elements.iter().map(lower_type_expression).collect())
+                ValkyrieType::Tuple(tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect())
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
@@ -235,7 +235,15 @@ pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
             if tuple.elements.is_empty() {
                 return "()".to_string();
             }
-            let inner = tuple.elements.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
+            let inner = tuple
+                .elements
+                .iter()
+                .map(|element| match &element.name {
+                    Some(name) => format!("{}: {}", name.name, render_type_expression(&element.ty)),
+                    None => render_type_expression(&element.ty),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("({inner})")
         }
         TypeExpression::Function(function) => {
@@ -511,6 +519,31 @@ mod tests {
             parts: vec![Identifier { name: name.to_string(), span: oak_span(name.len()) }],
             span: oak_span(name.len()),
         }))
+    }
+
+    #[test]
+    fn named_tuple_type_lowers_to_positional_tuple() {
+        use crate::valkyrie::frontend::ast::type_nodes::{TupleType, TupleTypeElement};
+
+        let tuple = TypeExpression::Tuple(Box::new(TupleType {
+            elements: vec![
+                TupleTypeElement {
+                    name: Some(Identifier { name: "ordinal".into(), span: oak_span(7) }),
+                    ty: path_type("usize"),
+                    span: oak_span(14),
+                },
+                TupleTypeElement {
+                    name: Some(Identifier { name: "value".into(), span: oak_span(5) }),
+                    ty: path_type("T"),
+                    span: oak_span(7),
+                },
+            ],
+            span: oak_span(30),
+        }));
+        assert_eq!(
+            lower_type_expression(&tuple),
+            ValkyrieType::Tuple(vec![ValkyrieType::Named(HirIdentifier::new("usize")), ValkyrieType::Named(HirIdentifier::new("T"))],)
+        );
     }
 
     #[test]

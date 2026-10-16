@@ -501,7 +501,7 @@ fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<(), Pa
         | HirExprKind::Resume(value) => validate_expr_call_contracts(value, function)?,
         HirExprKind::Cast { expr, .. } => validate_expr_call_contracts(expr, function)?,
         HirExprKind::ArrayNew { length, .. } => validate_expr_call_contracts(length, function)?,
-        HirExprKind::ArrayLiteral { items } => {
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
             for item in items {
                 validate_expr_call_contracts(item, function)?;
             }
@@ -1263,7 +1263,7 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
                 bind_expr(value, namespace, structs, enums)?;
             }
             HirExprKind::ArrayNew { length, .. } => bind_expr(length, namespace, structs, enums)?,
-            HirExprKind::ArrayLiteral { items } => {
+            HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
                 for item in items {
                     bind_expr(item, namespace, structs, enums)?;
                 }

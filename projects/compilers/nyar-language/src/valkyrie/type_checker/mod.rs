@@ -649,7 +649,7 @@ impl ValueTypeChecker {
             HirExprKind::ArrayNew { length, .. } => {
                 self.scan_expr(class_name, length, locals, errors);
             }
-            HirExprKind::ArrayLiteral { items } => {
+            HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
                 for item in items {
                     self.scan_expr(class_name, item, locals, errors);
                 }

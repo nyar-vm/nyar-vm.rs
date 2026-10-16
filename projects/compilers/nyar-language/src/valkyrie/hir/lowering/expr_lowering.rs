@@ -140,6 +140,9 @@ fn lower_term_expression_with_context(
         TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
             items: items.iter().map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false)).collect(),
         },
+        TermExpression::TupleLiteral { items, .. } => HirExprKind::TupleLiteral {
+            items: items.iter().map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false)).collect(),
+        },
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone()),
         TermExpression::IntegerLiteral { value, .. } => {
