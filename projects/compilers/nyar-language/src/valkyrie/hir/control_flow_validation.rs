@@ -197,7 +197,7 @@ fn validate_hir_expr(expr: &HirExpr, state: &mut HirValidationState, value_conte
                 validate_future_control_operand(expr, value, state)?;
             }
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => {
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
             for arg in args {
                 validate_hir_expr(arg, state, true)?;
             }
@@ -942,7 +942,7 @@ fn shallow_expr_contains_yield(expr: &HirExpr) -> bool {
         HirExprKind::Call { callee, args, .. } => {
             shallow_expr_contains_yield(callee) || args.iter().any(|arg| shallow_expr_contains_yield(&arg.value))
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(shallow_expr_contains_yield),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(shallow_expr_contains_yield),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1002,7 +1002,7 @@ fn shallow_expr_contains_await(expr: &HirExpr) -> bool {
         HirExprKind::Call { callee, args, .. } => {
             shallow_expr_contains_await(callee) || args.iter().any(|arg| shallow_expr_contains_await(&arg.value))
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(shallow_expr_contains_await),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(shallow_expr_contains_await),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1062,7 +1062,7 @@ fn shallow_expr_contains_block_on(expr: &HirExpr) -> bool {
         HirExprKind::Call { callee, args, .. } => {
             shallow_expr_contains_block_on(callee) || args.iter().any(|arg| shallow_expr_contains_block_on(&arg.value))
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(shallow_expr_contains_block_on),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(shallow_expr_contains_block_on),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1131,7 +1131,7 @@ fn expr_contains_yield(expr: &HirExpr) -> bool {
         HirExprKind::Yield(_) | HirExprKind::YieldFrom(_) => true,
         HirExprKind::Lambda { body, .. } => block_contains_yield(body),
         HirExprKind::Call { callee, args, .. } => expr_contains_yield(callee) || args.iter().any(|arg| expr_contains_yield(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_yield),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_yield),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1227,7 +1227,7 @@ fn expr_contains_raise(expr: &HirExpr) -> bool {
     match &expr.kind {
         HirExprKind::Raise(_) => true,
         HirExprKind::Call { callee, args, .. } => expr_contains_raise(callee) || args.iter().any(|arg| expr_contains_raise(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_raise),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_raise),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1276,7 +1276,7 @@ fn expr_contains_catch(expr: &HirExpr) -> bool {
     match &expr.kind {
         HirExprKind::Catch { .. } => true,
         HirExprKind::Call { callee, args, .. } => expr_contains_catch(callee) || args.iter().any(|arg| expr_contains_catch(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_catch),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_catch),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1323,7 +1323,7 @@ fn expr_contains_resume(expr: &HirExpr) -> bool {
     match &expr.kind {
         HirExprKind::Resume(_) => true,
         HirExprKind::Call { callee, args, .. } => expr_contains_resume(callee) || args.iter().any(|arg| expr_contains_resume(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_resume),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_resume),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1394,7 +1394,7 @@ fn expr_contains_await(expr: &HirExpr) -> bool {
         HirExprKind::Await(_) => true,
         HirExprKind::Lambda { body, .. } => block_contains_await(body),
         HirExprKind::Call { callee, args, .. } => expr_contains_await(callee) || args.iter().any(|arg| expr_contains_await(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_await),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_await),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1450,7 +1450,7 @@ fn expr_contains_block_on(expr: &HirExpr) -> bool {
         HirExprKind::BlockOn(_) => true,
         HirExprKind::Lambda { body, .. } => block_contains_block_on(body),
         HirExprKind::Call { callee, args, .. } => expr_contains_block_on(callee) || args.iter().any(|arg| expr_contains_block_on(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_block_on),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_block_on),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1510,7 +1510,7 @@ fn expr_contains_awake(expr: &HirExpr) -> bool {
         HirExprKind::Awake(_) => true,
         HirExprKind::Lambda { body, .. } => block_contains_awake(body),
         HirExprKind::Call { callee, args, .. } => expr_contains_awake(callee) || args.iter().any(|arg| expr_contains_awake(&arg.value)),
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_awake),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_awake),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }
@@ -1819,7 +1819,7 @@ fn collect_expr_variable_names(expr: &HirExpr, names: &mut BTreeSet<String>) {
                 collect_expr_variable_names(&arg.value, names);
             }
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => {
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
             for arg in args {
                 collect_expr_variable_names(arg, names);
             }
@@ -1954,7 +1954,7 @@ fn expr_contains_fallthrough(expr: &HirExpr) -> bool {
         HirExprKind::Call { callee, args, .. } => {
             expr_contains_fallthrough(callee) || args.iter().any(|arg| expr_contains_fallthrough(&arg.value))
         }
-        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => args.iter().any(expr_contains_fallthrough),
+        HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => args.iter().any(expr_contains_fallthrough),
         HirExprKind::ArrayNew { length, .. }
         | HirExprKind::FieldInit { value: length, .. }
         | HirExprKind::FieldAccess { object: length, .. }

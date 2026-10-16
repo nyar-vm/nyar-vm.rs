@@ -1099,7 +1099,7 @@ fn resolve_expr_calls(
         HirExprKind::ArrayNew { length, .. } => {
             resolve_expr_calls(length, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
         }
-        HirExprKind::ArrayLiteral { items: args } => {
+        HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
             for arg in args {
                 resolve_expr_calls(arg, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
             }
@@ -2986,6 +2986,10 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
             let item_type = items.first().and_then(|item| infer_expr_type(item, locals))?;
             Some(ValkyrieType::Array(Box::new(item_type)))
         }
+        HirExprKind::TupleLiteral { items } => {
+            let element_types = items.iter().map(|item| infer_expr_type(item, locals)).collect::<Option<Vec<_>>>()?;
+            Some(ValkyrieType::Tuple(element_types))
+        }
         HirExprKind::Construct { resolved, .. } => resolved.as_ref().map(|call| call.return_type.clone()),
         HirExprKind::If { then_branch, else_branch, .. } | HirExprKind::IfLet { then_branch, else_branch, .. } => {
             let then_type = then_branch.expr.as_ref().and_then(|expr| infer_expr_type(expr, locals))?;
@@ -3242,7 +3246,7 @@ fn validate_expr_extractor_patterns(
             validate_expr_extractor_patterns(value, candidates, type_relations, locals, struct_fields)?;
         }
         HirExprKind::ArrayNew { length, .. } => validate_expr_extractor_patterns(length, candidates, type_relations, locals, struct_fields)?,
-        HirExprKind::ArrayLiteral { items } => {
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
             for item in items {
                 validate_expr_extractor_patterns(item, candidates, type_relations, locals, struct_fields)?;
             }

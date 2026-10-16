@@ -175,7 +175,7 @@ fn hoist_expr(expr: &mut HirExpr, context: &mut HoistContext, locals: &BTreeMap<
                 hoist_expr(arg, context, locals);
             }
         }
-        HirExprKind::ArrayLiteral { items } => {
+        HirExprKind::ArrayLiteral { items } | HirExprKind::TupleLiteral { items } => {
             for item in items {
                 hoist_expr(item, context, locals);
             }

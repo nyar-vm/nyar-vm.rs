@@ -148,7 +148,7 @@ impl PatternRefutabilityChecker {
                     self.check_expr(&arg.value)?;
                 }
             }
-            HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } => {
+            HirExprKind::Construct { args, .. } | HirExprKind::ArrayLiteral { items: args } | HirExprKind::TupleLiteral { items: args } => {
                 for arg in args {
                     self.check_expr(arg)?;
                 }
