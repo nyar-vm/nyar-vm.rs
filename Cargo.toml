@@ -35,10 +35,10 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "96df730ae27c39d78f81edef6284e3d29f8ab094" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "96df730ae27c39d78f81edef6284e3d29f8ab094", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "96df730ae27c39d78f81edef6284e3d29f8ab094" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "96df730ae27c39d78f81edef6284e3d29f8ab094" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7d535ee33947b5e5eac3bcb19e4b64fca6297a94" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7d535ee33947b5e5eac3bcb19e4b64fca6297a94", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7d535ee33947b5e5eac3bcb19e4b64fca6297a94" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "7d535ee33947b5e5eac3bcb19e4b64fca6297a94" }
 # Nyar Compiler
 nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
