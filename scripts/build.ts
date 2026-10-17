@@ -21,7 +21,7 @@ const commonTargets: Target[] = [
     { target: 'x86_64-unknown-linux-musl', pkgSuffix: 'linux-x64', binName: 'nyar', tool: 'zigbuild' },
     { target: 'x86_64-apple-darwin', pkgSuffix: 'darwin-x64', binName: 'nyar', tool: 'zigbuild' },
     { target: 'aarch64-apple-darwin', pkgSuffix: 'darwin-arm64', binName: 'nyar', tool: 'zigbuild' },
-    { target: 'wasm32-wasip1', pkgSuffix: 'wasm32-wasi', binName: 'nyar.wasm', tool: 'cargo', altBin: 'nyar.wasm' },
+    { target: 'wasm32-unknown-unknown', pkgSuffix: 'unknown-wasm32', binName: 'nyar.wasm', tool: 'cargo', altBin: 'nyar.wasm' },
 ];
 
 function getTool(t: Target): string {

@@ -1,15 +1,15 @@
-# @nyar-vm/nyar-wasm32-wasi
+# @nyar/nyar-unknown-wasm32
 
-Prebuilt **Wasm WASI host sidecar** for Nyar VM. **Not a public import target.**
+Prebuilt **Wasm GC host sidecar** for Nyar VM. **Not a public import target.**
 
-This package is pulled automatically when installing `@nyar-vm/nyar` on Wasm-capable hosts.
+This package is pulled automatically when installing `@nyar/nyar` on Wasm-capable hosts.
 
 ## Example
 
 Application code imports the main package only:
 
 ```typescript
-import { createNyarHost } from "@nyar-vm/nyar";
+import { createNyarHost } from "@nyar/nyar";
 
 const host = await createNyarHost();
 await host.runBytecode(bytes);

@@ -1,0 +1,10 @@
+{
+    "js": ["@nyar/nyar"],
+    "native": [
+        "@nyar/nyar-win32-x64",
+        "@nyar/nyar-linux-x64",
+        "@nyar/nyar-darwin-x64",
+        "@nyar/nyar-darwin-arm64",
+        "@nyar/nyar-unknown-wasm32"
+    ]
+}

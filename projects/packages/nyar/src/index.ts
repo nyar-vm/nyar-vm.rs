@@ -15,7 +15,7 @@ export type NyarHost = {
  * Create a Nyar host for the current platform.
  *
  * Native collects are preferred when the matching optional dependency is installed;
- * otherwise the Wasm WASI collect from `@nyar-vm/nyar-wasm32-wasi` is used.
+ * otherwise the Wasm GC collect from `@nyar/nyar-unknown-wasm32` is used.
  */
 export async function createNyarHost(): Promise<NyarHost> {
     const collect = resolveCollect();

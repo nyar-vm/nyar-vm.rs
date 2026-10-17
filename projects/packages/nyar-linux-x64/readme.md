@@ -1,15 +1,15 @@
-# @nyar-vm/nyar-linux-x64
+# @nyar/nyar-linux-x64
 
 Prebuilt **native host sidecar** for Nyar VM on Linux x64. **Not a public import target.**
 
-This package is pulled automatically when installing `@nyar-vm/nyar` on a matching host.
+This package is pulled automatically when installing `@nyar/nyar` on a matching host.
 
 ## Example
 
 Application code imports the main package only:
 
 ```typescript
-import { createNyarHost } from "@nyar-vm/nyar";
+import { createNyarHost } from "@nyar/nyar";
 
 const host = await createNyarHost();
 await host.runBytecode(bytes);

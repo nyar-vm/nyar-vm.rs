@@ -10,6 +10,8 @@
         "build:wasm": "node scripts/build.mjs wasm",
         "build:native": "npx tsx scripts/build.ts",
         "prepare:npm": "node scripts/prepare-npm-publish.mjs",
+        "placeholder:publish": "nifty publish --placeholder",
+        "placeholder:trust": "nifty trust",
         "migrate:compiler-flow": "node scripts/reshape-compiler-flow.mjs",
         "fmt": "nifty format",
         "fmt:check": "nifty format --check",

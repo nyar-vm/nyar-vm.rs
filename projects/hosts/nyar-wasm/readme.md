@@ -4,7 +4,7 @@ WebAssembly **cdylib/rlib** binding layer for the Nyar runtime.
 
 ## Overview
 
-`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@game-gpt/nyar` platform packages (`nyar-wasm32-wasi`). It re-exports `nyar-runner` for shared host dispatch. There is **no** `[[bin]]` or `main` in this crate—the user-facing CLI lives under `projects/packages/`.
+`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@nyar/nyar` platform packages (`nyar-unknown-wasm32`). It re-exports `nyar-runner` for shared host dispatch. There is **no** `[[bin]]` or `main` in this crate—the user-facing CLI lives under `projects/packages/`.
 
 ## Build
 

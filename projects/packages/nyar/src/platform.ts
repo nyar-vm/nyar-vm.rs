@@ -5,13 +5,13 @@ import { fileURLToPath } from 'node:url';
 const HOST_KEY = `${platform()}-${arch()}`;
 
 const OPTIONAL_NATIVE_PACKAGES: Record<string, string> = {
-    'win32-x64': '@nyar-vm/nyar-win32-x64',
-    'linux-x64': '@nyar-vm/nyar-linux-x64',
-    'darwin-x64': '@nyar-vm/nyar-darwin-x64',
-    'darwin-arm64': '@nyar-vm/nyar-darwin-arm64',
+    'win32-x64': '@nyar/nyar-win32-x64',
+    'linux-x64': '@nyar/nyar-linux-x64',
+    'darwin-x64': '@nyar/nyar-darwin-x64',
+    'darwin-arm64': '@nyar/nyar-darwin-arm64',
 };
 
-const WASM_PACKAGE = '@nyar-vm/nyar-wasm32-wasi';
+const WASM_PACKAGE = '@nyar/nyar-unknown-wasm32';
 
 export type NyarCollectKind = 'native' | 'wasm';
 

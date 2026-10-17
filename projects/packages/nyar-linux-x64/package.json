@@ -1,5 +1,5 @@
 {
-    "name": "@nyar-vm/nyar-linux-x64",
+    "name": "@nyar/nyar-linux-x64",
     "version": "0.0.0",
     "description": "Nyar native collect — Linux x64 (Node-API host)",
     "license": "MIT",

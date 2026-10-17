@@ -29,8 +29,8 @@ const NATIVE_TARGETS = [
 
 const WASM_TARGETS = [
     {
-        triple: "wasm32-wasip1",
-        packageDir: "nyar-wasm32-wasi",
+        triple: "wasm32-unknown-unknown",
+        packageDir: "nyar-unknown-wasm32",
         libName: "nyar_wasm",
         destName: "nyar_wasm.wasm",
     },
@@ -98,6 +98,31 @@ function selectNativeTargets(targets, all) {
         }
     }
     return targets.slice(0, 1);
+}
+
+/**
+ * 本机 runner 上优先 cargo；仅跨平台本地打包才走 zigbuild。
+ * @param {{ triple: string, packageDir: string, tool: "cargo" | "zigbuild" }} target
+ * @param {boolean} release
+ * @param {string} crate
+ */
+function resolveNativeBuild(target) {
+    const host = hostTriple();
+    if (process.platform === "win32" && target.packageDir === "nyar-win32-x64") {
+        return { triple: host, tool: "cargo" };
+    }
+    if (process.platform === "linux" && target.packageDir === "nyar-linux-x64") {
+        return { triple: host, tool: "cargo" };
+    }
+    if (process.platform === "darwin") {
+        if (target.packageDir === "nyar-darwin-arm64" && process.arch === "arm64") {
+            return { triple: host, tool: "cargo" };
+        }
+        if (target.packageDir === "nyar-darwin-x64" && process.arch === "x64") {
+            return { triple: host, tool: "cargo" };
+        }
+    }
+    return { triple: target.triple, tool: target.tool };
 }
 
 /**
@@ -187,11 +212,12 @@ function buildNapi(opts) {
     console.log(`build:napi → nyar-napi cdylib (${release ? "release" : "debug"}, ${targets.length} target(s))`);
 
     for (const target of targets) {
-        console.log(`\n→ ${target.triple} → projects/packages/${target.packageDir}`);
-        cargoBuildTarget(target.triple, release, target.tool, "nyar-napi");
+        const build = resolveNativeBuild(target);
+        console.log(`\n→ ${build.triple} (${build.tool}) → projects/packages/${target.packageDir}`);
+        cargoBuildTarget(build.triple, release, build.tool, "nyar-napi");
 
-        const src = resolveArtifact(nativeLibCandidates(target.triple, release, "nyar_napi"));
-        const destName = nativeCollectDestName(target.triple, "nyar_napi");
+        const src = resolveArtifact(nativeLibCandidates(build.triple, release, "nyar_napi"));
+        const destName = nativeCollectDestName(build.triple, "nyar_napi");
         const dest = join(ROOT, "projects", "packages", target.packageDir, destName);
         copyArtifact(src, dest);
         console.log(`  copied ${destName}`);

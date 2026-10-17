@@ -1,15 +1,15 @@
-# @nyar-vm/nyar-darwin-arm64
+# @nyar/nyar-darwin-arm64
 
 Prebuilt **native host sidecar** for Nyar VM on macOS Apple Silicon. **Not a public import target.**
 
-This package is pulled automatically when installing `@nyar-vm/nyar` on a matching host.
+This package is pulled automatically when installing `@nyar/nyar` on a matching host.
 
 ## Example
 
 Application code imports the main package only:
 
 ```typescript
-import { createNyarHost } from "@nyar-vm/nyar";
+import { createNyarHost } from "@nyar/nyar";
 
 const host = await createNyarHost();
 await host.runBytecode(bytes);

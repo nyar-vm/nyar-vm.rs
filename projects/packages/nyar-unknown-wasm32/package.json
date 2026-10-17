@@ -1,7 +1,7 @@
 {
-    "name": "@nyar-vm/nyar-wasm32-wasi",
+    "name": "@nyar/nyar-unknown-wasm32",
     "version": "0.0.0",
-    "description": "Nyar Wasm collect — wasm32-wasip1 host artifacts",
+    "description": "Nyar Wasm collect — wasm32-unknown-unknown host artifacts",
     "license": "MIT",
     "type": "module",
     "exports": {
@@ -23,12 +23,12 @@
         "nyar",
         "nyar-vm",
         "wasm",
-        "wasi"
+        "wasm-gc"
     ],
     "repository": {
         "type": "git",
         "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
-        "directory": "projects/packages/nyar-wasm32-wasi"
+        "directory": "projects/packages/nyar-unknown-wasm32"
     },
     "publishConfig": {
         "access": "public"

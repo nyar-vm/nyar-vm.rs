@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
 function printUsage() {
-    console.error(`@nyar-vm/nyar ${pkg.version} (${hostPlatformKey()})`);
+    console.error(`@nyar/nyar ${pkg.version} (${hostPlatformKey()})`);
     console.error('Usage: nyar <command> [args...]');
     console.error('Commands:');
     console.error('  host-info   Print resolved platform collect metadata');

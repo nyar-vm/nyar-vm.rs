@@ -1,47 +1,235 @@
+# Trusted Publisher contract (sole npm trusted workflow — keep this filename):
+#   file = publish-npm.yml
+#   repo = nyar-vm/nyar-vm.rs
+#   env  = NPM_PUBLISH
+#
+# Triggers:
+#   - push tag v*           (e.g. v0.0.1) — preferred
+#   - workflow_dispatch     (retry only): version MUST match an existing tag;
+#     jobs checkout that tag peel — never publish branch HEAD with a free version.
+# Do not register Trusted Publisher on any other workflow file.
+
 name: Publish npm
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "pnpm publish --dry-run instead of publishing"
-        type: boolean
-        default: true
+      version:
+        description: 'Must match existing git tag vX.Y.Z (retry only; checkout forced to that tag)'
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  publish:
+  provenance:
+    name: Bind version ↔ tag ↔ commit
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bind.outputs.version }}
+      sha: ${{ steps.bind.outputs.sha }}
+      tag: ${{ steps.bind.outputs.tag }}
     steps:
-      - run: git config --global core.autocrlf false
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - name: Checkout (for tag fetch)
+        uses: actions/checkout@v5
         with:
-          version: 9.15.4
-      - uses: actions/setup-node@v4
+          fetch-depth: 0
+
+      - name: Bind publish tag
+        id: bind
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/bind-publish-tag.mjs
+
+      - name: Require green CI on tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_SHA: ${{ steps.bind.outputs.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/ci/require-ci-success.mjs --sha=${{ steps.bind.outputs.sha }}
+
+  build-native:
+    name: Native ${{ matrix.short }}
+    needs: provenance
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            short: win32-x64
+          - os: ubuntu-latest
+            short: linux-x64
+          - os: macos-latest
+            short: darwin-arm64
+          - os: macos-15-intel
+            short: darwin-x64
+    steps:
+      - name: Checkout tag peel
+        uses: actions/checkout@v5
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
-      - name: Rust nightly
+          ref: refs/tags/${{ needs.provenance.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify HEAD is bound tag SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          want="${{ needs.provenance.outputs.sha }}"
+          if [[ "$head" != "$want" ]]; then
+            echo "Refusing native build: HEAD=$head != bound tag sha=$want" >&2
+            exit 1
+          fi
+
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: publish-native-${{ matrix.short }}
+          cache-on-failure: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build Wasm collect
+
+      - name: Build native collect (release)
+        run: node scripts/build.mjs napi
+
+      - name: Stage native artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="dist/${{ matrix.short }}"
+          mkdir -p "$out"
+          case "${{ matrix.short }}" in
+            win32-x64) src="projects/packages/nyar-win32-x64/nyar_napi.dll" ;;
+            linux-x64) src="projects/packages/nyar-linux-x64/libnyar_napi.so" ;;
+            darwin-x64|darwin-arm64) src="projects/packages/nyar-${{ matrix.short }}/libnyar_napi.dylib" ;;
+            *) echo "unknown platform ${{ matrix.short }}" >&2; exit 1 ;;
+          esac
+          if [[ -f "$src" ]]; then
+            cp "$src" "$out/$(basename "$src")"
+          else
+            echo "missing native binary $src — metadata-only collect allowed" >&2
+          fi
+          ls -la "$out" || true
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.short }}
+          path: dist/${{ matrix.short }}
+          if-no-files-found: warn
+
+  publish:
+    name: Publish packages
+    needs: [provenance, build-native]
+    runs-on: ubuntu-latest
+    environment: NPM_PUBLISH
+    steps:
+      - name: Checkout tag peel
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.provenance.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify HEAD is bound tag SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          want="${{ needs.provenance.outputs.sha }}"
+          if [[ "$head" != "$want" ]]; then
+            echo "Refusing publish: HEAD=$head != bound tag sha=$want" >&2
+            exit 1
+          fi
+          echo "publishing ${{ needs.provenance.outputs.tag }} @ $head"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          # Do NOT set registry-url: it writes _authToken=${NODE_AUTH_TOKEN} into
+          # the runner npmrc and blocks Trusted Publisher OIDC (npm E404 on PUT).
+          package-manager-cache: false
+
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build wasm collect
         run: node scripts/build.mjs wasm
+
       - name: Prepare package readmes
         run: node scripts/prepare-npm-publish.mjs
-      - name: Publish workspace packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: dist/native-artifacts
+
+      - name: Normalize artifact layout
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
-            pnpm -r --filter "@nyar-vm/*" publish --access public --no-git-checks --dry-run
-          else
-            pnpm -r --filter "@nyar-vm/*" publish --access public --no-git-checks
-          fi
+          set -euo pipefail
+          mkdir -p dist/native-flat dist/wasm-flat/unknown-wasm32
+          for d in dist/native-artifacts/native-* dist/native-artifacts/*; do
+            [[ -d "$d" ]] || continue
+            base="$(basename "$d")"
+            short="${base#native-}"
+            mkdir -p "dist/native-flat/$short"
+            cp -r "$d"/. "dist/native-flat/$short/" || true
+          done
+          cp projects/packages/nyar-unknown-wasm32/nyar_wasm.wasm dist/wasm-flat/unknown-wasm32/nyar_wasm.wasm
+          find dist/native-flat dist/wasm-flat -type f -print
+
+      - name: Strip token-style npmrc (OIDC only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN NPM_TOKEN || true
+          for f in "${HOME}/.npmrc" "${NPM_CONFIG_USERCONFIG:-}" "${RUNNER_TEMP:-}/.npmrc"; do
+            [[ -n "${f}" && -f "${f}" ]] || continue
+            if grep -q '_authToken' "${f}"; then
+              grep -v '_authToken' "${f}" > "${f}.oidc" && mv "${f}.oidc" "${f}"
+              echo "stripped _authToken from ${f}"
+            fi
+          done
+
+      - name: Publish packages
+        env:
+          NYAR_NATIVE_ARTIFACTS: ${{ github.workspace }}/dist/native-flat
+          NYAR_WASM_ARTIFACTS: ${{ github.workspace }}/dist/wasm-flat
+          GITHUB_REF: refs/tags/v${{ needs.provenance.outputs.version }}
+        run: node scripts/ci/publish-npm.mjs --version=${{ needs.provenance.outputs.version }}
