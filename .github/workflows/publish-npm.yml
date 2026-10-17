@@ -99,18 +99,6 @@ jobs:
           shared-key: publish-native-${{ matrix.short }}
           cache-on-failure: true
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          package-manager-cache: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Build native collect (release)
         run: node scripts/build.mjs napi
 
@@ -179,7 +167,7 @@ jobs:
         run: npm install -g npm@latest
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
