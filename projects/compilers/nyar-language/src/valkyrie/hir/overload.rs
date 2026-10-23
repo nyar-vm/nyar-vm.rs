@@ -2089,7 +2089,6 @@ fn build_constructor_resolved_call(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
-        requirement: None,
     };
     // enrichment 仅在 Constructor 专属路径调用，Function 候选不会被误改写
     enrich_unite_variant_constructor_facts(
@@ -2130,7 +2129,6 @@ fn try_resolve_call(
                 parameter_types: func.params.clone(),
                 has_receiver: false,
                 extractor_payload_type: None,
-                requirement: None,
             });
         }
         if locals.contains_key(local_name) {
@@ -2180,7 +2178,6 @@ fn try_resolve_call(
                     parameter_types: matched.signature.params,
                     has_receiver: false,
                     extractor_payload_type: None,
-                    requirement: None,
                 });
             }
             if singleton_names.contains(owner) {
@@ -2355,19 +2352,6 @@ fn try_resolve_call(
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
-    // 平坦运算符调用（`a + b` → `a.infix +(b)`）以首实参为接收者。接收者是
-    // 未声明 bound 的泛型形参时，声明期没有可匹配的具体 impl；此时冻结成员
-    // 要求，由单态化按完整代入选择唯一 witness，禁止按同名实现过选。
-    if filtered.is_empty()
-        && matches!(&callee.kind, HirExprKind::Path(path) if path.parts().len() == 1)
-        && let Some(receiver_type) = args.first().and_then(|arg| {
-            infer_expr_type(&arg.value, locals).or_else(|| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names))
-        })
-        && has_unresolved_generic_arguments(&receiver_type)
-        && let Some(call) = deferred_member_requirement(candidates, &receiver_type, &callee_name, false)
-    {
-        return Some(call);
-    }
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let symbol = overload_symbol_path(&resolved);
@@ -2384,7 +2368,6 @@ fn try_resolve_call(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
-        requirement: None,
     };
     if matches!(callee_name.as_str(), "unwrap" | "is_some") {
         let receiver_type = args.first().and_then(|arg| infer_scrutinee_type(&arg.value, locals, struct_fields, singleton_names));
@@ -2481,7 +2464,6 @@ fn try_resolve_qualified_free_function(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
-        requirement: None,
     })
 }
 
@@ -2659,14 +2641,6 @@ fn try_resolve_instance_method(
             }
         }
     }
-    if filtered.is_empty()
-        && has_unresolved_generic_arguments(&receiver_type)
-        && let Some(call) = deferred_member_requirement(candidates, &receiver_type, method_name, true)
-    {
-        // 未声明 bound 的泛型接收者：HIR 只冻结分派键与签名形状，
-        // 具体 witness/impl 必须由实例化阶段按完整代入选择。
-        return Some(call);
-    }
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let mut call = HirResolvedCall {
@@ -2681,160 +2655,9 @@ fn try_resolve_instance_method(
         parameter_types: resolved.signature.params,
         has_receiver,
         extractor_payload_type: None,
-        requirement: None,
     };
     enrich_sum_variant_operation_facts(&mut call, Some(&receiver_type), candidates);
     Some(call)
-}
-
-/// 未声明 bound 的泛型接收者：按成员选择名冻结分派键与签名形状。
-///
-/// 这里不挑选任何具体 impl：trait 成员记录 trait 声明身份，自有成员/运算符
-/// 记录成员名。同一成员名的候选若给出不一致的形状（返回类型或元数不同），
-/// 说明该调用无法在声明期确定合同，fail-closed。
-fn deferred_member_requirement(
-    candidates: &[OverloadCandidate],
-    subject: &ValkyrieType,
-    method_name: &Identifier,
-    has_receiver: bool,
-) -> Option<HirResolvedCall> {
-    let member_candidates = candidates
-        .iter()
-        .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function))
-        .filter(|candidate| candidate_has_receiver_parameter(candidate))
-        .filter(|candidate| candidate_instance_method_matches(candidate, method_name))
-        .filter(|candidate| candidate_receiver_matches_subject(candidate, subject))
-        .collect::<Vec<_>>();
-    // 分派优先级：class/impl 自有成员先于 trait 方法。自有成员存在时 trait 候选不参与
-    // 合同冻结，也不能因某个 trait 方法无法实例化而否掉已经成立的自有成员合同。
-    let mut own_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
-    for candidate in member_candidates.iter().copied().filter(|candidate| candidate.trait_owner.is_none()) {
-        let Some(shape) = own_member_requirement_shape(candidate, subject)
-        else {
-            continue;
-        };
-        if own_shape.as_ref().is_some_and(|existing| existing != &shape) {
-            return None;
-        }
-        own_shape = Some(shape);
-    }
-    let mut trait_ids = BTreeSet::new();
-    let mut trait_shape: Option<(Vec<ValkyrieType>, ValkyrieType)> = None;
-    if own_shape.is_none() {
-        for candidate in member_candidates.iter().copied().filter(|candidate| candidate.trait_owner.is_some()) {
-            let Some(trait_id) = candidate.trait_owner
-            else {
-                continue;
-            };
-            // trait 自身带泛型参数时缺实参事实，该候选 fail-closed；只影响 trait 分支。
-            let Some(instantiated) = instantiate_trait_method_candidate(candidate, subject)
-            else {
-                continue;
-            };
-            trait_ids.insert(trait_id);
-            let shape = (instantiated.signature.params, instantiated.signature.return_type);
-            if trait_shape.as_ref().is_some_and(|existing| existing != &shape) {
-                return None;
-            }
-            trait_shape = Some(shape);
-        }
-    }
-    // 分派优先级：class/impl 自有方法先于 trait 方法；trait 歧义必须失败。
-    let (parameter_types, return_type, trait_declaration) = match (own_shape, trait_shape) {
-        (Some((params, return_type)), _) => (params, return_type, None),
-        (None, Some((params, return_type))) => {
-            if trait_ids.len() != 1 {
-                return None;
-            }
-            (params, return_type, trait_ids.into_iter().next())
-        }
-        (None, None) => return None,
-    };
-    Some(HirResolvedCall {
-        declaration: None,
-        instance: None,
-        sum_owner: None,
-        sum_variant: None,
-        intrinsic: None,
-        symbol: NamePath::new(vec![method_name.clone()]),
-        domain: HirCallableDomain::Function,
-        return_type,
-        parameter_types,
-        has_receiver,
-        extractor_payload_type: None,
-        requirement: Some(crate::types::hir::HirCallRequirement { subject: subject.clone(), member: method_name.clone(), trait_declaration }),
-    })
-}
-
-/// 候选接收者能否以 `subject` 为接收者（只按声明身份判定）。
-///
-/// 同名成员存在于多个 owner（`SwissTable.insert` / `HashMap.insert`）：subject 已冻结到
-/// 某一声明时，其他 owner 的候选不可能成为该调用的实现，必须在签名形状比较前排除；
-/// 否则它们的形状差异会把本来唯一的合同误判成歧义。subject 尚未冻结到声明时不排除，
-/// trait 方法按 `Self` 由 trait 身份决定归属。
-fn candidate_receiver_matches_subject(candidate: &OverloadCandidate, subject: &ValkyrieType) -> bool {
-    let ValkyrieType::Nominal { declaration: subject_owner, .. } = subject
-    else {
-        return true;
-    };
-    match candidate.signature.params.first() {
-        Some(ValkyrieType::Nominal { declaration, .. }) => declaration == subject_owner,
-        Some(ValkyrieType::SelfType | ValkyrieType::AutoType | ValkyrieType::Generic(_)) => true,
-        Some(_) => false,
-        None => false,
-    }
-}
-
-/// 自有成员在泛型接收者上的签名形状：接收者槽替换为 subject，其余参数位置
-/// 保持声明。
-///
-/// 返回类型不参与替换：`imply bool` 的 `-> bool` 是具体类型而非 `Self`，把它
-/// 收成 subject 会把“结果恒为 bool”误判成“结果恒等于接收者”。同一成员在不同
-/// impl 上返回类型不一致时，声明期没有可冻结的统一合同，fail-closed。
-fn own_member_requirement_shape(candidate: &OverloadCandidate, subject: &ValkyrieType) -> Option<(Vec<ValkyrieType>, ValkyrieType)> {
-    let receiver = candidate.signature.params.first()?;
-    if matches!(receiver, ValkyrieType::AutoType | ValkyrieType::SelfType) {
-        return None;
-    }
-    let params = candidate
-        .signature
-        .params
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| if index == 0 { subject.clone() } else { replace_exact_type(ty, receiver, subject) })
-        .collect();
-    Some((params, candidate.signature.return_type.clone()))
-}
-
-fn replace_exact_type(ty: &ValkyrieType, from: &ValkyrieType, to: &ValkyrieType) -> ValkyrieType {
-    if ty == from {
-        return to.clone();
-    }
-    match ty {
-        ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
-            declaration: *declaration,
-            arguments: arguments.iter().map(|argument| replace_exact_type(argument, from, to)).collect(),
-        },
-        ValkyrieType::Apply(base, arguments) => ValkyrieType::Apply(
-            Box::new(replace_exact_type(base, from, to)),
-            arguments.iter().map(|argument| replace_exact_type(argument, from, to)).collect(),
-        ),
-        ValkyrieType::Array(element) => ValkyrieType::Array(Box::new(replace_exact_type(element, from, to))),
-        ValkyrieType::FixedArray { element, length } => {
-            ValkyrieType::FixedArray { element: Box::new(replace_exact_type(element, from, to)), length: *length }
-        }
-        ValkyrieType::Nullable(element) => ValkyrieType::Nullable(Box::new(replace_exact_type(element, from, to))),
-        ValkyrieType::Tuple(items) => ValkyrieType::Tuple(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
-        ValkyrieType::Union(items) => ValkyrieType::Union(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
-        ValkyrieType::Intersection(items) => ValkyrieType::Intersection(items.iter().map(|item| replace_exact_type(item, from, to)).collect()),
-        ValkyrieType::Function(function) => {
-            let mut function = function.as_ref().clone();
-            function.params = function.params.iter().map(|param| replace_exact_type(param, from, to)).collect();
-            function.return_type = replace_exact_type(&function.return_type, from, to);
-            ValkyrieType::Function(Box::new(function))
-        }
-        _ => ty.clone(),
-    }
 }
 
 /// 未声明 bound 的泛型接收者：把成员实例化为 trait 方法合同本身。
@@ -3022,7 +2845,6 @@ fn try_resolve_type_static_method(
         parameter_types: resolved.signature.params.iter().map(|ty| substitute_self_type(ty, Some(type_owner))).collect(),
         has_receiver: candidate_has_receiver_parameter(&resolved),
         extractor_payload_type: None,
-        requirement: None,
     })
 }
 
@@ -3134,7 +2956,6 @@ fn try_resolve_singleton_method(
         parameter_types,
         has_receiver,
         extractor_payload_type: None,
-        requirement: None,
     })
 }
 
@@ -3525,7 +3346,6 @@ fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates:
         parameter_types: vec![operand_type.clone()],
         has_receiver: false,
         extractor_payload_type: payload_type,
-        requirement: None,
     })
 }
 
@@ -3646,7 +3466,6 @@ pub fn try_resolve_constructor(
         parameter_types: resolved.signature.params,
         has_receiver: false,
         extractor_payload_type: None,
-        requirement: None,
     })
 }
 
@@ -3803,7 +3622,6 @@ fn try_resolve_pattern_extractor(
         parameter_types,
         has_receiver,
         extractor_payload_type: Some(payload_type),
-        requirement: None,
     })
 }
 

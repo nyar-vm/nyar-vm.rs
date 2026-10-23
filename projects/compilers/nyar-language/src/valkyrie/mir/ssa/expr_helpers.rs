@@ -350,10 +350,6 @@ pub(super) fn lower_callee_operand(
         if resolved.domain == crate::types::hir::HirCallableDomain::Constructor {
             return None;
         }
-        // 未声明 bound 的泛型接收者：保留结构化要求，由单态化按完整代入选择 witness。
-        if resolved.requirement.is_some() {
-            return None;
-        }
         if let Some(instance) = resolved.instance {
             return Some(MirOperand::Callable(instance));
         }
