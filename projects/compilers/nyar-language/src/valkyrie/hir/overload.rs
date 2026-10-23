@@ -3535,6 +3535,14 @@ pub fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_t
 }
 
 fn instantiate_candidate_for_context(candidate: &OverloadCandidate, contextual_type: &ValkyrieType) -> Option<OverloadCandidate> {
+    // 防御：candidate.return_type 最外层是裸 Generic binder 时（如 intrinsic seed
+    // `__array_get(self: Array<T>): T`），禁止用外层 contextual_type 反推泛型。
+    // 否则 Some(Option<T>) context 会把裸 T 绑定成 Option<T>，导致函数 appear 返回
+    // Option<T>，再被 Some 包成 Option<Option<T>>。普通函数/构造器的返回类型总有
+    // 外层形状（Option<T> / ArrayList<T> / Self / Nominal），裸 Generic 只在 intrinsic seed。
+    if matches!(&candidate.signature.return_type, ValkyrieType::Generic(_)) {
+        return None;
+    }
     let mut substitutions = BTreeMap::new();
     unify_call_type_binders(&candidate.signature.return_type, contextual_type, &candidate.generic_binders, &mut substitutions)?;
     let mut candidate = candidate.clone();
