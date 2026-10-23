@@ -374,12 +374,14 @@ fn visible_type_aliases(roots: &[&ValkyrieRoot], imported_semantic_exports: &[Hi
 ///
 /// 全部可见名字在填目标之前已经注册，因此别名之间可以互相引用（含前向引用）；
 /// 展开在引用点进行，环由 `expand_module_type_alias` 的 visiting 集合拒绝。
-fn register_root_type_alias_targets(roots: &[&ValkyrieRoot]) {
+fn register_root_type_alias_targets(roots: &[&ValkyrieRoot]) -> Result<(), HirError> {
     for root in roots {
         for alias in root_type_alias_declarations(root) {
-            ModuleTypeAliasScope::register_alias(&alias.name.name, Vec::new(), lower_type_expression(&alias.target));
+            let target = lower_type_expression(&alias.target)?;
+            ModuleTypeAliasScope::register_alias(&alias.name.name, Vec::new(), target);
         }
     }
+    Ok(())
 }
 
 /// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
@@ -899,7 +901,7 @@ impl ValkyrieCompiler {
         // 类型别名作用域是组级事实：本组全部文件的 `type` 声明 + 可见依赖导出的别名。
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
         let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(&roots, imported_semantic_exports));
-        register_root_type_alias_targets(&roots);
+        register_root_type_alias_targets(&roots)?;
         let mut merged: Option<HirModule> = None;
         for (file, root) in &prepared {
             let module = self.lower_prepared_source_file(file, root, imported_semantic_exports, module_name.clone())?;
@@ -2353,7 +2355,7 @@ impl AstToHir {
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
         let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(std::slice::from_ref(&root), imported_semantic_exports));
-        register_root_type_alias_targets(std::slice::from_ref(&root));
+        register_root_type_alias_targets(std::slice::from_ref(&root))?;
         self.lower_prepared_root(root, imported_semantic_exports, module_name_override)
     }
 
@@ -2523,53 +2525,53 @@ impl AstToHir {
     ) -> Result<(), HirError> {
         match item {
             StatementNode::Micro(micro) => {
-                functions.push(self.lower_micro(micro, namespace));
+                functions.push(self.lower_micro(micro, namespace)?);
                 Ok(())
             }
             StatementNode::TypeFunction(type_function) => {
-                type_functions.push(self.lower_type_function(type_function));
+                type_functions.push(self.lower_type_function(type_function)?);
                 Ok(())
             }
             StatementNode::TypeAlias(alias) => {
-                type_aliases.push(self.lower_type_alias(alias));
+                type_aliases.push(self.lower_type_alias(alias)?);
                 Ok(())
             }
             StatementNode::Class(class_decl) => {
-                structs.push(self.lower_class(class_decl, namespace));
+                structs.push(self.lower_class(class_decl, namespace)?);
                 Ok(())
             }
             StatementNode::Structure(structure) => {
-                structs.push(self.lower_structure(structure, namespace));
+                structs.push(self.lower_structure(structure, namespace)?);
                 Ok(())
             }
             StatementNode::Singleton(singleton) => {
-                singletons.push(self.lower_singleton(singleton, namespace));
+                singletons.push(self.lower_singleton(singleton, namespace)?);
                 Ok(())
             }
             StatementNode::Widget(widget) => {
-                widgets.push(self.lower_widget(widget));
+                widgets.push(self.lower_widget(widget)?);
                 Ok(())
             }
             StatementNode::Trait(trait_decl) => {
-                let mut lowered = self.lower_trait(trait_decl);
+                let mut lowered = self.lower_trait(trait_decl)?;
                 lowered.declaring_namespace = namespace.clone();
                 traits.push(lowered);
                 Ok(())
             }
             StatementNode::Enums(enum_decl) => {
-                enums.push(self.lower_enums(enum_decl));
+                enums.push(self.lower_enums(enum_decl)?);
                 Ok(())
             }
             StatementNode::Variant(variant_decl) => {
-                enums.push(self.lower_variant_decl(variant_decl));
+                enums.push(self.lower_variant_decl(variant_decl)?);
                 Ok(())
             }
             StatementNode::Flags(flags_decl) => {
-                flags.push(self.lower_flags(flags_decl));
+                flags.push(self.lower_flags(flags_decl)?);
                 Ok(())
             }
             StatementNode::Imply(imply) => {
-                impls.push(self.lower_imply(imply, namespace));
+                impls.push(self.lower_imply(imply, namespace)?);
                 Ok(())
             }
             StatementNode::Union(union_decl) => Err(HirError::LoweringFailed {
@@ -2598,20 +2600,20 @@ impl AstToHir {
         }
     }
 
-    fn lower_micro(&self, function: &MicroDeclaration, declaring_namespace: &NamePath) -> HirFunction {
+    fn lower_micro(&self, function: &MicroDeclaration, declaring_namespace: &NamePath) -> Result<HirFunction, HirError> {
         let span = frontend::std_range(&function.span);
-        HirFunction {
+        Ok(HirFunction {
             declaration: None,
             instance: None,
             name: operator_member_name(&function.name, &function.annotations),
             declaring_namespace: declaring_namespace.clone(),
             doc: lower_documentation(&function.annotations),
-            annotations: function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect(),
+            annotations: function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
             generics: lower_generic_parameters(&function.generics),
-            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id),
-            params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
-            return_type: function.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
-            body: lower_block(&function.body, self.source_id, span.clone()),
+            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id)?,
+            params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
+            return_type: function.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
+            body: lower_block(&function.body, self.source_id, span.clone())?,
             span: with_source(&span, self.source_id),
             visibility: lower_visibility(&function.annotations),
             is_abstract: function.is_abstract
@@ -2620,32 +2622,32 @@ impl AstToHir {
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,
             is_override: false,
-        }
+        })
     }
 
-    fn lower_type_alias(&self, alias: &TypeAliasDeclaration) -> HirTypeAlias {
-        HirTypeAlias {
+    fn lower_type_alias(&self, alias: &TypeAliasDeclaration) -> Result<HirTypeAlias, HirError> {
+        Ok(HirTypeAlias {
             name: Identifier::new(&alias.name.name),
             generics: Vec::new(),
-            target: lower_type_expression(&alias.target),
+            target: lower_type_expression(&alias.target)?,
             span: with_source(&frontend::std_range(&alias.span), self.source_id),
-        }
+        })
     }
 
-    fn lower_type_function(&self, function: &TypeFunction) -> HirTypeFunction {
+    fn lower_type_function(&self, function: &TypeFunction) -> Result<HirTypeFunction, HirError> {
         let span = frontend::std_range(&function.span);
-        HirTypeFunction {
+        Ok(HirTypeFunction {
             name: Identifier::new(&function.name.name),
             documents: lower_documentation(&function.annotations),
             generics: lower_generic_parameters(&function.generics),
-            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id),
-            params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
-            return_type: function.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
-            body: lower_block(&function.body, self.source_id, span),
-        }
+            where_constraints: lower_where_constraints(&function.where_constraints, self.source_id)?,
+            params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
+            return_type: function.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
+            body: lower_block(&function.body, self.source_id, span)?,
+        })
     }
 
-    fn lower_class(&self, class_decl: &ClassDeclaration, namespace: &NamePath) -> HirStruct {
+    fn lower_class(&self, class_decl: &ClassDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
         self.lower_class_like(
             Identifier::new(&class_decl.name.name),
             namespace.parts(),
@@ -2658,7 +2660,7 @@ impl AstToHir {
         )
     }
 
-    fn lower_structure(&self, structure: &StructureDeclaration, namespace: &NamePath) -> HirStruct {
+    fn lower_structure(&self, structure: &StructureDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
         self.lower_class_like(
             Identifier::new(&structure.name.name),
             namespace.parts(),
@@ -2681,8 +2683,8 @@ impl AstToHir {
         fields: &[FieldDeclaration],
         methods: &[MethodDeclaration],
         is_value_type: bool,
-    ) -> HirStruct {
-        HirStruct {
+    ) -> Result<HirStruct, HirError> {
+        Ok(HirStruct {
             constructor_declaration: None,
             constructor_instance: None,
             name,
@@ -2690,9 +2692,9 @@ impl AstToHir {
             doc: lower_documentation(annotations),
             generics: lower_generic_parameters(generics),
             parents: parents.iter().map(lower_parent).collect(),
-            fields: fields.iter().map(lower_field).collect(),
-            methods: methods.iter().filter(|method| !is_property_accessor(method)).map(|method| self.lower_method(method)).collect(),
-            properties: self.lower_object_properties(methods),
+            fields: fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
+            methods: methods.iter().filter(|method| !is_property_accessor(method)).map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
+            properties: self.lower_object_properties(methods)?,
             visibility: lower_visibility(annotations),
             is_value_type,
             is_abstract: has_modifier(annotations, "abstract"),
@@ -2702,15 +2704,15 @@ impl AstToHir {
             abstract_methods: Vec::new(),
             abstract_properties: Vec::new(),
             derives: lower_derives(annotations),
-        }
+        })
     }
 
-    fn lower_widget(&self, widget: &WidgetDeclaration) -> HirWidget {
+    fn lower_widget(&self, widget: &WidgetDeclaration) -> Result<HirWidget, HirError> {
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         for item in &widget.items {
             match item {
-                StatementNode::Micro(micro) => methods.push(self.lower_micro(micro, &NamePath::default())),
+                StatementNode::Micro(micro) => methods.push(self.lower_micro(micro, &NamePath::default())?),
                 _ => {}
             }
         }
@@ -2721,7 +2723,7 @@ impl AstToHir {
             has_before_update: methods.iter().any(|m| m.name.as_str() == "before_update"),
             has_after_update: methods.iter().any(|m| m.name.as_str() == "after_update"),
         };
-        HirWidget {
+        Ok(HirWidget {
             name: oak_identifier(&widget.name),
             doc: lower_documentation(&widget.annotations),
             generics: lower_generic_parameters(&widget.generics),
@@ -2731,12 +2733,17 @@ impl AstToHir {
             state_fields: Vec::new(),
             initial_state: Vec::new(),
             lifecycle,
-        }
+        })
     }
 
-    fn lower_singleton(&self, singleton: &SingletonDeclaration, namespace: &NamePath) -> HirSingleton {
-        let all_methods: Vec<HirFunction> =
-            singleton.body.methods.iter().filter(|method| !is_property_accessor(method)).map(|method| self.lower_method(method)).collect();
+    fn lower_singleton(&self, singleton: &SingletonDeclaration, namespace: &NamePath) -> Result<HirSingleton, HirError> {
+        let all_methods: Vec<HirFunction> = singleton
+            .body
+            .methods
+            .iter()
+            .filter(|method| !is_property_accessor(method))
+            .map(|method| self.lower_method(method))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut constructor: Option<Box<HirFunction>> = None;
         let mut finalizer: Option<Box<HirFunction>> = None;
         let mut ordinary_methods: Vec<HirFunction> = Vec::with_capacity(all_methods.len());
@@ -2756,15 +2763,15 @@ impl AstToHir {
                 }
             }
         }
-        HirSingleton {
+        Ok(HirSingleton {
             name: Identifier::new(&singleton.name.name),
             namespace: namespace.parts().to_vec(),
             doc: lower_documentation(&singleton.annotations),
             generics: lower_generic_parameters(&singleton.generics),
             parents: singleton.parents.iter().map(lower_parent).collect(),
-            fields: singleton.body.fields.iter().map(lower_field).collect(),
+            fields: singleton.body.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             methods: ordinary_methods,
-            properties: self.lower_object_properties(&singleton.body.methods),
+            properties: self.lower_object_properties(&singleton.body.methods)?,
             visibility: lower_visibility(&singleton.annotations),
             derives: lower_derives(&singleton.annotations),
             is_lazy: has_modifier(&singleton.annotations, "lazy"),
@@ -2772,39 +2779,40 @@ impl AstToHir {
             constructor,
             finalizer,
             accessor_instance: None,
-        }
+        })
     }
 
-    fn lower_flags(&self, flags_decl: &Flags) -> HirFlags {
-        HirFlags {
+    fn lower_flags(&self, flags_decl: &Flags) -> Result<HirFlags, HirError> {
+        Ok(HirFlags {
             name: oak_identifier(&flags_decl.name),
             doc: lower_documentation(&flags_decl.annotations),
-            members: flags_decl.variants.iter().map(|member| self.lower_flag_member(member)).collect(),
+            members: flags_decl.variants.iter().map(|member| self.lower_flag_member(member)).collect::<Result<Vec<_>, _>>()?,
             visibility: lower_visibility(&flags_decl.annotations),
-        }
+        })
     }
 
-    fn lower_flag_member(&self, member: &EnumVariant) -> HirFlagMember {
+    fn lower_flag_member(&self, member: &EnumVariant) -> Result<HirFlagMember, HirError> {
         let span = frontend::std_range(&member.span);
-        HirFlagMember {
+        Ok(HirFlagMember {
             name: oak_identifier(&member.name),
             doc: lower_documentation(&member.annotations),
             value: member
                 .value
                 .as_ref()
                 .map(|expr| lower_term_expression(expr, self.source_id, span.clone()))
+                .transpose()?
                 .unwrap_or_else(|| HirExpr { kind: HirExprKind::Literal(HirLiteral::Integer64(0)), span: with_source(&span, self.source_id) }),
             is_combined: false,
-        }
+        })
     }
 
-    fn lower_trait(&self, trait_decl: &Trait) -> HirTrait {
+    fn lower_trait(&self, trait_decl: &Trait) -> Result<HirTrait, HirError> {
         let associated_names =
             trait_decl.body.associated_types.iter().map(|item| oak_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
         let mut methods = Vec::new();
         let mut default_methods = Vec::new();
         for method in trait_decl.body.methods.iter().filter(|method| !is_property_accessor(method)) {
-            let lowered = finalize_trait_method_signature(lower_trait_method(self.lower_method(method), &associated_names));
+            let lowered = finalize_trait_method_signature(lower_trait_method(self.lower_method(method)?, &associated_names));
             if lowered.is_abstract {
                 methods.push(lowered);
             }
@@ -2813,22 +2821,22 @@ impl AstToHir {
             }
         }
 
-        HirTrait {
+        Ok(HirTrait {
             declaration: None,
             declaring_namespace: Default::default(),
             name: oak_identifier(&trait_decl.name),
             doc: lower_documentation(&trait_decl.annotations),
             generics: lower_generic_parameters(&trait_decl.generics),
             methods,
-            associated_types: trait_decl.body.associated_types.iter().map(|item| lower_trait_associated_type(item, self.source_id)).collect(),
+            associated_types: trait_decl.body.associated_types.iter().map(|item| lower_trait_associated_type(item, self.source_id)).collect::<Result<Vec<_>, _>>()?,
             associated_constants: Vec::new(),
             super_traits: Vec::new(),
             default_methods,
             visibility: lower_visibility(&trait_decl.annotations),
-        }
+        })
     }
 
-    fn lower_enums(&self, enum_decl: &Enums) -> HirEnum {
+    fn lower_enums(&self, enum_decl: &Enums) -> Result<HirEnum, HirError> {
         let mut enum_def = match enum_decl.kind {
             EnumsKind::Unity => HirEnum::new_unity(oak_identifier(&enum_decl.name)),
             EnumsKind::Enums | EnumsKind::Enum => HirEnum::new(oak_identifier(&enum_decl.name)),
@@ -2836,12 +2844,12 @@ impl AstToHir {
         enum_def.doc = lower_documentation(&enum_decl.annotations);
         enum_def.visibility = lower_visibility(&enum_decl.annotations);
         enum_def.generics = lower_generic_parameters(&enum_decl.generics);
-        enum_def.variants = enum_decl.variants.iter().map(|variant| self.lower_enum_variant(variant, enum_decl.kind)).collect();
+        enum_def.variants = enum_decl.variants.iter().map(|variant| self.lower_enum_variant(variant, enum_decl.kind)).collect::<Result<Vec<_>, _>>()?;
         enum_def.is_unity = enum_decl.kind == EnumsKind::Unity;
-        enum_def
+        Ok(enum_def)
     }
 
-    fn lower_variant_decl(&self, variant_decl: &Variant) -> HirEnum {
+    fn lower_variant_decl(&self, variant_decl: &Variant) -> Result<HirEnum, HirError> {
         let mut enum_def = HirEnum::new_unity(oak_identifier(&variant_decl.name));
         enum_def.doc = lower_documentation(&variant_decl.annotations);
         enum_def.visibility = lower_visibility(&variant_decl.annotations);
@@ -2850,60 +2858,63 @@ impl AstToHir {
             .cases
             .iter()
             .enumerate()
-            .map(|(index, case)| {
+            .map(|(index, case)| -> Result<_, HirError> {
                 let span = frontend::std_range(&case.span);
-                HirVariant {
+                Ok(HirVariant {
                     declaration: None,
                     instance: None,
                     name: Identifier::new(&format!("case_{index}")),
                     doc: HirDocumentation::default(),
                     fields: Vec::new(),
                     result_type: None,
-                    discriminator: Some(lower_term_expression(&case.body, self.source_id, span)),
-                }
+                    discriminator: Some(lower_term_expression(&case.body, self.source_id, span)?),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         enum_def.is_unity = true;
-        enum_def
+        Ok(enum_def)
     }
 
-    fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> HirImpl {
-        let trait_arguments = imply
-            .trait_type
-            .as_ref()
-            .and_then(|ty| match ty {
-                TypeExpression::Apply(node) => Some(node.arguments.iter().map(lower_type_expression).collect()),
-                _ => None,
-            })
-            .unwrap_or_default();
-        HirImpl {
+    fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> Result<HirImpl, HirError> {
+        let trait_arguments = if let Some(ty) = imply.trait_type.as_ref() {
+            if let TypeExpression::Apply(node) = ty {
+                node.arguments.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?
+            }
+            else {
+                Vec::new()
+            }
+        }
+        else {
+            Vec::new()
+        };
+        Ok(HirImpl {
             trait_declaration: None,
             declaring_namespace: declaring_namespace.clone(),
             trait_arguments,
             generics: lower_generic_parameters(&imply.generics),
             where_constraints: Vec::new(),
-            target: lower_type_expression(&imply.target_type),
+            target: lower_type_expression(&imply.target_type)?,
             trait_path: imply.trait_type.as_ref().map(lower_trait_path_from_type),
-            methods: imply.methods.iter().map(|method| self.lower_method(method)).collect(),
+            methods: imply.methods.iter().map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
             associated_type_impls: Vec::new(),
             associated_const_impls: Vec::new(),
-        }
+        })
     }
 
-    fn lower_method(&self, method: &MethodDeclaration) -> HirFunction {
+    fn lower_method(&self, method: &MethodDeclaration) -> Result<HirFunction, HirError> {
         let span = frontend::std_range(&method.span);
-        HirFunction {
+        Ok(HirFunction {
             declaration: None,
             instance: None,
             name: operator_member_name(&method.name, &method.annotations),
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),
-            annotations: method.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect(),
+            annotations: method.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
             generics: lower_generic_parameters(&method.generics),
-            where_constraints: lower_where_constraints(&method.where_constraints, self.source_id),
-            params: method.parameters.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect(),
-            return_type: method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
-            body: method.body.as_ref().map(|block| lower_block(block, self.source_id, span.clone())).unwrap_or_else(|| HirBlock {
+            where_constraints: lower_where_constraints(&method.where_constraints, self.source_id)?,
+            params: method.parameters.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
+            return_type: method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
+            body: method.body.as_ref().map(|block| lower_block(block, self.source_id, span.clone())).transpose()?.unwrap_or_else(|| HirBlock {
                 statements: Vec::new(),
                 expr: None,
                 span: with_source(&span, self.source_id),
@@ -2914,10 +2925,10 @@ impl AstToHir {
             is_final: has_modifier(&method.annotations, "final"),
             is_virtual: has_modifier(&method.annotations, "virtual"),
             is_override: has_modifier(&method.annotations, "override"),
-        }
+        })
     }
 
-    fn lower_object_properties(&self, methods: &[MethodDeclaration]) -> Vec<HirProperty> {
+    fn lower_object_properties(&self, methods: &[MethodDeclaration]) -> Result<Vec<HirProperty>, HirError> {
         let mut lowered = Vec::new();
 
         for method in methods.iter().filter(|method| is_property_accessor(method)) {
@@ -2925,8 +2936,8 @@ impl AstToHir {
             else {
                 continue;
             };
-            let accessor = self.lower_property_accessor(method, accessor_kind);
-            let ty = lower_property_type(method, accessor_kind);
+            let accessor = self.lower_property_accessor(method, accessor_kind)?;
+            let ty = lower_property_type(method, accessor_kind)?;
 
             if let Some(existing) = lowered.iter_mut().find(|item: &&mut HirProperty| item.name == oak_identifier(&method.name)) {
                 existing.ty = ty;
@@ -2980,32 +2991,32 @@ impl AstToHir {
             lowered.push(hir_property);
         }
 
-        lowered
+        Ok(lowered)
     }
 
-    fn lower_enum_variant(&self, variant: &EnumVariant, kind: EnumsKind) -> HirVariant {
+    fn lower_enum_variant(&self, variant: &EnumVariant, kind: EnumsKind) -> Result<HirVariant, HirError> {
         let span = frontend::std_range(&variant.span);
-        let discriminator = variant.value.as_ref().map(|value| lower_term_expression(value, self.source_id, span.clone())).or_else(|| {
+        let discriminator = variant.value.as_ref().map(|value| lower_term_expression(value, self.source_id, span.clone())).transpose()?.or_else(|| {
             if kind == EnumsKind::Unity { tag_attribute_discriminator(&variant.annotations, self.source_id, span.clone()) } else { None }
         });
-        HirVariant {
+        Ok(HirVariant {
             declaration: None,
             instance: None,
             name: oak_identifier(&variant.name),
             doc: lower_documentation(&variant.annotations),
-            fields: variant.fields.iter().map(lower_field).collect(),
+            fields: variant.fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
             result_type: None,
             discriminator,
-        }
+        })
     }
 
-    fn lower_property_accessor(&self, method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> HirFunction {
+    fn lower_property_accessor(&self, method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> Result<HirFunction, HirError> {
         let accessor_name = match accessor_kind {
             PropertyMethodKind::Get => oak_identifier(&method.name),
             PropertyMethodKind::Set => Identifier::new(&format!("set_{}", method.name.name)),
         };
 
-        HirFunction {
+        Ok(HirFunction {
             declaration: None,
             instance: None,
             name: accessor_name,
@@ -3015,12 +3026,12 @@ impl AstToHir {
                 .annotations
                 .iter()
                 .map(|attribute| lower_attribute(attribute, self.source_id, frontend::std_range(&method.span)))
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             generics: lower_generic_parameters(&method.generics),
             where_constraints: Vec::new(),
-            params: method.parameters.iter().map(|param| lower_param(param, self.source_id, frontend::std_range(&method.span))).collect(),
-            return_type: method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
-            body: method.body.as_ref().map(|block| lower_block(block, self.source_id, frontend::std_range(&method.span))).unwrap_or_else(
+            params: method.parameters.iter().map(|param| lower_param(param, self.source_id, frontend::std_range(&method.span))).collect::<Result<Vec<_>, _>>()?,
+            return_type: method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
+            body: method.body.as_ref().map(|block| lower_block(block, self.source_id, frontend::std_range(&method.span))).transpose()?.unwrap_or_else(
                 || HirBlock { statements: Vec::new(), expr: None, span: with_source(&frontend::std_range(&method.span), self.source_id) },
             ),
             span: with_source(&frontend::std_range(&method.span), self.source_id),
@@ -3029,7 +3040,7 @@ impl AstToHir {
             is_final: has_modifier(&method.annotations, "final"),
             is_virtual: has_modifier(&method.annotations, "virtual"),
             is_override: has_modifier(&method.annotations, "override"),
-        }
+        })
     }
 }
 
@@ -3040,38 +3051,40 @@ fn tag_attribute_discriminator(annotations: &[Attribute], source_id: SourceID, s
             continue;
         }
         let first = attribute.args.first()?;
-        return Some(lower_term_expression(&first.value, source_id, span));
+        return lower_term_expression(&first.value, source_id, span).ok();
     }
     None
 }
 
-fn lower_trait_associated_type(item: &AssociatedType, source_id: SourceID) -> HirAssociatedType {
-    HirAssociatedType {
+fn lower_trait_associated_type(item: &AssociatedType, source_id: SourceID) -> Result<HirAssociatedType, HirError> {
+    Ok(HirAssociatedType {
         name: Identifier::new(&item.name.name),
         doc: lower_documentation(&item.annotations),
         type_params: Vec::new(),
-        bounds: item.bounds.iter().map(lower_type_expression).collect(),
-        default: item.default.as_ref().map(lower_type_expression),
+        bounds: item.bounds.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?,
+        default: item.default.as_ref().map(lower_type_expression).transpose()?,
         span: with_source(&frontend::std_range(&item.span), source_id),
-    }
+    })
 }
 
-fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallback_span: Range<usize>) -> HirAttribute {
+fn lower_attribute(attribute: &Attribute, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirAttribute, HirError> {
     let arguments = attribute
         .args
         .iter()
-        .map(|argument| HirArgument {
-            key: argument.key.as_ref().map(|key| Identifier::new(&key.name)),
-            value: Box::new(lower_attribute_argument_expression(&argument.value, source_id, fallback_span.clone())),
+        .map(|argument| -> Result<_, HirError> {
+            Ok(HirArgument {
+                key: argument.key.as_ref().map(|key| Identifier::new(&key.name)),
+                value: Box::new(lower_attribute_argument_expression(&argument.value, source_id, fallback_span.clone())?),
+            })
         })
-        .collect();
-    HirAttribute::with_arguments(NamePath::new(vec![oak_identifier(&attribute.name)]), arguments)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HirAttribute::with_arguments(NamePath::new(vec![oak_identifier(&attribute.name)]), arguments))
 }
 
-fn lower_attribute_argument_expression(expr: &TermExpression, source_id: SourceID, fallback_span: Range<usize>) -> HirExpr {
+fn lower_attribute_argument_expression(expr: &TermExpression, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirExpr, HirError> {
     match expr {
         TermExpression::NamePath(path) => {
-            HirExpr { kind: HirExprKind::Path(lower_name_path(path)), span: with_source(&frontend::std_range(&path.span), source_id) }
+            Ok(HirExpr { kind: HirExprKind::Path(lower_name_path(path)), span: with_source(&frontend::std_range(&path.span), source_id) })
         }
         _ => lower_term_expression(expr, source_id, fallback_span),
     }
@@ -3117,15 +3130,15 @@ pub(super) fn lower_parent(parent: &Parent) -> HirParent {
     HirParent::full(lower_name_path(&parent.name), parent.alias.as_ref().map(|alias| Identifier::new(&alias.name)), Vec::new())
 }
 
-fn lower_field(field: &FieldDeclaration) -> HirField {
-    HirField {
+fn lower_field(field: &FieldDeclaration) -> Result<HirField, HirError> {
+    Ok(HirField {
         id: None,
         name: Identifier::new(&field.name.name),
         doc: lower_documentation(&field.annotations),
-        ty: lower_type_expression(&field.typing),
+        ty: lower_type_expression(&field.typing)?,
         visibility: lower_visibility(&field.annotations),
         is_mutable: has_modifier(&field.annotations, "mut"),
-    }
+    })
 }
 
 fn lower_generic_parameters(parameters: &[GenericParam]) -> Vec<GenericType> {
@@ -3146,24 +3159,24 @@ fn lower_bound_identifier(bound: &frontend::ast::TypeExpression) -> Identifier {
     Identifier::new(&render_type_expression(bound))
 }
 
-fn lower_param(param: &Param, source_id: SourceID, fallback_span: Range<usize>) -> HirParam {
+fn lower_param(param: &Param, source_id: SourceID, fallback_span: Range<usize>) -> Result<HirParam, HirError> {
     let span_range = if param.span.is_empty() { fallback_span } else { frontend::std_range(&param.span) };
-    HirParam {
+    Ok(HirParam {
         name: HirIdentifier { name: Identifier::new(&param.name.name), shadow_index: 0, span: with_source(&span_range, source_id) },
-        ty: param.ty.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::AutoType),
+        ty: param.ty.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::AutoType),
         binding_kind: HirParameterBindingKind::PositionalOrKeyword,
         is_mutable: has_modifier(&param.annotations, "mut"),
-        default: param.default.as_ref().map(|expr| lower_term_expression(expr, source_id, span_range.clone())),
+        default: param.default.as_ref().map(|expr| lower_term_expression(expr, source_id, span_range.clone())).transpose()?,
         variadic: HirVariadicKind::None,
-    }
+    })
 }
 
-fn lower_method_params(method: &MethodDeclaration, source_id: SourceID) -> Vec<HirParam> {
+fn lower_method_params(method: &MethodDeclaration, source_id: SourceID) -> Result<Vec<HirParam>, HirError> {
     let span = frontend::std_range(&method.span);
     method.parameters.iter().map(|param| lower_param(param, source_id, span.clone())).collect()
 }
 
-fn lower_property_params(method: &MethodDeclaration, source_id: SourceID) -> Vec<HirParam> {
+fn lower_property_params(method: &MethodDeclaration, source_id: SourceID) -> Result<Vec<HirParam>, HirError> {
     lower_method_params(method, source_id)
 }
 
@@ -3189,13 +3202,16 @@ fn is_property_accessor(method: &MethodDeclaration) -> bool {
     property_accessor_kind(method).is_some()
 }
 
-fn lower_property_type(method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> ValkyrieType {
-    match accessor_kind {
-        PropertyMethodKind::Get => method.return_type.as_ref().map(lower_type_expression).unwrap_or(ValkyrieType::Unit),
-        PropertyMethodKind::Set => {
-            method.parameters.last().and_then(|param| param.ty.as_ref().map(lower_type_expression)).unwrap_or(ValkyrieType::Unit)
-        }
-    }
+fn lower_property_type(method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> Result<ValkyrieType, HirError> {
+    Ok(match accessor_kind {
+        PropertyMethodKind::Get => method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
+        PropertyMethodKind::Set => method
+            .parameters
+            .last()
+            .and_then(|param| param.ty.as_ref().map(lower_type_expression))
+            .transpose()?
+            .unwrap_or(ValkyrieType::Unit),
+    })
 }
 
 fn property_is_abstract(method: &MethodDeclaration) -> bool {
@@ -3275,29 +3291,42 @@ fn operator_member_name(declared: &frontend::ast::Identifier, annotations: &[Att
 }
 
 /// Oak 已区分返回类型与约束；这里只转换结构化语法事实。
-fn lower_where_constraints(constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint], source_id: SourceID) -> Vec<HirWhereConstraint> {
+fn lower_where_constraints(
+    constraints: &[oak_valkyrie::ast::type_nodes::WhereConstraint],
+    source_id: SourceID,
+) -> Result<Vec<HirWhereConstraint>, HirError> {
     constraints
         .iter()
-        .map(|constraint| HirWhereConstraint {
-            target: lower_type_expression(&constraint.target),
-            bounds: constraint
+        .map(|constraint| {
+            let target = lower_type_expression(&constraint.target)?;
+            let bounds = constraint
                 .bounds
                 .iter()
-                .map(|bound| HirTraitBound {
-                    declaration: None,
-                    trait_path: NamePath::new(bound.trait_path.parts.iter().map(oak_identifier).collect()),
-                    type_arguments: bound.type_arguments.iter().map(lower_type_expression).collect(),
-                    associated_types: bound
+                .map(|bound| {
+                    let type_arguments = bound.type_arguments.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?;
+                    let associated_types = bound
                         .associated_types
                         .iter()
-                        .map(|equation| HirAssociatedTypeBinding {
-                            name: oak_identifier(&equation.name),
-                            ty: lower_type_expression(&equation.ty),
+                        .map(|equation| -> Result<_, HirError> {
+                            Ok(HirAssociatedTypeBinding {
+                                name: oak_identifier(&equation.name),
+                                ty: lower_type_expression(&equation.ty)?,
+                            })
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok::<_, HirError>(HirTraitBound {
+                        declaration: None,
+                        trait_path: NamePath::new(bound.trait_path.parts.iter().map(oak_identifier).collect()),
+                        type_arguments,
+                        associated_types,
+                    })
                 })
-                .collect(),
-            span: with_source(&frontend::std_range(&constraint.span), source_id),
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(HirWhereConstraint {
+                target,
+                bounds,
+                span: with_source(&frontend::std_range(&constraint.span), source_id),
+            })
         })
         .collect()
 }

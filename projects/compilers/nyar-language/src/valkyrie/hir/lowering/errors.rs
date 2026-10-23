@@ -128,6 +128,19 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 类型 lowering 时遇到无法解析的类型短名。
+    ///
+    /// 既不是当前作用域内已声明的 type 别名，也不是语言内建（`bool`/`utf8`/`unit`/`i64` 等）。
+    /// 这种名字以前被错误地 fallback 成 `ValkyrieType::Named` 传递到 canonical 阶段，
+    /// 但 canonical 已对 Named 直接返回 CAN003——现在在 lowering 阶段就结构化失败。
+    TypeNotFound {
+        /// 未解析的类型短名。
+        name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// `.vx` source 暂不支持。
     VxUnsupported,
 }
@@ -164,6 +177,7 @@ impl HirError {
             Self::InvalidDiscriminator { .. } => "valkyrie.hir.invalid_discriminator",
             Self::NoBodySourceInGroup { .. } => "valkyrie.hir.no_body_source",
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
+            Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
         }
     }
@@ -236,6 +250,9 @@ impl From<HirError> for DiagnosticRow {
                     row = row.with_arg(k, DiagnosticArg::String(v.clone()));
                 }
             }
+            HirError::TypeNotFound { name, .. } => {
+                row = row.with_arg("name", DiagnosticArg::TypeName(name.clone()));
+            }
             HirError::VxUnsupported => {}
         }
 
@@ -254,6 +271,7 @@ fn other_source(error: &HirError) -> &DiagnosticSource {
         HirError::InvalidDiscriminator { source, .. } => source,
         HirError::NoBodySourceInGroup { source, .. } => source,
         HirError::LoweringFailed { source, .. } => source,
+        HirError::TypeNotFound { source, .. } => source,
         HirError::VxUnsupported => unreachable!(),
     }
 }
@@ -269,6 +287,7 @@ fn other_span(error: &HirError) -> &DiagnosticSpan {
         HirError::InvalidDiscriminator { span, .. } => span,
         HirError::NoBodySourceInGroup { span, .. } => span,
         HirError::LoweringFailed { span, .. } => span,
+        HirError::TypeNotFound { span, .. } => span,
         HirError::VxUnsupported => unreachable!(),
     }
 }
@@ -346,6 +365,7 @@ impl std::fmt::Display for HirError {
                 }
                 write!(f, " source={} span={}..{}", source.id, span.start, span.end)
             }
+            Self::TypeNotFound { name, .. } => write!(f, "unknown type name `{name}`: not a module type alias or language builtin"),
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
         }
     }

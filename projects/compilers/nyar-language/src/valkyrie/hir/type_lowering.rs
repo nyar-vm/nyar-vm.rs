@@ -19,6 +19,7 @@ use crate::{
         },
     },
 };
+use nyar_types::DiagnosticSpan;
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 thread_local! {
@@ -151,10 +152,13 @@ pub fn validate_source_text_type_name(name: &str) -> Result<(), HirError> {
 }
 
 /// 将 Oak `AST` 类型表达式降到最小 `HIR` 类型表示。
+///
+/// 无法在当前作用域解析的类型短名会以 `HirError::TypeNotFound` 返回，由调用方
+/// 逐层传播；不再静默 fallback 成 `ValkyrieType::Named` 传递到 canonical 阶段。
 #[doc(hidden)]
-pub fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
-    match ty {
-        TypeExpression::Namepath(path) => lower_type_namepath(path),
+pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirError> {
+    Ok(match ty {
+        TypeExpression::Namepath(path) => lower_type_namepath(path)?,
         TypeExpression::Generic(generic) => ValkyrieType::Generic(GenericType {
             binder: None,
             name: Identifier::new(&generic.name.name),
@@ -166,14 +170,16 @@ pub fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect())
+                ValkyrieType::Tuple(
+                    tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect::<Result<Vec<_>, _>>()?,
+                )
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
-            params: function.params.iter().map(lower_type_expression).collect(),
-            return_type: lower_type_expression(&function.return_type),
+            params: function.params.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?,
+            return_type: lower_type_expression(&function.return_type)?,
         })),
-        TypeExpression::Optional(optional) => flatten_nullable_type(lower_type_expression(&optional.inner)),
+        TypeExpression::Optional(optional) => flatten_nullable_type(lower_type_expression(&optional.inner)?),
         TypeExpression::AssociatedType(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
             base: if associated.base.name == "Self" {
                 ValkyrieType::SelfType
@@ -185,7 +191,7 @@ pub fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
             type_arguments: Vec::new(),
         })),
         TypeExpression::QualifiedAssociatedType(qualified) => {
-            let base = lower_type_expression(&qualified.ty);
+            let base = lower_type_expression(&qualified.ty)?;
             ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
                 base,
                 name: Identifier::new(&qualified.name.name),
@@ -193,15 +199,15 @@ pub fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
             }))
         }
         TypeExpression::Binary(node) => match node.operator {
-            ValkyrieTokenType::Pipe => ValkyrieType::Union(vec![lower_type_expression(&node.lhs), lower_type_expression(&node.rhs)]),
+            ValkyrieTokenType::Pipe => ValkyrieType::Union(vec![lower_type_expression(&node.lhs)?, lower_type_expression(&node.rhs)?]),
             ValkyrieTokenType::Ampersand => {
-                ValkyrieType::Intersection(vec![lower_type_expression(&node.lhs), lower_type_expression(&node.rhs)])
+                ValkyrieType::Intersection(vec![lower_type_expression(&node.lhs)?, lower_type_expression(&node.rhs)?])
             }
-            _ => lower_type_expression(&node.lhs),
+            _ => lower_type_expression(&node.lhs)?,
         },
         TypeExpression::Unary(node) => match node.operator {
             ValkyrieTokenType::BracketL => {
-                let element = lower_type_expression(&node.base);
+                let element = lower_type_expression(&node.base)?;
                 if let Some(length_expr) = &node.length {
                     let length = match length_expr {
                         frontend::ast::TermExpression::IntegerLiteral { value, .. } => value.parse().unwrap_or(0),
@@ -213,14 +219,14 @@ pub fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
                     ValkyrieType::Array(Box::new(element))
                 }
             }
-            _ => lower_type_expression(&node.base),
+            _ => lower_type_expression(&node.base)?,
         },
         TypeExpression::Apply(apply) => {
-            let base = lower_type_expression(&apply.base);
-            let arguments = apply.arguments.iter().map(lower_type_expression).collect();
+            let base = lower_type_expression(&apply.base)?;
+            let arguments = apply.arguments.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?;
             ValkyrieType::Apply(Box::new(base), arguments)
         }
-    }
+    })
 }
 
 fn flatten_nullable_type(inner: ValkyrieType) -> ValkyrieType {
@@ -371,20 +377,32 @@ fn has_module_type_alias(name: &str) -> bool {
     MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains_key(name)))
 }
 
-/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 未解析短名。
+/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 失败（结构化 TypeNotFound）。
 ///
-/// 别名目标尚未填入（或形参个数不匹配）时保留别名身份，不折算成内建类型：
-/// 别名是声明身份，不能被同名的内建类型顶替。
-fn resolve_named_type(name: &str) -> ValkyrieType {
+/// 别名目标尚未填入（或形参个数不匹配）时保留别名身份为 `ValkyrieType::Named`，
+/// 不折算成内建类型：别名是声明身份，不能被同名的内建类型顶替。
+///
+/// 无法在作用域内找到别名、也不匹配任何语言内建的名字，以前被错误地 fallback 成
+/// `Named` 传递到 canonical 阶段。现在这里直接返回结构化 `TypeNotFound`，由上层
+/// 逐层用 `?` 传播到 lowering 主入口。
+fn resolve_named_type(name: &str) -> Result<ValkyrieType, HirError> {
     if let Some(expanded) = expand_module_type_alias(name, &[], &mut BTreeSet::new()) {
-        return expanded;
+        return Ok(expanded);
     }
     if has_module_type_alias(name) {
-        return ValkyrieType::Named(Identifier::new(name));
+        return Ok(ValkyrieType::Named(Identifier::new(name)));
     }
-    canonical_builtin_type(name)
-        .or_else(|| numeric_builtin_scalar(name))
-        .unwrap_or_else(|| ValkyrieType::Named(Identifier::new(name)))
+    if let Some(builtin) = canonical_builtin_type(name) {
+        return Ok(builtin);
+    }
+    if let Some(scalar) = numeric_builtin_scalar(name) {
+        return Ok(scalar);
+    }
+    Err(HirError::TypeNotFound {
+        name: name.to_string(),
+        source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
+        span: DiagnosticSpan { start: 0, end: 0 },
+    })
 }
 
 fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &mut BTreeSet<String>) -> Option<ValkyrieType> {
@@ -465,12 +483,12 @@ fn expand_type_aliases(ty: &ValkyrieType, visiting: &mut BTreeSet<String>) -> Va
     }
 }
 
-fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
+fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
     // 只消费 Oak 产出的结构化 NamePath；禁止按 span 切片重解析源码。
     let parts = path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>();
     let last = parts.last().copied().unwrap_or_default();
     if parts.len() == 1 && last == "Self" {
-        return ValkyrieType::SelfType;
+        return Ok(ValkyrieType::SelfType);
     }
     if parts.first().is_some_and(|part| *part == "Self") {
         let mut base = ValkyrieType::SelfType;
@@ -481,26 +499,26 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
                 type_arguments: Vec::new(),
             }));
         }
-        return base;
+        return Ok(base);
     }
     // `Type::Assoc`：两段且非已知命名空间前缀时保留 Associated，禁止丢前缀只留短名。
     // `core::…` / `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。
     if parts.len() == 2 && !is_known_builtin_type_namespace(&parts, last) && !is_module_root_prefix(parts[0]) {
         let head = parts[0];
-        return ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
-            base: resolve_named_type(head),
+        return Ok(ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: resolve_named_type(head)?,
             name: Identifier::new(last),
             type_arguments: Vec::new(),
-        }));
+        })));
     }
     // 停线清理：删除 QualifiedPath 作为语法类型进入 HIR 的路径。多段限定类型名
     // 在 frontend 绑定阶段必须已完全解析为声明身份；无法解析时必须返回前端
     // TypeError，不得带着 QualifiedPath 旁路进入后续 canonical / representation。
     //
     // 当前所有非内建、非 Self、非两段 Associated 的多段名直接按最后一段短名交给
-    // resolve_named_type 处理；若无法在当前作用域绑定，将在后续 bind_type 阶段失败。
-    // 单段名与已知内建命名空间限定名共用同一解析顺序：作用域别名优先于内建类型。
-    resolve_named_type(last)
+    // resolve_named_type 处理；无法在当前作用域绑定则返回 TypeNotFound，
+    // 不再静默 fallback 成 Named。
+    Ok(resolve_named_type(last)?)
 }
 
 fn is_module_root_prefix(name: &str) -> bool {
