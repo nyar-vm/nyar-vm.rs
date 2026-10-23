@@ -83,7 +83,7 @@ fn trait_associated_result_binds_array_intrinsic_argument() {
     let base = r#"
 unite Option<T> { Some { value: T }, None }
 imply Option<T> {
-    micro unwrap(self) -> T { match self { case Some(value): value case None: panic("none") } }
+    micro unwrap(self) -> T { match self { case Some(value): value case None: raise "none" } }
 }
 
 trait Iterator { type Item; micro has_next(self) -> bool; micro next(self) -> Option<Item>; }
@@ -169,7 +169,7 @@ fn imported_impl_method_contract_survives_dependency_boundary() {
 namespace core.types;
 unite Option<T> { Some { value: T }, None }
 imply Option<T> {
-    micro unwrap(self) -> T { match self { case Some(value): value case None: panic("none") } }
+    micro unwrap(self) -> T { match self { case Some(value): value case None: raise "none" } }
 }
 "#,
         )

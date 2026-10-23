@@ -633,10 +633,6 @@ impl MirBuilder {
             }
             HirExprKind::Call { callee, args, resolved, .. } => {
                 let (explicit_generic_arguments, callee) = peel_generic_apply(callee.as_ref());
-                if super::expr_helpers::callee_matches_name(callee, resolved.as_ref(), "panic") {
-                    let payload = if args.len() == 1 { Some(self.lower_expr_to_operand(&args[0].value)) } else { None };
-                    return self.lower_uncaught_raise(payload);
-                }
                 // HIR may lower `expr.unwrap()` to `unwrap(expr)` (functional call).
                 // ????Option ??????? Extractor ??????????????????
                 if args.len() == 1 && Self::is_option_unwrap_call(resolved.as_ref()) {
