@@ -16,9 +16,7 @@
 //! 3. 编译验证 + 跑既有测试确认零新回归
 //! 4. 再推进 ResolveError / StageError / TypeError
 
-use nyar_types::{
-    DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
-};
+use nyar_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
 
 /// HIR lowering 阶段的结构化失败原因。
 ///
@@ -119,32 +117,11 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
-    /// MIR 校验拒绝 MIR 自己产出的结构化诊断。
+    /// MIR 校验阶段的跨阶段升级桥接。
     ///
-    /// 该变体只承载 MIR lowering 已冻结的结构化诊断事实，不在 HIR 侧重新拼装场景字符串。
-    MirDiagnosticRejected {
-        /// MIR lowering 产出的原始诊断。
-        diagnostic: crate::mir::MirDiagnostic,
-    },
-    /// Semantic MIR 合同校验失败（由 `SemanticMirContractError` 生产）。
-    MirContractFailed(crate::valkyrie::mir::validation::SemanticMirContractError),
-    /// MIR 控制流图校验失败。
-    ///
-    /// 控制流校验器当前仍以 `ParseError` 生产失败事实，本变体原样转发其结构化错误，
-    /// 不由 HIR 重新解释或字符串化。
-    MirControlFlowRejected(crate::valkyrie::frontend::ParseError),
-    /// MIR 函数缺少 entry block。
-    MirEntryBlockMissing {
-        /// 函数符号。
-        function: String,
-    },
-    /// dispatch block 引用了函数未冻结的 state 值。
-    MirUnknownStateValue {
-        /// 函数符号。
-        function: String,
-        /// dispatch block 标签。
-        block: String,
-    },
+    /// 具体失败变体、code、source 与 span 由 `MirValidationError` 自己生产；
+    /// 本变体只转发结构化错误，不在 HIR 侧重新解释或字符串化。
+    MirValidationRejected(crate::valkyrie::mir::validation::MirValidationError),
     /// frontend 解析 / 暂存阶段失败。
     ///
     /// 原样转发 frontend 生产的 `ParseError`（parser、staging 边界的事实所有者），
@@ -873,22 +850,12 @@ impl HirError {
 
     /// TGrammar 模板展开失败；span 指向触发失败的模板 token 流。
     pub(crate) fn template_expansion_failed(construct: TemplateConstruct, failure: TemplateFailure, span: DiagnosticSpan) -> Self {
-        Self::TemplateExpansionFailed {
-            construct,
-            failure,
-            source: DiagnosticSource { id: "<template>".into(), revision: None },
-            span,
-        }
+        Self::TemplateExpansionFailed { construct, failure, source: DiagnosticSource { id: "<template>".into(), revision: None }, span }
     }
 
     /// `match` 源码恢复失败；span 指向被恢复的 `match` 块。
     pub(crate) fn match_recovery_failed(stage: MatchRecoveryStage, pattern: Option<String>, span: DiagnosticSpan) -> Self {
-        Self::MatchRecoveryFailed {
-            stage,
-            pattern,
-            source: DiagnosticSource { id: "<match>".into(), revision: None },
-            span,
-        }
+        Self::MatchRecoveryFailed { stage, pattern, source: DiagnosticSource { id: "<match>".into(), revision: None }, span }
     }
 
     fn code(&self) -> &'static str {
@@ -901,11 +868,7 @@ impl HirError {
             Self::SumUniteMissingDeclaration { .. } => "valkyrie.hir.sum_unite_missing_declaration",
             Self::InvalidDiscriminator { .. } => "valkyrie.hir.invalid_discriminator",
             Self::NoBodySourceInGroup { .. } => "valkyrie.hir.no_body_source",
-            Self::MirDiagnosticRejected { .. } => "valkyrie.mir.diagnostic_rejected",
-            Self::MirContractFailed(_) => "valkyrie.mir.contract_failed",
-            Self::MirControlFlowRejected(_) => "valkyrie.mir.control_flow_rejected",
-            Self::MirEntryBlockMissing { .. } => "valkyrie.mir.entry_block_missing",
-            Self::MirUnknownStateValue { .. } => "valkyrie.mir.unknown_state_value",
+            Self::MirValidationRejected(error) => error.code(),
             Self::FrontendRejected(_) => "valkyrie.frontend.rejected",
             Self::TemplateExpansionFailed { .. } => "valkyrie.hir.template_expansion_failed",
             Self::MatchRecoveryFailed { .. } => "valkyrie.hir.match_recovery_failed",
@@ -962,6 +925,10 @@ impl HirError {
 
 impl From<HirError> for DiagnosticRow {
     fn from(error: HirError) -> Self {
+        // MIR 校验阶段自己生产 code / source / span / args，这里整体转发，不重新解释。
+        if let HirError::MirValidationRejected(error) = error {
+            return DiagnosticRow::from(error);
+        }
         let source = match &error {
             HirError::VxUnsupported => DiagnosticSource { id: ".vx".into(), revision: None },
             other => other_source(other),
@@ -976,14 +943,7 @@ impl From<HirError> for DiagnosticRow {
             _ => (DiagnosticPhase::Hir, DiagnosticOwner::ValkyrieFrontend),
         };
 
-        let mut row = DiagnosticRow::new(
-            error.code(),
-            DiagnosticSeverity::Error,
-            phase,
-            owner,
-            source,
-            span,
-        );
+        let mut row = DiagnosticRow::new(error.code(), DiagnosticSeverity::Error, phase, owner, source, span);
 
         match &error {
             HirError::UnresolvedCall { selector, context, .. } => {
@@ -992,9 +952,7 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("context", DiagnosticArg::String(context.clone()));
             }
             HirError::UnresolvedConstructor { name, context, .. } => {
-                row = row
-                    .with_arg("name", DiagnosticArg::Aggregate(name.clone()))
-                    .with_arg("context", DiagnosticArg::String(context.clone()));
+                row = row.with_arg("name", DiagnosticArg::Aggregate(name.clone())).with_arg("context", DiagnosticArg::String(context.clone()));
             }
             HirError::NominalAmbiguous { name, candidate_count, .. } => {
                 row = row
@@ -1026,27 +984,7 @@ impl From<HirError> for DiagnosticRow {
             HirError::NoBodySourceInGroup { dependency_key, .. } => {
                 row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
             }
-            HirError::MirDiagnosticRejected { diagnostic } => {
-                row = mir_diagnostic_args(row, diagnostic);
-            }
-            HirError::MirContractFailed(error) => {
-                row = row
-                    .with_arg("code", DiagnosticArg::String(error.code.to_string()))
-                    .with_arg("function", DiagnosticArg::CallableShort(error.function.clone()))
-                    .with_arg("location", DiagnosticArg::String(error.location.clone()))
-                    .with_cause(error.detail.clone());
-            }
-            HirError::MirControlFlowRejected(error) => {
-                row = row.with_cause(error.to_string());
-            }
-            HirError::MirEntryBlockMissing { function } => {
-                row = row.with_arg("function", DiagnosticArg::CallableShort(function.clone()));
-            }
-            HirError::MirUnknownStateValue { function, block } => {
-                row = row
-                    .with_arg("function", DiagnosticArg::CallableShort(function.clone()))
-                    .with_arg("block", DiagnosticArg::String(block.clone()));
-            }
+            HirError::MirValidationRejected(_) => {}
             HirError::FrontendRejected(error) => {
                 row = row.with_cause(error.to_string());
             }
@@ -1055,9 +993,7 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("construct", DiagnosticArg::String(template_construct_name(*construct).to_string()))
                     .with_arg("failure", DiagnosticArg::String(template_failure_name(failure).to_string()));
                 if let TemplateFailure::LoopRangeInvalid { start, end } = failure {
-                    row = row
-                        .with_arg("range_start", DiagnosticArg::Int(*start))
-                        .with_arg("range_end", DiagnosticArg::Int(*end));
+                    row = row.with_arg("range_start", DiagnosticArg::Int(*start)).with_arg("range_end", DiagnosticArg::Int(*end));
                 }
                 if let TemplateFailure::BlockFragmentUnsupportedNode { kind } = failure {
                     row = row.with_arg("node_kind", DiagnosticArg::String(kind.clone()));
@@ -1086,9 +1022,8 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("carries_value", DiagnosticArg::String(carries_value.to_string()));
             }
             HirError::BreakValueTypeMismatch { actual, expected, .. } => {
-                row = row
-                    .with_arg("actual", DiagnosticArg::String(actual.clone()))
-                    .with_arg("expected", DiagnosticArg::String(expected.clone()));
+                row =
+                    row.with_arg("actual", DiagnosticArg::String(actual.clone())).with_arg("expected", DiagnosticArg::String(expected.clone()));
             }
             HirError::TryPropagateOperandUnsupported { operand_type, .. } => {
                 row = row.with_arg("operand_type", DiagnosticArg::String(operand_type.clone()));
@@ -1114,9 +1049,8 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("expected_type", DiagnosticArg::String(expected_type.clone()));
             }
             HirError::ReturnValueTypeMismatch { actual, expected, function, .. } => {
-                row = row
-                    .with_arg("actual", DiagnosticArg::String(actual.clone()))
-                    .with_arg("expected", DiagnosticArg::String(expected.clone()));
+                row =
+                    row.with_arg("actual", DiagnosticArg::String(actual.clone())).with_arg("expected", DiagnosticArg::String(expected.clone()));
                 if let Some(function) = function {
                     row = row.with_arg("function", DiagnosticArg::CallableShort(function.clone()));
                 }
@@ -1148,10 +1082,7 @@ impl From<HirError> for DiagnosticRow {
             HirError::SemanticCheckViolations { checks, .. } => {
                 row = row.with_arg("checker_count", DiagnosticArg::Int(checks.len() as i64));
                 for (index, check) in checks.iter().enumerate() {
-                    row = row.with_arg(
-                        format!("checker_{index}"),
-                        DiagnosticArg::String(semantic_checker_name(check.checker).to_string()),
-                    );
+                    row = row.with_arg(format!("checker_{index}"), DiagnosticArg::String(semantic_checker_name(check.checker).to_string()));
                 }
             }
             HirError::CopyDisciplineViolations { violations, .. } => {
@@ -1234,11 +1165,11 @@ impl From<HirError> for DiagnosticRow {
                 row = row.with_arg("item_kind", DiagnosticArg::String(item_kind.clone()));
             }
             HirError::PipelineRejected { codes, module } => {
-                row = row
-                    .with_arg("module", DiagnosticArg::String(module.clone()))
-                    .with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
+                row =
+                    row.with_arg("module", DiagnosticArg::String(module.clone())).with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
             }
-            HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {}
+            HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {
+            }
             HirError::LegacyBuiltinTypeAlias { alias, canonical, .. } => {
                 row = row
                     .with_arg("alias", DiagnosticArg::TypeName(alias.clone()))
@@ -1269,24 +1200,6 @@ impl From<HirError> for DiagnosticRow {
     }
 }
 
-/// 把 MIR 生产的结构化诊断渲染为人类可读文本（仅用于 `Display`）。
-fn mir_diagnostic_message(diagnostic: &crate::mir::MirDiagnostic) -> String {
-    use crate::mir::MirDiagnostic;
-    match diagnostic {
-        MirDiagnostic::PatternLoweringFailed { reason, .. } => format!("MIR lowering failed: {reason}"),
-        MirDiagnostic::UnsupportedExpression { span, kind } => {
-            format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")
-        }
-        MirDiagnostic::UnresolvedValueType { context } => format!("MIR lowering missing value type fact: {context}"),
-        MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
-            format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")
-        }
-        MirDiagnostic::UnresolvedNominalIdentity { type_name } => format!("MIR lowering unresolved nominal identity `{type_name}`"),
-        MirDiagnostic::UnresolvedFieldIdentity { field } => format!("MIR lowering unresolved field identity `{field}`"),
-        MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
-    }
-}
-
 /// frontend 失败事实的缺省 source 身份。
 fn frontend_source(_error: &crate::valkyrie::frontend::ParseError) -> DiagnosticSource {
     DiagnosticSource { id: "<frontend>".into(), revision: None }
@@ -1295,9 +1208,7 @@ fn frontend_source(_error: &crate::valkyrie::frontend::ParseError) -> Diagnostic
 /// 从 frontend `ParseError` 提取可定位的源码 span。
 fn frontend_span(error: &crate::valkyrie::frontend::ParseError) -> DiagnosticSpan {
     match error {
-        crate::valkyrie::frontend::ParseError::Invalid { span: Some(range), .. } => {
-            DiagnosticSpan { start: range.start, end: range.end }
-        }
+        crate::valkyrie::frontend::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
         _ => empty_span(),
     }
 }
@@ -1355,11 +1266,9 @@ fn template_failure_message(failure: &TemplateFailure) -> String {
         TemplateFailure::RangeEndpointNotInteger => "range endpoints must be integer literals",
         TemplateFailure::LoopRangeInvalid { start, end } => return format!("`loop` range `{start}..{end}` is invalid"),
         TemplateFailure::NonArchScrutinee => "`match` only supports the `arch` scrutinee",
-        TemplateFailure::BlockFragmentUnsupportedNode { kind } => {
-            return format!("expanded `{kind}` cannot be kept inside a block")
-        }
+        TemplateFailure::BlockFragmentUnsupportedNode { kind } => return format!("expanded `{kind}` cannot be kept inside a block"),
         TemplateFailure::FragmentNotMicroDeclaration { produced_items } => {
-            return format!("expanded meta expression produced {produced_items} top-level items instead of one `micro` declaration")
+            return format!("expanded meta expression produced {produced_items} top-level items instead of one `micro` declaration");
         }
     }
     .to_string()
@@ -1462,42 +1371,9 @@ fn copy_discipline_reason_name(reason: CopyDisciplineReason) -> &'static str {
     }
 }
 
-/// MIR 侧失败事实的缺省 source 身份（MIR 结构本身不携带源码身份）。
-fn mir_source() -> DiagnosticSource {
-    DiagnosticSource { id: "<mir>".into(), revision: None }
-}
-
 /// 无源码定位时的空 span。
 fn empty_span() -> DiagnosticSpan {
     DiagnosticSpan { start: 0, end: 0 }
-}
-
-/// 从 MIR 诊断中提取可定位的源码 span。
-fn mir_diagnostic_span(diagnostic: &crate::mir::MirDiagnostic) -> DiagnosticSpan {
-    match diagnostic {
-        crate::mir::MirDiagnostic::UnsupportedExpression { span, .. } => {
-            DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize }
-        }
-        _ => empty_span(),
-    }
-}
-
-/// 把 MIR 诊断的结构化字段映射为诊断参数。
-fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &crate::mir::MirDiagnostic) -> DiagnosticRow {
-    use crate::mir::MirDiagnostic;
-    match diagnostic {
-        MirDiagnostic::PatternLoweringFailed { reason, .. } => row.with_arg("reason", DiagnosticArg::String(reason.clone())),
-        MirDiagnostic::UnsupportedExpression { span, kind } => row
-            .with_arg("kind", DiagnosticArg::String(kind.clone()))
-            .with_arg("span", DiagnosticArg::Span(DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize })),
-        MirDiagnostic::UnresolvedValueType { context } => row.with_arg("context", DiagnosticArg::String(context.clone())),
-        MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => row
-            .with_arg("sum_type", DiagnosticArg::Aggregate(sum_type.clone()))
-            .with_arg("variant", DiagnosticArg::CallableShort(variant.clone())),
-        MirDiagnostic::UnresolvedNominalIdentity { type_name } => row.with_arg("type_name", DiagnosticArg::TypeName(type_name.clone())),
-        MirDiagnostic::UnresolvedFieldIdentity { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
-        MirDiagnostic::UnresolvedCallableIdentity { symbol } => row.with_arg("symbol", DiagnosticArg::CallableShort(symbol.clone())),
-    }
 }
 
 fn other_source(error: &HirError) -> DiagnosticSource {
@@ -1510,11 +1386,7 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::SumUniteMissingDeclaration { source, .. } => source.clone(),
         HirError::InvalidDiscriminator { source, .. } => source.clone(),
         HirError::NoBodySourceInGroup { source, .. } => source.clone(),
-        HirError::MirDiagnosticRejected { .. } => mir_source(),
-        HirError::MirContractFailed(_) => mir_source(),
-        HirError::MirControlFlowRejected(_) => mir_source(),
-        HirError::MirEntryBlockMissing { .. } => mir_source(),
-        HirError::MirUnknownStateValue { .. } => mir_source(),
+        HirError::MirValidationRejected(_) => unreachable!(),
         HirError::FrontendRejected(error) => frontend_source(error),
         HirError::TemplateExpansionFailed { source, .. } => source.clone(),
         HirError::MatchRecoveryFailed { source, .. } => source.clone(),
@@ -1577,11 +1449,7 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::SumUniteMissingDeclaration { span, .. } => span.clone(),
         HirError::InvalidDiscriminator { span, .. } => span.clone(),
         HirError::NoBodySourceInGroup { span, .. } => span.clone(),
-        HirError::MirDiagnosticRejected { diagnostic } => mir_diagnostic_span(diagnostic),
-        HirError::MirContractFailed(_) => empty_span(),
-        HirError::MirControlFlowRejected(_) => empty_span(),
-        HirError::MirEntryBlockMissing { .. } => empty_span(),
-        HirError::MirUnknownStateValue { .. } => empty_span(),
+        HirError::MirValidationRejected(_) => unreachable!(),
         HirError::FrontendRejected(error) => frontend_span(error),
         HirError::TemplateExpansionFailed { span, .. } => span.clone(),
         HirError::MatchRecoveryFailed { span, .. } => span.clone(),
@@ -1646,6 +1514,12 @@ impl From<crate::valkyrie::semantic_closure::SemanticClosureError> for HirError 
     }
 }
 
+impl From<crate::valkyrie::mir::validation::MirValidationError> for HirError {
+    fn from(error: crate::valkyrie::mir::validation::MirValidationError) -> Self {
+        Self::MirValidationRejected(error)
+    }
+}
+
 impl std::error::Error for HirError {}
 
 impl miette::Diagnostic for HirError {}
@@ -1689,18 +1563,7 @@ impl std::fmt::Display for HirError {
             Self::NoBodySourceInGroup { dependency_key, .. } => {
                 write!(f, "no body source in group `{dependency_key}`")
             }
-            Self::MirDiagnosticRejected { diagnostic } => write!(f, "{}", mir_diagnostic_message(diagnostic)),
-            Self::MirContractFailed(error) => {
-                write!(f, "{} {} at {}: {}", error.code, error.function, error.location, error.detail)
-            }
-            Self::MirControlFlowRejected(error) => write!(f, "{error}"),
-            Self::MirEntryBlockMissing { function } => {
-                write!(f, "control-flow schedule validation failed: function `{function}` has no entry block")
-            }
-            Self::MirUnknownStateValue { function, block } => write!(
-                f,
-                "control-flow schedule validation failed: dispatch block `{block}` of function `{function}` references an unknown state value"
-            ),
+            Self::MirValidationRejected(error) => write!(f, "{error}"),
             Self::FrontendRejected(error) => write!(f, "{error}"),
             Self::TemplateExpansionFailed { construct, failure, .. } => {
                 write!(f, "TGrammar {} expansion failed: {}", template_construct_name(*construct), template_failure_message(failure))
@@ -1735,12 +1598,15 @@ impl std::fmt::Display for HirError {
                 write!(f, "`?` cannot be applied to `{operand_type}`")
             }
             Self::TryPropagateReturnMismatch { protocol, return_type, .. } => {
-                write!(f, "`?` on a `{}` operand requires a matching enclosing return type, got `{return_type}`", propagate_protocol_name(*protocol))
+                write!(
+                    f,
+                    "`?` on a `{}` operand requires a matching enclosing return type, got `{return_type}`",
+                    propagate_protocol_name(*protocol)
+                )
             }
-            Self::TryPropagateErrorTypeMismatch { error_type, return_error, .. } => write!(
-                f,
-                "`?` error type `{error_type}` is incompatible with enclosing return error `{return_error}`"
-            ),
+            Self::TryPropagateErrorTypeMismatch { error_type, return_error, .. } => {
+                write!(f, "`?` error type `{error_type}` is incompatible with enclosing return error `{return_error}`")
+            }
             Self::FutureControlOperandMismatch { operation, operand_type, .. } => {
                 write!(f, "`{}` requires a `Future<T>` or `Promise<T>` operand, got `{operand_type}`", control_flow_op_name(*operation))
             }
@@ -1768,14 +1634,12 @@ impl std::fmt::Display for HirError {
                 f,
                 "`yield from` item type `{source_item}` is incompatible with the `{expected_item}` item of return type `{expected_return}`"
             ),
-            Self::AmbiguousBareNamePattern { name, .. } => write!(
-                f,
-                "bare lowercase single-segment pattern `{name}` is ambiguous with a variable binding, use a variant form instead"
-            ),
-            Self::RefutableLetPattern { pattern, .. } => write!(
-                f,
-                "refutable pattern `{pattern}` is not allowed in a `let` binding, use `if let` or `case` instead"
-            ),
+            Self::AmbiguousBareNamePattern { name, .. } => {
+                write!(f, "bare lowercase single-segment pattern `{name}` is ambiguous with a variable binding, use a variant form instead")
+            }
+            Self::RefutableLetPattern { pattern, .. } => {
+                write!(f, "refutable pattern `{pattern}` is not allowed in a `let` binding, use `if let` or `case` instead")
+            }
             Self::SemanticCheckViolations { checks, .. } => {
                 write!(f, "semantic checks rejected the module")?;
                 for check in checks {
@@ -1792,10 +1656,9 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
-            Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => write!(
-                f,
-                "duplicate definition of `{name}` in namespace `{namespace}`: {prior_kind} and {current_kind}"
-            ),
+            Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {
+                write!(f, "duplicate definition of `{name}` in namespace `{namespace}`: {prior_kind} and {current_kind}")
+            }
             Self::SourceGroupProducerMissing { dependency_key, .. } => {
                 write!(f, "generated source group has no producer identity")?;
                 match dependency_key {
@@ -1872,10 +1735,9 @@ impl std::fmt::Display for HirError {
             Self::LegacyBuiltinTypeAlias { alias, canonical, .. } => {
                 write!(f, "legacy builtin type alias `{alias}` has been removed; use `{canonical}` explicitly")
             }
-            Self::AmbiguousTextTypeName { name, .. } => write!(
-                f,
-                "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`"
-            ),
+            Self::AmbiguousTextTypeName { name, .. } => {
+                write!(f, "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`")
+            }
             Self::TypeNotFound { name, .. } => write!(f, "unknown type name `{name}`: not a module type alias or language builtin"),
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
             Self::SourceGroupClosureFailed(e) => write!(f, "source group closure failed: {e}"),
@@ -1890,4 +1752,3 @@ impl std::fmt::Display for HirError {
         }
     }
 }
-

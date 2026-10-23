@@ -6,7 +6,10 @@ use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
 use crate::{
     hir::{validate_control_flow_module, validate_try_propagate_module},
-    mir::{MirModule, validation::validate_module as validate_mir_module},
+    mir::{
+        MirModule,
+        validation::{MirValidationError, validate_module as validate_mir_module},
+    },
     type_checker::{
         CompositePatternExhaustivenessChecker, CopySemanticsValidator, LiteralExhaustivenessChecker, ParameterSemantics, ReturnSemantics,
         SealedMatchChecker, SingletonChecker, UnreachableArmChecker, ValueTypeChecker, check_pattern_refutability,
@@ -17,9 +20,7 @@ use crate::{
     },
     valkyrie::{
         HirError,
-        hir::lowering::errors::{
-            CopyDisciplineReason, CopyDisciplineViolation, SemanticCheckFailure, SemanticChecker,
-        },
+        hir::lowering::errors::{CopyDisciplineReason, CopyDisciplineViolation, SemanticCheckFailure, SemanticChecker},
     },
 };
 
@@ -280,7 +281,7 @@ impl ControlFlowScheduler {
     }
 
     /// 校验 `MIR` 控制流图的 block / terminator 一致性。
-    pub fn validate_mir_module(module: &MirModule) -> Result<(), HirError> {
+    pub fn validate_mir_module(module: &MirModule) -> Result<(), MirValidationError> {
         validate_mir_module(module)
     }
 }

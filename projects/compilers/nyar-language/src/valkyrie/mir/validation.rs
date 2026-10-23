@@ -13,12 +13,14 @@
 mod control_flow;
 mod diagnostics;
 mod effect_validation;
+mod errors;
 mod function_validation;
 mod module_validation;
 mod semantic_contract;
 mod symbols;
 mod type_inference;
 
+pub use errors::MirValidationError;
 pub use module_validation::validate_module;
 pub use semantic_contract::{SemanticMirContractError, semantic_observation, validate_semantic_module};
 pub use symbols::is_language_builtin_symbol;

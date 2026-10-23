@@ -1,10 +1,7 @@
 //! 可达块、跳转目标与跳转形状校验。
 
-use super::{diagnostics::display_type, type_inference::infer_operand_static_type};
-use crate::{
-    mir::{MirBlock, MirBlockRef, MirFunction, MirOperand, MirTerminator},
-    valkyrie::frontend::ParseError,
-};
+use super::{diagnostics::display_type, errors::MirValidationError, type_inference::infer_operand_static_type};
+use crate::mir::{MirBlock, MirBlockRef, MirFunction, MirOperand, MirTerminator};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn collect_reachable_blocks(function: &MirFunction) -> BTreeSet<MirBlockRef> {
@@ -48,7 +45,7 @@ pub(super) fn validate_jump_target(
     arguments: &[MirOperand],
     blocks: &BTreeMap<MirBlockRef, usize>,
     block_map: &BTreeMap<MirBlockRef, &MirBlock>,
-) -> Result<(), ParseError> {
+) -> Result<(), MirValidationError> {
     validate_jump_shape(&function.display_symbol, block.label.as_str(), target, arguments.len(), blocks)?;
     let Some(target_block) = block_map.get(&target)
     else {
@@ -64,15 +61,14 @@ pub(super) fn validate_jump_target(
             continue;
         };
         if argument_type != *parameter_type {
-            return Err(ParseError::Invalid { message: format!(
-                "控制流调度校验失败：`MIR` 函数 `{}` 的 block `{}` 跳向 `{}` 时，第 {} 个 Jump 参数类型为 `{}`，目标参数类型为 `{}`",
-                function.display_symbol,
-                block.label,
-                target_block.label,
-                index + 1,
-                display_type(&argument_type),
-                display_type(parameter_type)
-            ), span: None });
+            return Err(MirValidationError::JumpArgumentTypeMismatch {
+                function: function.display_symbol.clone(),
+                block: block.label.to_string(),
+                target_block: target_block.label.to_string(),
+                index,
+                argument_type,
+                parameter_type: parameter_type.clone(),
+            });
         }
     }
     Ok(())
@@ -83,15 +79,18 @@ pub(super) fn validate_jump_shape(
     target: MirBlockRef,
     argument_count: usize,
     blocks: &BTreeMap<MirBlockRef, usize>,
-) -> Result<(), ParseError> {
+) -> Result<(), MirValidationError> {
     let Some(expected_parameter_count) = blocks.get(&target).copied()
     else {
-        return Err(ParseError::Invalid { message: format!("控制流调度校验失败：函数 `{function_name}` 的 block `{block_label}` 跳转到了不存在的目标块"), span: None });
+        return Err(MirValidationError::JumpTargetMissing { function: function_name.to_string(), block: block_label.to_string() });
     };
     if expected_parameter_count != argument_count {
-        return Err(ParseError::Invalid { message: format!(
-            "控制流调度校验失败：函数 `{function_name}` 的 block `{block_label}` 传出的参数数量与目标块参数数量不一致"
-        ), span: None });
+        return Err(MirValidationError::JumpArgumentCountMismatch {
+            function: function_name.to_string(),
+            block: block_label.to_string(),
+            expected: expected_parameter_count,
+            actual: argument_count,
+        });
     }
     Ok(())
 }
@@ -101,11 +100,11 @@ pub(super) fn ensure_target_exists(
     block_label: &str,
     target: MirBlockRef,
     blocks: &BTreeMap<MirBlockRef, usize>,
-) -> Result<(), ParseError> {
+) -> Result<(), MirValidationError> {
     if blocks.contains_key(&target) {
         Ok(())
     }
     else {
-        Err(ParseError::Invalid { message: format!("控制流调度校验失败：函数 `{function_name}` �?block `{block_label}` 指向了不存在的目标块"), span: None })
+        Err(MirValidationError::TargetBlockMissing { function: function_name.to_string(), block: block_label.to_string() })
     }
 }
