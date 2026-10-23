@@ -1350,18 +1350,8 @@ fn resolve_expr_calls_at(
                 resolve_expr_calls(&mut arg.value, candidates, type_relations, locals, struct_fields, singleton_names, context);
             }
             *resolved = try_resolve_call(callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
-            if let Some(resolved) = resolved.as_mut() {
-                enrich_unite_variant_constructor_facts(
-                    callee,
-                    args,
-                    resolved,
-                    contextual_type,
-                    candidates,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                );
-            }
+            // enrich_unite_variant_constructor_facts 已移入 try_resolve_constructor_call，
+            // 由 Constructor 域专属路径独享——Function 候选不会被误改写为 unity 构造。
         }
         HirExprKind::FieldAccess { object, field, field_id } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
@@ -1997,6 +1987,112 @@ fn substitute_self_type(ty: &ValkyrieType, owner: Option<&Identifier>) -> Valkyr
     }
 }
 
+/// Constructor domain 专属解析路径。统一处理两种构造候选：
+/// 1. Owned variant constructor：枚举变体（`Some(x)`、`Fine(v)`），candidate.owner 有值
+/// 2. Free constructor / struct literal：结构体构造（`Range(...)`、`ArrayList { ... }`），owner 为 None
+///
+/// 两条子路径各自独立执行 symbol match → contextual_type instantiate → match_call_candidate，
+/// 共享 resolve_overload 和 enrich_unite_variant_constructor_facts（后者仅在此路径拥有调用权）。
+/// 与 Function 主路径彻底隔离，消除跨-domain 污染。
+fn try_resolve_constructor_call(
+    callee: &HirExpr,
+    args: &[HirCallArgument],
+    candidates: &[OverloadCandidate],
+    type_relations: &TypeRelationContext,
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &BTreeSet<Identifier>,
+    contextual_type: Option<&ValkyrieType>,
+) -> Option<HirResolvedCall> {
+    let (explicit_generic_arguments, callee) = peel_explicit_generic_arguments(callee);
+    let callee_name = extract_callable_name(callee)?;
+    let callee_path = NamePath::new(vec![callee_name.clone()]);
+
+    // --- 子路径 A：Owned variant constructor（枚举变体 Some(x)/Fine(v)）---
+    let owned_variant_constructors = candidates
+        .iter()
+        .filter(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.owner.is_some())
+        .filter(|candidate| candidate_variant_constructor_matches(candidate, &callee_name))
+        .filter_map(|candidate| {
+            if let Some(context) = contextual_type
+                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                && let Some(matched) = match_call_candidate(
+                    &instantiated, args, &explicit_generic_arguments,
+                    type_relations, locals, struct_fields, singleton_names,
+                )
+            {
+                return Some(matched);
+            }
+            match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+        })
+        .collect::<Vec<_>>();
+    if let Ok(resolved) = resolve_overload(&owned_variant_constructors) {
+        return Some(build_constructor_resolved_call(
+            callee, args, resolved, contextual_type, candidates, locals, struct_fields, singleton_names,
+        ));
+    }
+
+    // --- 子路径 B：Free constructor / struct literal（Range(...)/ArrayList {...}）---
+    let free_constructors = candidates
+        .iter()
+        .filter(|candidate| candidate.domain == OverloadDomain::Constructor && candidate.owner.is_none())
+        .filter(|candidate| aggregate_constructor_matches_name(candidate, &callee_path))
+        .filter_map(|candidate| {
+            if let Some(context) = contextual_type
+                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                && let Some(matched) = match_call_candidate(
+                    &instantiated, args, &explicit_generic_arguments,
+                    type_relations, locals, struct_fields, singleton_names,
+                )
+            {
+                return Some(matched);
+            }
+            match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
+        })
+        .collect::<Vec<_>>();
+    if let Ok(resolved) = resolve_overload(&free_constructors) {
+        return Some(build_constructor_resolved_call(
+            callee, args, resolved, contextual_type, candidates, locals, struct_fields, singleton_names,
+        ));
+    }
+
+    None
+}
+
+fn build_constructor_resolved_call(
+    callee: &HirExpr,
+    args: &[HirCallArgument],
+    resolved: OverloadCandidate,
+    contextual_type: Option<&ValkyrieType>,
+    candidates: &[OverloadCandidate],
+    locals: &BTreeMap<String, ValkyrieType>,
+    struct_fields: &AggregateFieldIndex,
+    singleton_names: &BTreeSet<Identifier>,
+) -> HirResolvedCall {
+    let has_receiver = candidate_has_receiver_parameter(&resolved);
+    let symbol = overload_symbol_path(&resolved);
+    let return_type = resolved.signature.return_type;
+    let mut call = HirResolvedCall {
+        declaration: resolved.declaration,
+        instance: resolved.instance,
+        sum_owner: resolved.sum_owner,
+        sum_variant: resolved.sum_variant,
+        intrinsic: resolved.intrinsic,
+        symbol,
+        domain: HirCallableDomain::Constructor,
+        return_type,
+        parameter_types: resolved.signature.params,
+        has_receiver,
+        extractor_payload_type: None,
+        requirement: None,
+    };
+    // enrichment 仅在 Constructor 专属路径调用，Function 候选不会被误改写
+    enrich_unite_variant_constructor_facts(
+        callee, args, &mut call, contextual_type, candidates, locals, struct_fields, singleton_names,
+    );
+    call
+}
+
 fn try_resolve_call(
     callee: &HirExpr,
     args: &[HirCallArgument],
@@ -2194,59 +2290,14 @@ fn try_resolve_call(
         }
     }
 
-    // unite/enum 变体构造（`Some(x)`、`Fine(v)`）在候选上带 `owner`，不能走自由函数路径。
-    let owned_variant_constructors = candidates
-        .iter()
-        .filter(|candidate| candidate.domain == OverloadDomain::Constructor)
-        .filter(|candidate| candidate.owner.is_some() && candidate_variant_constructor_matches(candidate, &callee_name))
-        .filter_map(|candidate| {
-            if let Some(context) = contextual_type {
-                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
-                    if let Some(matched) = match_call_candidate(
-                        &instantiated,
-                        args,
-                        &explicit_generic_arguments,
-                        type_relations,
-                        locals,
-                        struct_fields,
-                        singleton_names,
-                    ) {
-                        return Some(matched);
-                    }
-                }
-            }
-            match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
-        })
-        .collect::<Vec<_>>();
-    if let Ok(resolved) = resolve_overload(&owned_variant_constructors) {
-        let has_receiver = candidate_has_receiver_parameter(&resolved);
-        let symbol = overload_symbol_path(&resolved);
-        let return_type = resolved.signature.return_type;
-        let mut call = HirResolvedCall {
-            declaration: resolved.declaration,
-            instance: resolved.instance,
-            sum_owner: resolved.sum_owner,
-            sum_variant: resolved.sum_variant,
-            intrinsic: resolved.intrinsic,
-            symbol,
-            domain: HirCallableDomain::Constructor,
-            return_type,
-            parameter_types: resolved.signature.params,
-            has_receiver,
-            extractor_payload_type: None,
-            requirement: None,
-        };
-        enrich_unite_variant_constructor_facts(
-            callee,
-            args,
-            &mut call,
-            contextual_type,
-            candidates,
-            locals,
-            struct_fields,
-            singleton_names,
-        );
-        return Some(call);
+    // --- Constructor 域专属子路径（变体 + 结构体构造） ---
+    // 统一处理所有 Constructor 候选，包括 owned variant (Some/Fine) 和 free constructor (Range/ArrayList)。
+    // 必须在 Function 主路径之前尝试，因为 Constructor 和 Function 可能同名，且 Constructor 需要独立的
+    // contextual_type 反推 + aggregate_constructor_matches_name 末段对齐符号匹配。
+    if let Some(resolved) = try_resolve_constructor_call(
+        callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type,
+    ) {
+        return Some(resolved);
     }
 
     // 平坦运算符调用（`a + b` → `infix +(a, b)`）以首实参为接收者，必须走实例成员解析。
@@ -2277,42 +2328,20 @@ fn try_resolve_call(
         }
     }
 
+    // --- Function 主路径（自由函数 + intrinsic 内建） ---
+    // Constructor 候选已在上方专属子路径处理完毕，此处只看 Function domain。
     let enclosing_module = type_relations.enclosing_module();
-    let callee_path = NamePath::new(vec![callee_name.clone()]);
     let mut filtered = candidates
         .iter()
-        .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
+        .filter(|candidate| candidate.domain == OverloadDomain::Function && candidate.owner.is_none())
         .filter(|candidate| {
-            candidate.owner.is_none()
-                && match candidate.domain {
-                    // Constructor：结构体/聚合构造用末段对齐 fallback，允许跨 namespace 命中
-                    // 完整路径候选（如 `core.Range` 在 `app` namespace 里被 `Range(...)` 命中）。
-                    OverloadDomain::Constructor => aggregate_constructor_matches_name(candidate, &callee_path),
-                    // Function：自由函数保持 namespace 精确匹配 + imported export + intrinsic fallback。
-                    _ => symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
-                        || symbol_matches_imported_dependency_export(candidate, &callee_name)
-                        || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name)),
-                }
+            symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+                || symbol_matches_imported_dependency_export(candidate, &callee_name)
+                || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name))
         })
         .filter_map(|candidate| {
-            // contextual_type 反推泛型只对构造器候选（变体/结构体构造）有效。
-            // 普通函数的返回类型由声明决定，不能从外层 context 硬套——否则会把 __array_get
-            // 的裸 T 和 Some 外层的 Option<T> 做 unify，错误地把 T 绑定为 Option<T>。
-            if let Some(context) = contextual_type
-                && matches!(candidate.domain, OverloadDomain::Constructor)
-                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
-                && let Some(matched) = match_call_candidate(
-                    &instantiated,
-                    args,
-                    &explicit_generic_arguments,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                )
-            {
-                return Some(matched);
-            }
+            // Function 候选不做 contextual_type 反推——返回类型由声明决定，防止把裸泛型
+            // 参数（如 __array_get 的 T）被外层 Option<T> context 错误绑定。
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
         .collect::<Vec<_>>();
@@ -2329,9 +2358,6 @@ fn try_resolve_call(
     {
         return Some(call);
     }
-    if filtered.iter().any(|candidate| candidate.domain == OverloadDomain::Constructor) {
-        filtered.retain(|candidate| candidate.domain == OverloadDomain::Constructor);
-    }
     let resolved = resolve_overload(&filtered).ok()?;
     let has_receiver = candidate_has_receiver_parameter(&resolved);
     let symbol = overload_symbol_path(&resolved);
@@ -2343,11 +2369,7 @@ fn try_resolve_call(
         sum_variant: resolved.sum_variant,
         intrinsic: resolved.intrinsic,
         symbol,
-        domain: match resolved.domain {
-            OverloadDomain::Function => HirCallableDomain::Function,
-            OverloadDomain::Constructor => HirCallableDomain::Constructor,
-            OverloadDomain::Extractor => HirCallableDomain::Extractor,
-        },
+        domain: HirCallableDomain::Function,
         return_type,
         parameter_types: resolved.signature.params,
         has_receiver,
