@@ -212,6 +212,128 @@ impl IdKind for ProvenanceIdKind {
 /// 源码 / 合成 provenance 身份。
 pub type ProvenanceId = SemanticId<ProvenanceIdKind>;
 
+/// 目标指令可承载的数值标量宽度。
+///
+/// 只登记当前两个后端（`nyar-vm` 与 `wasm`）都有原生指令来源的宽度。
+/// 新增宽度必须先有两个后端各自的编码事实，再在此登记；不预留空槽位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum NumericScalar {
+    /// 有符号 32 位整数：`nyar-vm` 有 `I32*` opcode，`wasm` 有 `i32.*` 指令。
+    I32,
+}
+
+impl NumericScalar {
+    /// 源 `[intrinsic("<t>.<op>")]` 的宽度段 → 标量身份；未知宽度返回 `None`。
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "i32" => Some(Self::I32),
+            _ => None,
+        }
+    }
+
+    /// 诊断 / 注册表用的宽度段（不是运行时分派键）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::I32 => "i32",
+        }
+    }
+}
+
+/// 标量数值运算。
+///
+/// 有限集合：只包含两个后端都能编码的运算。比较类运算的结果类型是 `bool`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum NumericOp {
+    /// 加法。
+    Add,
+    /// 减法。
+    Sub,
+    /// 乘法。
+    Mul,
+    /// 有符号除法。
+    Div,
+    /// 有符号取余。
+    Rem,
+    /// 相等比较。
+    Eq,
+    /// 不等比较。
+    Ne,
+    /// 有符号小于比较。
+    Lt,
+    /// 有符号小于等于比较。
+    Le,
+    /// 有符号大于比较。
+    Gt,
+    /// 有符号大于等于比较。
+    Ge,
+}
+
+impl NumericOp {
+    /// 源 `[intrinsic("<t>.<op>")]` 的运算段 → 运算身份；未知运算返回 `None`。
+    ///
+    /// **禁止**为没有两个后端指令来源的运算（例如 `i32.and`、`i32.pow`）登记别名。
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "add" => Some(Self::Add),
+            "sub" => Some(Self::Sub),
+            "mul" => Some(Self::Mul),
+            "div" => Some(Self::Div),
+            "rem" => Some(Self::Rem),
+            "eq" => Some(Self::Eq),
+            "ne" => Some(Self::Ne),
+            "lt" => Some(Self::Lt),
+            "le" => Some(Self::Le),
+            "gt" => Some(Self::Gt),
+            "ge" => Some(Self::Ge),
+            _ => None,
+        }
+    }
+
+    /// 诊断 / 注册表用的运算段（不是运行时分派键）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Sub => "sub",
+            Self::Mul => "mul",
+            Self::Div => "div",
+            Self::Rem => "rem",
+            Self::Eq => "eq",
+            Self::Ne => "ne",
+            Self::Lt => "lt",
+            Self::Le => "le",
+            Self::Gt => "gt",
+            Self::Ge => "ge",
+        }
+    }
+
+    /// 该运算产生 `bool` 结果（比较）而非标量结果。
+    pub fn is_comparison(self) -> bool {
+        matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
+    }
+}
+
+/// 已冻结的标量数值 identity：`<宽度>.<运算>`。
+///
+/// 这是语言 callable（例如 core 的 `i32.+`）到目标指令的结构化身份；
+/// 它不携带宿主符号名，也不按字符串在 backend 分派。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NumericIntrinsic {
+    /// 目标标量宽度。
+    pub scalar: NumericScalar,
+    /// 目标运算。
+    pub op: NumericOp,
+}
+
+impl NumericIntrinsic {
+    /// 构造一个新的结构化数值 identity。
+    pub const fn new(scalar: NumericScalar, op: NumericOp) -> Self {
+        Self { scalar, op }
+    }
+}
+
 /// 语言与 emitter 共享的有限内置 / intrinsic 操作。
 ///
 /// 注册一次；后端消费 id，而不是 `builtin.array.push` 这类路径字符串。
@@ -232,19 +354,25 @@ pub enum IntrinsicId {
     IsNull,
     /// 可空解包（表面名 `unwrap_null` 仅迁移期）。
     UnwrapNull,
+    /// 结构化标量数值运算；由 backend 直接编码为目标算术指令。
+    Numeric(NumericIntrinsic),
 }
 
 impl IntrinsicId {
     /// 写入 `CallIntrinsic` 操作数的稳定稠密下标（与 VM 分派表对齐；不是诊断路径）。
-    pub fn bytecode_index(self) -> u32 {
+    ///
+    /// 只有 legacy `CallIntrinsic` 系列有下标；数值 identity 必须走目标算术指令，
+    /// 因此返回 `None`，禁止借用 `CallIntrinsic` 冒充可执行。
+    pub fn bytecode_index(self) -> Option<u32> {
         match self {
-            Self::ArrayPush => 0,
-            Self::ArrayLen => 1,
-            Self::ArrayGet => 2,
-            Self::ArraySet => 3,
-            Self::RefDeref => 4,
-            Self::IsNull => 5,
-            Self::UnwrapNull => 6,
+            Self::ArrayPush => Some(0),
+            Self::ArrayLen => Some(1),
+            Self::ArrayGet => Some(2),
+            Self::ArraySet => Some(3),
+            Self::RefDeref => Some(4),
+            Self::IsNull => Some(5),
+            Self::UnwrapNull => Some(6),
+            Self::Numeric(_) => None,
         }
     }
 
@@ -263,15 +391,16 @@ impl IntrinsicId {
     }
 
     /// 诊断 / 注册表路径段（不是运行时分派键）。
-    pub fn diagnostic_path(self) -> &'static str {
+    pub fn diagnostic_path(self) -> String {
         match self {
-            Self::ArrayPush => "builtin.array.push",
-            Self::ArrayLen => "builtin.array.length",
-            Self::ArrayGet => "builtin.array.get",
-            Self::ArraySet => "builtin.array.set",
-            Self::RefDeref => "builtin.ref.deref",
-            Self::IsNull => "builtin.null.is_null",
-            Self::UnwrapNull => "builtin.null.unwrap",
+            Self::ArrayPush => "builtin.array.push".to_string(),
+            Self::ArrayLen => "builtin.array.length".to_string(),
+            Self::ArrayGet => "builtin.array.get".to_string(),
+            Self::ArraySet => "builtin.array.set".to_string(),
+            Self::RefDeref => "builtin.ref.deref".to_string(),
+            Self::IsNull => "builtin.null.is_null".to_string(),
+            Self::UnwrapNull => "builtin.null.unwrap".to_string(),
+            Self::Numeric(numeric) => format!("{}.{}", numeric.scalar.as_str(), numeric.op.as_str()),
         }
     }
 
@@ -280,6 +409,8 @@ impl IntrinsicId {
     /// 仅识别：
     /// - 语言 builtin 路径 `builtin.array.*` / `builtin.ref.deref`
     /// - 私有 `[intrinsic(...)]` 种子名（`__array_len` 等，可带限定前缀）
+    /// - `[intrinsic("<t>.<op>")]` 的**恰好两段**标量数值形态，且宽度与运算都已在
+    ///   [`NumericScalar`] / [`NumericOp`] 中登记；未知宽度或运算一律 `None`
     ///
     /// **禁止**按 `Array.get` / 类型名末段猜 —— 那会把 `HashMap.get` 等绑错。
     pub fn resolve_from_segments(parts: &[&str]) -> Option<Self> {
@@ -294,6 +425,12 @@ impl IntrinsicId {
                 ("null", "unwrap") | ("null", "unwrap_null") => Some(Self::UnwrapNull),
                 _ => None,
             };
+        }
+        if let [scalar, op] = parts {
+            // 只登记已冻结的 `<t>.<op>` 形态；其余两段路径仍按既有单段种子名处理。
+            if let (Some(scalar), Some(op)) = (NumericScalar::from_name(scalar), NumericOp::from_name(op)) {
+                return Some(Self::Numeric(NumericIntrinsic::new(scalar, op)));
+            }
         }
         match parts.last().copied() {
             Some("__array_len") => Some(Self::ArrayLen),
@@ -310,7 +447,7 @@ impl IntrinsicId {
 
 impl fmt::Display for IntrinsicId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.diagnostic_path())
+        f.write_str(&self.diagnostic_path())
     }
 }
 

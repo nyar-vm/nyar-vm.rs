@@ -560,6 +560,9 @@ fn lower_operation(
         CanonicalOperation::SumVariantIs { nominal, variant, object } => {
             InstructionKind::SumVariantIs { nominal: *nominal, variant: *variant, object: value(*object) }
         }
+        CanonicalOperation::Numeric { scalar, op, left, right } => {
+            InstructionKind::Numeric { scalar: *scalar, op: *op, left: value(*left), right: value(*right) }
+        }
         unsupported => return Err(miette!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
 }

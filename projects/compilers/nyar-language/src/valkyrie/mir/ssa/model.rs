@@ -572,6 +572,21 @@ pub enum MirOperation {
         /// 目标类型。
         ty: ValkyrieType,
     },
+    /// 标量数值运算：由 `[intrinsic("<t>.<op>")]` 声明冻结的结构化 identity 降低而来。
+    ///
+    /// 它不是普通调用：callee 声明（例如 `__i32_add`）只是语言运算符的来源，
+    /// 目标指令由 backend 按 `scalar` / `op` 直接编码。结果类型由语义校验决定
+    /// （比较为 `bool`，其余为标量本身）。
+    Numeric {
+        /// 目标标量宽度。
+        scalar: nyar_types::NumericScalar,
+        /// 目标运算。
+        op: nyar_types::NumericOp,
+        /// 左操作数。
+        left: MirOperand,
+        /// 右操作数。
+        right: MirOperand,
+    },
     /// 将值写入具名局部变量（`let` 绑定）。
     ///
     /// `name` 为变量名，`value` 为待写入的操作数。
