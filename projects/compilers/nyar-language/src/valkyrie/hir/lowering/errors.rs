@@ -99,8 +99,8 @@ pub enum HirError {
     InvalidDiscriminator {
         /// 所属聚合名。
         aggregate: String,
-        /// 失败场景：`not_non_negative_integer` / `duplicate_tag`。
-        scenario: String,
+        /// 失败场景。
+        failure: DiscriminatorFailure,
         /// 涉及的变体名（None 表示 aggregate 级问题）。
         variant: Option<String>,
         /// 具体值（None 表示未知）。
@@ -806,6 +806,25 @@ pub enum CopyDisciplineReason {
     ReturnNonCopyValueType,
 }
 
+/// `sum`/`unite` discriminator 分配失败的具体场景。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscriminatorFailure {
+    /// `[tag(...)]` 或 `Variant = ...` 不是非负整数字面量。
+    NotNonNegativeInteger,
+    /// 两个变体得到相同 tag。
+    DuplicateTag,
+}
+
+impl DiscriminatorFailure {
+    /// 稳定场景名，用于诊断参数。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotNonNegativeInteger => "not_non_negative_integer",
+            Self::DuplicateTag => "duplicate_tag",
+        }
+    }
+}
+
 /// 单条值类型 copy 纪律违规事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CopyDisciplineViolation {
@@ -980,10 +999,10 @@ impl From<HirError> for DiagnosticRow {
             HirError::SumUniteMissingDeclaration { name, .. } => {
                 row = row.with_arg("aggregate", DiagnosticArg::Aggregate(name.clone()));
             }
-            HirError::InvalidDiscriminator { aggregate, scenario, variant, value, .. } => {
+            HirError::InvalidDiscriminator { aggregate, failure, variant, value, .. } => {
                 row = row
                     .with_arg("aggregate", DiagnosticArg::Aggregate(aggregate.clone()))
-                    .with_arg("scenario", DiagnosticArg::String(scenario.clone()));
+                    .with_arg("scenario", DiagnosticArg::String(failure.as_str().to_string()));
                 if let Some(v) = variant {
                     row = row.with_arg("variant", DiagnosticArg::CallableShort(v.clone()));
                 }
@@ -1637,8 +1656,13 @@ impl std::fmt::Display for HirError {
             Self::SumUniteMissingDeclaration { name, .. } => {
                 write!(f, "sum/unite `{name}` missing declaration")
             }
-            Self::InvalidDiscriminator { aggregate, scenario, variant, value, .. } => {
-                write!(f, "invalid discriminator in `{aggregate}` ({scenario})");
+            Self::InvalidDiscriminator { aggregate, failure, variant, value, .. } => {
+                match failure {
+                    DiscriminatorFailure::NotNonNegativeInteger => {
+                        write!(f, "discriminator in `{aggregate}` must be a non-negative integer literal")?;
+                    }
+                    DiscriminatorFailure::DuplicateTag => write!(f, "duplicate discriminator in `{aggregate}`")?,
+                }
                 if let Some(v) = variant {
                     write!(f, " variant={v}")?;
                 }
@@ -1747,7 +1771,7 @@ impl std::fmt::Display for HirError {
                 Ok(())
             }
             Self::CopyDisciplineViolations { violations, .. } => {
-                write!(f, "value type copy discipline is violated")?;
+                write!(f, "copy discipline violation")?;
                 for violation in violations {
                     write!(f, "; {} in `{}`", copy_discipline_reason_name(violation.reason), violation.owner)?;
                 }
@@ -1769,14 +1793,14 @@ impl std::fmt::Display for HirError {
             }
             Self::SourceGroupIdentityInvalid { dependency_key, empty, .. } => {
                 if *empty {
-                    write!(f, "source group dependency identity is empty")
+                    write!(f, "Compiler 源码组身份为空")
                 }
                 else {
-                    write!(f, "source group dependency identity `{dependency_key}` is duplicated")
+                    write!(f, "Compiler 源码组身份为空或重复: `{dependency_key}`")
                 }
             }
             Self::SourceGroupDependencyUnavailable { group, dependency, .. } => {
-                write!(f, "source group `{group}` depends on `{dependency}`, which was not provided before it")
+                write!(f, "依赖 `{dependency}` 未在 `{group}` 之前提供")
             }
             Self::SourceFileIdentityInvalid { group, path, empty, .. } => {
                 if *empty {
@@ -1818,7 +1842,7 @@ impl std::fmt::Display for HirError {
                 f,
                 "dependency declaration registration requires the full compiler source closure, got {imported_export_count} imported exports"
             ),
-            Self::UnionNotLowered { union_name, .. } => write!(f, "named union `{union_name}` is not lowered into HIR"),
+            Self::UnionNotLowered { union_name, .. } => write!(f, "named union `{union_name}` is not yet lowered into HIR"),
             Self::UnexpandedTemplateItem { .. } => write!(f, "TGrammar template item reached HIR lowering without expansion"),
             Self::UnsupportedRootItem { item_kind, .. } => {
                 write!(f, "root item kind `{item_kind}` is not supported by HIR lowering")

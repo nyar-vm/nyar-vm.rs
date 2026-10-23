@@ -38,7 +38,7 @@ use crate::{
 mod trait_binding;
 pub mod errors;
 pub use errors::HirError;
-use errors::IndexSpace;
+use errors::{DiscriminatorFailure, IndexSpace};
 use nyar_types::{DiagnosticSource, DiagnosticSpan, NyarType};
 
 /// 源码组 / 索引注册等无源码定位失败使用的占位 source 身份。
@@ -645,7 +645,7 @@ fn resolve_sum_variant_tag(owner: &crate::types::Identifier, variant: &HirVarian
     let tag = if let Some(discriminator) = &variant.discriminator {
         integer_literal_u32(discriminator).ok_or_else(|| HirError::InvalidDiscriminator {
             aggregate: owner.to_string(),
-            scenario: "not_non_negative_integer".into(),
+            failure: DiscriminatorFailure::NotNonNegativeInteger,
             variant: Some(variant.name.to_string()),
             value: None,
             source: plan_source(),
@@ -673,7 +673,7 @@ fn validate_sum_type_discriminators(owner: &crate::types::Identifier, variants: 
         if !seen.insert(tag) {
             return Err(HirError::InvalidDiscriminator {
                 aggregate: owner.to_string(),
-                scenario: "duplicate_tag".into(),
+                failure: DiscriminatorFailure::DuplicateTag,
                 variant: Some(variant.name.to_string()),
                 value: Some(tag.to_string()),
                 source: plan_source(),
