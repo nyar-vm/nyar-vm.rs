@@ -69,7 +69,12 @@ micro collect<I, T, C>(item: T, self: I) -> C
         .expect("the static trait call must have a resolved HIR contract");
     assert_eq!(resolved.symbol.to_string(), "FromIterator.from_iterator");
     assert_eq!(resolved.parameter_types.len(), 2);
-    assert_eq!(resolved.parameter_types[0], nyar_language::types::hir::ValkyrieType::Named(nyar_language::types::Identifier::new("T")));
+    match &resolved.parameter_types[0] {
+        nyar_language::types::hir::ValkyrieType::Generic(g) => {
+            assert_eq!(g.name.as_str(), "T", "from_iterator first parameter must bind to collect's generic T");
+        }
+        other => panic!("expected Generic(T), got {other:?}"),
+    }
 }
 
 #[test]
