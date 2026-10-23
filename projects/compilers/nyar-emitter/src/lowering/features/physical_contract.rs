@@ -192,15 +192,15 @@ fn build_function_plan(
             let location = format!("block {} instruction {instruction_index}", block.id.0);
             let callee = match callee {
                 ExecutableOperand::Item(instance) => *instance,
-                ExecutableOperand::Symbol(path) if is_language_builtin_symbol(path) => {
-                    continue;
-                }
+                // batch 7：语言 intrinsic 不再以 Symbol path 到达 physical lowering。
+                // intrinsic 调用必须在 Semantic MIR 降级为 Call { callee: Item(instance) }
+                // 才能通过 adaptor/import binding 消费。
                 ExecutableOperand::Symbol(_) => {
                     return Err(PhysicalPlanError::new(
                         "BPHYS004",
                         function,
                         location.clone(),
-                        "ordinary callable must carry a resolved item identity",
+                        "ordinary callable must carry a resolved item identity; intrinsic calls must degrade to Call with Item(instance) in Semantic MIR",
                     ));
                 }
                 ExecutableOperand::Value(_) | ExecutableOperand::Constant(_) => continue,
@@ -271,10 +271,12 @@ fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
     }
 }
 
-/// Keep aligned with `semantic_mir_contract::is_language_builtin_symbol`.
-fn is_language_builtin_symbol(path: &NamePath) -> bool {
-    let parts = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-    nyar_types::IntrinsicId::resolve_from_segments(&parts).is_some()
+/// 已删除（batch 7）：按符号路径猜测 intrinsic 的旁路。
+/// intrinsic 调用必须降级为 `Call { callee: Item(instance) }` 才能通过 adaptor/import binding。
+#[allow(dead_code)]
+fn _is_language_builtin_symbol_unused(path: &NamePath) -> bool {
+    let _ = path;
+    false
 }
 
 fn collect_text_projections(

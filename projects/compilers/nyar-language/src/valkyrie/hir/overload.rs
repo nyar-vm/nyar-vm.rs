@@ -451,7 +451,12 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     vec![length, push, get, set, cardinal_get, cardinal_set]
 }
 
-/// 按候选符号的 [`IntrinsicId`] 做形实参合同（非调用点拼写）。
+/// 按候选的结构化 intrinsic 身份做形实参合同。
+///
+/// **收紧（batch 7）**：只信任 `candidate.intrinsic`（由 `build_*_candidate` 给源码 `[intrinsic(...)]`
+/// 种子或 `language_builtin_candidates()` 给语言内建挂的结构化身份）。
+/// 禁止按符号路径段猜测 intrinsic——那条旁路会把私有种子误绑定成内建 opcode，
+/// 绕过 adaptor/import binding，让没有后端实现的 intrinsic 悄悄生成 Semantic MIR。
 fn match_intrinsic_builtin_candidate(
     candidate: &OverloadCandidate,
     args: &[HirCallArgument],
@@ -460,9 +465,8 @@ fn match_intrinsic_builtin_candidate(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<OverloadCandidate> {
-    // 结构化 intrinsic 优先；源码 `[intrinsic(...)]` 种子仍由符号路径通道识别。
-    let parts = candidate.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-    match candidate.intrinsic.or_else(|| IntrinsicId::resolve_from_segments(&parts))? {
+    let intrinsic = candidate.intrinsic?;
+    match intrinsic {
         IntrinsicId::ArrayPush => {
             if args.len() != 2 {
                 return None;
@@ -2224,10 +2228,13 @@ fn try_resolve_call(
     }
     if let HirExprKind::Path(path) = &callee.kind {
         if path.parts().len() >= 2 {
-            let segments = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-            // `builtin.array.length` 等语言 intrinsic 路径不得走限定自由函数解析；
+            // `builtin.array.*` 等语言 intrinsic 路径不得走限定自由函数解析；
             // 否则会提前 `return None` 且永远匹配不到 `language_builtin_candidates`。
-            if IntrinsicId::resolve_from_segments(&segments).is_some() {
+            //
+            // **收紧（batch 7）**：只认 `builtin` 命名空间前缀，不再按完整路径段猜 intrinsic 身份。
+            // 身份必须由 `language_builtin_candidates()` 或 `[intrinsic(...)]` 声明结构化提供。
+            let head = path.parts().first().map(|p| p.as_str()).unwrap_or("");
+            if head == "builtin" {
                 // fall through to callee_name / intrinsic matching below
             }
             else {

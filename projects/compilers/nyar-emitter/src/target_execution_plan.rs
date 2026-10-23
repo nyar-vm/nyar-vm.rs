@@ -497,14 +497,26 @@ fn lower_operation(
             }
         }
         CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
-        CanonicalOperation::ArrayGet { array, index } => InstructionKind::ArrayGet { array: value(*array), index: value(*index) },
-        CanonicalOperation::ArraySet { array, index, value: stored } => {
-            InstructionKind::ArraySet { array: value(*array), index: value(*index), value: value(*stored) }
+        // Intrinsic 专用 opcode 必须在 lowering 阶段降级为 Call { callee: Callable(instance) }
+        // 让 linker adaptor / backend TargetExecutionPlan 链路消费。到达这里说明 lowering 没收紧。
+        CanonicalOperation::ArrayGet { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"))
         }
-        CanonicalOperation::ArrayLength { array } => InstructionKind::ArrayLength { array: value(*array) },
-        CanonicalOperation::ArrayPush { array, value: pushed } => InstructionKind::ArrayPush { array: value(*array), value: value(*pushed) },
-        CanonicalOperation::NullIsNull { value: operand } => InstructionKind::NullIsNull { value: value(*operand) },
-        CanonicalOperation::NullUnwrap { value: operand } => InstructionKind::NullUnwrap { value: value(*operand) },
+        CanonicalOperation::ArraySet { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"))
+        }
+        CanonicalOperation::ArrayLength { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"))
+        }
+        CanonicalOperation::ArrayPush { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"))
+        }
+        CanonicalOperation::NullIsNull { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"))
+        }
+        CanonicalOperation::NullUnwrap { .. } => {
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"))
+        }
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
             array_type: lower_type(program, *array_type)?,
             length: value(*length),
