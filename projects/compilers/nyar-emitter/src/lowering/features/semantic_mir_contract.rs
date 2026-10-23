@@ -425,7 +425,6 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
         ArrayPush { array, value } => vec![array, value],
         NullIsNull { value } => vec![value],
         NullUnwrap { value } => vec![value],
-        Numeric { left, right, .. } => vec![left, right],
     }
 }
 

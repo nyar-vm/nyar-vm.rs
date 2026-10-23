@@ -291,46 +291,6 @@ impl CanonicalSemanticMir {
                             }
                             vec![*source]
                         }
-                        CanonicalOperation::Numeric { scalar: _, op, left, right } => {
-                            let Some(left_ty) = function.value_types.get(left).copied()
-                            else {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *left,
-                                });
-                            };
-                            let Some(right_ty) = function.value_types.get(right).copied()
-                            else {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *right,
-                                });
-                            };
-                            // 数值 intrinsic 的实参必须是同一标量身份；宽度不在这里重新推断。
-                            if left_ty != right_ty {
-                                return Err(CanonicalMirError::OperationOperandTypeMismatch {
-                                    function: *key,
-                                    instruction: instruction.id,
-                                    value: *right,
-                                });
-                            }
-                            if instruction.results.len() != 1 {
-                                return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });
-                            }
-                            let Some(result_ty) = instruction.results.first().and_then(|value| function.value_types.get(value)).copied()
-                            else {
-                                return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
-                            };
-                            // 比较结果是语言 `bool`，必须与标量身份分离；其余运算结果就是标量本身。
-                            // 布尔 / 标量的身份由前端解析，本层只拒绝复用同一身份。
-                            let result_matches = if op.is_comparison() { result_ty != left_ty } else { result_ty == left_ty };
-                            if !result_matches {
-                                return Err(CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
-                            }
-                            vec![*left, *right]
-                        }
                         CanonicalOperation::StoreVar { name: _, value, ty } => {
                             if instruction.results.len() > 1 {
                                 return Err(CanonicalMirError::OperationResultArityMismatch { function: *key, instruction: instruction.id });

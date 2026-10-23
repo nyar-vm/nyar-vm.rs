@@ -320,19 +320,6 @@ pub enum InstructionKind {
         /// 已确认为非 null 的可空值操作数。
         value: Operand,
     },
-    /// 标量数值运算；由已冻结的 `<t>.<op>` intrinsic identity 降低而来。
-    ///
-    /// 目标指令由 backend 按 `scalar` / `op` 编码；不携带 callee 名字或 opcode 猜测。
-    Numeric {
-        /// 目标标量宽度。
-        scalar: crate::NumericScalar,
-        /// 目标运算。
-        op: crate::NumericOp,
-        /// 左操作数。
-        left: Operand,
-        /// 右操作数。
-        right: Operand,
-    },
 }
 
 /// Array slot initialization for [`InstructionKind::ArrayNew`].

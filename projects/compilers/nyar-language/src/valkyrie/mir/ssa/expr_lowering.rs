@@ -521,33 +521,6 @@ impl MirBuilder {
             .or_else(|| self.try_lower_array_push_intrinsic(resolved, callee, arguments, expected_type))
     }
 
-    /// 把已冻结的标量数值 intrinsic 调用降低为 [`MirOperation::Numeric`]。
-    ///
-    /// 身份只来自 `HirResolvedCall.intrinsic`（`[intrinsic("<t>.<op>")]` 声明）；
-    /// 未绑定声明 / 实例的候选仍走普通 `Call`，由 adaptor 消费。
-    fn try_lower_numeric_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-    ) -> Option<MirOperand> {
-        let Some(IntrinsicId::Numeric(numeric)) = Self::callee_intrinsic_id(resolved, callee)
-        else {
-            return None;
-        };
-        if !Self::has_intrinsic_adaptor_binding(resolved) || arguments.len() != 2 {
-            return None;
-        }
-        let call = resolved.expect("numeric intrinsic requires a resolved call contract");
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(
-            MirOperation::Numeric { scalar: numeric.scalar, op: numeric.op, left: arguments[0].clone(), right: arguments[1].clone() },
-            vec![value],
-        );
-        self.value_types.insert(value, call.return_type.clone());
-        Some(MirOperand::Value(value))
-    }
-
     /// Positional `Range(a, b)` ??????????`StructNew`???????????`Call`??
     fn try_lower_struct_constructor_call(&mut self, call: &HirResolvedCall, arguments: &[MirOperand]) -> Option<MirOperand> {
         if call.sum_owner.is_some() || call.sum_variant.is_some() {
@@ -746,9 +719,6 @@ impl MirBuilder {
                     if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
                         return operand;
                     }
-                    if let Some(operand) = self.try_lower_numeric_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                        return operand;
-                    }
                     let return_type = self.return_type_for_resolved_call(&callee, resolved_call);
                     self.push_call_returning(callee, arguments, return_type);
                 }
@@ -909,9 +879,6 @@ impl MirBuilder {
                     return operand;
                 }
                 if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                    return operand;
-                }
-                if let Some(operand) = self.try_lower_numeric_intrinsic(resolved.as_ref(), &callee, &arguments) {
                     return operand;
                 }
                 let function_ty = self.function_type_of_callee(&callee);

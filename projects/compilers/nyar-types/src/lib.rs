@@ -37,8 +37,7 @@ pub use self::{
     registries::{AttributeRegistry, AttributeRegistryError},
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
-        ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, NumericIntrinsic,
-        NumericOp, NumericScalar, ProvenanceId,
+        ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, ProvenanceId,
         SemanticId, TypeId, TypeInstanceId, ValueIdentity, VariantId, builtin_attribute, layout_choice,
     },
     source::{Location, Position, SourceID, SourceSpan},

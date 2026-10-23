@@ -118,7 +118,6 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                         CanonicalOperation::StructNew { .. }
                         | CanonicalOperation::Copy { .. }
                         | CanonicalOperation::Cast { .. }
-                        | CanonicalOperation::Numeric { .. }
                         | CanonicalOperation::StoreVar { .. }
                         | CanonicalOperation::AggregateCopy { .. }
                         | CanonicalOperation::LoadConstant { .. }

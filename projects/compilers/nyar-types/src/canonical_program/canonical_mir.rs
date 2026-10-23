@@ -3,7 +3,7 @@
 //! 本模块拥有已解析、已类型化的 Semantic MIR：块、指令、操作、终结符与
 //! effect 类别，以及验证失败的确定性原因。这里不引入 AST 运算符类别。
 
-use crate::semantic_ids::{FieldId, InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, NumericOp, NumericScalar, TypeId, VariantId};
+use crate::semantic_ids::{FieldId, InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
 use std::collections::BTreeMap;
 
 /// Semantic MIR 中的稳定基本块身份。
@@ -55,17 +55,6 @@ pub enum CanonicalOperation {
         source: MirValueId,
         /// 转换后的目标类型。
         ty: TypeId,
-    },
-    /// 标量数值运算；由已冻结的 `<t>.<op>` intrinsic identity 降低而来。
-    Numeric {
-        /// 目标标量宽度。
-        scalar: NumericScalar,
-        /// 目标运算。
-        op: NumericOp,
-        /// 左操作数。
-        left: MirValueId,
-        /// 右操作数。
-        right: MirValueId,
     },
     /// 将 SSA 值绑定到命名局部（`let`）。
     StoreVar {

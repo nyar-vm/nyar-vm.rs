@@ -14,7 +14,7 @@ use nyar::NamePath;
 use nyar_bytecode::{
     NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
 };
-use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId, NumericOp, NumericScalar};
+use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{FragmentSubmission, TargetExecutionPlan};
@@ -81,10 +81,7 @@ impl<'a> BytecodeEmitter<'a> {
 
     /// 按 [`IntrinsicId`] 稠密下标调用内置；operand1 = bytecode index，operand2 = argc。
     fn emit_call_intrinsic(&mut self, intrinsic: IntrinsicId, arg_count: i32) {
-        let index = intrinsic
-            .bytecode_index()
-            .unwrap_or_else(|| panic!("intrinsic `{}` 没有 Nyar `CallIntrinsic` 下标", intrinsic.diagnostic_path()));
-        nyar_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, index as i32, arg_count);
+        nyar_bytecode::emit_imm2(&mut self.code_bytes, NyarHeadCode::CallIntrinsic, intrinsic.bytecode_index() as i32, arg_count);
     }
 
     fn emit_jump_placeholder(&mut self, opcode: NyarHeadCode, target: MirBlockRef) -> usize {
@@ -280,26 +277,6 @@ fn lower_mir_function_to_bytecode(
         }
     }
     lowerer.emitter.patch_pending_jumps();
-}
-
-/// 把已冻结的数值 intrinsic identity 映射到 Nyar 原生 I32 指令。
-///
-/// 未登记宽度或运算不存在目标实现，因此这里只接受与 [`NumericScalar::I32`]
-/// 有等价指令的运算；不存在默认值或按名字补齐。
-fn numeric_opcode(scalar: NumericScalar, op: NumericOp) -> NyarHeadCode {
-    match (scalar, op) {
-        (NumericScalar::I32, NumericOp::Add) => NyarHeadCode::I32Add,
-        (NumericScalar::I32, NumericOp::Sub) => NyarHeadCode::I32Sub,
-        (NumericScalar::I32, NumericOp::Mul) => NyarHeadCode::I32Mul,
-        (NumericScalar::I32, NumericOp::Div) => NyarHeadCode::I32DivS,
-        (NumericScalar::I32, NumericOp::Rem) => NyarHeadCode::I32RemS,
-        (NumericScalar::I32, NumericOp::Eq) => NyarHeadCode::I32Eq,
-        (NumericScalar::I32, NumericOp::Ne) => NyarHeadCode::I32Ne,
-        (NumericScalar::I32, NumericOp::Lt) => NyarHeadCode::I32LtS,
-        (NumericScalar::I32, NumericOp::Le) => NyarHeadCode::I32LeS,
-        (NumericScalar::I32, NumericOp::Gt) => NyarHeadCode::I32GtS,
-        (NumericScalar::I32, NumericOp::Ge) => NyarHeadCode::I32GeS,
-    }
 }
 
 struct NyarMirLowerer<'a, 'e> {
@@ -499,15 +476,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     panic!("nyar-vm NullUnwrap operand not materializable in `{}`", self.mir_fn.symbol);
                 }
                 self.emitter.emit_call_intrinsic(IntrinsicId::UnwrapNull, 1);
-                if let Some(output) = output {
-                    self.store_to_local(output);
-                }
-            }
-            MirInstructionKind::Numeric { scalar, op, left, right } => {
-                let opcode = numeric_opcode(*scalar, *op);
-                self.emit_operand(left);
-                self.emit_operand(right);
-                self.emitter.emit_plain(opcode);
                 if let Some(output) = output {
                     self.store_to_local(output);
                 }

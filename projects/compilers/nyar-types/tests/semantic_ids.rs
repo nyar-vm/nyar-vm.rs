@@ -58,7 +58,7 @@ fn branded_ids_are_distinct_types() {
 #[test]
 fn intrinsic_and_attribute_ids_are_extensible() {
     assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
-    assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), Some(0));
+    assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);
     assert_eq!(IntrinsicId::from_bytecode_index(2), Some(IntrinsicId::ArrayGet));
     assert_eq!(IntrinsicId::from_bytecode_index(99), None);
     assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]), Some(IntrinsicId::ArrayPush));
@@ -80,21 +80,4 @@ fn intrinsic_and_attribute_ids_are_extensible() {
     assert_eq!(builtin_attribute::lookup_seed("custom_attr"), None);
     let cap = ImportCapability::new("env", "console_log");
     assert_eq!(cap.to_string(), "env::console_log");
-}
-
-#[test]
-fn numeric_intrinsics_have_structural_identity_only_for_supported_scalar_and_op() {
-    let identity = IntrinsicId::resolve_from_segments(&["i32", "add"]).expect("`i32.add` 必须有结构化 identity");
-    assert_eq!(identity, IntrinsicId::Numeric(NumericIntrinsic::new(NumericScalar::I32, NumericOp::Add)));
-    assert_eq!(identity.diagnostic_path(), "i32.add");
-    assert_eq!(identity.bytecode_index(), None, "数值 identity 不得借用 `CallIntrinsic` 下标");
-
-    // 反例：没有目标指令来源的宽度 / 运算必须无法解析成 identity。
-    for scalar in ["u8", "u16", "i8", "i16", "i64", "u32", "u64", "isize", "usize", "f32", "f64", "bool"] {
-        assert_eq!(IntrinsicId::resolve_from_segments(&[scalar, "add"]), None, "宽度 `{scalar}` 不应登记数值 identity");
-    }
-    for op in ["pow", "and", "or", "xor", "shl", "shr", "neg", "bit_not", "min", "max"] {
-        assert_eq!(IntrinsicId::resolve_from_segments(&["i32", op]), None, "运算 `{op}` 不应登记数值 identity");
-    }
-    assert_eq!(IntrinsicId::resolve_from_segments(&["i32", "add", "extra"]), None, "不允许多段猜测");
 }

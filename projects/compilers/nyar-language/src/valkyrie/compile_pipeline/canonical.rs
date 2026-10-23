@@ -708,9 +708,6 @@ fn lower_operation(
         }),
         MirOperation::Copy { source } => Ok(CanonicalOperation::Copy { source: value(source)? }),
         MirOperation::Cast { source, ty } => Ok(CanonicalOperation::Cast { source: value(source)?, ty: type_id(ids, ty)? }),
-        MirOperation::Numeric { scalar, op, left, right } => {
-            Ok(CanonicalOperation::Numeric { scalar: *scalar, op: *op, left: value(left)?, right: value(right)? })
-        }
         MirOperation::AggregateCopy { source, dest } => {
             Ok(CanonicalOperation::AggregateCopy { source: value(source)?, destination: value(dest)? })
         }

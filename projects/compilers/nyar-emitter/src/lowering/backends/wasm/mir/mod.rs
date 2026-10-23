@@ -26,7 +26,7 @@ use crate::{
     nyar_backend_wasi::{WasmBinaryModule, WasmSection},
 };
 
-use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId, NumericOp, NumericScalar};
+use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
 
 use super::{
     super::{
@@ -1140,26 +1140,6 @@ pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinary
     module.sections.push(WasmSection { id: 0, name: Some("nyar.value_aggregate".to_string()), bytes: payload.into_bytes() });
 }
 
-/// 把已冻结的数值 intrinsic identity 映射到 wasm 原生指令。
-///
-/// 未登记宽度或运算不存在 wasm 指令来源，因此这里只接受与
-/// [`NumericScalar::I32`] 有等价指令的运算；不存在默认值或按名字补齐。
-fn wasm_numeric_opcode(scalar: NumericScalar, op: NumericOp) -> WasmOpcode {
-    match (scalar, op) {
-        (NumericScalar::I32, NumericOp::Add) => WasmOpcode::I32Add,
-        (NumericScalar::I32, NumericOp::Sub) => WasmOpcode::I32Sub,
-        (NumericScalar::I32, NumericOp::Mul) => WasmOpcode::I32Mul,
-        (NumericScalar::I32, NumericOp::Div) => WasmOpcode::I32DivS,
-        (NumericScalar::I32, NumericOp::Rem) => WasmOpcode::I32RemS,
-        (NumericScalar::I32, NumericOp::Eq) => WasmOpcode::I32Eq,
-        (NumericScalar::I32, NumericOp::Ne) => WasmOpcode::I32Ne,
-        (NumericScalar::I32, NumericOp::Lt) => WasmOpcode::I32LtS,
-        (NumericScalar::I32, NumericOp::Le) => WasmOpcode::I32LeS,
-        (NumericScalar::I32, NumericOp::Gt) => WasmOpcode::I32GtS,
-        (NumericScalar::I32, NumericOp::Ge) => WasmOpcode::I32GeS,
-    }
-}
-
 fn lower_mir_function_to_wasm_bytes(
     submission: &FragmentSubmission,
     mir_fn: &MirFunction,
@@ -1961,15 +1941,6 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::NullUnwrap { value } => {
                 // `try?` / pattern lowering already branches on `NullIsNull` before unwrap.
                 self.emit_operand_coerced(value, WASM_GC_ANYREF);
-                if let Some(output) = instruction_primary_result(instruction) {
-                    self.store_scalar(output);
-                }
-            }
-            MirInstructionKind::Numeric { scalar, op, left, right } => {
-                let opcode = wasm_numeric_opcode(*scalar, *op);
-                self.emit_operand(left);
-                self.emit_operand(right);
-                opcode.encode(&mut self.code);
                 if let Some(output) = instruction_primary_result(instruction) {
                     self.store_scalar(output);
                 }
