@@ -89,9 +89,6 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
         match ty {
-            ValkyrieType::Named(name) => {
-                linked.type_surface_spellings.insert(*id, name.clone());
-            }
             ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
                 if let Some(aggregate) = module.structs.iter().find(|item| item.declaration == Some(*declaration)) {
                     linked.type_surface_spellings.insert(*id, Identifier::new(&aggregate.name));
@@ -803,14 +800,6 @@ fn lower_operation(
             Ok(CanonicalOperation::FieldSet { object: value(object)?, field: *field, value: value(stored)? })
         }
         _ => Err(error_without_module("CAN009", format!("操作没有无损 canonical 形状: {operation:?}"))),
-    }
-}
-
-fn aggregate_owner(ty: &ValkyrieType) -> Option<String> {
-    match ty {
-        ValkyrieType::Named(name) => Some(name.to_string()),
-        ValkyrieType::Apply(base, _) => aggregate_owner(base),
-        _ => None,
     }
 }
 
