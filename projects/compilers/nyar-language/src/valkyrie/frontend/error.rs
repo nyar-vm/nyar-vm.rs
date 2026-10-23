@@ -24,20 +24,14 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    /// 构造无 span 的无效输入错误。
-    pub fn invalid(message: impl Into<String>) -> Self {
-        Self::Invalid { message: message.into(), span: None }
-    }
-
-    /// 构造带 span 的无效输入错误。
-    pub fn invalid_at(message: impl Into<String>, span: Range<usize>) -> Self {
-        Self::Invalid { message: message.into(), span: Some(span) }
-    }
-
     /// 将 Oak 解析错误映射为前端 `ParseError`（保留 `source_offset`）。
     pub fn from_oak(error: oak_core::OakError) -> Self {
         let message = error.to_string();
-        if let Some(start) = error.source_offset() { Self::invalid_at(message, start..start.saturating_add(1)) } else { Self::invalid(message) }
+        if let Some(start) = error.source_offset() {
+            Self::Invalid { message, span: Some(start..start.saturating_add(1)) }
+        } else {
+            Self::Invalid { message, span: None }
+        }
     }
 }
 
