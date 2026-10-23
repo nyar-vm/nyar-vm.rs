@@ -49,7 +49,7 @@ micro handle() -> i32 {
             MirOperation::LoadConstant { constant: MirConstant::Utf8(text), .. } if text == "request" => {
                 saw_utf8_request = true;
             }
-            MirOperation::Call { callee: MirOperand::Callable(instance), deferred_member: None, .. } if *instance == begin_phase => {
+            MirOperation::Call { callee: MirOperand::Callable(instance), .. } if *instance == begin_phase => {
                 saw_begin = true;
             }
             _ => {}
@@ -61,7 +61,7 @@ micro handle() -> i32 {
     let mut saw_end = false;
     for block in &function.blocks {
         for instruction in &block.instructions {
-            if let MirOperation::Call { callee: MirOperand::Callable(instance), deferred_member: None, .. } = &instruction.kind {
+            if let MirOperation::Call { callee: MirOperand::Callable(instance), .. } = &instruction.kind {
                 if *instance == end_phase {
                     saw_end = true;
                 }

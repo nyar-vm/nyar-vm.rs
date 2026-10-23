@@ -30,7 +30,7 @@ micro caller() -> [WasmValueType] {
     let mut found = false;
     for block in &caller.blocks {
         for instruction in &block.instructions {
-            if let MirOperation::Call { callee: MirOperand::Callable(instance), arguments, deferred_member: None } = &instruction.kind {
+            if let MirOperation::Call { callee: MirOperand::Callable(instance), arguments } = &instruction.kind {
                 if mir.callable_symbols.get(instance).is_some_and(|path| path.ends_with("wasm_i32_types")) {
                     found = true;
                     assert_eq!(arguments.len(), 1);

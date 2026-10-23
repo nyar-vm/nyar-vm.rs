@@ -207,7 +207,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         statements: Vec::new(),
         type_aliases: Vec::new(),
     };
-    lower_function_semantic(
+    let (func, _) = lower_function_semantic(
         &module,
         &function,
         &mut AggregateLayoutPlan::default(),
@@ -218,7 +218,8 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         Vec::new(),
         &BTreeMap::new(),
         &mut Vec::new(),
-    )
+    );
+    func
 }
 
 /// 构造一个最小模块并降低为 `MIR`。

@@ -72,7 +72,6 @@ fn module_with_contract_call(contract_instance: ItemInstanceId, provider_instanc
                     MirOperation::Call {
                         callee: MirOperand::Callable(contract_instance),
                         arguments: vec![MirOperand::Value(MirValueRef(0))],
-                        deferred_member: None,
                     },
                     vec![],
                 )],
@@ -126,7 +125,6 @@ fn selected_host_provider_rewrites_contract_calls_to_provider_instance() {
         MirOperation::Call {
             callee: MirOperand::Callable(provider_instance),
             arguments: vec![MirOperand::Value(MirValueRef(0))],
-            deferred_member: None,
         }
     );
     assert!(module.external_calls.is_empty());
@@ -196,7 +194,6 @@ fn host_provider_ignores_decoy_with_same_display_symbol() {
         MirOperation::Call {
             callee: MirOperand::Callable(provider_instance),
             arguments: vec![MirOperand::Value(MirValueRef(0))],
-            deferred_member: None,
         }
     );
 }

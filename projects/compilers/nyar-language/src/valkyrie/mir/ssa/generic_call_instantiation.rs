@@ -245,13 +245,16 @@ type MonomorphCache = BTreeMap<(ItemInstanceId, BTreeMap<GenericBinderId, Valkyr
 ///
 /// `seed_pool` 提供已 lowering 的依赖模块泛型种子：consumer 的调用点必须能在
 /// 完整源码闭包内实例化依赖函数，不能因为种子不在本模块而跳过。
-/// `dispatch` 是声明期冻结的成员分派表，用于解析 `Call.deferred_member`。
+/// `dispatch` 是声明期冻结的成员分派表，用于解析延迟成员要求。
+/// `pending_requirements` 由 lowering 收集（InstructionId → HirCallRequirement），
+/// 在此处按 InstructionId 索引到具体函数/块/指令后，用 dispatch 表解析 witness。
 pub(super) fn materialize_generic_call_instances(
     functions: &mut Vec<MirFunction>,
     next_instance: &mut u32,
     seed_pool: &[MirFunction],
     dispatch: &[MirDispatchEntry],
     diagnostics: &mut Vec<MirDiagnostic>,
+    pending_requirements: &[(nyar_types::InstructionId, HirCallRequirement)],
 ) {
     let mut cache = MonomorphCache::new();
     let mut cursor = 0usize;
@@ -279,30 +282,43 @@ pub(super) fn materialize_generic_call_instances(
                 *callee = MirOperand::Callable(mono);
             }
         }
-        let requirement_sites = collect_requirement_sites(&functions[cursor]);
-        for (block_index, instruction_index, requirement) in requirement_sites {
-            // 种子自身仍带泛型 binder：具体 witness 由调用点的 monomorph 决定。
-            // 未实例化的种子不产生诊断，也不会被当成入口链接。
-            if contains_unresolved_generic(&requirement.subject) {
-                continue;
-            }
-            let result_type = functions[cursor].blocks[block_index].instructions[instruction_index]
-                .results
-                .first()
-                .and_then(|result| functions[cursor].value_types.get(result).cloned());
-            match resolve_requirement_callee(&requirement, result_type.as_ref(), functions, seed_pool, dispatch, next_instance, &mut cache) {
-                Ok(mono) => {
-                    if let MirOperation::Call { callee, deferred_member, .. } =
-                        &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind
-                    {
-                        *callee = MirOperand::Callable(mono);
-                        *deferred_member = None;
-                    }
-                }
-                Err(detail) => diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: detail }),
+        cursor += 1;
+    }
+    // 先用 InstructionId 索引定位 pending requirements 的具体位置。
+    let mut instr_to_pos: BTreeMap<nyar_types::InstructionId, (usize, usize, usize)> = BTreeMap::new();
+    for (func_idx, func) in functions.iter().enumerate() {
+        for (block_idx, block) in func.blocks.iter().enumerate() {
+            for (instr_idx, instr) in block.instructions.iter().enumerate() {
+                instr_to_pos.insert(instr.id, (func_idx, block_idx, instr_idx));
             }
         }
-        cursor += 1;
+    }
+    for (instr_id, requirement) in pending_requirements {
+        // 种子自身仍带泛型 binder：具体 witness 由调用点的 monomorph 决定。
+        // 未实例化的种子不产生诊断，也不会被当成入口链接。
+        if contains_unresolved_generic(&requirement.subject) {
+            continue;
+        }
+        let Some(&(func_idx, block_idx, instr_idx)) = instr_to_pos.get(instr_id) else {
+            diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
+                symbol: format!("pending requirement references unknown instruction {:?}", instr_id),
+            });
+            continue;
+        };
+        let result_type = functions[func_idx].blocks[block_idx].instructions[instr_idx]
+            .results
+            .first()
+            .and_then(|result| functions[func_idx].value_types.get(result).cloned());
+        match resolve_requirement_callee(&requirement, result_type.as_ref(), functions, seed_pool, dispatch, next_instance, &mut cache) {
+            Ok(mono) => {
+                if let MirOperation::Call { callee, .. } =
+                    &mut functions[func_idx].blocks[block_idx].instructions[instr_idx].kind
+                {
+                    *callee = MirOperand::Callable(mono);
+                }
+            }
+            Err(detail) => diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: detail }),
+        }
     }
 }
 
@@ -381,18 +397,6 @@ fn resolve_requirement_callee(
         .ok_or_else(|| format!("member `{}` witness cannot be fully substituted", requirement.member))
 }
 
-fn collect_requirement_sites(function: &MirFunction) -> Vec<(usize, usize, HirCallRequirement)> {
-    let mut sites = Vec::new();
-    for (block_index, block) in function.blocks.iter().enumerate() {
-        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            if let MirOperation::Call { deferred_member: Some(requirement), .. } = &instruction.kind {
-                sites.push((block_index, instruction_index, requirement.clone()));
-            }
-        }
-    }
-    sites
-}
-
 fn collect_instantiation_sites(
     function: &MirFunction,
     functions: &[MirFunction],
@@ -401,7 +405,7 @@ fn collect_instantiation_sites(
     let mut sites = Vec::new();
     for (block_index, block) in function.blocks.iter().enumerate() {
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            let MirOperation::Call { callee: MirOperand::Callable(seed), arguments, deferred_member: None } = &instruction.kind
+            let MirOperation::Call { callee: MirOperand::Callable(seed), arguments } = &instruction.kind
             else {
                 continue;
             };
@@ -501,11 +505,6 @@ fn specialize_operation(operation: &mut MirOperation, substitutions: &BTreeMap<G
             for argument in type_args.iter_mut() {
                 *argument = apply_type_substitution(argument, substitutions);
             }
-        }
-        // 种子内的延迟成员要求随种子代入改写接收者；未闭合的要求保留到下一次
-        // 实例化，由分派表按完整代入选择 witness。
-        MirOperation::Call { deferred_member: Some(requirement), .. } => {
-            requirement.subject = apply_type_substitution(&requirement.subject, substitutions);
         }
         _ => {}
     }

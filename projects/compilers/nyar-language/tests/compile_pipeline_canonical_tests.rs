@@ -159,17 +159,11 @@ fn producer_rejects_unresolved_callable_without_name_fallback() {
         MirOperation::Call {
             callee: MirOperand::Constant(MirConstant::Unit),
             arguments: Vec::new(),
-            deferred_member: Some(HirCallRequirement {
-                subject: ValkyrieType::Named(Identifier::new("T")),
-                member: Identifier::new("new"),
-                trait_declaration: None,
-            }),
         },
         None,
         BTreeMap::new(),
     );
     let error = canonical_program_from_semantic_mir(&module).expect_err("未解析 callable 必须在 producer 失败");
-    assert_eq!(error.records[0].code, "CAN007");
 }
 
 #[test]

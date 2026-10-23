@@ -591,8 +591,6 @@ pub enum MirOperation {
         callee: MirOperand,
         /// 语义实参（有 receiver 时显式为第 0 个）。
         arguments: Vec<MirOperand>,
-        /// 单态化前待闭合的 HIR 成员要求；进入 Canonical 前必须清空并冻结 `callee`。
-        deferred_member: Option<crate::types::hir::HirCallRequirement>,
     },
     /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {
