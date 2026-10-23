@@ -58,7 +58,7 @@ pub fn validate_semantic_module(module: &HirModule) -> Result<(), HirError> {
     }
     if !all_errors.is_empty() {
         let joined = all_errors.join("; ");
-        return Err(HirError::invalid(joined));
+        return Err(HirError::lowering_failed(joined));
     }
     check_pattern_refutability(module)?;
     ControlFlowScheduler::validate_hir_module(module)
@@ -204,7 +204,7 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
     }
     if !violations.is_empty() {
         let joined = violations.join("; ");
-        return Err(HirError::invalid(joined));
+        return Err(HirError::lowering_failed(joined));
     }
     Ok(())
 }

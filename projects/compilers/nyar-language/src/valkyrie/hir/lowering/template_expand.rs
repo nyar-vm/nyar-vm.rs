@@ -172,7 +172,7 @@ fn statement_node_to_statement(item: StatementNode) -> Result<Statement, HirErro
 
         StatementNode::Template(template) => Ok(Statement::Template(template)),
 
-        other => Err(HirError::invalid(format!("TGrammar 展开后不能在块内保留顶层项: {other:?}"))),
+        other => Err(HirError::lowering_failed(format!("TGrammar 展开后不能在块内保留顶层项: {other:?}"))),
     }
 }
 
@@ -216,9 +216,9 @@ fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, 
     // 元表达式 splice 发生在语句上下文中，须经块内重解析而非模块根。
     let wrapped = format!("micro __tg_fragment() -> void {{ {snippet}; }}");
     let root = parse_source_with_language(&wrapped, &production_language())?;
-    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| HirError::invalid("TGrammar 元表达式展开失败"))?
+    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| HirError::lowering_failed("TGrammar 元表达式展开失败"))?
     else {
-        return Err(HirError::invalid("TGrammar 元表达式展开失败"));
+        return Err(HirError::lowering_failed("TGrammar 元表达式展开失败"));
     };
     Ok(micro.body.statements.iter().cloned().map(statement_to_statement_node).collect())
 }
@@ -233,7 +233,7 @@ fn statement_to_statement_node(statement: Statement) -> StatementNode {
 
 fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
     if !is_arch_scrutinee(source, &match_node.header) {
-        return Err(HirError::invalid("TGrammar `<% match %>` 当前仅支持按 `arch` 展开"));
+        return Err(HirError::lowering_failed("TGrammar `<% match %>` 当前仅支持按 `arch` 展开"));
     }
 
     for arm in &match_node.arms {

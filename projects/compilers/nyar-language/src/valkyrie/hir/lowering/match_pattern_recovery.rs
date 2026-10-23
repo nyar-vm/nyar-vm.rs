@@ -58,16 +58,16 @@ pub fn recover_match_arms(
     match_span: Range<usize>,
 ) -> Result<Vec<(HirPattern, TermExpression)>, HirError> {
     let interior = extract_match_block_interior(source, match_span)
-        .ok_or_else(|| HirError::invalid("无法从 match 源码块恢复 pattern"))?;
+        .ok_or_else(|| HirError::lowering_failed("无法从 match 源码块恢复 pattern"))?;
     let raw_arms = split_match_arms(&interior);
     if raw_arms.is_empty() {
-        return Err(HirError::invalid("match 块未包含可恢复的 arm"));
+        return Err(HirError::lowering_failed("match 块未包含可恢复的 arm"));
     }
     raw_arms
         .into_iter()
         .map(|(pattern_text, body_text)| {
             let pattern = parse_recovered_pattern(&pattern_text)
-                .ok_or_else(|| HirError::invalid(format!("无法恢复 match pattern `{pattern_text}`")))?;
+                .ok_or_else(|| HirError::lowering_failed(format!("无法恢复 match pattern `{pattern_text}`")))?;
             let body = parse_arm_body_expression(&body_text)?;
             Ok((pattern, body))
         })
@@ -267,7 +267,7 @@ fn parse_hir_literal(text: &str) -> Option<HirLiteral> {
 fn parse_arm_body_expression(body: &str) -> Result<TermExpression, HirError> {
     let trimmed = body.trim();
     if trimmed.is_empty() {
-        return Err(HirError::invalid("match arm 缺少 body"));
+        return Err(HirError::lowering_failed("match arm 缺少 body"));
     }
     let wrapper = format!("micro __match_arm_body() {{ {trimmed} }}");
     let root = parse_source(&wrapper)?;
@@ -278,7 +278,7 @@ fn parse_arm_body_expression(body: &str) -> Result<TermExpression, HirError> {
             StatementNode::Micro(micro) if micro.name.name == "__match_arm_body" => Some(micro),
             _ => None,
         })
-        .ok_or_else(|| HirError::invalid("无法解析 match arm body"))?;
+        .ok_or_else(|| HirError::lowering_failed("无法解析 match arm body"))?;
     micro
         .body
         .statements
@@ -287,5 +287,5 @@ fn parse_arm_body_expression(body: &str) -> Result<TermExpression, HirError> {
             oak_valkyrie::ast::Statement::Expression(expr_stmt) if !expr_stmt.semi => Some(expr_stmt.expr.clone()),
             _ => None,
         })
-        .ok_or_else(|| HirError::invalid("match arm body 必须是表达式"))
+        .ok_or_else(|| HirError::lowering_failed("match arm body 必须是表达式"))
 }

@@ -1,7 +1,6 @@
 use nyar_language::{ValkyrieCompiler, types::SourceID};
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn generic_static_call_uses_declared_trait_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4301 });
     compiler
@@ -32,7 +31,6 @@ micro invoke(value: bool) -> bool { return constrained(value); }
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn generic_static_call_preserves_associated_equations() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4302 });
     let hir = compiler
@@ -75,7 +73,6 @@ micro collect<I, T, C>(item: T, self: I) -> C
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn trait_associated_result_binds_array_intrinsic_argument() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4303 });
     let base = r#"
@@ -159,7 +156,6 @@ micro collect_array<I, T>(self: I) -> bool
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn imported_impl_method_contract_survives_dependency_boundary() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4307 });
     let provider = compiler

@@ -90,9 +90,8 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
-        let mut pending_requirements: Vec<(nyar_types::InstructionId, crate::types::hir::HirCallRequirement)> = Vec::new();
         for function in module.functions.iter().filter(|function| !function.is_abstract) {
-            let (func, reqs) = lower_function_semantic(
+            functions.push(lower_function_semantic(
                 module,
                 function,
                 &mut aggregate_layouts,
@@ -103,9 +102,7 @@ impl MirLowerer {
                 Vec::new(),
                 &host_runtime_callables,
                 &mut diagnostics,
-            );
-            functions.push(func);
-            pending_requirements.extend(reqs);
+            ));
         }
         functions.extend(lower_singleton_method_functions(
             module,
@@ -115,7 +112,6 @@ impl MirLowerer {
             dispatch,
             &host_runtime_callables,
             &mut diagnostics,
-            &mut pending_requirements,
         ));
         functions.extend(lower_impl_method_functions(
             module,
@@ -125,7 +121,6 @@ impl MirLowerer {
             dispatch,
             &host_runtime_callables,
             &mut diagnostics,
-            &mut pending_requirements,
         ));
         // 编译器内建宿主合同只在函数真正发射 begin/end phase 调用时进入外部调用闭包。
         // 全局注册表存在本身不构成依赖，否则每个模块都会凭空多出未使用的导入。
@@ -159,7 +154,7 @@ impl MirLowerer {
         if *next_mono < local_floor {
             *next_mono = local_floor;
         }
-        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono, seed_pool, dispatch, &mut diagnostics, &pending_requirements);
+        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono, seed_pool, dispatch, &mut diagnostics);
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);

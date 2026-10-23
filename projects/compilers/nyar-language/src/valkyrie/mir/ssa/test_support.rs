@@ -207,7 +207,7 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         statements: Vec::new(),
         type_aliases: Vec::new(),
     };
-    let (func, _) = lower_function_semantic(
+    let func = lower_function_semantic(
         &module,
         &function,
         &mut AggregateLayoutPlan::default(),

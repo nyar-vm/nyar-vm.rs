@@ -18,7 +18,7 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), HirError> 
     let blocks: BTreeMap<_, _> = function.blocks.iter().map(|block| (block.id, block.parameters.len())).collect();
     let block_map: BTreeMap<_, _> = function.blocks.iter().map(|block| (block.id, block)).collect();
     if !blocks.contains_key(&function.entry) {
-        return Err(HirError::invalid(format!("控制流调度校验失败：函数 `{}` 的 entry block 不存在", function.display_symbol)));
+        return Err(HirError::lowering_failed(format!("控制流调度校验失败：函数 `{}` 的 entry block 不存在", function.display_symbol)));
     }
 
     let reachable_blocks = collect_reachable_blocks(function);
@@ -57,7 +57,7 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), HirError> 
             MirTerminator::StateDispatch { state, cases, default_target } => {
                 ensure_target_exists(&function.display_symbol, block.label.as_str(), *default_target, &blocks)?;
                 if !function.value_types.contains_key(state) {
-                    return Err(HirError::invalid(format!(
+                    return Err(HirError::lowering_failed(format!(
                         "控制流调度校验失败：函数 `{}` 的 dispatch block `{}` 引用了未知 state 值",
                         function.display_symbol, block.label
                     )));
