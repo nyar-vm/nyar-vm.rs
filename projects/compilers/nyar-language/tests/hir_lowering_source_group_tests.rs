@@ -176,7 +176,6 @@ fn materialized_hir_requires_call_resolution_before_semantic_success() {
 }
 
 #[test]
-#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_closure_materialization_precedes_call_validation() {
     let groups = vec![
         CompilerSourceGroup {
