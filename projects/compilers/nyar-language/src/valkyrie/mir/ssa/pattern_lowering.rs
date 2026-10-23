@@ -980,7 +980,7 @@ impl MirBuilder {
         found
     }
 
-    /// Extractor ???? extractor payload??????????????????
+    /// 把 extractor payload 绑定到 extractor 各字段的模式绑定上。
     pub(super) fn bind_extractor_pattern_from_payload(&mut self, extractor: &HirExtractorPattern, payload: MirOperand) {
         let resolved = extractor_resolved_call(extractor);
         match extractor {
@@ -1140,15 +1140,14 @@ impl MirBuilder {
         extracted
     }
 
-    /// ?????? lowering ????????????? fallback ????
+    /// 无法完成 lowering 的模式匹配回退路径。
     ///
-    /// ??????????????????? lowering?extractor ? resolved?
-    /// scrutinee ?????tuple/object ???????????????
-    /// `MirDiagnostic::PatternLoweringFailed` ????? `Bool(false)`?
-    /// ???? emit ??? trap ? `PatternMatch` ???
+    /// 模式类型或 extractor 未 resolved 时，scrutinee 的 tuple/object 形状无法验证，
+    /// 这里记录 `MirDiagnostic::PatternLoweringFailed` 并返回 `Bool(false)`，
+    /// 由 emit 阶段决定 trap 还是保留 `PatternMatch` 检查。
     pub(super) fn lower_fallback_pattern_match(&mut self, pattern: HirPattern, _value: MirOperand) -> MirOperand {
         self.diagnostics
-            .push(MirDiagnostic::PatternLoweringFailed { pattern, reason: "???? lowering ? MIR ?????????? extractor ??".to_string() });
+            .push(MirDiagnostic::PatternLoweringFailed { pattern, reason: "模式 lowering 缺少 MIR 可验证的 extractor 身份".to_string() });
         MirOperand::Constant(MirConstant::Bool(false))
     }
 }
