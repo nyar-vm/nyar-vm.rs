@@ -145,6 +145,33 @@ pub enum HirError {
         /// dispatch block 标签。
         block: String,
     },
+    /// frontend 解析 / 暂存阶段失败。
+    ///
+    /// 原样转发 frontend 生产的 `ParseError`（parser、staging 边界的事实所有者），
+    /// HIR 不重新拼装解析消息。
+    FrontendRejected(crate::valkyrie::frontend::ParseError),
+    /// TGrammar 模板展开失败。
+    TemplateExpansionFailed {
+        /// 触发失败的模板构造。
+        construct: TemplateConstruct,
+        /// 结构化失败原因。
+        failure: TemplateFailure,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `match` 源码恢复失败。
+    MatchRecoveryFailed {
+        /// 恢复阶段。
+        stage: MatchRecoveryStage,
+        /// 涉及的 pattern 文本（仅 pattern 恢复阶段携带）。
+        pattern: Option<String>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// HIR lowering 失败（通用 fallback，携带已解析的结构化信息）。
     LoweringFailed {
         /// 场景标识。
@@ -182,6 +209,86 @@ pub enum HirError {
     },
 }
 
+/// TGrammar 模板构造类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateConstruct {
+    /// 元表达式 `<% ... %>`。
+    MetaExpression,
+    /// `loop _ in start..end` 常量范围展开。
+    Loop,
+    /// 按 `arch` 选择分支的 `match`。
+    Match,
+    /// 块内模板片段展开。
+    BlockFragment,
+}
+
+/// TGrammar 模板展开的结构化失败原因。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateFailure {
+    /// 元表达式为空。
+    EmptyExpression,
+    /// 表达式后仍有无法求值的语法。
+    TrailingTokens,
+    /// 表达式在未读完时结束。
+    IncompleteExpression,
+    /// 括号未闭合。
+    UnclosedParenthesis,
+    /// 出现无法求值的 token。
+    UnevaluableToken,
+    /// 整数字面量无法解析成 `i64`。
+    IntegerLiteralUnparsable,
+    /// 比较两侧类型不兼容。
+    IncompatibleComparisonOperands,
+    /// `loop` 头部短于 `_ in start..end`。
+    LoopHeaderTooShort,
+    /// `loop` 绑定名不是丢弃绑定 `_`。
+    LoopBindingNotDiscard,
+    /// `loop` 头部缺少 `in` 关键字。
+    LoopMissingInKeyword,
+    /// `loop` 头部在范围表达式之后仍有无法求值的语法。
+    LoopHeaderTrailingTokens,
+    /// `loop` 缺少范围表达式。
+    LoopRangeMissing,
+    /// `loop` 范围不是 `start..end` 形态。
+    RangeShapeUnsupported,
+    /// 范围端点不是整数字面量。
+    RangeEndpointNotInteger,
+    /// 范围起点大于终点。
+    LoopRangeInvalid {
+        /// 起点。
+        start: i64,
+        /// 终点。
+        end: i64,
+    },
+    /// `match` 的 scrutinee 不是 `arch`。
+    NonArchScrutinee,
+    /// 展开结果不能作为块内语句保留。
+    BlockFragmentUnsupportedNode {
+        /// 无法保留的节点类别（稳定短名，不是 `Debug` 输出）。
+        kind: String,
+    },
+    /// 元表达式重新解析后不是单个 `micro` 声明。
+    FragmentNotMicroDeclaration {
+        /// 重新解析产出的顶层项数量。
+        produced_items: usize,
+    },
+}
+
+/// `match` 源码恢复阶段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchRecoveryStage {
+    /// 从源码 span 恢复 `match` 块内部文本。
+    BlockInterior,
+    /// `match` 块没有可恢复的 arm。
+    Arms,
+    /// 恢复 arm 的 pattern。
+    Pattern,
+    /// arm body 为空。
+    ArmBody,
+    /// arm body 不是表达式。
+    ArmBodyExpression,
+}
+
 impl HirError {
     /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
     pub fn lowering_failed(message: impl Into<String>) -> Self {
@@ -203,6 +310,26 @@ impl HirError {
         }
     }
 
+    /// TGrammar 模板展开失败；span 指向触发失败的模板 token 流。
+    pub(crate) fn template_expansion_failed(construct: TemplateConstruct, failure: TemplateFailure, span: DiagnosticSpan) -> Self {
+        Self::TemplateExpansionFailed {
+            construct,
+            failure,
+            source: DiagnosticSource { id: "<template>".into(), revision: None },
+            span,
+        }
+    }
+
+    /// `match` 源码恢复失败；span 指向被恢复的 `match` 块。
+    pub(crate) fn match_recovery_failed(stage: MatchRecoveryStage, pattern: Option<String>, span: DiagnosticSpan) -> Self {
+        Self::MatchRecoveryFailed {
+            stage,
+            pattern,
+            source: DiagnosticSource { id: "<match>".into(), revision: None },
+            span,
+        }
+    }
+
     fn code(&self) -> &'static str {
         match self {
             Self::UnresolvedCall { .. } => "valkyrie.hir.unresolved_call",
@@ -218,6 +345,9 @@ impl HirError {
             Self::MirControlFlowRejected(_) => "valkyrie.mir.control_flow_rejected",
             Self::MirEntryBlockMissing { .. } => "valkyrie.mir.entry_block_missing",
             Self::MirUnknownStateValue { .. } => "valkyrie.mir.unknown_state_value",
+            Self::FrontendRejected(_) => "valkyrie.frontend.rejected",
+            Self::TemplateExpansionFailed { .. } => "valkyrie.hir.template_expansion_failed",
+            Self::MatchRecoveryFailed { .. } => "valkyrie.hir.match_recovery_failed",
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
@@ -309,6 +439,31 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("function", DiagnosticArg::CallableShort(function.clone()))
                     .with_arg("block", DiagnosticArg::String(block.clone()));
             }
+            HirError::FrontendRejected(error) => {
+                row = row.with_cause(error.to_string());
+            }
+            HirError::TemplateExpansionFailed { construct, failure, .. } => {
+                row = row
+                    .with_arg("construct", DiagnosticArg::String(template_construct_name(*construct).to_string()))
+                    .with_arg("failure", DiagnosticArg::String(template_failure_name(failure).to_string()));
+                if let TemplateFailure::LoopRangeInvalid { start, end } = failure {
+                    row = row
+                        .with_arg("range_start", DiagnosticArg::Int(*start))
+                        .with_arg("range_end", DiagnosticArg::Int(*end));
+                }
+                if let TemplateFailure::BlockFragmentUnsupportedNode { kind } = failure {
+                    row = row.with_arg("node_kind", DiagnosticArg::String(kind.clone()));
+                }
+                if let TemplateFailure::FragmentNotMicroDeclaration { produced_items } = failure {
+                    row = row.with_arg("produced_items", DiagnosticArg::Int(*produced_items as i64));
+                }
+            }
+            HirError::MatchRecoveryFailed { stage, pattern, .. } => {
+                row = row.with_arg("stage", DiagnosticArg::String(match_recovery_stage_name(*stage).to_string()));
+                if let Some(pattern) = pattern {
+                    row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
+                }
+            }
             HirError::LoweringFailed { scenario, details, .. } => {
                 row = row.with_arg("scenario", DiagnosticArg::String(scenario.clone()));
                 for (k, v) in details {
@@ -349,6 +504,95 @@ fn mir_diagnostic_message(diagnostic: &crate::mir::MirDiagnostic) -> String {
         MirDiagnostic::UnresolvedNominalIdentity { type_name } => format!("MIR lowering unresolved nominal identity `{type_name}`"),
         MirDiagnostic::UnresolvedFieldIdentity { field } => format!("MIR lowering unresolved field identity `{field}`"),
         MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
+    }
+}
+
+/// frontend 失败事实的缺省 source 身份。
+fn frontend_source(_error: &crate::valkyrie::frontend::ParseError) -> DiagnosticSource {
+    DiagnosticSource { id: "<frontend>".into(), revision: None }
+}
+
+/// 从 frontend `ParseError` 提取可定位的源码 span。
+fn frontend_span(error: &crate::valkyrie::frontend::ParseError) -> DiagnosticSpan {
+    match error {
+        crate::valkyrie::frontend::ParseError::Invalid { span: Some(range), .. } => {
+            DiagnosticSpan { start: range.start, end: range.end }
+        }
+        _ => empty_span(),
+    }
+}
+
+/// 模板构造的稳定短名（用于诊断参数）。
+fn template_construct_name(construct: TemplateConstruct) -> &'static str {
+    match construct {
+        TemplateConstruct::MetaExpression => "meta_expression",
+        TemplateConstruct::Loop => "loop",
+        TemplateConstruct::Match => "match",
+        TemplateConstruct::BlockFragment => "block_fragment",
+    }
+}
+
+/// 模板失败原因的稳定短名（用于诊断参数）。
+fn template_failure_name(failure: &TemplateFailure) -> &'static str {
+    match failure {
+        TemplateFailure::EmptyExpression => "empty_expression",
+        TemplateFailure::TrailingTokens => "trailing_tokens",
+        TemplateFailure::IncompleteExpression => "incomplete_expression",
+        TemplateFailure::UnclosedParenthesis => "unclosed_parenthesis",
+        TemplateFailure::UnevaluableToken => "unevaluable_token",
+        TemplateFailure::IntegerLiteralUnparsable => "integer_literal_unparsable",
+        TemplateFailure::IncompatibleComparisonOperands => "incompatible_comparison_operands",
+        TemplateFailure::LoopHeaderTooShort => "loop_header_too_short",
+        TemplateFailure::LoopBindingNotDiscard => "loop_binding_not_discard",
+        TemplateFailure::LoopMissingInKeyword => "loop_missing_in_keyword",
+        TemplateFailure::LoopHeaderTrailingTokens => "loop_header_trailing_tokens",
+        TemplateFailure::LoopRangeMissing => "loop_range_missing",
+        TemplateFailure::RangeShapeUnsupported => "range_shape_unsupported",
+        TemplateFailure::RangeEndpointNotInteger => "range_endpoint_not_integer",
+        TemplateFailure::LoopRangeInvalid { .. } => "loop_range_invalid",
+        TemplateFailure::NonArchScrutinee => "non_arch_scrutinee",
+        TemplateFailure::BlockFragmentUnsupportedNode { .. } => "block_fragment_unsupported_node",
+        TemplateFailure::FragmentNotMicroDeclaration { .. } => "fragment_not_micro_declaration",
+    }
+}
+
+/// 模板失败原因的人类可读描述（仅用于 `Display`）。
+fn template_failure_message(failure: &TemplateFailure) -> String {
+    match failure {
+        TemplateFailure::EmptyExpression => "meta expression is empty",
+        TemplateFailure::TrailingTokens => "meta expression has unevaluable trailing tokens",
+        TemplateFailure::IncompleteExpression => "meta expression ended before it is complete",
+        TemplateFailure::UnclosedParenthesis => "meta expression parenthesis is not closed",
+        TemplateFailure::UnevaluableToken => "meta expression contains an unevaluable token",
+        TemplateFailure::IntegerLiteralUnparsable => "integer literal cannot be parsed as `i64`",
+        TemplateFailure::IncompatibleComparisonOperands => "comparison operands have incompatible types",
+        TemplateFailure::LoopHeaderTooShort => "`loop` header must be `_ in start..end`",
+        TemplateFailure::LoopBindingNotDiscard => "`loop` only supports the discard binding `_`",
+        TemplateFailure::LoopMissingInKeyword => "`loop` header must contain `in`",
+        TemplateFailure::LoopHeaderTrailingTokens => "`loop` header has unevaluable syntax after the range",
+        TemplateFailure::LoopRangeMissing => "`loop` is missing a range expression",
+        TemplateFailure::RangeShapeUnsupported => "range endpoints must be integer literals",
+        TemplateFailure::RangeEndpointNotInteger => "range endpoints must be integer literals",
+        TemplateFailure::LoopRangeInvalid { start, end } => return format!("`loop` range `{start}..{end}` is invalid"),
+        TemplateFailure::NonArchScrutinee => "`match` only supports the `arch` scrutinee",
+        TemplateFailure::BlockFragmentUnsupportedNode { kind } => {
+            return format!("expanded `{kind}` cannot be kept inside a block")
+        }
+        TemplateFailure::FragmentNotMicroDeclaration { produced_items } => {
+            return format!("expanded meta expression produced {produced_items} top-level items instead of one `micro` declaration")
+        }
+    }
+    .to_string()
+}
+
+/// match 恢复阶段的稳定短名（用于诊断参数）。
+fn match_recovery_stage_name(stage: MatchRecoveryStage) -> &'static str {
+    match stage {
+        MatchRecoveryStage::BlockInterior => "block_interior",
+        MatchRecoveryStage::Arms => "arms",
+        MatchRecoveryStage::Pattern => "pattern",
+        MatchRecoveryStage::ArmBody => "arm_body",
+        MatchRecoveryStage::ArmBodyExpression => "arm_body_expression",
     }
 }
 
@@ -405,6 +649,9 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::MirControlFlowRejected(_) => mir_source(),
         HirError::MirEntryBlockMissing { .. } => mir_source(),
         HirError::MirUnknownStateValue { .. } => mir_source(),
+        HirError::FrontendRejected(error) => frontend_source(error),
+        HirError::TemplateExpansionFailed { source, .. } => source.clone(),
+        HirError::MatchRecoveryFailed { source, .. } => source.clone(),
         HirError::LoweringFailed { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -428,6 +675,9 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::MirControlFlowRejected(_) => empty_span(),
         HirError::MirEntryBlockMissing { .. } => empty_span(),
         HirError::MirUnknownStateValue { .. } => empty_span(),
+        HirError::FrontendRejected(error) => frontend_span(error),
+        HirError::TemplateExpansionFailed { span, .. } => span.clone(),
+        HirError::MatchRecoveryFailed { span, .. } => span.clone(),
         HirError::LoweringFailed { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -438,29 +688,7 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
 
 impl From<crate::valkyrie::frontend::ParseError> for HirError {
     fn from(error: crate::valkyrie::frontend::ParseError) -> Self {
-        let (span, details) = match &error {
-            crate::valkyrie::frontend::ParseError::Invalid { message, span } => {
-                let diagnostic_span = match span {
-                    Some(r) => DiagnosticSpan { start: r.start, end: r.end },
-                    None => DiagnosticSpan { start: 0, end: 0 },
-                };
-                let mut ds = Vec::with_capacity(2);
-                ds.push(("message".to_string(), message.clone()));
-                if let Some(r) = span {
-                    ds.push(("span".to_string(), format!("{}..{}", r.start, r.end)));
-                }
-                (diagnostic_span, ds)
-            }
-            crate::valkyrie::frontend::ParseError::Io(io) => {
-                (DiagnosticSpan { start: 0, end: 0 }, vec![("io".to_string(), io.to_string())])
-            }
-        };
-        Self::LoweringFailed {
-            scenario: "parse error".to_string(),
-            details,
-            source: DiagnosticSource { id: "<parse>".into(), revision: None },
-            span,
-        }
+        Self::FrontendRejected(error)
     }
 }
 
@@ -520,6 +748,17 @@ impl std::fmt::Display for HirError {
                 f,
                 "control-flow schedule validation failed: dispatch block `{block}` of function `{function}` references an unknown state value"
             ),
+            Self::FrontendRejected(error) => write!(f, "{error}"),
+            Self::TemplateExpansionFailed { construct, failure, .. } => {
+                write!(f, "TGrammar {} expansion failed: {}", template_construct_name(*construct), template_failure_message(failure))
+            }
+            Self::MatchRecoveryFailed { stage, pattern, .. } => {
+                write!(f, "match recovery failed at stage `{}`", match_recovery_stage_name(*stage))?;
+                if let Some(pattern) = pattern {
+                    write!(f, " for pattern `{pattern}`")?;
+                }
+                Ok(())
+            }
             Self::LoweringFailed { scenario, details, source, span, .. } => {
                 write!(f, "lowering failed: {scenario}")?;
                 if !details.is_empty() {

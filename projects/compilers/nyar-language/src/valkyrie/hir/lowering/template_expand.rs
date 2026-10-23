@@ -8,10 +8,13 @@ use crate::valkyrie::{
     },
 };
 
+use nyar_types::DiagnosticSpan;
+
 use oak_core::TokenType;
 
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
+use super::errors::{TemplateConstruct, TemplateFailure};
 use super::template_const::{const_value_to_source, eval_const_condition, eval_const_expr, parse_const_loop_range};
 
 /// 默认架构键；单文件 `compile_source` 测试夹具使用。
@@ -133,9 +136,10 @@ fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &s
 }
 
 fn expand_template_to_statement_nodes(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
+    let span = template_span(template);
     match template {
         TemplateNode::Match(match_node) => {
-            let body = select_arch_match_body(match_node, source, arch)?;
+            let body = select_arch_match_body(match_node, source, arch, span)?;
 
             let mut items = body;
 
@@ -156,15 +160,30 @@ fn expand_template_to_statement_nodes(template: &TemplateNode, source: &str, arc
 
         TemplateNode::Loop(loop_node) => expand_loop_body(loop_node, source, arch),
 
-        TemplateNode::Fragment { tokens, .. } => expand_fragment(tokens, source, arch),
+        TemplateNode::Fragment { tokens, .. } => expand_fragment(tokens, source, arch, span),
     }
 }
 
 fn expand_template_to_statements(template: &TemplateNode, source: &str, arch: &str) -> Result<Vec<Statement>, HirError> {
-    expand_template_to_statement_nodes(template, source, arch)?.into_iter().map(statement_node_to_statement).collect()
+    let span = template_span(template);
+    expand_template_to_statement_nodes(template, source, arch)?
+        .into_iter()
+        .map(|item| statement_node_to_statement(item, span.clone()))
+        .collect()
 }
 
-fn statement_node_to_statement(item: StatementNode) -> Result<Statement, HirError> {
+/// 模板节点的源码跨度。
+fn template_span(template: &TemplateNode) -> DiagnosticSpan {
+    let span = match template {
+        TemplateNode::Fragment { span, .. } => span,
+        TemplateNode::If(node) => &node.span,
+        TemplateNode::Loop(node) => &node.span,
+        TemplateNode::Match(node) => &node.span,
+    };
+    DiagnosticSpan { start: span.start, end: span.end }
+}
+
+fn statement_node_to_statement(item: StatementNode, span: DiagnosticSpan) -> Result<Statement, HirError> {
     match item {
         StatementNode::Let(binding) => Ok(Statement::Let(*binding)),
 
@@ -172,7 +191,41 @@ fn statement_node_to_statement(item: StatementNode) -> Result<Statement, HirErro
 
         StatementNode::Template(template) => Ok(Statement::Template(template)),
 
-        other => Err(HirError::lowering_failed(format!("TGrammar 展开后不能在块内保留顶层项: {other:?}"))),
+        other => Err(HirError::template_expansion_failed(
+            TemplateConstruct::BlockFragment,
+            TemplateFailure::BlockFragmentUnsupportedNode { kind: statement_node_kind(&other).to_string() },
+            span,
+        )),
+    }
+}
+
+/// 顶层语句节点的稳定类别短名（不使用 `Debug` 输出参与诊断）。
+fn statement_node_kind(item: &StatementNode) -> &'static str {
+    match item {
+        StatementNode::Namespace(_) => "namespace",
+        StatementNode::Using(_) => "using",
+        StatementNode::Class(_) => "class",
+        StatementNode::Structure(_) => "structure",
+        StatementNode::Union(_) => "union",
+        StatementNode::Singleton(_) => "singleton",
+        StatementNode::Flags(_) => "flags",
+        StatementNode::Enums(_) => "enums",
+        StatementNode::Trait(_) => "trait",
+        StatementNode::Widget(_) => "widget",
+        StatementNode::Imply(_) => "imply",
+        StatementNode::Micro(_) => "micro",
+        StatementNode::TypeFunction(_) => "type_function",
+        StatementNode::TypeAlias(_) => "type_alias",
+        StatementNode::Statement(_) => "statement",
+        StatementNode::Variant(_) => "variant",
+        StatementNode::Effect(_) => "effect",
+        StatementNode::Property(_) => "property",
+        StatementNode::Shader(_) => "shader",
+        StatementNode::Component(_) => "component",
+        StatementNode::System(_) => "system",
+        StatementNode::Let(_) => "let",
+        StatementNode::ExprStmt(_) => "expression_statement",
+        StatementNode::Template(_) => "template",
     }
 }
 
@@ -208,7 +261,12 @@ fn expand_loop_body(loop_node: &TemplateLoop, source: &str, arch: &str) -> Resul
     Ok(items)
 }
 
-fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
+fn expand_fragment(
+    tokens: &[oak_core::Token<ValkyrieTokenType>],
+    source: &str,
+    arch: &str,
+    span: DiagnosticSpan,
+) -> Result<Vec<StatementNode>, HirError> {
     let snippet = const_value_to_source(&eval_const_expr(source, tokens, arch)?);
     if snippet.trim().is_empty() {
         return Ok(Vec::new());
@@ -216,9 +274,16 @@ fn expand_fragment(tokens: &[oak_core::Token<ValkyrieTokenType>], source: &str, 
     // 元表达式 splice 发生在语句上下文中，须经块内重解析而非模块根。
     let wrapped = format!("micro __tg_fragment() -> void {{ {snippet}; }}");
     let root = parse_source_with_language(&wrapped, &production_language())?;
-    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| HirError::lowering_failed("TGrammar 元表达式展开失败"))?
+    let fragment_failure = |produced_items: usize| {
+        HirError::template_expansion_failed(
+            TemplateConstruct::BlockFragment,
+            TemplateFailure::FragmentNotMicroDeclaration { produced_items },
+            span.clone(),
+        )
+    };
+    let StatementNode::Micro(micro) = root.items.first().ok_or_else(|| fragment_failure(0))?
     else {
-        return Err(HirError::lowering_failed("TGrammar 元表达式展开失败"));
+        return Err(fragment_failure(root.items.len()));
     };
     Ok(micro.body.statements.iter().cloned().map(statement_to_statement_node).collect())
 }
@@ -231,9 +296,18 @@ fn statement_to_statement_node(statement: Statement) -> StatementNode {
     }
 }
 
-fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str) -> Result<Vec<StatementNode>, HirError> {
+fn select_arch_match_body(
+    match_node: &TemplateMatch,
+    source: &str,
+    arch: &str,
+    span: DiagnosticSpan,
+) -> Result<Vec<StatementNode>, HirError> {
     if !is_arch_scrutinee(source, &match_node.header) {
-        return Err(HirError::lowering_failed("TGrammar `<% match %>` 当前仅支持按 `arch` 展开"));
+        return Err(HirError::template_expansion_failed(
+            TemplateConstruct::Match,
+            TemplateFailure::NonArchScrutinee,
+            span,
+        ));
     }
 
     for arm in &match_node.arms {
