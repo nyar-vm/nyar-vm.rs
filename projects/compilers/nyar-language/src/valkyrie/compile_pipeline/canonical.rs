@@ -20,8 +20,9 @@ use crate::valkyrie::{
 
 use super::diagnostics::fail_stage;
 
-/// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值。
-pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
+/// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值；集成测试夹具。
+#[doc(hidden)]
+pub(crate) fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
@@ -114,7 +115,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
         );
     }
     let sum_instance_by_type = register_sum_nominal_instances(module, &type_values, &mut linked, &mut nominals)?;
-    register_missing_nominal_semantics_from_module(module, &type_values, &mut linked)?;
+    // 禁止按类型名字猜测 carrier 或用默认 Reference 回填未登记 nominal；缺值语义事实时应在所属阶段结构化失败。
     linked.fields = field_records.clone();
     for function in &module.functions {
         let instance = function
@@ -334,9 +335,11 @@ fn collect_aggregate_identities(
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
         let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
-        if nominals.insert(sum.nominal, (declaration, NominalValueSemantics::Reference)).is_some() {
-            return Err(error_without_module("CAN020", format!("sum identity 重复: {}", sum.name)));
-        }
+        // NominalValueSemantics 只能来自语言声明或已冻结的表示事实；canonical 不得默认 Reference 回填。
+        return Err(error_without_module(
+            "CAN056",
+            format!("sum `{}` 缺少冻结的值语义事实，无法登记 NominalValueSemantics", sum.name),
+        ));
     }
     Ok((nominals, field_records))
 }
@@ -437,7 +440,12 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
             let declaration = type_id(ids, &declaration_ty)?;
             CanonicalTypeKind::Nominal { declaration, arguments: arguments.iter().map(id).collect::<Result<_, _>>()? }
         }
-        ValkyrieType::Named(_) => CanonicalTypeKind::Nominal { declaration: ids[ty], arguments: Vec::new() },
+        ValkyrieType::Named(name) => {
+            return Err(error_without_module(
+                "CAN003",
+                format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
+            ));
+        }
         ValkyrieType::QualifiedPath { namespace, name } => {
             return Err(error_without_module(
                 "CAN003",
@@ -476,10 +484,15 @@ fn register_sum_nominal_instances(
         let item = sum.declaration.ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少 declaration ItemId", sum.name)))?;
         let declaration_ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = type_id(type_values, &declaration_ty)?;
+        // 不得用 Reference 默认值回填 sum 的 nominal_instances；collect_aggregate_identities 已拒绝 sum。
+        let existing_semantics = nominals
+            .get(&sum.nominal)
+            .map(|(_, semantics)| *semantics)
+            .ok_or_else(|| error_without_module("CAN056", format!("sum `{}` 缺少冻结的 NominalValueSemantics", sum.name)))?;
         linked.nominal_instances.entry(sum.nominal).or_insert(NominalInstanceRecord {
             declaration,
             ty: declaration,
-            semantics: NominalValueSemantics::Reference,
+            semantics: existing_semantics,
             fields: Vec::new(),
         });
         // 开放/泛型声明侧不登记未代入 payload；具体实例下方补齐。
@@ -506,13 +519,11 @@ fn register_sum_nominal_instances(
         let nominal =
             NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
         next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
-        if nominals.insert(nominal, (declaration, NominalValueSemantics::Reference)).is_some() {
-            return Err(error_without_module("CAN020", format!("sum instance identity 重复: {nominal:?}")));
-        }
-        linked.nominal_instances.insert(
-            nominal,
-            NominalInstanceRecord { declaration, ty: *concrete_ty, semantics: NominalValueSemantics::Reference, fields: Vec::new() },
-        );
+        // 泛型 sum 实例不得默认 Reference；必须从语言声明或冻结表示事实取得值语义。
+        return Err(error_without_module(
+            "CAN056",
+            format!("泛型 sum 实例缺少冻结的 NominalValueSemantics，无法登记: {nominal:?}"),
+        ));
         let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
             let instantiated = sum
@@ -654,12 +665,13 @@ fn resolve_sum_nominal(
     ids: &BTreeMap<ValkyrieType, TypeId>,
     sum_instance_by_type: &BTreeMap<TypeId, NominalInstanceId>,
 ) -> Result<NominalInstanceId, StructuredDiagnosticSet> {
-    let Some(ty) = shape
-    else {
-        return Ok(mir_nominal);
-    };
+    // 不得用 MIR 原始 nominal 兜底；必须有具体类型形状和已映射的泛型实例。
+    let ty = shape.ok_or_else(|| error_without_module("CAN056", format!("sum nominal {mir_nominal:?} 缺少具体类型形状，无法解析")))?;
     let concrete = type_id(ids, ty)?;
-    Ok(sum_instance_by_type.get(&concrete).copied().unwrap_or(mir_nominal))
+    sum_instance_by_type
+        .get(&concrete)
+        .copied()
+        .ok_or_else(|| error_without_module("CAN056", format!("sum 具体类型 {concrete:?} 缺少 NominalInstanceId 映射")))
 }
 
 fn lower_operation(
@@ -853,57 +865,6 @@ fn lower_constant(constant: &MirConstant) -> Result<CanonicalConstant, Structure
         MirConstant::Unit => Ok(CanonicalConstant::Unit),
         MirConstant::Float64(_) => Err(error_without_module("CAN012", "浮点常量没有 canonical 形状")),
     }
-}
-
-/// 为 canonical 名义类型登记 carrier 语义。
-///
-/// 优先消费 MIR 聚合声明；单组测试闭包可对预设内置短名使用占位语义，禁止默认 `Reference` backfill。
-fn register_missing_nominal_semantics_from_module(
-    module: &MirModule,
-    type_values: &BTreeMap<ValkyrieType, TypeId>,
-    linked: &mut LinkedSemanticProgram,
-) -> Result<(), StructuredDiagnosticSet> {
-    use crate::valkyrie::mir::ssa::builtin_nominals::{
-        placeholder_semantics_for_surface_name, semantics_for_item_declaration,
-    };
-
-    for (type_id, record) in &linked.types {
-        if !matches!(record.kind, CanonicalTypeKind::Nominal { .. }) {
-            continue;
-        }
-        if linked.nominal_instances.values().any(|row| row.declaration == *type_id) {
-            continue;
-        }
-        let ty = type_values
-            .iter()
-            .find_map(|(key, id)| (id == type_id).then_some(key))
-            .ok_or_else(|| error_without_module("CAN014", format!("名义类型 `{type_id:?}` 缺少 ValkyrieType 事实")))?;
-        let semantics = match ty {
-            ValkyrieType::Nominal { declaration: item_id, arguments } if arguments.is_empty() => {
-                semantics_for_item_declaration(module, *item_id)
-                    .ok_or_else(|| error_without_module("CAN055", format!("名义类型 `{item_id:?}` 缺少 MIR 聚合声明，无法登记 carrier 语义")))?
-            }
-            ValkyrieType::Named(name) => placeholder_semantics_for_surface_name(name.as_str()).ok_or_else(|| {
-                error_without_module(
-                    "CAN055",
-                    format!("未声明的名义类型 `{name}` 缺少 carrier 语义；正式编译须在 core 声明，测试可使用预设内置类型"),
-                )
-            })?,
-            ValkyrieType::QualifiedPath { namespace, name } => {
-                return Err(error_without_module(
-                    "CAN055",
-                    format!("限定类型路径 `{}` 未绑定声明身份，无法登记 carrier 语义", ValkyrieType::qualified_path_label(namespace, name)),
-                ));
-            }
-            _ => {
-                return Err(error_without_module("CAN055", format!("名义类型 `{ty:?}` 无法解析 carrier 语义")));
-            }
-        };
-        let nominal = NominalInstanceId::from_index(linked.nominal_instances.len() as u32)
-            .ok_or_else(|| error_without_module("CAN020", "NominalInstanceId 溢出"))?;
-        linked.nominal_instances.insert(nominal, NominalInstanceRecord { declaration: *type_id, ty: *type_id, semantics, fields: Vec::new() });
-    }
-    Ok(())
 }
 
 /// 函数签名必须已经完成 `Self`/关联类型代入；泛型 binder 由调用点冻结的
