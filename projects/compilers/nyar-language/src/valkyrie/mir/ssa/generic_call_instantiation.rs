@@ -3,13 +3,10 @@
 //! 本模块只承载 Semantic MIR lowering 阶段的**声明期**已冻结事实：
 //! `MirDispatchEntry` 记录 HIR 里 impl/struct 方法的接收者类型与 callable 实例，
 //! 配合 `unify_generic_instantiation` / `apply_type_substitution` 等类型工具，
-//! 让 lowering 内部（builder/pending_requirements 处理）能在 frontend 语义闭包内
-//! 完成调用点到具体 callable 的解析。
+//! 让 lowering 内部能在 frontend 语义闭包内完成调用点到具体 callable 的解析。
 //!
-//! **后置泛型物化已删除**：泛型 substitution 和 evidence 必须在 frontend 内形成
-//! 固定点，不能留到 MIR 层。历史上由 `materialize_generic_call_instances` /
-//! `instantiate_seed` / `specialize_function` 等函数承担的 MIR 后置单态化职责，
-//! 已按架构合同要求归回 frontend，不再在 Semantic MIR 层执行。
+//! **注意**：泛型 substitution 和 evidence 必须在 frontend 内形成固定点，不能留到
+//! MIR 层做后置单态化。历史上由本模块承担的 MIR 后置物化职责已按架构合同归回 frontend。
 
 use std::collections::BTreeMap;
 
