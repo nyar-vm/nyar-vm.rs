@@ -572,12 +572,25 @@ pub enum HirError {
         /// owning module 符号。
         module: String,
     },
-    /// HIR lowering 失败（通用 fallback，携带已解析的结构化信息）。
-    LoweringFailed {
-        /// 场景标识。
-        scenario: String,
-        /// 附加细节（禁止预格式化——放入 args）。
-        details: Vec<(String, String)>,
+    /// 源码使用了已移除的旧内建类型别名。
+    ///
+    /// 旧别名不再是语言身份：源码必须改写为规范名（`{canonical}`）。
+    LegacyBuiltinTypeAlias {
+        /// 源码写出的旧别名拼写。
+        alias: String,
+        /// 应当改用的规范类型拼写。
+        canonical: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 源码使用了不指定编码的歧义文本类型名。
+    ///
+    /// 文本类型必须写明编码（`utf8` / `utf16` / `c_str`），不能靠名字猜编码事实。
+    AmbiguousTextTypeName {
+        /// 源码写出的歧义文本类型拼写。
+        name: String,
         /// 诊断引用的源码或 artifact 身份。
         source: DiagnosticSource,
         /// 诊断主定位 span。
@@ -839,12 +852,21 @@ pub struct CopyDisciplineViolation {
 }
 
 impl HirError {
-    /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
-    pub fn lowering_failed(message: impl Into<String>) -> Self {
-        Self::LoweringFailed {
-            scenario: message.into(),
-            details: Vec::new(),
-            source: nyar_types::DiagnosticSource { id: "<unknown>".into(), revision: None },
+    /// 源码引用了已移除的旧内建类型别名。
+    pub fn legacy_builtin_type_alias(alias: impl Into<String>, canonical: impl Into<String>) -> Self {
+        Self::LegacyBuiltinTypeAlias {
+            alias: alias.into(),
+            canonical: canonical.into(),
+            source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
+            span: nyar_types::DiagnosticSpan { start: 0, end: 0 },
+        }
+    }
+
+    /// 源码使用了不指定编码的歧义文本类型名。
+    pub fn ambiguous_text_type_name(name: impl Into<String>) -> Self {
+        Self::AmbiguousTextTypeName {
+            name: name.into(),
+            source: nyar_types::DiagnosticSource { id: "<type_lowering>".into(), revision: None },
             span: nyar_types::DiagnosticSpan { start: 0, end: 0 },
         }
     }
@@ -927,7 +949,8 @@ impl HirError {
             Self::UnexpandedTemplateItem { .. } => "valkyrie.hir.unexpanded_template_item",
             Self::UnsupportedRootItem { .. } => "valkyrie.hir.unsupported_root_item",
             Self::PipelineRejected { .. } => "valkyrie.hir.pipeline_rejected",
-            Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
+            Self::LegacyBuiltinTypeAlias { .. } => "valkyrie.hir.legacy_builtin_type_alias",
+            Self::AmbiguousTextTypeName { .. } => "valkyrie.hir.ambiguous_text_type_name",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
             Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
@@ -1216,11 +1239,13 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
             }
             HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {}
-            HirError::LoweringFailed { scenario, details, .. } => {
-                row = row.with_arg("scenario", DiagnosticArg::String(scenario.clone()));
-                for (k, v) in details {
-                    row = row.with_arg(k, DiagnosticArg::String(v.clone()));
-                }
+            HirError::LegacyBuiltinTypeAlias { alias, canonical, .. } => {
+                row = row
+                    .with_arg("alias", DiagnosticArg::TypeName(alias.clone()))
+                    .with_arg("canonical", DiagnosticArg::TypeName(canonical.clone()));
+            }
+            HirError::AmbiguousTextTypeName { name, .. } => {
+                row = row.with_arg("name", DiagnosticArg::TypeName(name.clone()));
             }
             HirError::TypeNotFound { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::TypeName(name.clone()));
@@ -1534,7 +1559,7 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::UnexpandedTemplateItem { source, .. } => source.clone(),
         HirError::UnsupportedRootItem { source, .. } => source.clone(),
         HirError::PipelineRejected { .. } => DiagnosticSource { id: "<pipeline>".into(), revision: None },
-        HirError::LoweringFailed { source, .. } => source.clone(),
+        HirError::LegacyBuiltinTypeAlias { source, .. } | HirError::AmbiguousTextTypeName { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
@@ -1601,7 +1626,7 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::UnexpandedTemplateItem { span, .. } => span.clone(),
         HirError::UnsupportedRootItem { span, .. } => span.clone(),
         HirError::PipelineRejected { .. } => empty_span(),
-        HirError::LoweringFailed { span, .. } => span.clone(),
+        HirError::LegacyBuiltinTypeAlias { span, .. } | HirError::AmbiguousTextTypeName { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
@@ -1844,13 +1869,13 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
-            Self::LoweringFailed { scenario, details, source, span, .. } => {
-                write!(f, "lowering failed: {scenario}")?;
-                if !details.is_empty() {
-                    write!(f, " (details={})", details.len())?;
-                }
-                write!(f, " source={} span={}..{}", source.id, span.start, span.end)
+            Self::LegacyBuiltinTypeAlias { alias, canonical, .. } => {
+                write!(f, "legacy builtin type alias `{alias}` has been removed; use `{canonical}` explicitly")
             }
+            Self::AmbiguousTextTypeName { name, .. } => write!(
+                f,
+                "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`"
+            ),
             Self::TypeNotFound { name, .. } => write!(f, "unknown type name `{name}`: not a module type alias or language builtin"),
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
             Self::SourceGroupClosureFailed(e) => write!(f, "source group closure failed: {e}"),
