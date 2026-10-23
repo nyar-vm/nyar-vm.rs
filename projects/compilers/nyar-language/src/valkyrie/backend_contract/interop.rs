@@ -46,6 +46,10 @@ impl std::fmt::Display for BackendContractError {
 const C_BINDING_ATTRIBUTE: &str = "c";
 /// 内核系统调用绑定属性坝。
 const SYSCALL_BINDING_ATTRIBUTE: &str = "syscall";
+/// WebAssembly 指令绑定属性坝（`[wasm_opcode("i32.add")]`）。
+///
+/// 该属性只声明目标指令助记符；助记符到编码的映射归 wasm backend 所有。
+const WASM_OPCODE_BINDING_ATTRIBUTE: &str = "wasm_opcode";
 
 /// 当剝外部导入链接覝求的能力标签。
 pub(crate) fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
@@ -94,6 +98,17 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), Backend
         validate_interop_surface(submodule)?;
     }
     Ok(())
+}
+
+/// 标注是否把该可调用声明为外部导入合同。
+///
+/// 与 [`function_interop_contract`] 使用同一事实来源：任一目标绑定属性，或显式
+/// `[host_contract]`。无体声明携带外部导入合同时是抽象声明，实现由已选 provider
+/// 提供；不得降低成空体函数，否则调用静默落到空实现。
+pub(crate) fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool {
+    annotations
+        .iter()
+        .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"))
 }
 
 /// 从函数声明杝坖语言中性的外部导入链接。
@@ -179,6 +194,14 @@ fn attribute_to_interop_contract(attribute: &HirAttribute) -> Option<ExternalImp
     let locator_segments = attribute.arguments.iter().filter_map(argument_string_literal).collect::<Vec<_>>();
     if locator_segments.len() != attribute.arguments.len() {
         return None;
+    }
+
+    if name == WASM_OPCODE_BINDING_ATTRIBUTE {
+        // 目标指令助记符必须恰好一段；空段或多段不产链接，交由声明侧修正。
+        if locator_segments.len() != 1 {
+            return None;
+        }
+        return Some(ExternalImportLink::host(Some(Identifier::new("wasm-opcode")), locator_segments));
     }
 
     if name == C_BINDING_ATTRIBUTE {

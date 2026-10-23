@@ -6,6 +6,7 @@
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
 use super::*;
+use super::numeric::{self, WasmNumericArity, WasmNumericBinding, WasmNumericResult};
 
 impl<'a> WasmMirLowerer<'a> {
     /// Lowers a non-builtin MIR call to WASM bytecode.
@@ -32,6 +33,11 @@ impl<'a> WasmMirLowerer<'a> {
         let callee_return;
         match dispatch {
             MirDispatchKind::Static => {
+                // `[wasm_opcode]` 绑定的 provider 直接在调用点编码为目标指令；
+                // 不是 host import，也没有函数体，必须先于 import 解析处理。
+                if self.try_emit_wasm_opcode_call(callee, arguments, output) {
+                    return;
+                }
                 if let Some(import_index) = self.resolve_callee_import_index(callee, arguments) {
                     if self.try_emit_wasi_cli_write_via_stream(arguments, import_index, output) {
                         return;
@@ -177,6 +183,94 @@ impl<'a> WasmMirLowerer<'a> {
              TargetExecutionPlan must provide an explicit conversion — refusing null/0 placeholders",
             self.mir_fn.symbol
         );
+    }
+
+    /// `[wasm_opcode("...")]` 绑定：把契约调用直接编码为目标数值指令。
+    ///
+    /// 只有 callee 携带已绑定 host contract 的实例身份时才命中；未绑定 provider
+    /// 的 host contract 与普通函数调用都返回 `false`，走既有 import / local call
+    /// 路径。未知助记符不猜默认指令，直接结构化失败。
+    pub(super) fn try_emit_wasm_opcode_call(&mut self, callee: &MirOperand, arguments: &[MirOperand], output: Option<MirValueRef>) -> bool {
+        let MirOperand::Item(instance) = callee
+        else {
+            return false;
+        };
+        let Some(mnemonic) = self.callee_wasm_opcode.get(instance).cloned()
+        else {
+            return false;
+        };
+        let Some(binding) = WasmNumericBinding::from_mnemonic(&mnemonic)
+        else {
+            panic!(
+                "WASM `wasm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}",
+                self.mir_fn.symbol
+            );
+        };
+        let result_type = match binding.result {
+            WasmNumericResult::SameAsOperand => binding.scalar,
+            WasmNumericResult::I32 => VALTYPE_I32,
+        };
+        match binding.arity {
+            WasmNumericArity::Binary { opcode } => {
+                assert_eq!(
+                    arguments.len(),
+                    2,
+                    "WASM `wasm_opcode` 二元绑定 `{mnemonic}` 实参数量不一致: {}",
+                    self.mir_fn.symbol
+                );
+                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
+                numeric::emit_opcode(opcode, &mut self.code);
+            }
+            WasmNumericArity::IntegerNegate { sub_opcode } => {
+                assert_eq!(
+                    arguments.len(),
+                    1,
+                    "WASM `wasm_opcode` 一元绑定 `{mnemonic}` 实参数量不一致: {}",
+                    self.mir_fn.symbol
+                );
+                match binding.scalar {
+                    VALTYPE_I32 => self.emit_i32_const(0),
+                    VALTYPE_I64 => self.emit_i64_const(0),
+                    other => panic!(
+                        "WASM `wasm_opcode` 整数 neg 目标类型 `{other:#x}` 不受支持: `{mnemonic}` in {}",
+                        self.mir_fn.symbol
+                    ),
+                }
+                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
+                numeric::emit_opcode(sub_opcode, &mut self.code);
+            }
+            WasmNumericArity::NativeNegate { opcode } => {
+                assert_eq!(
+                    arguments.len(),
+                    1,
+                    "WASM `wasm_opcode` 一元绑定 `{mnemonic}` 实参数量不一致: {}",
+                    self.mir_fn.symbol
+                );
+                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
+                numeric::emit_opcode(opcode, &mut self.code);
+            }
+        }
+        match output {
+            None => WasmOpcode::Drop.encode(&mut self.code),
+            Some(output) => {
+                self.validate_output_slot_type(output, result_type);
+                self.assign_output_local(output);
+            }
+        }
+        true
+    }
+
+    /// 按自然栈类型发射绑定实参，并断言与目标标量类型一致。
+    fn emit_wasm_opcode_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) {
+        for argument in arguments {
+            let actual = self.operand_wasm_stack_type(argument);
+            assert_eq!(
+                actual, expected,
+                "WASM `wasm_opcode` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
+                self.mir_fn.symbol
+            );
+            self.emit_operand(argument);
+        }
     }
 
     pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {

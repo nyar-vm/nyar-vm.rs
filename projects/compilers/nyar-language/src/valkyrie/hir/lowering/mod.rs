@@ -20,7 +20,7 @@ use crate::{
     },
     validation::{ControlFlowScheduler, validate_semantic_module},
     valkyrie::{
-        backend_contract::interop::{function_host_provider_target, validate_interop_surface},
+        backend_contract::interop::{annotations_declare_external_import, function_host_provider_target, validate_interop_surface},
         frontend::{
             self, ParseError, ValkyrieRoot,
             ast::{
@@ -2714,23 +2714,29 @@ impl AstToHir {
 
     fn lower_micro(&self, function: &MicroDeclaration, declaring_namespace: &NamePath) -> Result<HirFunction, HirError> {
         let span = frontend::std_range(&function.span);
+        let annotations = function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
+        let body = lower_block(&function.body, self.source_id, span.clone())?;
+        // 无体且携带外部导入合同时，声明是外部导入：实现由已选 provider 提供。
+        // 若降低成本地空体函数，调用会静默落到空实现，绑定链在链接阶段断开。
+        let declares_external_import = body.statements.is_empty() && body.expr.is_none() && annotations_declare_external_import(&annotations);
         Ok(HirFunction {
             declaration: None,
             instance: None,
             name: operator_member_name(&function.name, &function.annotations),
             declaring_namespace: declaring_namespace.clone(),
             doc: lower_documentation(&function.annotations),
-            annotations: function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
+            annotations,
             generics: lower_generic_parameters(&function.generics),
             where_constraints: lower_where_constraints(&function.where_constraints, self.source_id)?,
             params: function.params.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
             return_type: function.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
-            body: lower_block(&function.body, self.source_id, span.clone())?,
+            body,
             span: with_source(&span, self.source_id),
             visibility: lower_visibility(&function.annotations),
             is_abstract: function.is_abstract
                 || has_modifier(&function.annotations, "abstract")
-                || has_modifier(&function.annotations, "host_contract"),
+                || has_modifier(&function.annotations, "host_contract")
+                || declares_external_import,
             is_final: has_modifier(&function.annotations, "final"),
             is_virtual: false,
             is_override: false,

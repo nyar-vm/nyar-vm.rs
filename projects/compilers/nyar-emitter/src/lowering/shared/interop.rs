@@ -81,6 +81,21 @@ pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmH
     }
 }
 
+/// 源码 `[wasm_opcode("i32.add")]` 声明的目标指令助记符。
+///
+/// 只接受 platform tag `wasm-opcode` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn wasm_opcode_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("wasm-opcode") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
     if !link.matches_boundary("host") {
         return None;

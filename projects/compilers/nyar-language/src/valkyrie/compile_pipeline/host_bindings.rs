@@ -9,7 +9,7 @@ use nyar_types::ItemInstanceId;
 
 use crate::valkyrie::{
     frontend::ParseError,
-    mir::{MirFunction, MirModule, MirOperand, MirOperation},
+    mir::{MirExternalCallContract, MirFunction, MirModule, MirOperand, MirOperation},
     semantic_closure::{DeclarationKey, DeclarationKind},
     types::hir::{HirFunction, HirModule, ValkyrieType},
 };
@@ -213,9 +213,22 @@ pub fn apply_host_provider_bindings(
         }
     }
 
+    // provider 的外部导入合同：无体 provider 由目标指令实现，其链接事实在依赖模块的
+    // external_calls 里。重映射会移除原合同导入，必须把 provider 自己的导入合同
+    // 一并迁入消费模块，否则调用既无定义也无导入。
+    let provider_imports = modules
+        .iter()
+        .flat_map(|dependency| dependency.external_calls.iter())
+        .filter(|contract| contract.instance.is_some())
+        .map(|contract| (contract.instance.expect("provider import instance"), contract.clone()))
+        .collect::<BTreeMap<ItemInstanceId, MirExternalCallContract>>();
+
     for plan in plans {
         if let Some(provider_function) = plan.provider_function {
             install_provider_definition(module, plan.provider_instance, provider_function)?;
+        }
+        else if let Some(contract) = provider_imports.get(&plan.provider_instance) {
+            install_provider_import(module, contract)?;
         }
     }
 
@@ -254,6 +267,20 @@ fn install_provider_definition(
     module.functions.push(provider_function.clone());
     module.register_callable_symbol(provider_instance, provider_function.display_symbol).map_err(|e| ParseError::Invalid { message: e, span: None })?;
     Ok(())
+}
+
+/// 把无体 provider 的外部导入合同迁入消费模块。
+///
+/// provider 没有函数体时，其目标绑定（`[vm]` / `[wasm_opcode]` 等）只以外部导入
+/// 合同存在；重映射移除原合同后，消费模块必须持有 provider 自己的合同身份，
+/// 后端才能按已绑定的目标编码调用。
+fn install_provider_import(module: &mut MirModule, contract: &MirExternalCallContract) -> Result<(), ParseError> {
+    let instance = contract.instance.expect("provider import instance");
+    if !module.external_calls.contains(contract) {
+        module.external_calls.push(contract.clone());
+    }
+    let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
+    module.register_callable_symbol(instance, symbol).map_err(|detail| ParseError::Invalid { message: detail, span: None })
 }
 
 fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>) {

@@ -5,8 +5,9 @@
 //! feature 时可编译；断言与生产代码不变。
 #![cfg(feature = "nyar-vm-lane")]
 
-use nyar_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarModuleData};
-use nyar_emitter::resolve_entry_symbols;
+use nyar_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData};
+use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
+use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
 
 fn module() -> NyarModuleData {
     NyarModuleData {
@@ -51,4 +52,105 @@ fn entry_contract_preserves_all_declared_library_exports() {
     module.exports.push(NyarExport { kind: NyarExportKind::Function, symbol_name: "second".to_owned(), function_index: 0 });
     let entries = vec!["second".to_owned(), "owner::main".to_owned()];
     assert_eq!(resolve_entry_symbols(&module, &entries).unwrap(), entries);
+}
+
+/// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
+fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
+    let program = ValkyrieCompiler::default()
+        .compile_source_groups_to_program_with_host_bindings(groups, &[], "native")
+        .expect("源码闭包必须完成 Compiler 链路");
+    let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
+    let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
+    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .expect("目标私有计划必须可表达");
+    nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
+        .expect("只允许沿已绑定实例发射")
+}
+
+fn decoded_codes(module: &NyarModuleData) -> Vec<NyarHeadCode> {
+    let mut codes = Vec::new();
+    let mut position = 0;
+    while position < module.code_bytes.len() {
+        let instruction = nyar_bytecode::decode_at(&module.code_bytes, position);
+        assert!(instruction.size > 0, "字节码必须可解码");
+        codes.push(instruction.code);
+        position += instruction.size as usize;
+    }
+    codes
+}
+
+/// 数值 primitive 声明组 + 入口组；入口组按显式依赖可见性使用 primitive。
+fn numeric_groups(primitive: &str, app: &str) -> Vec<CompilerSourceGroup> {
+    vec![
+        CompilerSourceGroup::single_source("core", "core", primitive),
+        CompilerSourceGroup::single_source("app", "demo", app).as_entry().with_direct_dependencies(vec!["core".into()]),
+    ]
+}
+
+#[test]
+fn i32_operator_lowers_to_vm_numeric_opcode_without_host_import() {
+    let groups = numeric_groups(
+        r#"[primitive("core::primitive::i32")]
+structure i32 { }"#,
+        r#"
+imply i32 {
+    infix `+`(self, rhs: Self): Self {
+        i32_add(self, rhs)
+    }
+}
+
+[host_contract]
+[vm("i32_add")]
+micro i32_add(a: i32, b: i32): i32
+
+[main]
+micro main() -> i32 {
+    return 1 + 2
+}
+"#,
+    );
+    let module = lower_source_groups(&groups);
+    let codes = decoded_codes(&module);
+    assert!(codes.contains(&NyarHeadCode::I32Add), "i32 `+` 必须降低为 I32Add 指令，实际 {codes:?}");
+    assert!(
+        module.imports.iter().all(|import| import.symbol_name != "i32_add" && import.module_name != "nyar.host"),
+        "已内联的数值 provider 不得留下 nyar.host 导入: {:?}",
+        module.imports
+    );
+}
+
+#[test]
+fn i64_add_provider_stays_a_nyar_host_import() {
+    let groups = numeric_groups(
+        r#"[primitive("core::primitive::i64")]
+structure i64 { }"#,
+        r#"
+[host_contract]
+[vm("i64_add")]
+micro i64_add(a: i64, b: i64): i64
+
+[main]
+micro main() -> i64 {
+    return i64_add(1, 2)
+}
+"#,
+    );
+    let module = lower_source_groups(&groups);
+    let import = module
+        .imports
+        .iter()
+        .position(|import| import.module_name == "nyar.host" && import.symbol_name == "i64_add")
+        .expect("i64_add 必须保留 nyar.host 导入");
+    assert_eq!(module.imports[import], NyarImport { kind: NyarImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_add".into() });
+    let mut position = 0;
+    let mut call_import = None;
+    while position < module.code_bytes.len() {
+        let instruction = nyar_bytecode::decode_at(&module.code_bytes, position);
+        if instruction.code == NyarHeadCode::CallImport && instruction.operand1 == import as i32 {
+            call_import = Some(instruction);
+        }
+        position += instruction.size as usize;
+    }
+    let call_import = call_import.expect("i64_add 调用必须发射 CallImport");
+    assert_eq!(call_import.operand2, 2, "CallImport argc 必须等于实参个数");
 }

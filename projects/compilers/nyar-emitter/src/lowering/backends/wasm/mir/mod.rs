@@ -31,7 +31,7 @@ use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
 use super::{
     super::{
         executable::{ExecutableLoweringContext, collect_reachable_blocks},
-        interop::{wasi_host_import_target, wasm_host_import_target},
+        interop::{wasi_host_import_target, wasm_host_import_target, wasm_opcode_target},
         pattern_matching_contract::validate_pattern_matching_invariants,
     },
     cabi::{
@@ -47,6 +47,7 @@ use super::{
 mod calls;
 mod control;
 mod library_glue;
+mod numeric;
 mod representation;
 mod type_registry;
 
@@ -383,6 +384,20 @@ fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String
     callee_import_index
 }
 
+/// `[wasm_opcode]` 绑定的 provider 实例 → 目标助记符。
+///
+/// 只消费已完成 host provider 绑定后的导入合同；未绑定 provider 的 host contract
+/// 不在导入表中，因此不会被误当成目标指令。
+fn build_callee_wasm_opcode_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, String> {
+    let mut callee_wasm_opcode = BTreeMap::new();
+    for (callee, import) in submission.backend_plan.imports() {
+        if let Some(mnemonic) = wasm_opcode_target(&import.link) {
+            callee_wasm_opcode.insert(*callee, mnemonic.to_string());
+        }
+    }
+    callee_wasm_opcode
+}
+
 /// WASI 模式下的 callee import 索引构建?
 ///
 /// ?Node 轨的差异：使?`wasi_host_import_target` 解析源码声明?`[wasi(...)]` imports?
@@ -571,6 +586,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     else {
         build_callee_import_index(submission, &host_imports)
     };
+    let callee_wasm_opcode = build_callee_wasm_opcode_index(submission);
     // Node JS-glue：宿主导入与 `.mjs` 启动壳统一使用 i32 句柄（`hostIntern` / `const_utf8`），
     // ?`wasm_import_type_for_field` ?i32 签名对齐。若?utf8 标成 anyref，call 实参?
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
@@ -706,6 +722,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             &callee_import_index,
+            &callee_wasm_opcode,
             &host_imports,
             &string_literal_index,
             &string_literal_offset,
@@ -1159,6 +1176,7 @@ fn lower_mir_function_to_wasm_bytes(
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
+    callee_wasm_opcode: &BTreeMap<ItemInstanceId, String>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
@@ -1187,6 +1205,7 @@ fn lower_mir_function_to_wasm_bytes(
         gc_i32_box_type_index,
         gc_i64_box_type_index,
         callee_import_index,
+        callee_wasm_opcode,
         host_imports,
         string_literal_index,
         string_literal_offset,
@@ -1241,6 +1260,8 @@ struct WasmMirLowerer<'a> {
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
     gc_array_type_indices: &'a BTreeMap<String, u32>,
     callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
+    /// `[wasm_opcode]` 绑定的 provider 实例 → 目标助记符。
+    callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, String>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     host_imports: &'a [(String, String)],
     string_literal_index: &'a BTreeMap<String, u32>,
@@ -1272,6 +1293,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
+        callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, String>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
@@ -1314,6 +1336,7 @@ impl<'a> WasmMirLowerer<'a> {
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             callee_import_index,
+            callee_wasm_opcode,
             host_imports,
             string_literal_index,
             string_literal_offset,

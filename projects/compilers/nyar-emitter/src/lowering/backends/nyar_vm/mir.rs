@@ -10,7 +10,7 @@ use crate::{
     },
     contracts::{EffectKind, ValueOrigin},
 };
-use nyar::NamePath;
+use nyar::{ExternalImportLink, NamePath};
 use nyar_bytecode::{
     NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarLayout, NyarModuleData,
 };
@@ -22,6 +22,38 @@ use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
+
+/// `[vm("...")]` 数值符号的 NyarVM 指令映射。
+///
+/// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
+/// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NyarNumericBinding {
+    /// 先发射两个实参，再发射该二元指令。
+    Binary(NyarHeadCode),
+    /// 先发射 `i32(0)`，再发射实参，再发射该二元指令（`0 - x`）。
+    Negate(NyarHeadCode),
+}
+
+/// `[vm]` 绑定符号到 NyarVM 指令的唯一映射表。
+fn nyar_numeric_binding(symbol: &str) -> Option<NyarNumericBinding> {
+    let binding = match symbol {
+        "i32_add" => NyarNumericBinding::Binary(NyarHeadCode::I32Add),
+        "i32_sub" => NyarNumericBinding::Binary(NyarHeadCode::I32Sub),
+        "i32_mul" => NyarNumericBinding::Binary(NyarHeadCode::I32Mul),
+        "i32_div" => NyarNumericBinding::Binary(NyarHeadCode::I32DivS),
+        "i32_rem" => NyarNumericBinding::Binary(NyarHeadCode::I32RemS),
+        "i32_eq" => NyarNumericBinding::Binary(NyarHeadCode::I32Eq),
+        "i32_ne" => NyarNumericBinding::Binary(NyarHeadCode::I32Ne),
+        "i32_lt" => NyarNumericBinding::Binary(NyarHeadCode::I32LtS),
+        "i32_le" => NyarNumericBinding::Binary(NyarHeadCode::I32LeS),
+        "i32_gt" => NyarNumericBinding::Binary(NyarHeadCode::I32GtS),
+        "i32_ge" => NyarNumericBinding::Binary(NyarHeadCode::I32GeS),
+        "i32_neg" => NyarNumericBinding::Negate(NyarHeadCode::I32Sub),
+        _ => return None,
+    };
+    Some(binding)
+}
 
 struct BytecodeEmitter<'a> {
     constants: Vec<NyarConstant>,
@@ -47,6 +79,13 @@ impl<'a> BytecodeEmitter<'a> {
     fn intern_string(&mut self, value: &str) -> i32 {
         let index = self.constants.len() as i32;
         self.constants.push(NyarConstant::String(value.to_string()));
+        index + self.constants_base
+    }
+
+    /// 登记一个 i32 常量并返回模块常量池下标（复用 `constants_base`）。
+    fn intern_i32(&mut self, value: i32) -> i32 {
+        let index = self.constants.len() as i32;
+        self.constants.push(NyarConstant::Integer32(value));
         index + self.constants_base
     }
 
@@ -142,6 +181,12 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
     };
 
     let mut layout_index_by_id = BTreeMap::<LayoutId, i32>::new();
+    let external_link_by_instance = submission
+        .backend_plan
+        .imports()
+        .iter()
+        .map(|(instance, import)| (*instance, import.link.clone()))
+        .collect::<BTreeMap<ItemInstanceId, ExternalImportLink>>();
 
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
@@ -168,6 +213,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 mir_fn,
                 &function_index_by_instance,
                 &function_entry_arities,
+                &external_link_by_instance,
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
@@ -251,6 +297,7 @@ fn lower_mir_function_to_bytecode(
     mir_fn: &MirFunction,
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
+    external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
@@ -267,6 +314,7 @@ fn lower_mir_function_to_bytecode(
         emitter,
         function_index_by_instance,
         function_entry_arities,
+        external_link_by_instance,
         layouts,
         layout_index_by_id,
     };
@@ -287,6 +335,7 @@ struct NyarMirLowerer<'a, 'e> {
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
+    external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     layouts: &'a mut Vec<NyarLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
@@ -411,6 +460,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
+                    if let Some(link) = self.external_link_by_instance.get(instance).cloned() {
+                        self.emit_external_call(&link, *instance, arguments, output);
+                        return;
+                    }
                     let index = self
                         .function_index_by_instance
                         .get(instance)
@@ -604,6 +657,71 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         }
     }
 
+    /// 发射 `backend_plan.imports()` 中的外部 provider 调用。
+    ///
+    /// 只有已绑定目标 provider（`host` 边界 + `vm` 目标标签 + 恰好一段符号）才是
+    /// NyarVM 可执行合同：数值符号按 [`nyar_numeric_binding`] 内联为指令，其余符号
+    /// 保持 `CallImport` 由 runtime `parse_host_op` 判定。未绑定 `[host_contract]`
+    /// 或其它目标标签必须失败，不得回落为空体、默认值或 `0`。
+    fn emit_external_call(
+        &mut self,
+        link: &ExternalImportLink,
+        instance: ItemInstanceId,
+        arguments: &[MirOperand],
+        output: Option<MirValueRef>,
+    ) {
+        let callee_name = self
+            .submission
+            .backend_plan
+            .abi_name_for_instance(instance)
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| format!("{instance:?}"));
+        let Some(symbol) = (link.matches_boundary("host") && link.matches_platform_tag("vm"))
+            .then(|| match link.locator_segments() {
+                [symbol] => Some(symbol.as_str()),
+                _ => None,
+            })
+            .flatten()
+        else {
+            panic!(
+                "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
+                 需要 host 边界 + 目标标签 `vm` + 恰好一段符号，未绑定目标 provider 不得回落"
+            );
+        };
+
+        match nyar_numeric_binding(symbol) {
+            Some(NyarNumericBinding::Binary(code)) => {
+                assert_eq!(arguments.len(), 2, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{symbol}` 二元绑定不符");
+                self.emit_external_arguments(&callee_name, arguments);
+                self.emitter.emit_plain(code);
+            }
+            Some(NyarNumericBinding::Negate(code)) => {
+                assert_eq!(arguments.len(), 1, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{symbol}` 一元绑定不符");
+                let zero = self.emitter.intern_i32(0);
+                self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
+                self.emit_external_arguments(&callee_name, arguments);
+                self.emitter.emit_plain(code);
+            }
+            None => {
+                self.emit_external_arguments(&callee_name, arguments);
+                self.emitter.emit_call_import(symbol, arguments.len() as i32);
+            }
+        }
+
+        if let Some(output) = output {
+            self.store_to_local(output);
+        }
+        else {
+            self.emitter.emit_plain(NyarHeadCode::Pop);
+        }
+    }
+
+    fn emit_external_arguments(&mut self, callee_name: &str, arguments: &[MirOperand]) {
+        for argument in arguments {
+            assert!(self.emit_call_operand(argument), "unmaterialized Nyar external call operand in `{callee_name}`: {argument:?}");
+        }
+    }
+
     fn emit_direct_call(&mut self, function_index: i32, path: &nyar::NamePath, arguments: &[MirOperand], output: Option<MirValueRef>) {
         let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
         assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
@@ -735,8 +853,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
 impl BytecodeEmitter<'_> {
     fn emit_const_i32(&mut self, value: i32) {
-        let index = self.constants.len() as i32 + self.constants_base;
-        self.constants.push(NyarConstant::Integer32(value));
+        let index = self.intern_i32(value);
         self.emit_imm1(NyarHeadCode::Constant, index);
     }
 
