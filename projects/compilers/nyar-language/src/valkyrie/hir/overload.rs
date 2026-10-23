@@ -2290,20 +2290,23 @@ fn try_resolve_call(
                     || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name)))
         })
         .filter_map(|candidate| {
-            if let Some(context) = contextual_type {
-                if let Some(instantiated) = instantiate_candidate_for_context(candidate, context) {
-                    if let Some(matched) = match_call_candidate(
-                        &instantiated,
-                        args,
-                        &explicit_generic_arguments,
-                        type_relations,
-                        locals,
-                        struct_fields,
-                        singleton_names,
-                    ) {
-                        return Some(matched);
-                    }
-                }
+            // contextual_type 反推泛型只对构造器候选（变体/结构体构造）有效。
+            // 普通函数的返回类型由声明决定，不能从外层 context 硬套——否则会把 __array_get
+            // 的裸 T 和 Some 外层的 Option<T> 做 unify，错误地把 T 绑定为 Option<T>。
+            if let Some(context) = contextual_type
+                && matches!(candidate.domain, OverloadDomain::Constructor)
+                && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
+                && let Some(matched) = match_call_candidate(
+                    &instantiated,
+                    args,
+                    &explicit_generic_arguments,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
+                )
+            {
+                return Some(matched);
             }
             match_call_candidate(candidate, args, &explicit_generic_arguments, type_relations, locals, struct_fields, singleton_names)
         })
@@ -3368,6 +3371,16 @@ fn enrich_unite_variant_constructor_facts(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) {
+    // intrinsic 函数不可能是 variant 构造；它们有稳定的 intrinsic 身份，
+    // 不得被 contextual_type / return_type 重写成 unity 构造。
+    if call.intrinsic.is_some() {
+        return;
+    }
+    // 已解析的普通函数调用（Function domain + declaration 存在）也不是 variant 构造。
+    // 这覆盖了 intrinsic 身份丢失但声明身份尚存的情况。
+    if call.domain == HirCallableDomain::Function && call.declaration.is_some() {
+        return;
+    }
     if call.sum_owner.is_some() && call.sum_variant.is_some() {
         return;
     }
