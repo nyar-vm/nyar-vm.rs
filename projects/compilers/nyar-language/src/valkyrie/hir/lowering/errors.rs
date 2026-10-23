@@ -172,6 +172,170 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 可打断控制流的操作出现在不允许它的上下文。
+    ControlFlowContextViolation {
+        /// 违规操作。
+        operation: ControlFlowOp,
+        /// 该操作要求的上下文。
+        required: RequiredContext,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `fallthrough` 所在的 `case` arm 没有后继 arm。
+    FallthroughWithoutNextArm {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `fallthrough` 不在 `case` statement 体系内。
+    FallthroughOutsideCaseChain {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `fallthrough` 非法引用上一 arm 的 pattern 绑定。
+    FallthroughBindingLeak {
+        /// 被非法引用的绑定名。
+        name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `break` / `continue` 找不到目标 loop。
+    LoopTargetMissing {
+        /// 跳转操作。
+        operation: LoopJumpOperation,
+        /// `break` 是否携带值。
+        carries_value: bool,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 目标 loop 当前不接受 `break` 值。
+    BreakValueRejected {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `break` 值类型与目标 loop 已收敛的结果类型不兼容。
+    BreakValueTypeMismatch {
+        /// 实际值类型。
+        actual: String,
+        /// 目标 loop 已收敛的结果类型。
+        expected: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `?` 的操作数不实现可传播协议（nullable / `Option` / `Result`）。
+    TryPropagateOperandUnsupported {
+        /// 操作数类型。
+        operand_type: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `?` 所在函数的返回类型与操作数协议不匹配，且不在 `try` 作用域内。
+    TryPropagateReturnMismatch {
+        /// 操作数要求的协议。
+        protocol: PropagateProtocol,
+        /// 当前函数返回类型。
+        return_type: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `await` / `awake` / `block` 的操作数不是 `Future<T>` / `Promise<T>`。
+    FutureControlOperandMismatch {
+        /// 违规操作。
+        operation: ControlFlowOp,
+        /// 操作数类型。
+        operand_type: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `return` / `yield` 缺少上下文要求的 carried value。
+    ControlFlowValueRequired {
+        /// 缺少值的操作。
+        operation: ControlFlowOp,
+        /// 上下文期望的类型。
+        expected_type: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `return expr` 的值类型与函数返回类型不兼容。
+    ReturnValueTypeMismatch {
+        /// 实际值类型。
+        actual: String,
+        /// 函数返回类型。
+        expected: String,
+        /// 所在函数名（未知时为空）。
+        function: Option<String>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `yield expr` 的值类型与生成器元素类型不兼容。
+    YieldValueTypeMismatch {
+        /// 实际值类型。
+        actual: String,
+        /// 函数返回类型。
+        expected_return: String,
+        /// 生成器 yield 元素类型。
+        item_type: String,
+        /// 所在函数名（未知时为空）。
+        function: Option<String>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `yield from` 的操作数不是生成器协议。
+    YieldFromOperandNotGenerator {
+        /// 操作数类型。
+        operand_type: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// `yield from` 的元素类型与当前函数的 yield 元素类型不兼容。
+    YieldFromItemTypeMismatch {
+        /// 被委托生成器的元素类型。
+        source_item: String,
+        /// 当前函数返回类型。
+        expected_return: String,
+        /// 当前函数 yield 元素类型。
+        expected_item: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 单段小写裸名字模式与变量绑定歧义。
+    AmbiguousBareNamePattern {
+        /// 歧义模式名。
+        name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// HIR lowering 失败（通用 fallback，携带已解析的结构化信息）。
     LoweringFailed {
         /// 场景标识。
@@ -289,6 +453,68 @@ pub enum MatchRecoveryStage {
     ArmBodyExpression,
 }
 
+/// 可能打断控制流连续性的操作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlFlowOp {
+    /// `await`。
+    Await,
+    /// `awake`。
+    Awake,
+    /// `block`。
+    Block,
+    /// `yield`。
+    Yield,
+    /// `yield from`。
+    YieldFrom,
+    /// `resume`。
+    Resume,
+    /// `?`。
+    TryPropagate,
+    /// `fallthrough`。
+    Fallthrough,
+    /// `break`。
+    Break,
+    /// `continue`。
+    Continue,
+    /// `return`。
+    Return,
+}
+
+/// 控制流操作要求的合法上下文。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequiredContext {
+    /// 必须位于 `catch arm body`。
+    CatchArmBody,
+    /// 不得位于 guard 中。
+    OutsideGuard,
+    /// 必须位于 async 作用域。
+    AsyncScope,
+    /// 必须位于允许阻塞的作用域。
+    BlockingScope,
+    /// 必须位于生成器或等价 handler 作用域。
+    GeneratorScope,
+}
+
+/// loop 跳转操作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopJumpOperation {
+    /// `break`。
+    Break,
+    /// `continue`。
+    Continue,
+}
+
+/// `?` 操作数要求的传播协议。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropagateProtocol {
+    /// nullable 类型。
+    Nullable,
+    /// `Option<T>`。
+    Option,
+    /// `Result<T, E>`。
+    Result,
+}
+
 impl HirError {
     /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
     pub fn lowering_failed(message: impl Into<String>) -> Self {
@@ -348,6 +574,22 @@ impl HirError {
             Self::FrontendRejected(_) => "valkyrie.frontend.rejected",
             Self::TemplateExpansionFailed { .. } => "valkyrie.hir.template_expansion_failed",
             Self::MatchRecoveryFailed { .. } => "valkyrie.hir.match_recovery_failed",
+            Self::ControlFlowContextViolation { .. } => "valkyrie.hir.control_flow_context_violation",
+            Self::FallthroughWithoutNextArm { .. } => "valkyrie.hir.fallthrough_without_next_arm",
+            Self::FallthroughOutsideCaseChain { .. } => "valkyrie.hir.fallthrough_outside_case_chain",
+            Self::FallthroughBindingLeak { .. } => "valkyrie.hir.fallthrough_binding_leak",
+            Self::LoopTargetMissing { .. } => "valkyrie.hir.loop_target_missing",
+            Self::BreakValueRejected { .. } => "valkyrie.hir.break_value_rejected",
+            Self::BreakValueTypeMismatch { .. } => "valkyrie.hir.break_value_type_mismatch",
+            Self::TryPropagateOperandUnsupported { .. } => "valkyrie.hir.try_propagate_operand_unsupported",
+            Self::TryPropagateReturnMismatch { .. } => "valkyrie.hir.try_propagate_return_mismatch",
+            Self::FutureControlOperandMismatch { .. } => "valkyrie.hir.future_control_operand_mismatch",
+            Self::ControlFlowValueRequired { .. } => "valkyrie.hir.control_flow_value_required",
+            Self::ReturnValueTypeMismatch { .. } => "valkyrie.hir.return_value_type_mismatch",
+            Self::YieldValueTypeMismatch { .. } => "valkyrie.hir.yield_value_type_mismatch",
+            Self::YieldFromOperandNotGenerator { .. } => "valkyrie.hir.yield_from_operand_not_generator",
+            Self::YieldFromItemTypeMismatch { .. } => "valkyrie.hir.yield_from_item_type_mismatch",
+            Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
@@ -464,6 +706,72 @@ impl From<HirError> for DiagnosticRow {
                     row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
                 }
             }
+            HirError::ControlFlowContextViolation { operation, required, .. } => {
+                row = row
+                    .with_arg("operation", DiagnosticArg::String(control_flow_op_name(*operation).to_string()))
+                    .with_arg("required", DiagnosticArg::String(control_flow_context_name(*required).to_string()));
+            }
+            HirError::FallthroughBindingLeak { name, .. } => {
+                row = row.with_arg("name", DiagnosticArg::String(name.clone()));
+            }
+            HirError::LoopTargetMissing { operation, carries_value, .. } => {
+                row = row
+                    .with_arg("operation", DiagnosticArg::String(loop_jump_operation_name(*operation).to_string()))
+                    .with_arg("carries_value", DiagnosticArg::String(carries_value.to_string()));
+            }
+            HirError::BreakValueTypeMismatch { actual, expected, .. } => {
+                row = row
+                    .with_arg("actual", DiagnosticArg::String(actual.clone()))
+                    .with_arg("expected", DiagnosticArg::String(expected.clone()));
+            }
+            HirError::TryPropagateOperandUnsupported { operand_type, .. } => {
+                row = row.with_arg("operand_type", DiagnosticArg::String(operand_type.clone()));
+            }
+            HirError::TryPropagateReturnMismatch { protocol, return_type, .. } => {
+                row = row
+                    .with_arg("protocol", DiagnosticArg::String(propagate_protocol_name(*protocol).to_string()))
+                    .with_arg("return_type", DiagnosticArg::String(return_type.clone()));
+            }
+            HirError::FutureControlOperandMismatch { operation, operand_type, .. } => {
+                row = row
+                    .with_arg("operation", DiagnosticArg::String(control_flow_op_name(*operation).to_string()))
+                    .with_arg("operand_type", DiagnosticArg::String(operand_type.clone()));
+            }
+            HirError::ControlFlowValueRequired { operation, expected_type, .. } => {
+                row = row
+                    .with_arg("operation", DiagnosticArg::String(control_flow_op_name(*operation).to_string()))
+                    .with_arg("expected_type", DiagnosticArg::String(expected_type.clone()));
+            }
+            HirError::ReturnValueTypeMismatch { actual, expected, function, .. } => {
+                row = row
+                    .with_arg("actual", DiagnosticArg::String(actual.clone()))
+                    .with_arg("expected", DiagnosticArg::String(expected.clone()));
+                if let Some(function) = function {
+                    row = row.with_arg("function", DiagnosticArg::CallableShort(function.clone()));
+                }
+            }
+            HirError::YieldValueTypeMismatch { actual, expected_return, item_type, function, .. } => {
+                row = row
+                    .with_arg("actual", DiagnosticArg::String(actual.clone()))
+                    .with_arg("expected_return", DiagnosticArg::String(expected_return.clone()))
+                    .with_arg("item_type", DiagnosticArg::String(item_type.clone()));
+                if let Some(function) = function {
+                    row = row.with_arg("function", DiagnosticArg::CallableShort(function.clone()));
+                }
+            }
+            HirError::YieldFromOperandNotGenerator { operand_type, .. } => {
+                row = row.with_arg("operand_type", DiagnosticArg::String(operand_type.clone()));
+            }
+            HirError::YieldFromItemTypeMismatch { source_item, expected_return, expected_item, .. } => {
+                row = row
+                    .with_arg("source_item", DiagnosticArg::String(source_item.clone()))
+                    .with_arg("expected_return", DiagnosticArg::String(expected_return.clone()))
+                    .with_arg("expected_item", DiagnosticArg::String(expected_item.clone()));
+            }
+            HirError::AmbiguousBareNamePattern { name, .. } => {
+                row = row.with_arg("name", DiagnosticArg::String(name.clone()));
+            }
+            HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {}
             HirError::LoweringFailed { scenario, details, .. } => {
                 row = row.with_arg("scenario", DiagnosticArg::String(scenario.clone()));
                 for (k, v) in details {
@@ -596,6 +904,51 @@ fn match_recovery_stage_name(stage: MatchRecoveryStage) -> &'static str {
     }
 }
 
+/// 控制流操作的稳定短名（用于诊断参数）。
+fn control_flow_op_name(operation: ControlFlowOp) -> &'static str {
+    match operation {
+        ControlFlowOp::Await => "await",
+        ControlFlowOp::Awake => "awake",
+        ControlFlowOp::Block => "block",
+        ControlFlowOp::Yield => "yield",
+        ControlFlowOp::YieldFrom => "yield_from",
+        ControlFlowOp::Resume => "resume",
+        ControlFlowOp::TryPropagate => "try_propagate",
+        ControlFlowOp::Fallthrough => "fallthrough",
+        ControlFlowOp::Break => "break",
+        ControlFlowOp::Continue => "continue",
+        ControlFlowOp::Return => "return",
+    }
+}
+
+/// 控制流上下文的稳定短名（用于诊断参数）。
+fn control_flow_context_name(context: RequiredContext) -> &'static str {
+    match context {
+        RequiredContext::CatchArmBody => "catch_arm_body",
+        RequiredContext::OutsideGuard => "outside_guard",
+        RequiredContext::AsyncScope => "async_scope",
+        RequiredContext::BlockingScope => "blocking_scope",
+        RequiredContext::GeneratorScope => "generator_scope",
+    }
+}
+
+/// loop 跳转操作的稳定短名（用于诊断参数）。
+fn loop_jump_operation_name(operation: LoopJumpOperation) -> &'static str {
+    match operation {
+        LoopJumpOperation::Break => "break",
+        LoopJumpOperation::Continue => "continue",
+    }
+}
+
+/// `?` 传播协议的稳定短名（用于诊断参数）。
+fn propagate_protocol_name(protocol: PropagateProtocol) -> &'static str {
+    match protocol {
+        PropagateProtocol::Nullable => "nullable",
+        PropagateProtocol::Option => "option",
+        PropagateProtocol::Result => "result",
+    }
+}
+
 /// MIR 侧失败事实的缺省 source 身份（MIR 结构本身不携带源码身份）。
 fn mir_source() -> DiagnosticSource {
     DiagnosticSource { id: "<mir>".into(), revision: None }
@@ -652,6 +1005,22 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::FrontendRejected(error) => frontend_source(error),
         HirError::TemplateExpansionFailed { source, .. } => source.clone(),
         HirError::MatchRecoveryFailed { source, .. } => source.clone(),
+        HirError::ControlFlowContextViolation { source, .. } => source.clone(),
+        HirError::FallthroughWithoutNextArm { source, .. } => source.clone(),
+        HirError::FallthroughOutsideCaseChain { source, .. } => source.clone(),
+        HirError::FallthroughBindingLeak { source, .. } => source.clone(),
+        HirError::LoopTargetMissing { source, .. } => source.clone(),
+        HirError::BreakValueRejected { source, .. } => source.clone(),
+        HirError::BreakValueTypeMismatch { source, .. } => source.clone(),
+        HirError::TryPropagateOperandUnsupported { source, .. } => source.clone(),
+        HirError::TryPropagateReturnMismatch { source, .. } => source.clone(),
+        HirError::FutureControlOperandMismatch { source, .. } => source.clone(),
+        HirError::ControlFlowValueRequired { source, .. } => source.clone(),
+        HirError::ReturnValueTypeMismatch { source, .. } => source.clone(),
+        HirError::YieldValueTypeMismatch { source, .. } => source.clone(),
+        HirError::YieldFromOperandNotGenerator { source, .. } => source.clone(),
+        HirError::YieldFromItemTypeMismatch { source, .. } => source.clone(),
+        HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
         HirError::LoweringFailed { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -678,6 +1047,22 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::FrontendRejected(error) => frontend_span(error),
         HirError::TemplateExpansionFailed { span, .. } => span.clone(),
         HirError::MatchRecoveryFailed { span, .. } => span.clone(),
+        HirError::ControlFlowContextViolation { span, .. } => span.clone(),
+        HirError::FallthroughWithoutNextArm { span, .. } => span.clone(),
+        HirError::FallthroughOutsideCaseChain { span, .. } => span.clone(),
+        HirError::FallthroughBindingLeak { span, .. } => span.clone(),
+        HirError::LoopTargetMissing { span, .. } => span.clone(),
+        HirError::BreakValueRejected { span, .. } => span.clone(),
+        HirError::BreakValueTypeMismatch { span, .. } => span.clone(),
+        HirError::TryPropagateOperandUnsupported { span, .. } => span.clone(),
+        HirError::TryPropagateReturnMismatch { span, .. } => span.clone(),
+        HirError::FutureControlOperandMismatch { span, .. } => span.clone(),
+        HirError::ControlFlowValueRequired { span, .. } => span.clone(),
+        HirError::ReturnValueTypeMismatch { span, .. } => span.clone(),
+        HirError::YieldValueTypeMismatch { span, .. } => span.clone(),
+        HirError::YieldFromOperandNotGenerator { span, .. } => span.clone(),
+        HirError::YieldFromItemTypeMismatch { span, .. } => span.clone(),
+        HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
         HirError::LoweringFailed { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -759,6 +1144,62 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
+            Self::ControlFlowContextViolation { operation, required, .. } => {
+                write!(f, "`{}` is only allowed in `{}`", control_flow_op_name(*operation), control_flow_context_name(*required))
+            }
+            Self::FallthroughWithoutNextArm { .. } => write!(f, "the last `case` arm cannot use `fallthrough`"),
+            Self::FallthroughOutsideCaseChain { .. } => write!(f, "`fallthrough` is only allowed inside a `case` chain"),
+            Self::FallthroughBindingLeak { name, .. } => {
+                write!(f, "`fallthrough` does not inherit the previous arm pattern bindings, yet `{name}` is referenced")
+            }
+            Self::LoopTargetMissing { operation, carries_value, .. } => {
+                write!(f, "`{}`", loop_jump_operation_name(*operation))?;
+                if *carries_value {
+                    write!(f, " with a value")?;
+                }
+                write!(f, " has no target loop")
+            }
+            Self::BreakValueRejected { .. } => write!(f, "the target loop does not accept a `break` value"),
+            Self::BreakValueTypeMismatch { actual, expected, .. } => {
+                write!(f, "`break` value type `{actual}` is incompatible with the target loop value type `{expected}`")
+            }
+            Self::TryPropagateOperandUnsupported { operand_type, .. } => {
+                write!(f, "`?` cannot be applied to `{operand_type}`")
+            }
+            Self::TryPropagateReturnMismatch { protocol, return_type, .. } => {
+                write!(f, "`?` on a `{}` operand requires a matching enclosing return type, got `{return_type}`", propagate_protocol_name(*protocol))
+            }
+            Self::FutureControlOperandMismatch { operation, operand_type, .. } => {
+                write!(f, "`{}` requires a `Future<T>` or `Promise<T>` operand, got `{operand_type}`", control_flow_op_name(*operation))
+            }
+            Self::ControlFlowValueRequired { operation, expected_type, .. } => {
+                write!(f, "`{}` requires a carried value of type `{expected_type}`", control_flow_op_name(*operation))
+            }
+            Self::ReturnValueTypeMismatch { actual, expected, function, .. } => {
+                write!(f, "`return` value type `{actual}` is incompatible with the function return type `{expected}`")?;
+                match function {
+                    Some(function) => write!(f, " in function `{function}`"),
+                    None => Ok(()),
+                }
+            }
+            Self::YieldValueTypeMismatch { actual, expected_return, item_type, function, .. } => {
+                write!(f, "`yield` value type `{actual}` is incompatible with the `{item_type}` item of return type `{expected_return}`")?;
+                match function {
+                    Some(function) => write!(f, " in function `{function}`"),
+                    None => Ok(()),
+                }
+            }
+            Self::YieldFromOperandNotGenerator { operand_type, .. } => {
+                write!(f, "`yield from` operand type `{operand_type}` is not a generator protocol")
+            }
+            Self::YieldFromItemTypeMismatch { source_item, expected_return, expected_item, .. } => write!(
+                f,
+                "`yield from` item type `{source_item}` is incompatible with the `{expected_item}` item of return type `{expected_return}`"
+            ),
+            Self::AmbiguousBareNamePattern { name, .. } => write!(
+                f,
+                "bare lowercase single-segment pattern `{name}` is ambiguous with a variable binding, use a variant form instead"
+            ),
             Self::LoweringFailed { scenario, details, source, span, .. } => {
                 write!(f, "lowering failed: {scenario}")?;
                 if !details.is_empty() {
