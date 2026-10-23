@@ -9,7 +9,6 @@ use nyar_types::IntrinsicId;
 
 use super::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin,
-    builtin_helpers::resolve_intrinsic_id,
     callee_name_matches,
     expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply},
     infer_builder_operand_type, lower_callee_operand,
@@ -17,10 +16,26 @@ use super::{
 };
 
 impl MirBuilder {
-    pub(super) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, callee: &MirOperand) -> Option<IntrinsicId> {
-        // 声明冻结的 intrinsic 身份优先；符号路径反查只作为迁移期通道，服务于
-        // 尚未带结构化身份的私有种子（`__array_len` 等）。
-        resolved.and_then(|call| call.intrinsic).or_else(|| resolved.and_then(|call| resolve_intrinsic_id(&call.symbol)))
+    /// 查询调用点的结构化 intrinsic 身份。
+    ///
+    /// 只信任 `HirResolvedCall.intrinsic`（由 overload 阶段给语言内建绑定）；
+    /// **禁止**按符号路径段猜测 intrinsic 身份——那条旁路会绕过 adaptor/import binding，
+    /// 让没有后端实现的 intrinsic 悄悄生成 opcode。
+    ///
+    /// 即使查到 intrinsic 身份，lowering 也不会走专用 opcode 路径：
+    /// intrinsic 调用必须降级为普通 `Call { callee: Callable(instance) }`，
+    /// 让 linker adaptor / backend TargetExecutionPlan 链路消费。
+    pub(super) fn callee_intrinsic_id(resolved: Option<&HirResolvedCall>, _callee: &MirOperand) -> Option<IntrinsicId> {
+        resolved.and_then(|call| call.intrinsic)
+    }
+
+    /// 检查 intrinsic 调用是否已绑定 adaptor（有 ItemId 或 ItemInstanceId）。
+    ///
+    /// 语言 builtin intrinsic 候选（`language_builtin_candidates`）只挂 intrinsic 身份，
+    /// 没有 declaration/instance；源码 `[intrinsic(...)]` 种子会同时挂 declaration。
+    /// **未绑定 adaptor 的 intrinsic 不能走专用 opcode 路径**，必须降级到普通 Call。
+    pub(super) fn has_intrinsic_adaptor_binding(resolved: Option<&HirResolvedCall>) -> bool {
+        resolved.is_some_and(|call| call.intrinsic.is_some() && (call.instance.is_some() || call.declaration.is_some()))
     }
 
     fn try_lower_ref_deref_intrinsic(
@@ -30,6 +45,11 @@ impl MirBuilder {
         arguments: &[MirOperand],
     ) -> Option<MirOperand> {
         if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::RefDeref) {
+            return None;
+        }
+        // intrinsic 必须绑定 adaptor（有 ItemId 或 ItemInstanceId）才能走专用 opcode；
+        // 否则降级到普通 Call 路径，让下游 adaptor 消费。
+        if !Self::has_intrinsic_adaptor_binding(resolved) {
             return None;
         }
         arguments.first().cloned()
@@ -370,6 +390,9 @@ impl MirBuilder {
         if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayLen) {
             return None;
         }
+        if !Self::has_intrinsic_adaptor_binding(resolved) {
+            return None;
+        }
         let array = arguments.first().cloned()?;
         let hint = resolved
             .map(|call| &call.return_type)
@@ -412,7 +435,10 @@ impl MirBuilder {
         if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayGet) {
             return None;
         }
-        // Option ?????????????????+ `Option` ????????????
+        if !Self::has_intrinsic_adaptor_binding(resolved) {
+            return None;
+        }
+        // Option 包装不生成 ArrayGet intrinsic；保留为普通 Call 让 adaptor 处理
         let wraps_option = resolved
             .map(|call| self.is_option_type(&call.return_type))
             .unwrap_or_else(|| expected_type.is_some_and(|ty| self.is_option_type(ty)));
@@ -424,7 +450,7 @@ impl MirBuilder {
         self.try_lower_array_get_on_array(array, ordinal, resolved, expected_type)
     }
 
-    /// ?? callee ?? overload ????[`IntrinsicId::ArraySet`] ?????
+    /// intrinsic 必须绑定 adaptor（有 ItemId/ItemInstanceId）才能走专用 opcode
     fn try_lower_array_set_intrinsic(
         &mut self,
         resolved: Option<&HirResolvedCall>,
@@ -433,6 +459,9 @@ impl MirBuilder {
         _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
         if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArraySet) || arguments.len() != 3 {
+            return None;
+        }
+        if !Self::has_intrinsic_adaptor_binding(resolved) {
             return None;
         }
         let array = arguments[0].clone();
@@ -448,8 +477,7 @@ impl MirBuilder {
         Some(MirOperand::Constant(MirConstant::Unit))
     }
 
-    /// ?? callee ?? overload ????[`IntrinsicId::ArrayPush`] ?????
-    /// ?????? `push` ??????ADR 0013???
+    /// intrinsic 必须绑定 adaptor（有 ItemId/ItemInstanceId）才能走专用 opcode
     fn try_lower_array_push_intrinsic(
         &mut self,
         resolved: Option<&HirResolvedCall>,
@@ -458,6 +486,9 @@ impl MirBuilder {
         expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
         if Self::callee_intrinsic_id(resolved, callee) != Some(IntrinsicId::ArrayPush) || arguments.len() != 2 {
+            return None;
+        }
+        if !Self::has_intrinsic_adaptor_binding(resolved) {
             return None;
         }
         let array = arguments[0].clone();
@@ -683,32 +714,23 @@ impl MirBuilder {
                         }
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
-                    let has_requirement = resolved_call.requirement.is_some();
-                    let callee = if has_requirement {
-                        MirOperand::Constant(MirConstant::Unit)
+                    if resolved_call.requirement.is_some() {
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                            symbol: format!("generic witness requirement for member `{}` cannot be resolved in MIR", resolved_call.symbol),
+                        });
+                        return MirOperand::Constant(MirConstant::Unit);
                     }
+                    let Some(callee) = lower_resolved_callee(resolved_call)
                     else {
-                        let Some(callee) = lower_resolved_callee(resolved_call)
-                        else {
-                            self.diagnostics
-                                .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
-                            return MirOperand::Constant(MirConstant::Unit);
-                        };
-                        callee
+                        self.diagnostics
+                            .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
+                        return MirOperand::Constant(MirConstant::Unit);
                     };
-                    if !has_requirement {
-                        if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                            return operand;
-                        }
+                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
+                        return operand;
                     }
                     let return_type = self.return_type_for_resolved_call(&callee, resolved_call);
-                    let operand = self.push_call_returning(callee, arguments, return_type);
-                    if let Some(req) = &resolved_call.requirement {
-                        if let Some(last) = self.instructions.last() {
-                            self.pending_requirements.push((last.id, req.clone()));
-                        }
-                    }
-                    return operand;
+                    self.push_call_returning(callee, arguments, return_type);
                 }
                 // `obj.field(args)` where `obj.field` is a function-typed field (e.g.
                 // `FilterIterator._predicate`). Lower as indirect call: load the field
@@ -839,13 +861,13 @@ impl MirBuilder {
                         return MirOperand::Constant(MirConstant::Unit);
                     }
                 }
-                let deferred_member = resolved.as_ref().and_then(|call| call.requirement.clone());
-                let has_requirement = deferred_member.is_some();
-                let callee = if has_requirement {
-                    MirOperand::Constant(MirConstant::Unit)
+                if resolved.as_ref().is_some_and(|call| call.requirement.is_some()) {
+                    self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
+                        symbol: "generic witness requirement must resolve at frontend phase, not MIR".to_string(),
+                    });
+                    return MirOperand::Constant(MirConstant::Unit);
                 }
-                else {
-                    match lower_callee_operand(callee, resolved.as_ref(), self) {
+                let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
                     None if resolved.as_ref().is_some_and(|call| call.domain == HirCallableDomain::Constructor) => {
                         let call = resolved.as_ref().expect("constructor call");
@@ -865,29 +887,24 @@ impl MirBuilder {
                         });
                         return MirOperand::Constant(MirConstant::Unit);
                     }
-                    }
                 };
-                if !has_requirement {
-                    if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
-                        return operand;
-                    }
-                    if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
-                        return operand;
-                    }
+                if let Some(operand) = self.try_lower_ref_deref_intrinsic(resolved.as_ref(), &callee, &arguments) {
+                    return operand;
+                }
+                if let Some(operand) = self.try_lower_null_intrinsics(resolved.as_ref(), &callee, &arguments) {
+                    return operand;
+                }
+                if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
+                    return operand;
                 }
                 let function_ty = self.function_type_of_callee(&callee);
-                if arguments.len() == 1 && !has_requirement {
+                if arguments.len() == 1 {
                     if self.is_option_is_some_call(resolved.as_ref()) && self.option_shaped_type(&arguments[0], None, None).is_some() {
                         if let Some(operand) = self.try_lower_option_is_some(arguments[0].clone(), resolved.as_ref()) {
                             return operand;
                         }
                     }
                 }
-                // ???`Call` ?? `push_call_returning`???? intrinsic ?????????
-                // `unit` ?????? value ??BPHYS001???
                 let Some(return_type) = resolved
                     .as_ref()
                     .map(|call| call.return_type.clone())
@@ -899,13 +916,7 @@ impl MirBuilder {
                     return MirOperand::Constant(MirConstant::Unit);
                 };
                 let return_type = super::expr_helpers::refine_call_return_type(return_type, expected_type);
-                let operand = self.push_call_returning(callee, arguments, return_type);
-                if let Some(req) = deferred_member {
-                    if let Some(last) = self.instructions.last() {
-                        self.pending_requirements.push((last.id, req));
-                    }
-                }
-                operand
+                self.push_call_returning(callee, arguments, return_type)
             }
             HirExprKind::ArrayNew { element_type, length } => {
                 let length_operand = self.lower_expr_to_operand(length);
