@@ -382,7 +382,9 @@ fn resolve_named_type(name: &str) -> ValkyrieType {
     if has_module_type_alias(name) {
         return ValkyrieType::Named(Identifier::new(name));
     }
-    canonical_builtin_type(name).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(name)))
+    canonical_builtin_type(name)
+        .or_else(|| numeric_builtin_scalar(name))
+        .unwrap_or_else(|| ValkyrieType::Named(Identifier::new(name)))
 }
 
 fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &mut BTreeSet<String>) -> Option<ValkyrieType> {
