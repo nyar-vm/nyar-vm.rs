@@ -874,13 +874,18 @@ fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &Name
     if candidate.domain != OverloadDomain::Constructor {
         return false;
     }
-    if candidate.owner.is_some() {
-        // enum variant 构造：owner 已冻结，只匹配变体短名。
-        return path.parts().last().is_some_and(|name| candidate_variant_constructor_matches(candidate, name));
+    if let Some(expected_owner) = candidate.owner.as_ref() {
+        // enum variant 构造：完整 identity 是 [owner, variant_name]，
+        // 不得只用 path 末段短名兜底。path 必须是 lowering 已绑定的完整路径。
+        let Some(variant_name) = candidate.symbol.parts().first()
+            else { return false };
+        matches!(path.parts(), [owner, variant] if owner == expected_owner && variant == variant_name)
     }
-    // free constructor：要求 lowering 已将 path 绑定为带完整声明 namespace 的完整路径，
-    // 与 candidate.symbol 硬匹配。单段 short name 不再兜底命中带命名空间的候选。
-    candidate.symbol.parts() == path.parts()
+    else {
+        // free constructor：要求 lowering 已将 path 绑定为带完整声明 namespace 的完整路径，
+        // 与 candidate.symbol 硬匹配。单段 short name 不再兜底命中带命名空间的候选。
+        candidate.symbol.parts() == path.parts()
+    }
 }
 
 /// 模式 extractors：`Owner.member` 与候选 `owner` + 单段符号精确对齐。
@@ -2444,19 +2449,17 @@ fn try_resolve_qualified_free_function(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
-    let canonical_key = crate::valkyrie::symbols::stable_symbol_key(path);
     let filtered = candidates
         .iter()
         .filter(|candidate| {
             if candidate.owner.is_some() {
                 return false;
             }
-            let candidate_key = crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol);
-            // 硬匹配完整 canonical identity。
-            // 允许 qualified path（调用者写了完整 namespace），也允许 lowering 产出的完整 symbol；
-            // 禁止单段短名末段兜底——app::helper 不得命中 std::helper，
+            // 结构化硬匹配完整 canonical identity：直接比较 NamePath parts，
+            // 禁止单段短名末段兜底。lowering 必须把 qualified call 先绑定为
+            // 带完整 namespace 的完整 identity，app::helper 不得命中 std::helper，
             // package_a::Range 不得命中 package_b::Range，未声明依赖中的同名函数不得命中。
-            candidate_key == canonical_key
+            candidate.symbol.parts() == path.parts()
         })
         .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
