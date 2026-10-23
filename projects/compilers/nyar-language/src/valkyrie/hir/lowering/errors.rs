@@ -336,6 +336,15 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `let` 绑定的 pattern 可被拒绝（refutable 或不可判定）。
+    RefutableLetPattern {
+        /// pattern 的渲染文本。
+        pattern: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// 生成源码组缺少显式 producer 身份。
     SourceGroupProducerMissing {
         /// 涉及的源码组依赖身份（未知时为 `None`）。
@@ -784,6 +793,7 @@ impl HirError {
             Self::YieldFromOperandNotGenerator { .. } => "valkyrie.hir.yield_from_operand_not_generator",
             Self::YieldFromItemTypeMismatch { .. } => "valkyrie.hir.yield_from_item_type_mismatch",
             Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
+            Self::RefutableLetPattern { .. } => "valkyrie.hir.refutable_let_pattern",
             Self::SourceGroupProducerMissing { .. } => "valkyrie.hir.source_group_producer_missing",
             Self::SourceGroupNotEntry { .. } => "valkyrie.hir.source_group_not_entry",
             Self::SourceGroupIdentityInvalid { .. } => "valkyrie.hir.source_group_identity_invalid",
@@ -983,6 +993,9 @@ impl From<HirError> for DiagnosticRow {
             }
             HirError::AmbiguousBareNamePattern { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::String(name.clone()));
+            }
+            HirError::RefutableLetPattern { pattern, .. } => {
+                row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
             }
             HirError::SourceGroupProducerMissing { dependency_key, .. } => {
                 if let Some(dependency_key) = dependency_key {
@@ -1328,6 +1341,7 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::YieldFromOperandNotGenerator { source, .. } => source.clone(),
         HirError::YieldFromItemTypeMismatch { source, .. } => source.clone(),
         HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
+        HirError::RefutableLetPattern { source, .. } => source.clone(),
         HirError::SourceGroupProducerMissing { source, .. } => source.clone(),
         HirError::SourceGroupNotEntry { source, .. } => source.clone(),
         HirError::SourceGroupIdentityInvalid { source, .. } => source.clone(),
@@ -1389,6 +1403,7 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::YieldFromOperandNotGenerator { span, .. } => span.clone(),
         HirError::YieldFromItemTypeMismatch { span, .. } => span.clone(),
         HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
+        HirError::RefutableLetPattern { span, .. } => span.clone(),
         HirError::SourceGroupProducerMissing { span, .. } => span.clone(),
         HirError::SourceGroupNotEntry { span, .. } => span.clone(),
         HirError::SourceGroupIdentityInvalid { span, .. } => span.clone(),
@@ -1544,6 +1559,10 @@ impl std::fmt::Display for HirError {
             Self::AmbiguousBareNamePattern { name, .. } => write!(
                 f,
                 "bare lowercase single-segment pattern `{name}` is ambiguous with a variable binding, use a variant form instead"
+            ),
+            Self::RefutableLetPattern { pattern, .. } => write!(
+                f,
+                "refutable pattern `{pattern}` is not allowed in a `let` binding, use `if let` or `case` instead"
             ),
             Self::SourceGroupProducerMissing { dependency_key, .. } => {
                 write!(f, "generated source group has no producer identity")?;

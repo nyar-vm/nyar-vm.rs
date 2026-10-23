@@ -1,7 +1,14 @@
+use nyar_types::{DiagnosticSource, DiagnosticSpan};
+
 use crate::{
     types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind},
     valkyrie::hir::{HirError, PatternRefutability},
 };
+
+/// `let` 绑定模式检查产出的诊断 source。
+fn let_source() -> DiagnosticSource {
+    DiagnosticSource { id: "<let>".into(), revision: None }
+}
 
 /// 校验模块内所有 `let` 绑定的 pattern 均不可是 refutable；命中则返回 lowering 结构化错误。
 pub fn check_pattern_refutability(module: &HirModule) -> Result<(), HirError> {
@@ -74,7 +81,7 @@ impl PatternRefutabilityChecker {
                 if let Some(init) = initializer {
                     self.check_expr(init)?;
                 }
-                self.check_let_pattern(pattern)?;
+                self.check_let_pattern(pattern, &statement.span)?;
             }
             HirStatementKind::Expr(expr) => {
                 self.check_expr(expr)?;
@@ -83,15 +90,14 @@ impl PatternRefutabilityChecker {
         Ok(())
     }
 
-    fn check_let_pattern(&mut self, pattern: &HirPattern) -> Result<(), HirError> {
+    fn check_let_pattern(&mut self, pattern: &HirPattern, span: &crate::SourceSpan) -> Result<(), HirError> {
         match pattern.refutability() {
             PatternRefutability::Irrefutable => Ok(()),
             PatternRefutability::Refutable | PatternRefutability::Unknown => {
-                self.errors.push(HirError::lowering_failed(format!(
-                    "refutable pattern not allowed in `let` binding; use `if let` or `case` instead (pattern: {})",
-                    self.pattern_to_string(pattern)
-                )));
-                Err(HirError::lowering_failed("refutable pattern in let binding"))
+                let rendered = self.pattern_to_string(pattern);
+                let span = DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize };
+                self.errors.push(HirError::RefutableLetPattern { pattern: rendered.clone(), source: let_source(), span: span.clone() });
+                Err(HirError::RefutableLetPattern { pattern: rendered, source: let_source(), span })
             }
         }
     }
