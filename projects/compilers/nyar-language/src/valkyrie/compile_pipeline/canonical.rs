@@ -446,12 +446,8 @@ fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) 
                 format!("未绑定的类型名 `{name}` 进入 canonical 类型表；必须在 HIR 绑定阶段冻结为 Nominal 或返回前端 TypeError"),
             ));
         }
-        ValkyrieType::QualifiedPath { namespace, name } => {
-            return Err(error_without_module(
-                "CAN003",
-                format!("限定类型路径 `{}` 未绑定声明身份，禁止进入 canonical 类型表", ValkyrieType::qualified_path_label(namespace, name)),
-            ));
-        }
+        // 停线清理：QualifiedPath 不得进入 canonical。若到达这里说明前端生成/绑定
+        // 阶段未切断该路径，直接走通配错误（CAN003 "类型没有无损 canonical 形状"）。
         ValkyrieType::Apply(base, args) => {
             CanonicalTypeKind::Nominal { declaration: id(base)?, arguments: args.iter().map(id).collect::<Result<_, _>>()? }
         }

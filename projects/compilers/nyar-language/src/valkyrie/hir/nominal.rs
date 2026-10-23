@@ -506,11 +506,12 @@ fn collect_generic_names(ty: &ValkyrieType, names: &mut BTreeSet<Identifier>) {
         | ValkyrieType::Void
         | ValkyrieType::AutoType
         | ValkyrieType::Named(_)
-        | ValkyrieType::QualifiedPath { .. }
         | ValkyrieType::r#SelfType
         | ValkyrieType::Nullable(_)
         | ValkyrieType::Union(_)
         | ValkyrieType::Intersection(_) => {}
+        // 停线清理：QualifiedPath 不得再被当作安全跳过。到达这里说明源头未切断。
+        ValkyrieType::QualifiedPath { .. } => panic!("QualifiedPath must not reach collect_generic_names; frontend lowering must resolve it"),
     }
 }
 
