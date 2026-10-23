@@ -84,7 +84,7 @@ impl MirBuilder {
             });
             return MirOperand::Constant(MirConstant::Unit);
         };
-        let value = self.push_call(MirOperand::Callable(*instance), Vec::new(), None);
+        let value = self.push_call(MirOperand::Callable(*instance), Vec::new());
         self.value_types.insert(value, ValkyrieType::Named(Identifier::new(singleton_name)));
         MirOperand::Value(value)
     }

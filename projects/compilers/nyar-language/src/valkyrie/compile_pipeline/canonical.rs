@@ -87,6 +87,19 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
     }
     for (ty, id) in &type_values {
         linked.types.insert(*id, TypeRecord { declaration: *id, kind: canonical_type_kind(ty, &type_values)? });
+        match ty {
+            ValkyrieType::Named(name) => {
+                linked.type_surface_spellings.insert(*id, name.clone());
+            }
+            ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
+                if let Some(aggregate) = module.structs.iter().find(|item| item.declaration == Some(*declaration)) {
+                    linked.type_surface_spellings.insert(*id, Identifier::new(&aggregate.name));
+                } else if let Some(sum) = module.sum_types.iter().find(|item| item.declaration == Some(*declaration)) {
+                    linked.type_surface_spellings.insert(*id, Identifier::new(&sum.name));
+                }
+            }
+            _ => {}
+        }
         // `Nominal{usize}` / `Named("usize")` 保持名义 TypeId，不得改写成 Primitive；登记后供
         // ArrayGet/ArrayLength/ArrayNew 合同认整数形状（见 LinkedSemanticProgram::array_index_types）。
         if is_array_index_valkyrie_type(ty, module) {
@@ -663,14 +676,11 @@ fn lower_operation(
         _ => Err(error_without_module("CAN006", "操作数不是已定义 SSA 值")),
     };
     match operation {
-        MirOperation::Call { callee: MirOperand::Callable(identity), arguments, deferred_member: None } => Ok(CanonicalOperation::Invoke {
+        MirOperation::Call { callee: MirOperand::Callable(identity), arguments } => Ok(CanonicalOperation::Invoke {
             callee: CanonicalCallee::Item(*identity),
             arguments: arguments.iter().map(value).collect::<Result<_, _>>()?,
         }),
-        MirOperation::Call { deferred_member: Some(_), .. } => {
-            Err(error_without_module("CAN007", "Semantic MIR 仍包含未闭合的成员要求"))
-        }
-        MirOperation::Call { callee: MirOperand::Value(callee), arguments, deferred_member: None } => Ok(CanonicalOperation::Invoke {
+        MirOperation::Call { callee: MirOperand::Value(callee), arguments } => Ok(CanonicalOperation::Invoke {
             callee: CanonicalCallee::Value(
                 MirValueId::from_index(callee.0).ok_or_else(|| error_without_module("CAN008", "函数值 callee identity 溢出"))?,
             ),

@@ -72,6 +72,9 @@ pub(super) struct MirBuilder {
     pub(super) workload_phase: Option<String>,
     /// 编译器内建宿主调用（`begin_phase` / `end_phase`）的冻结实例身份。
     pub(super) host_runtime_callables: BTreeMap<String, nyar_types::ItemInstanceId>,
+    /// lowering 时收集的待闭合成员要求：InstructionId → HirCallRequirement。
+    /// 由 materialize_generic_call_instances 在 lowering 末尾消费后清空。
+    pub(super) pending_requirements: Vec<(nyar_types::InstructionId, crate::types::hir::HirCallRequirement)>,
 }
 
 /// 模块内按简单名唯一解析 sum 声明 ItemId；歧义/缺失返回 `None`（不得猜测）。
@@ -143,6 +146,7 @@ impl MirBuilder {
             impl_type_arguments: Vec::new(),
             workload_phase: None,
             host_runtime_callables,
+            pending_requirements: Vec::new(),
         }
     }
 
@@ -194,10 +198,9 @@ impl MirBuilder {
         &mut self,
         callee: MirOperand,
         arguments: Vec<MirOperand>,
-        deferred_member: Option<crate::types::hir::HirCallRequirement>,
     ) -> MirValueRef {
         let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::Call { callee, arguments, deferred_member }, vec![value]);
+        self.push_instruction(MirOperation::Call { callee, arguments }, vec![value]);
         value
     }
 
@@ -207,13 +210,12 @@ impl MirBuilder {
         callee: MirOperand,
         arguments: Vec<MirOperand>,
         return_type: ValkyrieType,
-        deferred_member: Option<crate::types::hir::HirCallRequirement>,
     ) -> MirOperand {
         if matches!(return_type, ValkyrieType::Unit) {
-            self.push_instruction(MirOperation::Call { callee, arguments, deferred_member }, Vec::new());
+            self.push_instruction(MirOperation::Call { callee, arguments }, Vec::new());
             return MirOperand::Constant(MirConstant::Unit);
         }
-        let value = self.push_call(callee, arguments, deferred_member);
+        let value = self.push_call(callee, arguments);
         self.value_types.insert(value, return_type);
         MirOperand::Value(value)
     }
@@ -274,7 +276,7 @@ impl MirBuilder {
             MirOperation::LoadConstant { constant: MirConstant::Utf8(phase.to_string()), ty: Some(ValkyrieType::Utf8) },
             vec![constant],
         );
-        let _ = self.push_call(MirOperand::Callable(instance), vec![MirOperand::Value(constant)], None);
+        let _ = self.push_call(MirOperand::Callable(instance), vec![MirOperand::Value(constant)]);
     }
 
     pub(super) fn new_block(&mut self, label: &str) -> MirBlockRef {

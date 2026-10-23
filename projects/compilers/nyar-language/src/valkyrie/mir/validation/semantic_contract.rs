@@ -397,14 +397,7 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                     }
                 }
             }
-            if let MirOperation::Call { callee, arguments, deferred_member } = &instruction.kind {
-                if deferred_member.is_some() {
-                    return Err(error(
-                        "SMIR003",
-                        location.clone(),
-                        "deferred member requirement must be materialized before semantic validation".to_string(),
-                    ));
-                }
+            if let MirOperation::Call { callee, arguments } = &instruction.kind {
                 validate_static_call_resolution(module, function, &instruction.kind, location.clone())?;
                 // Callable 必须按 ItemInstanceId 取签名；禁止再按短名聚合多个实例后判歧义。
                 let signature = match callee {

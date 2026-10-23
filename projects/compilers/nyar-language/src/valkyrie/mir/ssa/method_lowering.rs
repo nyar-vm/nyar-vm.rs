@@ -18,11 +18,12 @@ pub(super) fn lower_singleton_method_functions(
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
+    pending_requirements: &mut Vec<(nyar_types::InstructionId, crate::types::hir::HirCallRequirement)>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for singleton in &module.singletons {
         for method in singleton.methods.iter().filter(|method| !method.is_abstract) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -36,9 +37,10 @@ pub(super) fn lower_singleton_method_functions(
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, method.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
         if let Some(constructor) = &singleton.constructor {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 constructor,
                 aggregate_layouts,
@@ -52,9 +54,10 @@ pub(super) fn lower_singleton_method_functions(
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, constructor.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
         if let Some(finalizer) = &singleton.finalizer {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 finalizer,
                 aggregate_layouts,
@@ -68,6 +71,7 @@ pub(super) fn lower_singleton_method_functions(
             );
             mir_function.display_symbol = format!("{}.{}", singleton.name, finalizer.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
     }
     functions
@@ -81,6 +85,7 @@ pub(super) fn lower_impl_method_functions(
     member_dispatch: &[super::generic_call_instantiation::MirDispatchEntry],
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
+    pending_requirements: &mut Vec<(nyar_types::InstructionId, crate::types::hir::HirCallRequirement)>,
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for impl_block in &module.impls {
@@ -88,7 +93,7 @@ pub(super) fn lower_impl_method_functions(
             continue;
         };
         for method in impl_block.methods.iter().filter(|method| !method.is_abstract) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -102,11 +107,12 @@ pub(super) fn lower_impl_method_functions(
             );
             mir_function.display_symbol = format!("{type_name}.{}", method.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
     }
     for item in &module.structs {
         for method in item.methods.iter().filter(|method| !method.is_abstract) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -120,11 +126,12 @@ pub(super) fn lower_impl_method_functions(
             );
             mir_function.display_symbol = format!("{}.{}", item.name, method.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
     }
     for trait_def in &module.traits {
         for method in trait_def.default_methods.iter().filter(|method| !method.is_abstract) {
-            let mut mir_function = lower_function_semantic(
+            let (mut mir_function, reqs) = lower_function_semantic(
                 module,
                 method,
                 aggregate_layouts,
@@ -138,6 +145,7 @@ pub(super) fn lower_impl_method_functions(
             );
             mir_function.display_symbol = format!("{}.{}", trait_def.name, method.name);
             functions.push(mir_function);
+            pending_requirements.extend(reqs);
         }
     }
     functions

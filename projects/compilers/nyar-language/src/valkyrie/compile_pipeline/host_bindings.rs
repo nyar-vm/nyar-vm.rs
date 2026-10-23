@@ -258,7 +258,7 @@ fn install_provider_definition(
 fn remap_call_targets(function: &mut MirFunction, remaps: &BTreeMap<ItemInstanceId, ItemInstanceId>) {
     for block in &mut function.blocks {
         for instruction in &mut block.instructions {
-            if let MirOperation::Call { callee, arguments, deferred_member: _ } = &mut instruction.kind {
+            if let MirOperation::Call { callee, arguments } = &mut instruction.kind {
                 if let MirOperand::Callable(instance) = callee {
                     if let Some(target) = remaps.get(instance) {
                         *callee = MirOperand::Callable(*target);
