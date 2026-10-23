@@ -1,6 +1,6 @@
 use nyar_language::{
     MirConstant, MirFunction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
-    types::hir::{HirCallRequirement, ValkyrieType},
+    types::hir::ValkyrieType,
     valkyrie::{
         compile_pipeline::canonical_program_from_semantic_mir,
         mir::{AggregateLayoutPlan, MirBlock, MirBlockRef, MirExternalCallContract, MirInstruction, MirModule, MirValue, MirValueRef},

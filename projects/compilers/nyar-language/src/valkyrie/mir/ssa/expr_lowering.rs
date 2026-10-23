@@ -714,12 +714,6 @@ impl MirBuilder {
                         }
                     }
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
-                    if resolved_call.requirement.is_some() {
-                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                            symbol: format!("generic witness requirement for member `{}` cannot be resolved in MIR", resolved_call.symbol),
-                        });
-                        return MirOperand::Constant(MirConstant::Unit);
-                    }
                     let Some(callee) = lower_resolved_callee(resolved_call)
                     else {
                         self.diagnostics
@@ -860,12 +854,6 @@ impl MirBuilder {
                         self.diagnostics.push(super::MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant });
                         return MirOperand::Constant(MirConstant::Unit);
                     }
-                }
-                if resolved.as_ref().is_some_and(|call| call.requirement.is_some()) {
-                    self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                        symbol: "generic witness requirement must resolve at frontend phase, not MIR".to_string(),
-                    });
-                    return MirOperand::Constant(MirConstant::Unit);
                 }
                 let callee = match lower_callee_operand(callee, resolved.as_ref(), self) {
                     Some(callee) => callee,
