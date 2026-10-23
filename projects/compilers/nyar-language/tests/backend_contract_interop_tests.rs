@@ -236,6 +236,42 @@ micro i32_add(a: i32, b: i32): i32;
 }
 
 #[test]
+fn maps_vm_opcode_binding_to_vm_opcode_host_link() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 915 });
+    let module = compiler
+        .compile_source(
+            r#"
+[vm_opcode("i32.add")]
+micro i32_add(a: i32, b: i32): i32;
+"#,
+        )
+        .unwrap();
+    let contract = function_interop_contract(&module.functions[0]).expect("expected vm opcode contract");
+    assert!(contract.matches_boundary("host"));
+    assert!(contract.matches_platform_tag("vm-opcode"));
+    assert_eq!(contract.locator_segments(), &["i32.add"]);
+}
+
+#[test]
+fn rejects_vm_opcode_binding_with_non_single_segment_locator() {
+    for (version_id, argument) in [(916, r#""i32", "add""#), (917, "32")] {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id });
+        let module = compiler
+            .compile_source(&format!(
+                r#"
+[vm_opcode({argument})]
+micro i32_add(a: i32, b: i32): i32;
+"#
+            ))
+            .unwrap();
+        assert!(
+            function_interop_contract(&module.functions[0]).is_none(),
+            "vm_opcode must require exactly one string mnemonic, got {argument}"
+        );
+    }
+}
+
+#[test]
 fn rejects_wasi_preview1_surface_imports() {
     for (version_id, source) in [
         (
@@ -265,7 +301,8 @@ micro console_read(message: utf8): unit;
         let row: nyar_types::DiagnosticRow = error.into();
         assert!(
             row.code.contains("lowering_failed") || row.code.contains("unresolved") || row.code.contains("contract"),
-            "preview1 fd I/O should be rejected, got code={}", row.code
+            "preview1 fd I/O should be rejected, got code={}",
+            row.code
         );
     }
 }

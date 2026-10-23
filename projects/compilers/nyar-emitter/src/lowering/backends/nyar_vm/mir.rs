@@ -23,36 +23,37 @@ use miette::Result;
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
-/// `[vm("...")]` 数值符号的 NyarVM 指令映射。
+/// `[vm_opcode("...")]` 目标助记符到 NyarVM 指令的唯一编码表。
 ///
 /// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
+/// 未知助记符返回 `None`，由调用方结构化失败，禁止回落到宿主导入或默认指令。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NyarNumericBinding {
+enum NyarOpcodeEncoding {
     /// 先发射两个实参，再发射该二元指令。
     Binary(NyarHeadCode),
     /// 先发射 `i32(0)`，再发射实参，再发射该二元指令（`0 - x`）。
     Negate(NyarHeadCode),
 }
 
-/// `[vm]` 绑定符号到 NyarVM 指令的唯一映射表。
-fn nyar_numeric_binding(symbol: &str) -> Option<NyarNumericBinding> {
-    let binding = match symbol {
-        "i32_add" => NyarNumericBinding::Binary(NyarHeadCode::I32Add),
-        "i32_sub" => NyarNumericBinding::Binary(NyarHeadCode::I32Sub),
-        "i32_mul" => NyarNumericBinding::Binary(NyarHeadCode::I32Mul),
-        "i32_div" => NyarNumericBinding::Binary(NyarHeadCode::I32DivS),
-        "i32_rem" => NyarNumericBinding::Binary(NyarHeadCode::I32RemS),
-        "i32_eq" => NyarNumericBinding::Binary(NyarHeadCode::I32Eq),
-        "i32_ne" => NyarNumericBinding::Binary(NyarHeadCode::I32Ne),
-        "i32_lt" => NyarNumericBinding::Binary(NyarHeadCode::I32LtS),
-        "i32_le" => NyarNumericBinding::Binary(NyarHeadCode::I32LeS),
-        "i32_gt" => NyarNumericBinding::Binary(NyarHeadCode::I32GtS),
-        "i32_ge" => NyarNumericBinding::Binary(NyarHeadCode::I32GeS),
-        "i32_neg" => NyarNumericBinding::Negate(NyarHeadCode::I32Sub),
+/// `[vm_opcode]` 助记符到 NyarVM 指令的唯一映射表。
+fn nyar_opcode_encoding(mnemonic: &str) -> Option<NyarOpcodeEncoding> {
+    let encoding = match mnemonic {
+        "i32.add" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Add),
+        "i32.sub" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Sub),
+        "i32.mul" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Mul),
+        "i32.div" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32DivS),
+        "i32.rem" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32RemS),
+        "i32.eq" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Eq),
+        "i32.ne" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Ne),
+        "i32.lt" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32LtS),
+        "i32.le" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32LeS),
+        "i32.gt" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32GtS),
+        "i32.ge" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32GeS),
+        "i32.neg" => NyarOpcodeEncoding::Negate(NyarHeadCode::I32Sub),
         _ => return None,
     };
-    Some(binding)
+    Some(encoding)
 }
 
 struct BytecodeEmitter<'a> {
@@ -659,10 +660,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     /// 发射 `backend_plan.imports()` 中的外部 provider 调用。
     ///
-    /// 只有已绑定目标 provider（`host` 边界 + `vm` 目标标签 + 恰好一段符号）才是
-    /// NyarVM 可执行合同：数值符号按 [`nyar_numeric_binding`] 内联为指令，其余符号
-    /// 保持 `CallImport` 由 runtime `parse_host_op` 判定。未绑定 `[host_contract]`
-    /// 或其它目标标签必须失败，不得回落为空体、默认值或 `0`。
+    /// 先按 `[vm_opcode("...")]` 目标助记符内联为指令：未知助记符结构化失败，
+    /// 不得回落为宿主导入或默认成功。其余已绑定目标 provider（`host` 边界 +
+    /// `vm` 目标标签 + 恰好一段符号）保持 `CallImport`，由 runtime `parse_host_op`
+    /// 判定。未绑定 `[host_contract]` 或其它目标标签必须失败，不得回落为空体、
+    /// 默认值或 `0`。
     fn emit_external_call(
         &mut self,
         link: &ExternalImportLink,
@@ -676,36 +678,42 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             .abi_name_for_instance(instance)
             .map(|name| name.to_string())
             .unwrap_or_else(|| format!("{instance:?}"));
-        let Some(symbol) = (link.matches_boundary("host") && link.matches_platform_tag("vm"))
-            .then(|| match link.locator_segments() {
-                [symbol] => Some(symbol.as_str()),
-                _ => None,
-            })
-            .flatten()
-        else {
-            panic!(
-                "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
-                 需要 host 边界 + 目标标签 `vm` + 恰好一段符号，未绑定目标 provider 不得回落"
-            );
-        };
 
-        match nyar_numeric_binding(symbol) {
-            Some(NyarNumericBinding::Binary(code)) => {
-                assert_eq!(arguments.len(), 2, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{symbol}` 二元绑定不符");
-                self.emit_external_arguments(&callee_name, arguments);
-                self.emitter.emit_plain(code);
+        if let Some(mnemonic) = crate::lowering::shared::interop::vm_opcode_target(link) {
+            let Some(encoding) = nyar_opcode_encoding(mnemonic)
+            else {
+                panic!("Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`", self.mir_fn.symbol);
+            };
+            match encoding {
+                NyarOpcodeEncoding::Binary(code) => {
+                    assert_eq!(arguments.len(), 2, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{mnemonic}` 二元绑定不符");
+                    self.emit_external_arguments(&callee_name, arguments);
+                    self.emitter.emit_plain(code);
+                }
+                NyarOpcodeEncoding::Negate(code) => {
+                    assert_eq!(arguments.len(), 1, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{mnemonic}` 一元绑定不符");
+                    let zero = self.emitter.intern_i32(0);
+                    self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
+                    self.emit_external_arguments(&callee_name, arguments);
+                    self.emitter.emit_plain(code);
+                }
             }
-            Some(NyarNumericBinding::Negate(code)) => {
-                assert_eq!(arguments.len(), 1, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{symbol}` 一元绑定不符");
-                let zero = self.emitter.intern_i32(0);
-                self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
-                self.emit_external_arguments(&callee_name, arguments);
-                self.emitter.emit_plain(code);
-            }
-            None => {
-                self.emit_external_arguments(&callee_name, arguments);
-                self.emitter.emit_call_import(symbol, arguments.len() as i32);
-            }
+        }
+        else {
+            let Some(symbol) = (link.matches_boundary("host") && link.matches_platform_tag("vm"))
+                .then(|| match link.locator_segments() {
+                    [symbol] => Some(symbol.as_str()),
+                    _ => None,
+                })
+                .flatten()
+            else {
+                panic!(
+                    "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
+                     需要 host 边界 + 目标标签 `vm` 或 `vm-opcode` + 恰好一段符号，未绑定目标 provider 不得回落"
+                );
+            };
+            self.emit_external_arguments(&callee_name, arguments);
+            self.emitter.emit_call_import(symbol, arguments.len() as i32);
         }
 
         if let Some(output) = output {

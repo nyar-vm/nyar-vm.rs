@@ -50,6 +50,11 @@ const SYSCALL_BINDING_ATTRIBUTE: &str = "syscall";
 ///
 /// 该属性只声明目标指令助记符；助记符到编码的映射归 wasm backend 所有。
 const WASM_OPCODE_BINDING_ATTRIBUTE: &str = "wasm_opcode";
+/// NyarVM 指令绑定属性（`[vm_opcode("i32.add")]`）。
+///
+/// 与 `[wasm_opcode]` 对称：该属性只声明目标指令助记符；助记符到 VM opcode
+/// 的映射归 NyarVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
+const VM_OPCODE_BINDING_ATTRIBUTE: &str = "vm_opcode";
 
 /// 当剝外部导入链接覝求的能力标签。
 pub(crate) fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
@@ -202,6 +207,14 @@ fn attribute_to_interop_contract(attribute: &HirAttribute) -> Option<ExternalImp
             return None;
         }
         return Some(ExternalImportLink::host(Some(Identifier::new("wasm-opcode")), locator_segments));
+    }
+
+    if name == VM_OPCODE_BINDING_ATTRIBUTE {
+        // 与 `[wasm_opcode]` 同形：目标指令助记符必须恰好一段。
+        if locator_segments.len() != 1 {
+            return None;
+        }
+        return Some(ExternalImportLink::host(Some(Identifier::new("vm-opcode")), locator_segments));
     }
 
     if name == C_BINDING_ATTRIBUTE {

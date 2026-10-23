@@ -5,6 +5,8 @@
 //! feature 时可编译；断言与生产代码不变。
 #![cfg(feature = "nyar-vm-lane")]
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use nyar_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData};
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
 use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
@@ -61,8 +63,8 @@ fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
         .expect("源码闭包必须完成 Compiler 链路");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
-    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
-        .expect("目标私有计划必须可表达");
+    let plan =
+        TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots).expect("目标私有计划必须可表达");
     nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .expect("只允许沿已绑定实例发射")
 }
@@ -100,7 +102,7 @@ imply i32 {
 }
 
 [host_contract]
-[vm("i32_add")]
+[vm_opcode("i32.add")]
 micro i32_add(a: i32, b: i32): i32
 
 [main]
@@ -117,6 +119,42 @@ micro main() -> i32 {
         "已内联的数值 provider 不得留下 nyar.host 导入: {:?}",
         module.imports
     );
+}
+
+/// 未知 `vm_opcode` 助记符不得回落为宿主导入或默认指令。
+#[test]
+fn unknown_vm_opcode_mnemonic_fails_structurally() {
+    let groups = numeric_groups(
+        r#"[primitive("core::primitive::i32")]
+structure i32 { }"#,
+        r#"
+imply i32 {
+    infix `+`(self, rhs: Self): Self {
+        i32_add(self, rhs)
+    }
+}
+
+[host_contract]
+[vm_opcode("i32.unknown")]
+micro i32_add(a: i32, b: i32): i32
+
+[main]
+micro main() -> i32 {
+    return 1 + 2
+}
+"#,
+    );
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        let _ = lower_source_groups(&groups);
+    }))
+    .expect_err("未知 `vm_opcode` 助记符必须结构化失败");
+    let message = panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|text| text.to_string()))
+        .expect("panic 载荷必须是文本");
+    assert!(message.contains("vm_opcode"), "{message}");
+    assert!(message.contains("i32.unknown"), "{message}");
 }
 
 #[test]
@@ -141,7 +179,10 @@ micro main() -> i64 {
         .iter()
         .position(|import| import.module_name == "nyar.host" && import.symbol_name == "i64_add")
         .expect("i64_add 必须保留 nyar.host 导入");
-    assert_eq!(module.imports[import], NyarImport { kind: NyarImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_add".into() });
+    assert_eq!(
+        module.imports[import],
+        NyarImport { kind: NyarImportKind::Function, module_name: "nyar.host".into(), symbol_name: "i64_add".into() }
+    );
     let mut position = 0;
     let mut call_import = None;
     while position < module.code_bytes.len() {
