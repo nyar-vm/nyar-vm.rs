@@ -4490,14 +4490,14 @@ fn diagnose_pattern_extractor_failure(
         if is_builtin_von_value_pattern(canonical_callee, actual_type) {
             return None;
         }
-        return Some(ParseError::invalid(format!("unknown pattern extractor `{extractor_name}` for scrutinee type `{type_name}`")));
+        return Some(ParseError::Invalid { message: format!("unknown pattern extractor `{extractor_name}` for scrutinee type `{type_name}`"), span: None });
     }
 
     if matching
         .iter()
         .any(|candidate| candidate.param_specs.first().is_some_and(|param| is_extractor_receiver_param(param) && param.is_mutable))
     {
-        return Some(ParseError::invalid(format!("pattern extractor `{extractor_name}` must not use `mut self` on `{type_name}`")));
+        return Some(ParseError::Invalid { message: format!("pattern extractor `{extractor_name}` must not use `mut self` on `{type_name}`"), span: None });
     }
 
     if matching.iter().all(|candidate| nullable_payload_type(&candidate.signature.return_type).is_none()) {
@@ -4505,9 +4505,9 @@ fn diagnose_pattern_extractor_failure(
             .first()
             .map(|candidate| render_valkyrie_type_name(&candidate.signature.return_type))
             .unwrap_or_else(|| "unknown".to_string());
-        return Some(ParseError::invalid(format!(
+        return Some(ParseError::Invalid { message: format!(
             "pattern extractor `{extractor_name}` must return a nullable type (`T?`); got `{return_type}` for `{type_name}`"
-        )));
+        ), span: None });
     }
 
     None
@@ -4521,7 +4521,7 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
 
     let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
     if matches!(head, "Fine" | "Fail" | "Some" | "None") {
-        return Some(ParseError::invalid(format!("pattern extractor `{head}` 需要已解析的 scrutinee 类型，不能仅凭变体名放行")));
+        return Some(ParseError::Invalid { message: format!("pattern extractor `{head}` 需要已解析的 scrutinee 类型，不能仅凭变体名放行"), span: None });
     }
     // VonValue unite arms (`case Object(fields):` in legion.tools manifest.v).
     // Same class as Result: variant-head extractors are valid even when local
@@ -4540,7 +4540,7 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
     }
 
     let extractor_name = canonical_callee.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
-    Some(ParseError::invalid(format!("cannot validate pattern extractor `{extractor_name}` without a known scrutinee type")))
+    Some(ParseError::Invalid { message: format!("cannot validate pattern extractor `{extractor_name}` without a known scrutinee type"), span: None })
 }
 
 fn diagnose_unresolved_arm_extractor(pattern: &HirPattern, candidates: &[OverloadCandidate]) -> Option<crate::valkyrie::frontend::ParseError> {

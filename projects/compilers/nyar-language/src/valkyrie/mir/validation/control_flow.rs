@@ -64,7 +64,7 @@ pub(super) fn validate_jump_target(
             continue;
         };
         if argument_type != *parameter_type {
-            return Err(ParseError::invalid(format!(
+            return Err(ParseError::Invalid { message: format!(
                 "控制流调度校验失败：`MIR` 函数 `{}` 的 block `{}` 跳向 `{}` 时，第 {} 个 Jump 参数类型为 `{}`，目标参数类型为 `{}`",
                 function.display_symbol,
                 block.label,
@@ -72,7 +72,7 @@ pub(super) fn validate_jump_target(
                 index + 1,
                 display_type(&argument_type),
                 display_type(parameter_type)
-            )));
+            ), span: None });
         }
     }
     Ok(())
@@ -86,12 +86,12 @@ pub(super) fn validate_jump_shape(
 ) -> Result<(), ParseError> {
     let Some(expected_parameter_count) = blocks.get(&target).copied()
     else {
-        return Err(ParseError::invalid(format!("控制流调度校验失败：函数 `{function_name}` 的 block `{block_label}` 跳转到了不存在的目标块")));
+        return Err(ParseError::Invalid { message: format!("控制流调度校验失败：函数 `{function_name}` 的 block `{block_label}` 跳转到了不存在的目标块"), span: None });
     };
     if expected_parameter_count != argument_count {
-        return Err(ParseError::invalid(format!(
+        return Err(ParseError::Invalid { message: format!(
             "控制流调度校验失败：函数 `{function_name}` 的 block `{block_label}` 传出的参数数量与目标块参数数量不一致"
-        )));
+        ), span: None });
     }
     Ok(())
 }
@@ -106,6 +106,6 @@ pub(super) fn ensure_target_exists(
         Ok(())
     }
     else {
-        Err(ParseError::invalid(format!("控制流调度校验失败：函数 `{function_name}` �?block `{block_label}` 指向了不存在的目标块")))
+        Err(ParseError::Invalid { message: format!("控制流调度校验失败：函数 `{function_name}` �?block `{block_label}` 指向了不存在的目标块"), span: None })
     }
 }

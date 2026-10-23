@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), ParseError> {
     let mut declarations = BTreeMap::<NamePath, Vec<(ItemId, usize)>>::new();
     fn collect_trait(item: &HirTrait, declarations: &mut BTreeMap<NamePath, Vec<(ItemId, usize)>>) -> Result<(), ParseError> {
-        let identity = item.declaration.ok_or_else(|| ParseError::invalid("trait export 缺少声明身份"))?;
+        let identity = item.declaration.ok_or_else(|| ParseError::Invalid { message: "trait export 缺少声明身份".into(), span: None })?;
         let mut path = item.declaring_namespace.parts().to_vec();
         path.push(item.name.clone());
         let entries = declarations.entry(NamePath::new(path)).or_default();
@@ -50,7 +50,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
         for candidate in candidates {
             if let Some(entries) = declarations.get(&candidate) {
                 if entries.len() != 1 {
-                    return Err(ParseError::invalid(format!("trait 声明歧义：{path}")));
+                    return Err(ParseError::Invalid { message: format!("trait 声明歧义：{path}"), span: None });
                 }
                 return Ok(entries[0]);
             }
@@ -69,7 +69,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
                     match matched {
                         None => matched = Some(*entry),
                         Some(existing) if existing.0 == entry.0 => {}
-                        Some(_) => return Err(ParseError::invalid(format!("trait 声明歧义：{path}"))),
+                        Some(_) => return Err(ParseError::Invalid { message: format!("trait 声明歧义：{path}"), span: None }),
                     }
                 }
             }
@@ -77,7 +77,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
                 return Ok(entry);
             }
         }
-        Err(ParseError::invalid(format!("trait 约束未解析：{path}")))
+        Err(ParseError::Invalid { message: format!("trait 约束未解析：{path}"), span: None })
     }
     fn bounds(
         constraints: &mut [HirWhereConstraint],
@@ -88,7 +88,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
             for bound in &mut constraint.bounds {
                 let (identity, arity) = lookup(&bound.trait_path, namespace, declarations)?;
                 if bound.type_arguments.len() != arity {
-                    return Err(ParseError::invalid(format!("trait 类型实参数量不符：{}", bound.trait_path)));
+                    return Err(ParseError::Invalid { message: format!("trait 类型实参数量不符：{}", bound.trait_path), span: None });
                 }
                 bound.declaration = Some(identity);
             }
@@ -122,7 +122,7 @@ pub(super) fn bind_trait_declarations(module: &mut HirModule) -> Result<(), Pars
             if let Some(path) = &item.trait_path {
                 let (identity, arity) = lookup(path, &item.declaring_namespace, declarations)?;
                 if arity != item.trait_arguments.len() {
-                    return Err(ParseError::invalid(format!("imply trait 类型实参数量不符：{path}")));
+                    return Err(ParseError::Invalid { message: format!("imply trait 类型实参数量不符：{path}"), span: None });
                 }
                 item.trait_declaration = Some(identity);
             }

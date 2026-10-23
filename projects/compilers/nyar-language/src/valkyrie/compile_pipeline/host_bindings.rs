@@ -50,7 +50,7 @@ pub fn resolve_host_provider_bindings(
             continue;
         };
         let provider_instance = instances.get(&binding.provider).copied().ok_or_else(|| {
-            ParseError::invalid(format!("host provider `{}` 未在源码闭包中解析到 callable identity", binding.provider.encoded()))
+            ParseError::Invalid { message: format!("host provider `{}` 未在源码闭包中解析到 callable identity", binding.provider.encoded()), span: None }
         })?;
         resolved.push(ResolvedHostProviderBinding { contract_instance, provider_instance });
     }
@@ -128,7 +128,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
     let mut instances = BTreeMap::new();
     for (key, found) in collected {
         if found.len() != 1 {
-            return Err(ParseError::invalid(format!("callable 声明 `{}` 对应多个 ItemInstanceId", key.encoded())));
+            return Err(ParseError::Invalid { message: format!("callable 声明 `{}` 对应多个 ItemInstanceId", key.encoded()), span: None });
         }
         instances.insert(key, *found.iter().next().expect("single callable instance"));
     }
@@ -185,7 +185,7 @@ pub fn apply_host_provider_bindings(
             continue;
         }
         if !callable_present(&modules, binding.provider_instance) {
-            return Err(ParseError::invalid(format!("host provider `{}` 未在源码闭包中定义", binding.provider_instance)));
+            return Err(ParseError::Invalid { message: format!("host provider `{}` 未在源码闭包中定义", binding.provider_instance), span: None });
         }
         let provider_function = modules
             .iter()
@@ -208,7 +208,7 @@ pub fn apply_host_provider_bindings(
         if let Some(previous) = remaps.insert(plan.contract_instance, plan.provider_instance)
             && previous != plan.provider_instance
         {
-            return Err(ParseError::invalid("host contract 不能同时绑定到多个 provider"));
+            return Err(ParseError::Invalid { message: "host contract 不能同时绑定到多个 provider".into(), span: None });
         }
     }
 
@@ -247,11 +247,11 @@ fn install_provider_definition(
     provider_function: MirFunction,
 ) -> Result<(), ParseError> {
     if module.functions.iter().any(|function| function.instance == Some(provider_instance)) {
-        module.register_callable_symbol(provider_instance, provider_function.display_symbol.clone()).map_err(ParseError::invalid)?;
+        module.register_callable_symbol(provider_instance, provider_function.display_symbol.clone()).map_err(|e| ParseError::Invalid { message: e, span: None })?;
         return Ok(());
     }
     module.functions.push(provider_function.clone());
-    module.register_callable_symbol(provider_instance, provider_function.display_symbol).map_err(ParseError::invalid)?;
+    module.register_callable_symbol(provider_instance, provider_function.display_symbol).map_err(|e| ParseError::Invalid { message: e, span: None })?;
     Ok(())
 }
 

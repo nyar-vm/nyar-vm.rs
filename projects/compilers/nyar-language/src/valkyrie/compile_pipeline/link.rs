@@ -28,33 +28,33 @@ pub fn link_reachable_dependency_mir(
     let mut imports = BTreeMap::new();
     for module in std::iter::once(&*consumer).chain(dependency_mirs) {
         if module.type_identities != consumer.type_identities {
-            return Err(ParseError::invalid("依赖链接必须消费 Compiler 统一 TypeId 表"));
+            return Err(ParseError::Invalid { message: "依赖链接必须消费 Compiler 统一 TypeId 表".into(), span: None });
         }
         for function in &module.functions {
             if let Some(instance) = function.instance {
                 if function.declaration.is_none() {
-                    return Err(ParseError::invalid(format!(
+                    return Err(ParseError::Invalid { message: format!(
                         "ItemInstanceId `{instance}` 缺少声明 ItemId；symbol=`{}`; module=`{}`",
                         function.display_symbol, module.name
-                    )));
+                    ), span: None });
                 }
                 if let Some((previous_module, previous)) = definitions.insert(instance, (module, function)) {
-                    return Err(ParseError::invalid(format!(
+                    return Err(ParseError::Invalid { message: format!(
                         "ItemInstanceId `{instance}` 定义重复；first=`{}`@`{}`; second=`{}`@`{}`",
                         previous.display_symbol, previous_module.name, function.display_symbol, module.name
-                    )));
+                    ), span: None });
                 }
             }
         }
         for contract in &module.external_calls {
-            let instance = contract.instance.ok_or_else(|| ParseError::invalid("外部导入缺少 ItemInstanceId"))?;
+            let instance = contract.instance.ok_or_else(|| ParseError::Invalid { message: "外部导入缺少 ItemInstanceId".into(), span: None })?;
             if contract.declaration.is_none() {
-                return Err(ParseError::invalid("外部导入缺少 ItemId"));
+                return Err(ParseError::Invalid { message: "外部导入缺少 ItemId".into(), span: None });
             }
             if let Some(previous) = imports.insert(instance, contract)
                 && previous != contract
             {
-                return Err(ParseError::invalid(format!("导入实例 `{instance}` 合同冲突")));
+                return Err(ParseError::Invalid { message: format!("导入实例 `{instance}` 合同冲突"), span: None });
             }
         }
     }
@@ -92,12 +92,12 @@ pub fn link_reachable_dependency_mir(
             }
             if !std::ptr::eq(*module, &*consumer) {
                 if let Err(detail) = linked.register_callable_symbol(instance, function.display_symbol.clone()) {
-                    return Err(ParseError::invalid(detail));
+                    return Err(ParseError::Invalid { message: detail, span: None });
                 }
                 let module_index = std::iter::once(&*consumer)
                     .chain(dependency_mirs)
                     .position(|candidate| std::ptr::eq(candidate, *module))
-                    .ok_or_else(|| ParseError::invalid("依赖模块身份不在当前源码闭包中"))?;
+                    .ok_or_else(|| ParseError::Invalid { message: "依赖模块身份不在当前源码闭包中".into(), span: None })?;
                 let mut function = (*function).clone();
                 remap_function_aggregates(&mut function, &remaps[module_index])?;
                 linked.functions.push(function);
@@ -108,7 +108,7 @@ pub fn link_reachable_dependency_mir(
                 linked.external_calls.push((*contract).clone());
                 let symbol = crate::valkyrie::symbols::stable_symbol_key(&contract.symbol);
                 if let Err(detail) = linked.register_callable_symbol(instance, symbol) {
-                    return Err(ParseError::invalid(detail));
+                    return Err(ParseError::Invalid { message: detail, span: None });
                 }
             }
         }
@@ -130,9 +130,9 @@ pub fn link_reachable_dependency_mir(
                 .map(|function| function.display_symbol.clone())
                 .collect::<Vec<_>>();
             let local_imports = consumer.external_calls.iter().map(|c| c.symbol.to_string()).take(12).collect::<Vec<_>>();
-            return Err(ParseError::invalid(format!(
+            return Err(ParseError::Invalid { message: format!(
                 "调用实例 `{instance}` 没有定义或显式导入合同；callers={callers:?}; consumer_imports={local_imports:?}"
-            )));
+            ), span: None });
         }
     }
     *consumer = linked;
@@ -149,7 +149,7 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
     for contract in &entry.exports {
         match consumer.exports.iter().find(|existing| existing.instance == contract.instance) {
             Some(existing) if existing != contract => {
-                return Err(ParseError::invalid(format!("入口组导出合同冲突: `{}`", contract.symbol)));
+                return Err(ParseError::Invalid { message: format!("入口组导出合同冲突: `{}`", contract.symbol), span: None });
             }
             Some(_) => {}
             None => consumer.exports.push(contract.clone()),
@@ -158,7 +158,7 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
     for contract in &entry.entries {
         match consumer.entries.iter().find(|existing| existing.instance == contract.instance) {
             Some(existing) if existing != contract => {
-                return Err(ParseError::invalid(format!("入口组入口合同冲突: `{}`", contract.symbol)));
+                return Err(ParseError::Invalid { message: format!("入口组入口合同冲突: `{}`", contract.symbol), span: None });
             }
             Some(_) => {}
             None => consumer.entries.push(contract.clone()),
@@ -179,12 +179,12 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
             if let Some(previous) = existing.wasm_export_names.insert(*instance, name.clone())
                 && previous != *name
             {
-                return Err(ParseError::invalid(format!("片段 `{}` 的 wasm 导出名冲突", fragment.id)));
+                return Err(ParseError::Invalid { message: format!("片段 `{}` 的 wasm 导出名冲突", fragment.id), span: None });
             }
         }
         match (existing.entry_operation, fragment.entry_operation) {
             (Some(previous), Some(next)) if previous != next => {
-                return Err(ParseError::invalid(format!("片段 `{}` 包含多个入口 operation", fragment.id)));
+                return Err(ParseError::Invalid { message: format!("片段 `{}` 包含多个入口 operation", fragment.id), span: None });
             }
             (None, Some(next)) => existing.entry_operation = Some(next),
             _ => {}
@@ -213,7 +213,7 @@ pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule])
                     && let Some(existing) = merged.layouts.iter().find(|candidate| candidate.id == existing_id)
                 {
                     if layout_contract_differs(existing, layout) {
-                        return Err(ParseError::invalid(format!("布局 `{}` 合同冲突", layout_diagnostic_label(layout))));
+                        return Err(ParseError::Invalid { message: format!("布局 `{}` 合同冲突", layout_diagnostic_label(layout)), span: None });
                     }
                     continue;
                 }
@@ -224,14 +224,14 @@ pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule])
                     let existing = merged.layouts.iter().find(|candidate| candidate.id == existing_id);
                     if let Some(existing) = existing {
                         if layout_contract_differs(existing, layout) {
-                            return Err(ParseError::invalid(format!("布局键 `{key:?}` 合同冲突")));
+                            return Err(ParseError::Invalid { message: format!("布局键 `{key:?}` 合同冲突"), span: None });
                         }
                         continue;
                     }
                 }
             }
             else {
-                return Err(ParseError::invalid(format!("布局 `{}` 缺少 declaration identity，禁止按名合并", layout_diagnostic_label(layout))));
+                return Err(ParseError::Invalid { message: format!("布局 `{}` 缺少 declaration identity，禁止按名合并", layout_diagnostic_label(layout)), span: None });
             }
             let new_id = merged.layouts.iter().map(|candidate| candidate.id).max().unwrap_or(0).saturating_add(1);
             let mut copied = layout.clone();
@@ -239,7 +239,7 @@ pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule])
             if let Some(item) = owner {
                 // 只按声明身份合并；名称或物理形状相同不能补出语义身份。
                 if merged.declaration_to_layout.insert(item, new_id).is_some() {
-                    return Err(ParseError::invalid(format!("布局 `{}` declaration identity 重复", layout_diagnostic_label(layout))));
+                    return Err(ParseError::Invalid { message: format!("布局 `{}` declaration identity 重复", layout_diagnostic_label(layout)), span: None });
                 }
                 if copied.storage == nyar_types::layout::StorageKind::Value {
                     merged.value_type_declarations.insert(item);
@@ -247,7 +247,7 @@ pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule])
             }
             else if let Some(key) = layout.key.clone() {
                 if merged.synthetic_layouts.insert(key, new_id).is_some() {
-                    return Err(ParseError::invalid(format!("布局键 `{:?}` 重复", layout.key)));
+                    return Err(ParseError::Invalid { message: format!("布局键 `{:?}` 重复", layout.key), span: None });
                 }
             }
             merged.layouts.push(copied);
@@ -330,27 +330,27 @@ fn freeze_aggregate_identities(
                 global_structs.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
             {
                 if !same_struct_contract(existing, declaration) {
-                    return Err(ParseError::invalid(format!("聚合声明 `{}` 合同冲突", declaration.qualified_name())));
+                    return Err(ParseError::Invalid { message: format!("聚合声明 `{}` 合同冲突", declaration.qualified_name()), span: None });
                 }
                 remap.nominals.insert(declaration.nominal, existing.nominal);
                 for (local, global) in declaration.fields.iter().zip(&existing.fields) {
                     if local.id != global.id {
-                        return Err(ParseError::invalid(format!(
+                        return Err(ParseError::Invalid { message: format!(
                             "聚合声明 `{}` 的字段身份不一致；local={}; global={}",
                             declaration.qualified_name(),
                             local.id,
                             global.id
-                        )));
+                        ), span: None });
                     }
                     claim_field_identity(&mut field_owners, local.id, &owner)?;
                     if remap.fields.insert(local.id, global.id).is_some() {
-                        return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
+                        return Err(ParseError::Invalid { message: format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name), span: None });
                     }
                 }
             }
             else {
                 let nominal =
-                    NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+                    NominalInstanceId::from_index(global_structs.len() as u32).ok_or_else(|| ParseError::Invalid { message: "NominalInstanceId 溢出".into(), span: None })?;
                 let mut frozen = declaration.clone();
                 frozen.nominal = nominal;
                 remap.nominals.insert(declaration.nominal, nominal);
@@ -366,7 +366,7 @@ fn freeze_aggregate_identities(
                 global_sums.iter().find(|existing| existing.declaration.is_some() && existing.declaration == declaration.declaration)
             {
                 if !same_sum_contract(existing, declaration) {
-                    return Err(ParseError::invalid(format!("sum 声明 `{}` 合同冲突", declaration.name)));
+                    return Err(ParseError::Invalid { message: format!("sum 声明 `{}` 合同冲突", declaration.name), span: None });
                 }
                 remap.nominals.insert(declaration.nominal, existing.nominal);
                 for (local_variant, global_variant) in declaration.variants.iter().zip(&existing.variants) {
@@ -374,14 +374,14 @@ fn freeze_aggregate_identities(
                     remap.variants.insert(local_variant.id, global_variant.id);
                     for (local, global) in local_variant.fields.iter().zip(&global_variant.fields) {
                         if local.id != global.id {
-                            return Err(ParseError::invalid(format!(
+                            return Err(ParseError::Invalid { message: format!(
                                 "sum 声明 `{}` 变体 `{}` 的字段身份不一致；local={}; global={}",
                                 declaration.name, local_variant.name, local.id, global.id
-                            )));
+                            ), span: None });
                         }
                         claim_field_identity(&mut field_owners, local.id, &owner)?;
                         if remap.fields.insert(local.id, global.id).is_some() {
-                            return Err(ParseError::invalid(format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name)));
+                            return Err(ParseError::Invalid { message: format!("字段身份 `{}` 在模块 `{}` 中重复", local.id, module.name), span: None });
                         }
                     }
                 }
@@ -389,14 +389,14 @@ fn freeze_aggregate_identities(
             else {
                 let mut frozen = declaration.clone();
                 let global_nominal = NominalInstanceId::from_index((global_structs.len() + global_sums.len()) as u32)
-                    .ok_or_else(|| ParseError::invalid("NominalInstanceId 溢出"))?;
+                    .ok_or_else(|| ParseError::Invalid { message: "NominalInstanceId 溢出".into(), span: None })?;
                 remap.nominals.insert(declaration.nominal, global_nominal);
                 frozen.nominal = global_nominal;
                 for (variant_index, variant) in frozen.variants.iter_mut().enumerate() {
                     let global_variant = nyar_types::VariantId::from_index(
                         global_sums.iter().flat_map(|sum| sum.variants.iter()).count() as u32 + variant_index as u32,
                     )
-                    .ok_or_else(|| ParseError::invalid("VariantId 溢出"))?;
+                    .ok_or_else(|| ParseError::Invalid { message: "VariantId 溢出".into(), span: None })?;
                     let owner = sum_field_owner(declaration, variant);
                     remap.variants.insert(variant.id, global_variant);
                     variant.id = global_variant;
@@ -430,7 +430,7 @@ fn sum_field_owner(declaration: &MirSumDeclaration, variant: &crate::valkyrie::m
 fn claim_field_identity(owners: &mut BTreeMap<FieldId, String>, id: FieldId, owner: &str) -> Result<(), ParseError> {
     match owners.get(&id) {
         Some(existing) if existing == owner => Ok(()),
-        Some(existing) => Err(ParseError::invalid(format!("字段身份 `{id}` 被 `{owner}` 与 `{existing}` 同时占用"))),
+        Some(existing) => Err(ParseError::Invalid { message: format!("字段身份 `{id}` 被 `{owner}` 与 `{existing}` 同时占用"), span: None }),
         None => {
             owners.insert(id, owner.to_string());
             Ok(())
@@ -443,19 +443,19 @@ fn remap_function_aggregates(function: &mut MirFunction, remap: &AggregateRemap)
         for instruction in &mut block.instructions {
             match &mut instruction.kind {
                 MirOperation::StructNew { nominal, fields } => {
-                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::invalid("StructNew 引用了未冻结的名义身份"))?;
+                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::Invalid { message: "StructNew 引用了未冻结的名义身份".into(), span: None })?;
                     for (field, _) in fields {
-                        *field = *remap.fields.get(field).ok_or_else(|| ParseError::invalid("StructNew 引用了未冻结的字段身份"))?;
+                        *field = *remap.fields.get(field).ok_or_else(|| ParseError::Invalid { message: "StructNew 引用了未冻结的字段身份".into(), span: None })?;
                     }
                 }
                 MirOperation::FieldGet { field, .. } | MirOperation::FieldSet { field, .. } => {
-                    *field = *remap.fields.get(field).ok_or_else(|| ParseError::invalid("字段操作引用了未冻结的字段身份"))?;
+                    *field = *remap.fields.get(field).ok_or_else(|| ParseError::Invalid { message: "字段操作引用了未冻结的字段身份".into(), span: None })?;
                 }
                 MirOperation::SumNew { nominal, variant, .. }
                 | MirOperation::SumPayloadGet { nominal, variant, .. }
                 | MirOperation::SumVariantIs { nominal, variant, .. } => {
-                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::invalid("sum 操作引用了未冻结的名义身份"))?;
-                    *variant = *remap.variants.get(variant).ok_or_else(|| ParseError::invalid("sum 操作引用了未冻结的 variant 身份"))?;
+                    *nominal = *remap.nominals.get(nominal).ok_or_else(|| ParseError::Invalid { message: "sum 操作引用了未冻结的名义身份".into(), span: None })?;
+                    *variant = *remap.variants.get(variant).ok_or_else(|| ParseError::Invalid { message: "sum 操作引用了未冻结的 variant 身份".into(), span: None })?;
                 }
                 _ => {}
             }

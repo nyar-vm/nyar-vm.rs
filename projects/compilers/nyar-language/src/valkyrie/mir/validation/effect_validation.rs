@@ -23,9 +23,9 @@ pub(super) fn validate_effect_resume_target(
     let actual_parameter_count = blocks.get(&resume_target).copied().unwrap_or_default();
     let expected_parameter_count = expected_effect_resume_parameter_count(effect);
     if actual_parameter_count != expected_parameter_count {
-        return Err(ParseError::invalid(format!(
+        return Err(ParseError::Invalid { message: format!(
             "控制流调度校验失败：`MIR` 函数 `{function_name}` 的 block `{block_label}` 所指向的 effect 恢复点参数个数不合法，期望 {expected_parameter_count} 个，当前为 {actual_parameter_count}"
-        )));
+        ), span: None });
     }
     Ok(())
 }
@@ -41,9 +41,9 @@ pub(super) fn validate_effect_payload(
             return Ok(());
         }
         if payload_required(effect) {
-            return Err(ParseError::invalid(format!(
+            return Err(ParseError::Invalid { message: format!(
                 "控制流调度校验失败：`MIR` 函数 `{function_name}` 的 block `{block_label}` 缺少 effect payload"
-            )));
+            ), span: None });
         }
     }
     Ok(())
@@ -64,16 +64,16 @@ pub(super) fn validate_effect_payload_static_type(
             MirEffectKind::AsyncBlock => "`block`",
             _ => unreachable!(),
         };
-        return Err(ParseError::invalid(format!(
+        return Err(ParseError::Invalid { message: format!(
             "控制流调度校验失败：`MIR` 函数 `{function_name}` 的 block `{block_label}` 的 {effect_name} effect payload 类型 `{}` 不满足 `Future<T>` / `Promise<T>` 形状",
             display_type(payload_type)
-        )));
+        ), span: None });
     }
     if matches!(effect, MirEffectKind::DelegateYield) && generator_source_type(payload_type).is_none() {
-        return Err(ParseError::invalid(format!(
+        return Err(ParseError::Invalid { message: format!(
             "控制流调度校验失败：`MIR` 函数 `{function_name}` 的 block `{block_label}` 的 `yield from` effect payload 类型 `{}` 不满足 `Generator<T>` / `Iterator<T>` 形状",
             display_type(payload_type)
-        )));
+        ), span: None });
     }
     Ok(())
 }
@@ -96,9 +96,9 @@ pub(super) fn validate_resume_block_parameter_static_type(
     if actual_type == expected_type {
         return Ok(());
     }
-    Err(ParseError::invalid(format!(
+    Err(ParseError::Invalid { message: format!(
         "控制流调度校验失败：`MIR` 函数 `{function_name}` 的 block `{block_label}` 所指向恢复点参数类型为 `{}`，期望 `{}`",
         display_type(actual_type),
         display_type(expected_type)
-    )))
+    ), span: None })
 }
