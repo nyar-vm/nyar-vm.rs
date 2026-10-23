@@ -42,6 +42,8 @@ pub struct LinkedSemanticProgram {
     pub entries: BTreeMap<ItemInstanceId, EntryRecord>,
     /// Semantic type table.
     pub types: BTreeMap<TypeId, TypeRecord>,
+    /// Frozen surface spelling for nominal declaration identities; used when lowering to executable types.
+    pub type_surface_spellings: BTreeMap<TypeId, Identifier>,
     /// 可作为数组下标 / `ArrayLength` 结果的 TypeId（含 `Nominal{usize}`）；禁止把名义整数改写成 Primitive。
     pub array_index_types: BTreeSet<TypeId>,
     /// Compiler 解析出的聚合布局；装配与 backend 不得从旧 MIR 重建。
