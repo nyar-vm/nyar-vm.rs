@@ -3398,16 +3398,7 @@ fn enrich_unite_variant_constructor_facts(
     struct_fields: &AggregateFieldIndex,
     singleton_names: &BTreeSet<Identifier>,
 ) {
-    // intrinsic 函数不可能是 variant 构造；它们有稳定的 intrinsic 身份，
-    // 不得被 contextual_type / return_type 重写成 unity 构造。
-    if call.intrinsic.is_some() {
-        return;
-    }
-    // 已解析的普通函数调用（Function domain + declaration 存在）也不是 variant 构造。
-    // 这覆盖了 intrinsic 身份丢失但声明身份尚存的情况。
-    if call.domain == HirCallableDomain::Function && call.declaration.is_some() {
-        return;
-    }
+    // domain 现已在 Constructor 专属路径保障，不会有 Function/intrinsic 候选误入。
     if call.sum_owner.is_some() && call.sum_variant.is_some() {
         return;
     }
