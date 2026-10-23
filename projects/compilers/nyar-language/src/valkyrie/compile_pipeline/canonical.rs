@@ -321,7 +321,17 @@ fn collect_aggregate_identities(
         let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("聚合 `{qualified}` 缺少类型事实")))?;
         let nominal = aggregate.nominal;
-        let semantics = if aggregate.is_value_type { NominalValueSemantics::Value } else { NominalValueSemantics::Reference };
+        // canonical 不得用 Reference 默认值回填；值类型事实必须在上游由 `structure`/`class` 关键字明确冻结。
+        let semantics = if aggregate.is_value_type {
+            NominalValueSemantics::Value
+        } else {
+            return Err(error_without_module(
+                "CAN057",
+                format!(
+                    "聚合 `{qualified}` 缺少冻结的值语义事实；canonical 不得默认 Reference 回填。`class` 类型的引用语义必须在上游明确登记"
+                ),
+            ));
+        };
         if nominals.insert(nominal, (declaration, semantics)).is_some() {
             return Err(error_without_module("CAN020", format!("聚合 identity 重复: {qualified}")));
         }
