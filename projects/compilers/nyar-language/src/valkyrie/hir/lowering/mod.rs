@@ -2,7 +2,7 @@ use std::{cell::RefCell, ops::Range, path::Path};
 
 use crate::{
     hir::{
-        ModuleTypeAliasScope, VisibleTypeAlias, hoist_anonymous_classes, lower_type_expression,
+        GenericBinderScope, ModuleTypeAliasScope, NominalTypeScope, VisibleTypeAlias, hoist_anonymous_classes, lower_type_expression,
         overload::{resolve_hir_calls, validate_extractor_patterns},
         render_type_expression, validate_ast_root,
     },
@@ -426,6 +426,41 @@ fn register_root_type_alias_targets(roots: &[&ValkyrieRoot]) -> Result<(), HirEr
         }
     }
     Ok(())
+}
+
+/// 收集 lowering 作用域内可见的名义类型声明短名（本组声明 + 依赖导出）。
+///
+/// 只登记会进入 `HirStruct`/`HirEnum` 的声明；名字仍由 `bind_declared_nominal_types`
+/// 按实际声明冻结身份，这里不提供跨 namespace 的可见性推断。
+fn visible_nominal_type_names(roots: &[&ValkyrieRoot], imported_semantic_exports: &[HirDependencySemanticExport]) -> Vec<String> {
+    fn walk<'a>(items: &'a [StatementNode], out: &mut Vec<&'a str>) {
+        for item in items {
+            match item {
+                StatementNode::Class(class_decl) => out.push(class_decl.name.name.as_str()),
+                StatementNode::Structure(structure) => out.push(structure.name.name.as_str()),
+                StatementNode::Enums(enums) => out.push(enums.name.name.as_str()),
+                StatementNode::Variant(variant) => out.push(variant.name.name.as_str()),
+                StatementNode::Namespace(namespace) => {
+                    if let Some(body) = &namespace.body {
+                        walk(&body.items, out);
+                    }
+                }
+                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), out),
+                _ => {}
+            }
+        }
+    }
+    let mut names = Vec::new();
+    for export in imported_semantic_exports {
+        names.extend(export.structs.iter().map(|item| item.name.to_string()));
+        names.extend(export.enums.iter().map(|item| item.name.to_string()));
+    }
+    for root in roots {
+        let mut declared = Vec::new();
+        walk(&root.items, &mut declared);
+        names.extend(declared.into_iter().map(str::to_string));
+    }
+    names
 }
 
 /// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
@@ -995,6 +1030,7 @@ impl ValkyrieCompiler {
         // 类型别名作用域是组级事实：本组全部文件的 `type` 声明 + 可见依赖导出的别名。
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
         let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(&roots, imported_semantic_exports));
+        let _nominal_scope = NominalTypeScope::enter(visible_nominal_type_names(&roots, imported_semantic_exports));
         register_root_type_alias_targets(&roots)?;
         let mut merged: Option<HirModule> = None;
         for (file, root) in &prepared {
@@ -2474,6 +2510,7 @@ impl AstToHir {
         module_name_override: Option<NamePath>,
     ) -> Result<HirModule, HirError> {
         let _type_alias_scope = ModuleTypeAliasScope::enter(visible_type_aliases(std::slice::from_ref(&root), imported_semantic_exports));
+        let _nominal_scope = NominalTypeScope::enter(visible_nominal_type_names(std::slice::from_ref(&root), imported_semantic_exports));
         register_root_type_alias_targets(std::slice::from_ref(&root))?;
         self.lower_prepared_root(root, imported_semantic_exports, module_name_override)
     }
@@ -2713,6 +2750,8 @@ impl AstToHir {
     }
 
     fn lower_micro(&self, function: &MicroDeclaration, declaring_namespace: &NamePath) -> Result<HirFunction, HirError> {
+        // 形参名先于返回值、参数、where 约束与 body 的类型降低进入作用域，函数体里的 `T` 才有声明事实。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&function.generics), &[]);
         let span = frontend::std_range(&function.span);
         let annotations = function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
         let body = lower_block(&function.body, self.source_id, span.clone())?;
@@ -2779,6 +2818,8 @@ impl AstToHir {
     }
 
     fn lower_structure(&self, structure: &StructureDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
+        // 作用域覆盖字段、方法与属性类型；方法自身的形参在内层帧继续叠加。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&structure.generics), &[]);
         self.lower_class_like(
             Identifier::new(&structure.name.name),
             namespace.parts(),
@@ -2855,6 +2896,8 @@ impl AstToHir {
     }
 
     fn lower_singleton(&self, singleton: &SingletonDeclaration, namespace: &NamePath) -> Result<HirSingleton, HirError> {
+        // 作用域覆盖方法的签名与 body，以及 singleton 字段类型。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&singleton.generics), &[]);
         let all_methods: Vec<HirFunction> = singleton
             .body
             .methods
@@ -2925,8 +2968,12 @@ impl AstToHir {
     }
 
     fn lower_trait(&self, trait_decl: &Trait) -> Result<HirTrait, HirError> {
+        // 关联名必须先扫完 trait body 再降低方法：作用域覆盖方法签名里的 `Item` 引用。
         let associated_names =
             trait_decl.body.associated_types.iter().map(|item| oak_identifier(&item.name)).collect::<std::collections::BTreeSet<_>>();
+        let generic_names = generic_parameter_names(&trait_decl.generics);
+        let associated = associated_names.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let _generic_scope = GenericBinderScope::enter(&generic_names, &associated);
         let mut methods = Vec::new();
         let mut default_methods = Vec::new();
         for method in trait_decl.body.methods.iter().filter(|method| !is_property_accessor(method)) {
@@ -2955,6 +3002,8 @@ impl AstToHir {
     }
 
     fn lower_enums(&self, enum_decl: &Enums) -> Result<HirEnum, HirError> {
+        // `unite Option<T>` 的变体字段引用 T 时同样需要声明域事实。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&enum_decl.generics), &[]);
         let mut enum_def = match enum_decl.kind {
             EnumsKind::Unity => HirEnum::new_unity(oak_identifier(&enum_decl.name)),
             EnumsKind::Enums | EnumsKind::Enum => HirEnum::new(oak_identifier(&enum_decl.name)),
@@ -2968,6 +3017,8 @@ impl AstToHir {
     }
 
     fn lower_variant_decl(&self, variant_decl: &Variant) -> Result<HirEnum, HirError> {
+        // 变体声明的泛型名同样在字段 lowering 前进入作用域。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&variant_decl.generics), &[]);
         let mut enum_def = HirEnum::new_unity(oak_identifier(&variant_decl.name));
         enum_def.doc = lower_documentation(&variant_decl.annotations);
         enum_def.visibility = lower_visibility(&variant_decl.annotations);
@@ -2994,6 +3045,8 @@ impl AstToHir {
     }
 
     fn lower_imply(&self, imply: &ImplyDeclaration, declaring_namespace: &NamePath) -> Result<HirImpl, HirError> {
+        // `imply Option<T>` 的 T 属于本实现域；作用域覆盖目标、trait 实参与方法签名/body。
+        let _generic_scope = GenericBinderScope::enter(&imply_generic_parameter_names(imply), &[]);
         let trait_arguments = if let Some(ty) = imply.trait_type.as_ref() {
             if let TypeExpression::Apply(node) = ty {
                 node.arguments.iter().map(lower_type_expression).collect::<Result<Vec<_>, _>>()?
@@ -3020,6 +3073,8 @@ impl AstToHir {
     }
 
     fn lower_method(&self, method: &MethodDeclaration) -> Result<HirFunction, HirError> {
+        // 方法形参在内层帧；外层声明域（structure/singleton/trait/imply）的形参与关联名仍可见。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&method.generics), &[]);
         let span = frontend::std_range(&method.span);
         Ok(HirFunction {
             declaration: None,
@@ -3261,6 +3316,41 @@ fn lower_field(field: &FieldDeclaration) -> Result<HirField, HirError> {
 
 fn lower_generic_parameters(parameters: &[GenericParam]) -> Vec<GenericType> {
     parameters.iter().map(lower_generic_parameter).collect()
+}
+
+/// 声明域拥有的泛型形参短名；用于 [`GenericBinderScope`] 的可见性事实。
+fn generic_parameter_names(parameters: &[GenericParam]) -> Vec<String> {
+    parameters.iter().map(|parameter| parameter.name.name.clone()).collect()
+}
+
+/// `imply Option<T>` 的 `<T>` 是 impl 的类型形参声明位置。
+///
+/// 显式形参列表之外，只把目标类型实参中尚未被别名/名义声明/内建/数值占据的单段名字
+/// 认作本实现的形参；已声明的类型名不得被误登记成新形参。
+fn imply_generic_parameter_names(imply: &ImplyDeclaration) -> Vec<String> {
+    fn collect(ty: &TypeExpression, out: &mut Vec<String>) {
+        match ty {
+            TypeExpression::Namepath(path) if path.parts.len() == 1 => {
+                let name = path.parts[0].name.as_str();
+                if !crate::hir::is_bound_type_name(name) && !out.iter().any(|existing| existing == name) {
+                    out.push(name.to_string());
+                }
+            }
+            TypeExpression::Apply(apply) => {
+                for argument in &apply.arguments {
+                    collect(argument, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut names = generic_parameter_names(&imply.generics);
+    if let TypeExpression::Apply(apply) = &imply.target_type {
+        for argument in &apply.arguments {
+            collect(argument, &mut names);
+        }
+    }
+    names
 }
 
 fn lower_generic_parameter(parameter: &GenericParam) -> GenericType {

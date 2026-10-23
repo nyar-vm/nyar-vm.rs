@@ -87,6 +87,8 @@ imply Option<T> {
 }
 
 trait Iterator { type Item; micro has_next(self) -> bool; micro next(self) -> Option<Item>; }
+[intrinsic("builtin.array.push")]
+micro push<T>(array: [T], value: T) -> [T] { }
 micro collect_array<I, T>(self: I) -> [T]
     where I: Iterator<Item = T>
 {
@@ -105,7 +107,7 @@ micro collect_array<I, T>(self: I) -> [T]
         let hir = compiler.compile_source(&source).unwrap_or_else(|error| panic!("调用 `{value}` 未形成完整合同: {error:?}"));
         let iterator = hir.traits.iter().find(|item| item.name.as_str() == "Iterator").expect("Iterator 声明");
         let next = iterator.methods.iter().find(|method| method.name.as_str() == "next").expect("next 声明");
-        let nyar_language::types::hir::ValkyrieType::Apply(_, arguments) = &next.return_type
+        let nyar_language::types::hir::ValkyrieType::Nominal { arguments, .. } = &next.return_type
         else {
             panic!("Option<Item> 必须保留 nominal 应用")
         };
@@ -125,6 +127,7 @@ fn namespaced_function_preserves_where_contract() {
         .compile_source(
             r#"
 namespace std.iterator;
+unite Option<T> { Some { value: T }, None }
 trait Iterator { type Item; micro next(self) -> Option<Item>; }
 micro collect_array<I, T>(self: I) -> bool
     where I: Iterator<Item = T>
@@ -145,6 +148,7 @@ fn concatenated_namespace_preserves_where_contract() {
         .compile_source(
             r#"
 namespace std.iterator;
+unite Option<T> { Some { value: T }, None }
 trait Iterator { type Item; micro next(self) -> Option<Item>; }
 
 namespace std.iterator;
@@ -163,8 +167,12 @@ micro collect_array<I, T>(self: I) -> bool
 #[test]
 fn imported_impl_method_contract_survives_dependency_boundary() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 4307 });
-    let provider = compiler
-        .compile_source(
+    // 依赖声明的身份注册由完整 Compiler 源码闭包拥有：单来源入口不接收依赖导出，
+    // 这里用 Resolver 形态的源码组表达同一个边界。
+    let groups = [
+        nyar_language::CompilerSourceGroup::single_source(
+            "core.types",
+            "core.types",
             r#"
 namespace core.types;
 unite Option<T> { Some { value: T }, None }
@@ -172,23 +180,16 @@ imply Option<T> {
     micro unwrap(self) -> T { match self { case Some(value): value case None: raise "none" } }
 }
 "#,
-        )
-        .expect("provider");
-    let export = nyar_language::types::hir::HirDependencySemanticExport {
-        module: nyar_language::types::NamePath::new(vec![nyar_language::types::Identifier::new("core.types")]),
-        functions: provider.functions.clone(),
-        structs: provider.structs.clone(),
-        enums: provider.enums.clone(),
-        traits: provider.traits.clone(),
-        type_aliases: provider.type_aliases.clone(),
-        impls: provider.impls.clone(),
-    };
-    compiler
-        .compile_source_with_semantic_exports(
+        ),
+        nyar_language::CompilerSourceGroup::single_source(
+            "app",
+            "app",
             r#"
-micro consume(value: Option<i32>) -> i32 { return value.unwrap() }
+[export] micro consume(value: Option<i32>) -> i32 { return value.unwrap() }
 "#,
-            &[export],
         )
-        .expect("imported impl method must resolve from its exported contract");
+        .as_entry()
+        .with_direct_dependencies(vec!["core.types".into()]),
+    ];
+    compiler.resolve_source_groups(&groups, "native").expect("imported impl method must resolve from its exported contract");
 }

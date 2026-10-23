@@ -10,13 +10,14 @@ use crate::{
         hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
     },
     valkyrie::{
-        hir::{HirError, type_relation::is_numeric_type_name},
-        frontend::{self,
+        frontend::{
+            self,
             ast::{
                 NamePath as AstNamePath, TypeExpression,
                 type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
             },
         },
+        hir::{HirError, type_relation::is_numeric_type_name},
     },
 };
 use nyar_types::DiagnosticSpan;
@@ -24,6 +25,14 @@ use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 thread_local! {
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
+    /// 当前 lowering 词法作用域声明的泛型形参与 trait 关联类型短名。
+    ///
+    /// 只有声明域本身拥有的名字进入这里；引用 `T` 或 `Item` 时不得再按拼写猜测。
+    static GENERIC_BINDER_SCOPE: RefCell<Vec<GenericBinderFrame>> = RefCell::new(Vec::new());
+    /// 当前 lowering 作用域可见的名义类型声明短名（structure/class/enums/variant）。
+    ///
+    /// 只登记实际声明过的名字，用于产出待冻结的 `Named`；不构成未知名字的 fallback。
+    static DECLARED_NOMINAL_TYPES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());
 }
 
 /// 进入一次 lowering 作用域时可见的单条类型别名。
@@ -86,6 +95,92 @@ impl Drop for ModuleTypeAliasScope {
             let _ = stack.borrow_mut().pop();
         });
     }
+}
+
+/// 一层声明域的泛型形参与 trait 关联类型短名。
+#[derive(Debug, Default)]
+struct GenericBinderFrame {
+    /// 本域声明的泛型形参短名。
+    type_params: BTreeSet<String>,
+    /// 本域 trait 声明的关联类型短名。
+    associated: BTreeSet<String>,
+}
+
+/// 管理泛型形参与 trait 关联类型名字的 lowering 作用域。
+///
+/// 与 [`ModuleTypeAliasScope`] 同构：进入时压入一帧，`Drop` 时出栈；嵌套声明域
+/// （例如 `structure` 里的 method）逐层向外查找，因此内层域可以看到外层的形参。
+#[derive(Debug)]
+pub(crate) struct GenericBinderScope;
+
+impl GenericBinderScope {
+    /// 进入一次声明域作用域并注册该域拥有的名字。
+    pub(crate) fn enter(type_params: &[String], associated: &[String]) -> Self {
+        GENERIC_BINDER_SCOPE.with(|stack| {
+            stack.borrow_mut().push(GenericBinderFrame {
+                type_params: type_params.iter().cloned().collect(),
+                associated: associated.iter().cloned().collect(),
+            });
+        });
+        Self
+    }
+}
+
+impl Drop for GenericBinderScope {
+    fn drop(&mut self) {
+        GENERIC_BINDER_SCOPE.with(|stack| {
+            let _ = stack.borrow_mut().pop();
+        });
+    }
+}
+
+/// 管理当前 lowering 作用域内已声明名义类型的短名集合。
+///
+/// 与 [`ModuleTypeAliasScope`] 同构：进入时压栈，`Drop` 时出栈。名义声明与类型别名
+/// 是两份独立事实，不能塞进别名表：别名要展开目标，名义名只产出待 `bind_declared_nominal_types`
+/// 冻结声明身份的 `Named`。
+#[derive(Debug)]
+pub(crate) struct NominalTypeScope;
+
+impl NominalTypeScope {
+    /// 进入一次 lowering 作用域并注册可见的名义类型短名。
+    pub(crate) fn enter(names: Vec<String>) -> Self {
+        DECLARED_NOMINAL_TYPES.with(|stack| {
+            stack.borrow_mut().push(names.into_iter().collect());
+        });
+        Self
+    }
+}
+
+impl Drop for NominalTypeScope {
+    fn drop(&mut self) {
+        DECLARED_NOMINAL_TYPES.with(|stack| {
+            let _ = stack.borrow_mut().pop();
+        });
+    }
+}
+
+/// 当前作用域内是否声明了该短名的名义类型。
+fn is_declared_nominal_type(name: &str) -> bool {
+    DECLARED_NOMINAL_TYPES.with(|stack| stack.borrow().last().is_some_and(|names| names.contains(name)))
+}
+
+/// 该短名是否已被别名、名义声明、内建或数值声明事实占据。
+///
+/// 供 `imply Option<T>` 这类把形参写在目标类型实参位置的声明入口筛选真正的形参名；
+/// 已占据的名字不得再被登记为新形参。
+pub(crate) fn is_bound_type_name(name: &str) -> bool {
+    has_module_type_alias(name) || is_declared_nominal_type(name) || canonical_builtin_type(name).is_some() || is_numeric_type_name(name)
+}
+
+/// 当前词法作用域（含外层声明域）是否声明了该泛型形参短名。
+fn is_generic_type_param(name: &str) -> bool {
+    GENERIC_BINDER_SCOPE.with(|stack| stack.borrow().iter().rev().any(|frame| frame.type_params.contains(name)))
+}
+
+/// 当前词法作用域（含外层声明域）是否声明了该 trait 关联类型短名。
+fn is_trait_associated_name(name: &str) -> bool {
+    GENERIC_BINDER_SCOPE.with(|stack| stack.borrow().iter().rev().any(|frame| frame.associated.contains(name)))
 }
 
 /// 校验 Oak `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
@@ -165,9 +260,7 @@ pub fn lower_type_expression(ty: &TypeExpression) -> Result<ValkyrieType, HirErr
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(
-                    tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect::<Result<Vec<_>, _>>()?,
-                )
+                ValkyrieType::Tuple(tuple.elements.iter().map(|element| lower_type_expression(&element.ty)).collect::<Result<Vec<_>, _>>()?)
             }
         }
         TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
@@ -367,10 +460,16 @@ fn has_module_type_alias(name: &str) -> bool {
     MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains_key(name)))
 }
 
-/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 数值声明引用 → 失败（结构化 TypeNotFound）。
+/// 单段类型名的唯一解析顺序：作用域别名 → 当前声明域泛型形参 → 当前 trait 作用域关联名
+/// → 作用域内的名义声明 → 内建类型 → 数值声明引用 → 失败（结构化 TypeNotFound）。
 ///
 /// 别名目标尚未填入（或形参个数不匹配）时保留别名身份为 `ValkyrieType::Named`，
 /// 不折算成内建类型：别名是声明身份，不能被同名的内建类型顶替。
+///
+/// 泛型形参只按声明域事实命中，产出待回填的 `Generic`（`binder: None`），由既有的
+/// `propagate_declared_generic_binders` 补上声明 binder；trait 关联名产出以 `Self`
+/// 为基的 `Associated`。两者都只匹配**单段名**：多段路径的末段同名不构成可见性，
+/// 由调用方通过 `single_segment` 拒绝放宽，保持 namespace/owner 隔离。
 ///
 /// 数值原始类型名（`i8`…`f64`、`usize`、`isize` 与 128 位宽度）属于 `core/primitive`
 /// 的 `structure` 声明族：这里只产出待绑定的 `Named`，不按名字生产低层 carrier；
@@ -380,11 +479,34 @@ fn has_module_type_alias(name: &str) -> bool {
 /// 无法在作用域内找到别名、也不匹配任何语言内建或数值声明族的名字，以前被错误地 fallback 成
 /// `Named` 传递到 canonical 阶段。现在这里直接返回结构化 `TypeNotFound`，由上层
 /// 逐层用 `?` 传播到 lowering 主入口。
-fn resolve_named_type(name: &str) -> Result<ValkyrieType, HirError> {
+fn resolve_named_type(name: &str, single_segment: bool) -> Result<ValkyrieType, HirError> {
     if let Some(expanded) = expand_module_type_alias(name, &[], &mut BTreeSet::new()) {
         return Ok(expanded);
     }
     if has_module_type_alias(name) {
+        return Ok(ValkyrieType::Named(Identifier::new(name)));
+    }
+    if single_segment {
+        if is_generic_type_param(name) {
+            return Ok(ValkyrieType::Generic(GenericType {
+                binder: None,
+                name: Identifier::new(name),
+                kind: HirKind::Type,
+                bounds: Vec::new(),
+            }));
+        }
+        if is_trait_associated_name(name) {
+            return Ok(ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                base: ValkyrieType::SelfType,
+                name: Identifier::new(name),
+                type_arguments: Vec::new(),
+            })));
+        }
+    }
+    // 已声明名义类型的短名保留为待冻结的 `Named`；声明身份由 `bind_declared_nominal_types`
+    // 按实际结构/枚举冻结，未知名字仍走结构化失败。多段路径的末段同名不构成可见性，
+    // 不允许借作用域名义名把限定名折叠成短名。
+    if single_segment && is_declared_nominal_type(name) {
         return Ok(ValkyrieType::Named(Identifier::new(name)));
     }
     if let Some(builtin) = canonical_builtin_type(name) {
@@ -501,7 +623,7 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
     if parts.len() == 2 && !is_known_builtin_type_namespace(&parts, last) && !is_module_root_prefix(parts[0]) {
         let head = parts[0];
         return Ok(ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
-            base: resolve_named_type(head)?,
+            base: resolve_named_type(head, true)?,
             name: Identifier::new(last),
             type_arguments: Vec::new(),
         })));
@@ -513,7 +635,8 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
     // 当前所有非内建、非 Self、非两段 Associated 的多段名直接按最后一段短名交给
     // resolve_named_type 处理；无法在当前作用域绑定则返回 TypeNotFound，
     // 不再静默 fallback 成 Named。
-    Ok(resolve_named_type(last)?)
+    // 只有单段名属于当前声明域的形参/关联名可见范围；多段路径的末段同名不放宽。
+    Ok(resolve_named_type(last, parts.len() == 1)?)
 }
 
 fn is_module_root_prefix(name: &str) -> bool {
