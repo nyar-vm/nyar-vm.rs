@@ -51,6 +51,26 @@ pub enum PlanningError {
     },
 }
 
+impl std::fmt::Display for PlanningError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SemanticContract { module, stage, detail } => {
+                write!(f, "planning failed in stage `{stage:?}` of module `{module}`: {detail}")
+            }
+            Self::MissingBackendInterpreter { fragment, projection_family, host_boundary } => {
+                write!(
+                    f,
+                    "no backend interpreter for fragment `{fragment}` (family={projection_family:?}, host={host_boundary:?})"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for PlanningError {}
+
+impl miette::Diagnostic for PlanningError {}
+
 /// 进入 `nyar` 规划层的中性输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OptimizerInput {

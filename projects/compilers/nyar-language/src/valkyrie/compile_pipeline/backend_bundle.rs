@@ -5,16 +5,38 @@
 
 use std::path::Path;
 
-use miette::{Result, miette};
+use miette::{Result, Report};
 use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
 use crate::valkyrie::{
-    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler, HirError,
+    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler,
     assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program,
 };
 
 use super::{context::CompilerBuildContext, evidence::CompilerCompileEvidence};
+
+/// Wasm artifact surface 合同校验失败（结构化，不包装成 Display 文本）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArtifactSurfaceError {
+    /// `artifact: library` 要求至少一个已解析的 export。
+    LibraryMissingExport,
+    /// `artifact: binary` 要求一个已解析的 main entry。
+    BinaryMissingEntry,
+}
+
+impl std::fmt::Display for ArtifactSurfaceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LibraryMissingExport => f.write_str("`artifact: library` requires at least one resolved export"),
+            Self::BinaryMissingEntry => f.write_str("`artifact: binary` requires a resolved main entry"),
+        }
+    }
+}
+
+impl std::error::Error for ArtifactSurfaceError {}
+
+impl miette::Diagnostic for ArtifactSurfaceError {}
 
 /// 完整目标产物与编译证据。
 #[derive(Debug)]
@@ -50,9 +72,9 @@ pub fn compile_source_groups_to_backend_bundle(
 ) -> Result<CompilerBuildBundle> {
     let compiled_program = compiler
         .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)
-        .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
+        .map_err(Report::new)?;
     let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
-        .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
+        .map_err(Report::new)?;
     let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind: context.wasm_package_kind };
     validate_artifact_surface(&bundle, context.wasm_package_kind)?;
     Ok(bundle)
@@ -71,7 +93,7 @@ pub fn compile_source_groups_to_artifacts(
     generate_runtime_config: bool,
 ) -> Result<CompilerArtifactReport> {
     let groups = crate::valkyrie::hir::lowering::compose_source_input_groups(input)
-        .map_err(|error| miette!("Compiler source input composition failed: {error}"))?;
+        .map_err(Report::new)?;
     let bundle = compile_source_groups_to_backend_bundle(compiler, &groups, context)?;
     let evidence = CompilerCompileEvidence::from_success_with_generated(
         &groups,
@@ -97,10 +119,10 @@ fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: ny
     let (export_count, entry_count) = bundle.surface_counts();
     match wasm_package_kind {
         nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
-            Err(miette!("`artifact: library` requires at least one resolved export"))
+            Err(Report::new(ArtifactSurfaceError::LibraryMissingExport))
         }
         nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
-            Err(miette!("`artifact: binary` requires a resolved main entry"))
+            Err(Report::new(ArtifactSurfaceError::BinaryMissingEntry))
         }
         _ => Ok(()),
     }
@@ -117,7 +139,6 @@ impl FrontendBuildBundle for CompilerBuildBundle {
 
     fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<nyar::AssembledFragment> {
         assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index)
-            .map_err(|error| miette!("Compiler fragment 装配失败: {error}"))
     }
 
     fn target_host_flavor(&self) -> Option<String> {
