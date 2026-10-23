@@ -2386,42 +2386,6 @@ fn is_text_type(ty: &ValkyrieType) -> bool {
     }
 }
 
-fn is_numeric_type(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Integer8 { .. }
-        | ValkyrieType::Integer16 { .. }
-        | ValkyrieType::Integer32 { .. }
-        | ValkyrieType::Integer64 { .. }
-        | ValkyrieType::Integer128 { .. }
-        | ValkyrieType::Float32
-        | ValkyrieType::Float64 => true,
-        ValkyrieType::Named(name) => matches!(
-            name.as_str(),
-            "byte"
-                | "sbyte"
-                | "usize"
-                | "isize"
-                | "u8"
-                | "u16"
-                | "u32"
-                | "u64"
-                | "u128"
-                | "i8"
-                | "i16"
-                | "i32"
-                | "i64"
-                | "i128"
-                | "f32"
-                | "f64"
-                | "f128"
-                | "core.primitive.usize"
-                | "core.primitive.isize"
-                | "core::primitive::usize"
-                | "core::primitive::isize"
-        ),
-        _ => false,
-    }
-}
 
 fn try_resolve_qualified_free_function(
     path: &NamePath,

@@ -387,7 +387,10 @@ fn collect_relation_structs(
     }
 }
 
-fn is_numeric_type_name(name: &str) -> bool {
+/// 数值名集合：源码写出的数值名与对应声明共用同一份口径。
+///
+/// 这里只判定“名字属于数值 primitive 声明族”，不生产任何低层 carrier；carrier 由表示阶段拥有。
+pub(crate) fn is_numeric_type_name(name: &str) -> bool {
     matches!(
         name,
         "byte"

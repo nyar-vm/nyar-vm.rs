@@ -10,7 +10,7 @@ use crate::{
         hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
     },
     valkyrie::{
-        hir::HirError,
+        hir::{HirError, type_relation::is_numeric_type_name},
         frontend::{self,
             ast::{
                 NamePath as AstNamePath, TypeExpression,
@@ -345,11 +345,11 @@ pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
-/// 数值原始类型名的语义标量形态。
+/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
 ///
-/// 只用于字面量推断与 `i64(x)` 这类显式数值转换的目标形态；类型的**声明身份**由
-/// `core/primitive` 的 `structure` 声明给出，二者不得在同一条解析路径上并存。
-fn numeric_builtin_scalar(name: &str) -> Option<ValkyrieType> {
+/// 这里是**显式转换**的目标形态，与类型名的声明身份无关：源码写出 `i32` 仍指
+/// `core/primitive` 的 `structure` 声明，只有转换表达式才需要低层 carrier。
+pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
         "i16" => Some(ValkyrieType::Integer16 { signed: true }),
@@ -365,11 +365,6 @@ fn numeric_builtin_scalar(name: &str) -> Option<ValkyrieType> {
     }
 }
 
-/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
-pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
-    numeric_builtin_scalar(name)
-}
-
 /// 当前作用域内是否声明了该短名的 `type` 别名（含目标尚未填入的本组声明）。
 ///
 /// 这是内建遮蔽的唯一事实来源：源码声明 `type utf8 = Utf8Text` 之后，`utf8` 就不再是内建编码类型。
@@ -377,12 +372,17 @@ fn has_module_type_alias(name: &str) -> bool {
     MODULE_TYPE_ALIASES.with(|stack| stack.borrow().last().is_some_and(|aliases| aliases.contains_key(name)))
 }
 
-/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 失败（结构化 TypeNotFound）。
+/// 单段类型名的唯一解析顺序：作用域别名 → 内建类型 → 数值声明引用 → 失败（结构化 TypeNotFound）。
 ///
 /// 别名目标尚未填入（或形参个数不匹配）时保留别名身份为 `ValkyrieType::Named`，
 /// 不折算成内建类型：别名是声明身份，不能被同名的内建类型顶替。
 ///
-/// 无法在作用域内找到别名、也不匹配任何语言内建的名字，以前被错误地 fallback 成
+/// 数值原始类型名（`i8`…`f64`、`usize`、`isize` 与 128 位宽度）属于 `core/primitive`
+/// 的 `structure` 声明族：这里只产出待绑定的 `Named`，不按名字生产低层 carrier；
+/// 声明身份由 `bind_declared_nominal_types` 冻结，声明不可见时残留 `Named` 由 canonical
+/// 以结构化诊断拒绝（CAN003），不会默认成 `Integer32`/`Float64`。
+///
+/// 无法在作用域内找到别名、也不匹配任何语言内建或数值声明族的名字，以前被错误地 fallback 成
 /// `Named` 传递到 canonical 阶段。现在这里直接返回结构化 `TypeNotFound`，由上层
 /// 逐层用 `?` 传播到 lowering 主入口。
 fn resolve_named_type(name: &str) -> Result<ValkyrieType, HirError> {
@@ -395,8 +395,8 @@ fn resolve_named_type(name: &str) -> Result<ValkyrieType, HirError> {
     if let Some(builtin) = canonical_builtin_type(name) {
         return Ok(builtin);
     }
-    if let Some(scalar) = numeric_builtin_scalar(name) {
-        return Ok(scalar);
+    if is_numeric_type_name(name) {
+        return Ok(ValkyrieType::Named(Identifier::new(name)));
     }
     Err(HirError::TypeNotFound {
         name: name.to_string(),
