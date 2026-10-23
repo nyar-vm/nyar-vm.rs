@@ -2440,7 +2440,8 @@ fn try_resolve_qualified_free_function(
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
     let canonical_key = crate::valkyrie::symbols::stable_symbol_key(path);
-    let path_last = path.parts().last();
+    let path_parts = path.parts();
+    let path_last = path_parts.last();
     let filtered = candidates
         .iter()
         .filter(|candidate| {
@@ -2448,8 +2449,17 @@ fn try_resolve_qualified_free_function(
                 return false;
             }
             let candidate_key = crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol);
-            candidate_key == canonical_key
-                || path_last.map(|p| candidate.symbol.parts().last() == Some(p)).unwrap_or(false)
+            // 多段限定路径（如 `std::helper`）必须精确匹配完整 namespace。
+            // 末段 fallback 只在 path 是单段短名（len==1）时允许——
+            // 那是 lowering 从源码 Identifier 提取短名的症状，调用者没写限定路径。
+            // 对于 qualified call（len>=2），调用者写了完整路径，
+            // 就必须精确命中，不能让 `app::helper` 误命中 `std::helper`。
+            if path_parts.len() >= 2 {
+                candidate_key == canonical_key
+            } else {
+                candidate_key == canonical_key
+                    || path_last.map(|p| candidate.symbol.parts().last() == Some(p)).unwrap_or(false)
+            }
         })
         .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
