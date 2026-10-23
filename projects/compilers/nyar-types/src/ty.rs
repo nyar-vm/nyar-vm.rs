@@ -109,6 +109,30 @@ impl Default for NyarType {
 }
 
 impl NyarType {
+    /// Map a frozen surface primitive spelling to a concrete platform type.
+    pub fn from_surface_primitive(name: &str) -> Option<Self> {
+        let simple = name.rsplit([':', '.']).next().unwrap_or(name);
+        Some(match simple {
+            "bool" => NyarType::Boolean,
+            "byte" | "u8" => NyarType::Integer8 { signed: false },
+            "sbyte" | "i8" => NyarType::Integer8 { signed: true },
+            "u16" => NyarType::Integer16 { signed: false },
+            "i16" => NyarType::Integer16 { signed: true },
+            "usize" | "u32" | "i32" => NyarType::Integer32 { signed: true },
+            "isize" => NyarType::Integer32 { signed: true },
+            "u64" | "i64" => NyarType::Integer64 { signed: true },
+            "u128" | "i128" => NyarType::Integer128 { signed: true },
+            "f32" => NyarType::Float32,
+            "f64" | "f128" => NyarType::Float64,
+            "char" => NyarType::Character,
+            "utf8" | "Utf8Text" => NyarType::Utf8,
+            "utf16" | "Utf16Text" => NyarType::Utf16,
+            "unit" => NyarType::Unit,
+            "void" => NyarType::Bottom,
+            _ => return None,
+        })
+    }
+
     /// `Void` or `Unit`.
     pub fn is_unitish(&self) -> bool {
         matches!(self, NyarType::Bottom | NyarType::Unit)
