@@ -656,7 +656,6 @@ fn enrich_sum_variant_operation_facts_attaches_option_some_for_unwrap() {
         parameter_types: vec![option_ty.clone()],
         has_receiver: true,
         extractor_payload_type: None,
-        requirement: None,
     };
     enrich_sum_variant_operation_facts(&mut call, Some(&option_ty), &[option_some]);
     assert!(call.sum_owner.is_some());

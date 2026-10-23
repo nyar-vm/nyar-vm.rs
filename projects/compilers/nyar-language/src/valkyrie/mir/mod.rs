@@ -32,7 +32,7 @@ pub use ssa::{
 impl ValkyrieCompiler {
     /// 集成测试夹具：将预解析 AST 降低为 Semantic MIR，不进入正式 Compiler 入口。
     #[doc(hidden)]
-    pub(crate) fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, HirError> {
+    pub fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, HirError> {
         let hir = self.lower_root(root)?;
         self.validate_hir_semantic_contract(&hir)?;
         self.lower_validated_hir_to_mir(&hir)

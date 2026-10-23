@@ -22,7 +22,7 @@ use super::diagnostics::fail_stage;
 
 /// 从已完成 HIR/Semantic MIR 合同的模块生成 canonical 成功值；集成测试夹具。
 #[doc(hidden)]
-pub(crate) fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
+pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<CanonicalProgram, StructuredDiagnosticSet> {
     if !module.diagnostics.is_empty() {
         return Err(error(module, "CAN033", format!("Semantic MIR lowering 失败: {:?}", module.diagnostics)));
     }
