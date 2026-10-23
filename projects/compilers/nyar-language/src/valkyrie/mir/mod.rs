@@ -30,8 +30,9 @@ pub use ssa::{
 };
 
 impl ValkyrieCompiler {
-    /// 将 AST 沿正式 HIR 合同降低为分析用 Semantic MIR，不生产目标产物。
-    pub fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, HirError> {
+    /// 集成测试夹具：将预解析 AST 降低为 Semantic MIR，不进入正式 Compiler 入口。
+    #[doc(hidden)]
+    pub(crate) fn lower_root_to_mir(&self, root: &ValkyrieRoot) -> Result<MirModule, HirError> {
         let hir = self.lower_root(root)?;
         self.validate_hir_semantic_contract(&hir)?;
         self.lower_validated_hir_to_mir(&hir)
@@ -44,8 +45,9 @@ impl ValkyrieCompiler {
         Ok(mir)
     }
 
-    /// 消费正式源码到 HIR 的展开与验证结果，不另建 parser 路线。
-    pub fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, HirError> {
+    /// 集成测试夹具：从单文件源码降低到 Semantic MIR；正式 Compiler 入口只接受源码闭包。
+    #[doc(hidden)]
+    pub(crate) fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, HirError> {
         let hir = self.compile_source(source)?;
         self.lower_validated_hir_to_mir(&hir)
     }
