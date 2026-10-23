@@ -7,7 +7,7 @@ use crate::valkyrie::mir::{MirModule, validation::validate_semantic_module};
 
 /// 校验 Semantic MIR 并生产唯一的已验证成功载荷；集成测试夹具。
 #[doc(hidden)]
-pub(crate) fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledProgram> {
+pub fn compile_linked_semantic_mir(module: &MirModule) -> StageResult<CompiledProgram> {
     if let Err(error) = validate_semantic_module(module) {
         return fail_stage(CompileStage::ValidateMir, "PIPE004", &module.name, format!("Semantic MIR 合同失败: {error:?}"));
     }
