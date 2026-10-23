@@ -26,12 +26,12 @@ pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], a
 pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<ConstantValue, HirError> {
     let meaningful = meaningful_tokens(tokens);
     if meaningful.is_empty() {
-        return Err(HirError::invalid("TGrammar 元表达式为空"));
+        return Err(HirError::lowering_failed("TGrammar 元表达式为空"));
     }
     let mut parser = ConstExprParser { source, tokens: &meaningful, index: 0, arch };
     let value = parser.parse_or()?;
     if parser.index < parser.tokens.len() {
-        return Err(HirError::invalid("TGrammar 元表达式含有无法求值的语法"));
+        return Err(HirError::lowering_failed("TGrammar 元表达式含有无法求值的语法"));
     }
     Ok(value)
 }
@@ -56,17 +56,17 @@ pub(super) fn const_value_to_source(value: &ConstantValue) -> String {
 pub fn parse_const_loop_range(source: &str, header: &[Token<ValkyrieTokenType>], arch: &str) -> Result<std::ops::Range<i64>, HirError> {
     let tokens = meaningful_tokens(header);
     if tokens.len() < 3 {
-        return Err(HirError::invalid("TGrammar `loop` 仅支持 `loop _ in start..end` 常量整数范围"));
+        return Err(HirError::lowering_failed("TGrammar `loop` 仅支持 `loop _ in start..end` 常量整数范围"));
     }
     if !is_discard_binding(source, &tokens[0]) {
-        return Err(HirError::invalid("TGrammar `loop` 当前仅支持 `_` 绑定名的常量范围展开"));
+        return Err(HirError::lowering_failed("TGrammar `loop` 当前仅支持 `_` 绑定名的常量范围展开"));
     }
     if tokens[1].kind != ValkyrieTokenType::Keyword(ValkyrieKeywords::In) {
-        return Err(HirError::invalid("TGrammar `loop` 头部必须是 `_ in start..end`"));
+        return Err(HirError::lowering_failed("TGrammar `loop` 头部必须是 `_ in start..end`"));
     }
     let range = parse_const_range_tokens(source, &tokens[2..])?;
     if range.start > range.end {
-        return Err(HirError::invalid(format!("TGrammar `loop` 范围无效: {}..{}", range.start, range.end)));
+        return Err(HirError::lowering_failed(format!("TGrammar `loop` 范围无效: {}..{}", range.start, range.end)));
     }
     let _ = arch;
     Ok(range)
@@ -100,13 +100,13 @@ fn is_discard_binding(source: &str, token: &Token<ValkyrieTokenType>) -> bool {
 
 fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -> Result<std::ops::Range<i64>, HirError> {
     if tokens.is_empty() {
-        return Err(HirError::invalid("TGrammar `loop` 缺少范围表达式"));
+        return Err(HirError::lowering_failed("TGrammar `loop` 缺少范围表达式"));
     }
     if tokens.len() >= 3 && tokens[1].kind == ValkyrieTokenType::DotDot {
         let start = parse_const_int_token(source, &tokens[0])?;
         let end = parse_const_int_token(source, &tokens[2])?;
         if tokens.len() > 3 {
-            return Err(HirError::invalid("TGrammar `loop` 头部含有无法求值的语法"));
+            return Err(HirError::lowering_failed("TGrammar `loop` 头部含有无法求值的语法"));
         }
         return Ok(start..end);
     }
@@ -115,7 +115,7 @@ fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -
             return Ok(range);
         }
     }
-    Err(HirError::invalid("TGrammar `loop` 范围必须是 `start..end` 常量整数"))
+    Err(HirError::lowering_failed("TGrammar `loop` 范围必须是 `start..end` 常量整数"))
 }
 
 #[doc(hidden)]
@@ -133,13 +133,13 @@ fn parse_const_int_token(source: &str, token: &Token<ValkyrieTokenType>) -> Resu
         ValkyrieTokenType::FloatLiteral => {
             let text = token_text(source, token);
             if let Some(value) = text.split('.').next() {
-                return value.parse::<i64>().map_err(|_| HirError::invalid("TGrammar 范围端点必须是整数字面量"));
+                return value.parse::<i64>().map_err(|_| HirError::lowering_failed("TGrammar 范围端点必须是整数字面量"));
             }
-            return Err(HirError::invalid("TGrammar 范围端点必须是整数字面量"));
+            return Err(HirError::lowering_failed("TGrammar 范围端点必须是整数字面量"));
         }
-        _ => return Err(HirError::invalid("TGrammar 范围端点必须是整数字面量")),
+        _ => return Err(HirError::lowering_failed("TGrammar 范围端点必须是整数字面量")),
     }
-    token_text(source, token).parse::<i64>().map_err(|_| HirError::invalid("TGrammar 范围端点必须是整数字面量"))
+    token_text(source, token).parse::<i64>().map_err(|_| HirError::lowering_failed("TGrammar 范围端点必须是整数字面量"))
 }
 
 struct ConstExprParser<'a> {
@@ -192,12 +192,12 @@ impl ConstExprParser<'_> {
         if self.match_kind(ValkyrieTokenType::ParenthesisL) {
             let value = self.parse_or()?;
             if !self.match_kind(ValkyrieTokenType::ParenthesisR) {
-                return Err(HirError::invalid("TGrammar 元表达式括号未闭合"));
+                return Err(HirError::lowering_failed("TGrammar 元表达式括号未闭合"));
             }
             return Ok(value);
         }
 
-        let token = self.current().ok_or_else(|| HirError::invalid("TGrammar 元表达式不完整"))?;
+        let token = self.current().ok_or_else(|| HirError::lowering_failed("TGrammar 元表达式不完整"))?;
         self.index += 1;
         match token.kind {
             ValkyrieTokenType::BoolLiteral => Ok(ConstantValue::Boolean(token_text(self.source, &token) == "true")),
@@ -205,9 +205,9 @@ impl ConstExprParser<'_> {
             ValkyrieTokenType::IntegerLiteral => token_text(self.source, &token)
                 .parse::<i64>()
                 .map(ConstantValue::Integer64)
-                .map_err(|_| HirError::invalid("TGrammar 整数字面量无法解析")),
+                .map_err(|_| HirError::lowering_failed("TGrammar 整数字面量无法解析")),
             ValkyrieTokenType::Identifier if token_text(self.source, &token) == "arch" => Ok(ConstantValue::Utf8(self.arch.to_string())),
-            _ => Err(HirError::invalid("TGrammar 元表达式含有无法求值的 token")),
+            _ => Err(HirError::lowering_failed("TGrammar 元表达式含有无法求值的 token")),
         }
     }
 
@@ -247,6 +247,6 @@ fn values_equal(left: &ConstantValue, right: &ConstantValue) -> Result<bool, Hir
         (ConstantValue::Boolean(lhs), ConstantValue::Integer64(rhs)) | (ConstantValue::Integer64(rhs), ConstantValue::Boolean(lhs)) => {
             Ok((*lhs && *rhs != 0) || (!*lhs && *rhs == 0))
         }
-        _ => Err(HirError::invalid("TGrammar 比较两侧类型不兼容")),
+        _ => Err(HirError::lowering_failed("TGrammar 比较两侧类型不兼容")),
     }
 }

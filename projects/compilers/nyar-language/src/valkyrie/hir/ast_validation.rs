@@ -35,7 +35,7 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[St
                 if let Some((name, kind)) = type_declaration_identity(other) {
                     let key = (current_namespace.clone(), name);
                     if let Some(prior) = seen.insert(key.clone(), kind) {
-                        return Err(HirError::invalid(format!(
+                        return Err(HirError::lowering_failed(format!(
                             "duplicate definition of `{}` in namespace `{}`: {prior} and {kind}",
                             key.1,
                             namespace_display(&key.0)

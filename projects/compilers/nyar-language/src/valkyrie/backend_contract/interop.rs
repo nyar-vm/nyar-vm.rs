@@ -112,7 +112,7 @@ fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), HirError> 
     }
 
     let span = attribute_argument_span(attribute);
-    Err(HirError::invalid_at(
+    Err(HirError::lowering_failed_at(
         "WASI 坪支挝 Component Model；禝止使用 `wasi_snapshot_preview1` / `fd_write` / `fd_read`，请改为 `wasi:...` component import",
         nyar_types::DiagnosticSpan { start: span.start, end: span.end },
     ))

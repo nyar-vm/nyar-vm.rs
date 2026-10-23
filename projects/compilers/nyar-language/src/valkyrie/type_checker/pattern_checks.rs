@@ -87,11 +87,11 @@ impl PatternRefutabilityChecker {
         match pattern.refutability() {
             PatternRefutability::Irrefutable => Ok(()),
             PatternRefutability::Refutable | PatternRefutability::Unknown => {
-                self.errors.push(HirError::invalid(format!(
+                self.errors.push(HirError::lowering_failed(format!(
                     "refutable pattern not allowed in `let` binding; use `if let` or `case` instead (pattern: {})",
                     self.pattern_to_string(pattern)
                 )));
-                Err(HirError::invalid("refutable pattern in let binding"))
+                Err(HirError::lowering_failed("refutable pattern in let binding"))
             }
         }
     }

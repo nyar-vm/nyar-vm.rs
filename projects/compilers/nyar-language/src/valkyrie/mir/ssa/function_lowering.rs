@@ -26,7 +26,7 @@ pub(super) fn lower_function_semantic(
     impl_type_arguments: Vec<ValkyrieType>,
     host_runtime_callables: &BTreeMap<String, nyar_types::ItemInstanceId>,
     diagnostics: &mut Vec<MirDiagnostic>,
-) -> (MirFunction, Vec<(nyar_types::InstructionId, crate::types::hir::HirCallRequirement)>) {
+) -> MirFunction {
     let effectful_inline_targets = effect_lowering::collect_effectful_inline_targets(module);
     let field_declarations = collect_field_declarations(module, diagnostics);
     let nominal_offset = u32::try_from(field_declarations.len()).expect("aggregate nominal identity overflow");
@@ -147,5 +147,5 @@ pub(super) fn lower_function_semantic(
         blocks: builder.blocks,
     };
     // 已删除：suspend_analysis / frame_planning 向 MirFunction 挂 God 元数据。
-    (mir_function, builder.pending_requirements)
+    mir_function
 }

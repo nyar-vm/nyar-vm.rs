@@ -133,9 +133,8 @@ pub enum HirError {
 }
 
 impl HirError {
-    /// 确定性生成 variant 的 machine code。
-    /// Construct generic lowering failure (fallback for ParseError::invalid during migration).
-    pub fn invalid(message: impl Into<String>) -> Self {
+    /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
+    pub fn lowering_failed(message: impl Into<String>) -> Self {
         Self::LoweringFailed {
             scenario: message.into(),
             details: Vec::new(),
@@ -144,8 +143,8 @@ impl HirError {
         }
     }
 
-    /// Construct lowering failure with explicit span.
-    pub fn invalid_at(message: impl Into<String>, span: nyar_types::DiagnosticSpan) -> Self {
+    /// 带显式 span 的 lowering fallback。
+    pub fn lowering_failed_at(message: impl Into<String>, span: nyar_types::DiagnosticSpan) -> Self {
         Self::LoweringFailed {
             scenario: message.into(),
             details: Vec::new(),
@@ -274,33 +273,77 @@ fn other_span(error: &HirError) -> &DiagnosticSpan {
     }
 }
 
-// ---------- 升级桥接：ParseError → HirError ----------
-// lowering 合法调用 frontend::parse_source，后者返回 ParseError。
-// 这个桥接让 .map_err(HirError::from) 把 parser 输出升级为 HirError。
-
 impl From<crate::valkyrie::frontend::ParseError> for HirError {
     fn from(error: crate::valkyrie::frontend::ParseError) -> Self {
-        Self::invalid(error.to_string())
+        let (span, details) = match &error {
+            crate::valkyrie::frontend::ParseError::Invalid { message, span } => {
+                let diagnostic_span = match span {
+                    Some(r) => DiagnosticSpan { start: r.start, end: r.end },
+                    None => DiagnosticSpan { start: 0, end: 0 },
+                };
+                let mut ds = Vec::with_capacity(2);
+                ds.push(("message".to_string(), message.clone()));
+                if let Some(r) = span {
+                    ds.push(("span".to_string(), format!("{}..{}", r.start, r.end)));
+                }
+                (diagnostic_span, ds)
+            }
+            crate::valkyrie::frontend::ParseError::Io(io) => {
+                (DiagnosticSpan { start: 0, end: 0 }, vec![("io".to_string(), io.to_string())])
+            }
+        };
+        Self::LoweringFailed {
+            scenario: "parse error".to_string(),
+            details,
+            source: DiagnosticSource { id: "<parse>".into(), revision: None },
+            span,
+        }
     }
 }
 
 impl std::fmt::Display for HirError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HirError::LoweringFailed { scenario, .. } => write!(f, "{scenario}"),
-            HirError::InvalidDiscriminator { scenario, variant: Some(v), value: Some(vv), .. } => {
-                write!(f, "{scenario}: variant={v}, value={vv}")
-            }
-            HirError::UnresolvedCall { selector, context, .. } => {
+            Self::UnresolvedCall { selector, context, .. } => {
                 write!(f, "unresolved call `{selector}` in {context}")
             }
-            HirError::UnresolvedConstructor { name, context, .. } => {
+            Self::UnresolvedConstructor { name, context, .. } => {
                 write!(f, "unresolved constructor `{name}` in {context}")
             }
-            _ => {
-                let row: nyar_types::DiagnosticRow = self.clone().into();
-                write!(f, "{}", row.code)
+            Self::NominalAmbiguous { name, candidate_count, .. } => {
+                write!(f, "nominal `{name}` is ambiguous ({candidate_count} candidates)")
             }
+            Self::SumUniteAmbiguous { name, candidate_count, .. } => {
+                write!(f, "sum/unite `{name}` is ambiguous ({candidate_count} candidates)")
+            }
+            Self::StructureMissingConstructor { qualified_name, .. } => {
+                write!(f, "structure `{qualified_name}` missing constructor_declaration")
+            }
+            Self::SumUniteMissingDeclaration { name, .. } => {
+                write!(f, "sum/unite `{name}` missing declaration")
+            }
+            Self::InvalidDiscriminator { aggregate, scenario, variant, value, .. } => {
+                write!(f, "invalid discriminator in `{aggregate}` ({scenario})");
+                if let Some(v) = variant {
+                    write!(f, " variant={v}")?;
+                }
+                if let Some(v) = value {
+                    write!(f, " value={v}")?;
+                }
+                Ok(())
+            }
+            Self::NoBodySourceInGroup { dependency_key, .. } => {
+                write!(f, "no body source in group `{dependency_key}`")
+            }
+            Self::LoweringFailed { scenario, details, source, span, .. } => {
+                write!(f, "lowering failed: {scenario}")?;
+                if !details.is_empty() {
+                    write!(f, " (details={})", details.len())?;
+                }
+                write!(f, " source={} span={}..{}", source.id, span.start, span.end)
+            }
+            Self::VxUnsupported => write!(f, ".vx source is not supported"),
         }
     }
 }
+

@@ -95,7 +95,7 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
             if let Some(part) = path.parts.last() {
                 validate_source_text_type_name(&part.name)?;
                 if let Some(canonical_name) = legacy_builtin_type_alias(&part.name) {
-                    return Err(HirError::invalid(format!(
+                    return Err(HirError::lowering_failed(format!(
                         "legacy builtin type alias `{name}` has been removed; use `{canonical_name}` explicitly",
                         name = part.name
                     )));
@@ -143,7 +143,7 @@ pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
 /// Reject source-level text aliases that do not identify a language encoding.
 pub fn validate_source_text_type_name(name: &str) -> Result<(), HirError> {
     if is_legacy_text_type_name(name) {
-        return Err(HirError::invalid(format!(
+        return Err(HirError::lowering_failed(format!(
             "ambiguous text type `{name}` is forbidden; use an explicit encoding such as `utf8`, `utf16`, or `c_str`"
         )));
     }

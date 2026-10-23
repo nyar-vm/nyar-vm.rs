@@ -134,12 +134,12 @@ fn validate_try_propagate_expr(
     };
     let Some(kind) = classify_try_operand(&operand_type, module)
     else {
-        return Err(HirError::invalid(format!("`?` cannot be applied to `{}`", render_type_name(&operand_type))));
+        return Err(HirError::lowering_failed(format!("`?` cannot be applied to `{}`", render_type_name(&operand_type))));
     };
     match kind {
         TryPropagateKind::Nullable(payload) => {
             if try_scope_depth == 0 && !is_nullable_type(enclosing_return) {
-                return Err(HirError::invalid(format!(
+                return Err(HirError::lowering_failed(format!(
                     "`?` on nullable `{}` requires enclosing return compatible with nullable or a `try` scope; got `{}`",
                     render_type_name(&payload),
                     render_type_name(enclosing_return)
@@ -148,7 +148,7 @@ fn validate_try_propagate_expr(
         }
         TryPropagateKind::Option(payload) => {
             if try_scope_depth == 0 && !is_option_apply_type(enclosing_return) {
-                return Err(HirError::invalid(format!(
+                return Err(HirError::lowering_failed(format!(
                     "`?` on `Option<{}>` requires enclosing `Option` return or a `try` scope; got `{}`",
                     render_type_name(&payload),
                     render_type_name(enclosing_return)
@@ -157,7 +157,7 @@ fn validate_try_propagate_expr(
         }
         TryPropagateKind::Result { ok, err } => {
             if !is_result_apply_type(enclosing_return) {
-                return Err(HirError::invalid(format!(
+                return Err(HirError::lowering_failed(format!(
                     "`?` on `Result<{}, {}>` requires enclosing binary unity return; got `{}`",
                     render_type_name(&ok),
                     render_type_name(&err),
@@ -166,7 +166,7 @@ fn validate_try_propagate_expr(
             }
             if let Some(enclosing_err) = result_err_type(enclosing_return) {
                 if enclosing_err != err {
-                    return Err(HirError::invalid(format!(
+                    return Err(HirError::lowering_failed(format!(
                         "`?` error type `{}` is incompatible with enclosing return error `{}`",
                         render_type_name(&err),
                         render_type_name(&enclosing_err)
