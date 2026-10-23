@@ -2278,16 +2278,21 @@ fn try_resolve_call(
     }
 
     let enclosing_module = type_relations.enclosing_module();
+    let callee_path = NamePath::new(vec![callee_name.clone()]);
     let mut filtered = candidates
         .iter()
         .filter(|candidate| matches!(candidate.domain, OverloadDomain::Function | OverloadDomain::Constructor))
         .filter(|candidate| {
             candidate.owner.is_none()
-                && (symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
-                    || symbol_matches_imported_dependency_export(candidate, &callee_name)
-                    // intrinsic 的身份由 [`IntrinsicId`] 承载，`builtin.array.push` 等路径只是
-                    // 语言内建的用户可见拼写，允许按末段命中后由结构化 intrinsic 合同裁决。
-                    || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name)))
+                && match candidate.domain {
+                    // Constructor：结构体/聚合构造用末段对齐 fallback，允许跨 namespace 命中
+                    // 完整路径候选（如 `core.Range` 在 `app` namespace 里被 `Range(...)` 命中）。
+                    OverloadDomain::Constructor => aggregate_constructor_matches_name(candidate, &callee_path),
+                    // Function：自由函数保持 namespace 精确匹配 + imported export + intrinsic fallback。
+                    _ => symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
+                        || symbol_matches_imported_dependency_export(candidate, &callee_name)
+                        || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name)),
+                }
         })
         .filter_map(|candidate| {
             // contextual_type 反推泛型只对构造器候选（变体/结构体构造）有效。
