@@ -1,8 +1,15 @@
-//! 将泛型种子调用点物化为具体签名的 `ItemInstanceId`。
+//! 声明期成员分派表与类型替换工具。
 //!
-//! Semantic MIR 允许调用点 SSA 携带已代入返回类型，而种子 `MirFunction` 仍保留 binder。
-//! Canonical `CallResultTypeMismatch` 要求 Invoke callee 的 `ItemInstanceRecord.return_type`
-//! 与结果 SSA 的 `TypeId` 精确相等，因此必须在进入 Canonical 前为每次具体代入分配实例并改写 callee。
+//! 本模块只承载 Semantic MIR lowering 阶段的**声明期**已冻结事实：
+//! `MirDispatchEntry` 记录 HIR 里 impl/struct 方法的接收者类型与 callable 实例，
+//! 配合 `unify_generic_instantiation` / `apply_type_substitution` 等类型工具，
+//! 让 lowering 内部（builder/pending_requirements 处理）能在 frontend 语义闭包内
+//! 完成调用点到具体 callable 的解析。
+//!
+//! **后置泛型物化已删除**：泛型 substitution 和 evidence 必须在 frontend 内形成
+//! 固定点，不能留到 MIR 层。历史上由 `materialize_generic_call_instances` /
+//! `instantiate_seed` / `specialize_function` 等函数承担的 MIR 后置单态化职责，
+//! 已按架构合同要求归回 frontend，不再在 Semantic MIR 层执行。
 
 use std::collections::BTreeMap;
 
@@ -10,7 +17,7 @@ use nyar_types::{ItemId, ItemInstanceId};
 
 use crate::types::hir::{GenericBinderId, HirModule, ValkyrieType};
 
-use super::{MirDiagnostic, MirFunction, MirOperand, MirOperation, hir_identity::nominal_type_name};
+use super::hir_identity::nominal_type_name;
 
 /// 声明期已冻结的成员分派条目。
 ///
@@ -231,190 +238,5 @@ fn dispatch_subject_matches(entry_target: &ValkyrieType, subject: &ValkyrieType)
     match (nominal_type_name(entry_target), nominal_type_name(subject)) {
         (Some(left), Some(right)) => left == right,
         _ => false,
-    }
-}
-
-/// 单态化缓存：同一 `(种子实例, 代入)` 复用同一个 monomorph 实例。
-type MonomorphCache = BTreeMap<(ItemInstanceId, BTreeMap<GenericBinderId, ValkyrieType>), ItemInstanceId>;
-
-/// 扫描全部 Call 站点并物化具体实例，改写 callee。
-///
-/// `next_instance` 必须是整份源码闭包的全局游标（已覆盖全部包的 HIR 实例），
-/// 不得仅取当前模块 `max(instance)+1`——否则会与后注册包的声明实例撞号（link 定义重复）。
-///
-/// `seed_pool` 提供已 lowering 的依赖模块泛型种子：consumer 的调用点必须能在
-/// 完整源码闭包内实例化依赖函数，不能因为种子不在本模块而跳过。
-/// `dispatch` 是声明期冻结的成员分派表。
-pub(super) fn materialize_generic_call_instances(
-    functions: &mut Vec<MirFunction>,
-    next_instance: &mut u32,
-    seed_pool: &[MirFunction],
-    dispatch: &[MirDispatchEntry],
-    diagnostics: &mut Vec<MirDiagnostic>,
-) {
-    let mut cache = MonomorphCache::new();
-    let mut cursor = 0usize;
-    while cursor < functions.len() {
-        let sites = collect_instantiation_sites(&functions[cursor], functions, seed_pool);
-        for (block_index, instruction_index, seed, concrete_return, substitutions) in sites {
-            let Some(seed_function) = functions
-                .iter()
-                .find(|function| function.instance == Some(seed))
-                .or_else(|| seed_pool.iter().find(|function| function.instance == Some(seed)))
-                .cloned()
-            else {
-                diagnostics
-                    .push(MirDiagnostic::UnresolvedCallableIdentity { symbol: format!("generic seed `{seed}` has no lowered definition") });
-                continue;
-            };
-            let Some(mono) = instantiate_seed(&seed_function, &concrete_return, &substitutions, functions, next_instance, &mut cache)
-            else {
-                diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity {
-                    symbol: format!("generic seed `{}` cannot be fully substituted", seed_function.display_symbol),
-                });
-                continue;
-            };
-            if let MirOperation::Call { callee, .. } = &mut functions[cursor].blocks[block_index].instructions[instruction_index].kind {
-                *callee = MirOperand::Callable(mono);
-            }
-        }
-        cursor += 1;
-    }
-}
-
-/// 按完整代入物化种子；签名仍含未代入 binder 时失败，不生成半成品实例。
-fn instantiate_seed(
-    seed: &MirFunction,
-    concrete_return: &ValkyrieType,
-    substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
-    functions: &mut Vec<MirFunction>,
-    next_instance: &mut u32,
-    cache: &mut MonomorphCache,
-) -> Option<ItemInstanceId> {
-    let seed_instance = seed.instance?;
-    if let Some(existing) = cache.get(&(seed_instance, substitutions.clone())).copied() {
-        return Some(existing);
-    }
-    let specialized = specialize_function(seed, concrete_return, substitutions, *next_instance);
-    if specialized.param_types.iter().any(contains_unresolved_generic) || contains_unresolved_generic(&specialized.return_type) {
-        return None;
-    }
-    let instance = specialized.instance?;
-    *next_instance = next_instance.saturating_add(1);
-    cache.insert((seed_instance, substitutions.clone()), instance);
-    functions.push(specialized);
-    Some(instance)
-}
-
-fn collect_instantiation_sites(
-    function: &MirFunction,
-    functions: &[MirFunction],
-    seed_pool: &[MirFunction],
-) -> Vec<(usize, usize, ItemInstanceId, ValkyrieType, BTreeMap<GenericBinderId, ValkyrieType>)> {
-    let mut sites = Vec::new();
-    for (block_index, block) in function.blocks.iter().enumerate() {
-        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            let MirOperation::Call { callee: MirOperand::Callable(seed), arguments } = &instruction.kind
-            else {
-                continue;
-            };
-            // 结果被丢弃的调用（含 `unit` 返回）同样必须物化：callee 仍是泛型种子时
-            // 链接会把未闭合的种子当作可达实例拉入，绕过调用点的完整代入。
-            // 没有结果 SSA 时以形参统一得到的代入改写种子返回类型。
-            let observed_return = instruction.results.first().and_then(|result| function.value_types.get(result).cloned());
-            let Some(seed_function) = functions
-                .iter()
-                .find(|candidate| candidate.instance == Some(*seed))
-                .or_else(|| seed_pool.iter().find(|candidate| candidate.instance == Some(*seed)))
-            else {
-                continue;
-            };
-            let mut substitutions = BTreeMap::new();
-            if arguments.len() != seed_function.param_types.len() {
-                continue;
-            }
-            let parameters_match = seed_function.param_types.iter().zip(arguments).all(|(formal, operand)| {
-                let MirOperand::Value(value) = operand
-                else {
-                    return false;
-                };
-                let Some(actual) = function.value_types.get(value)
-                else {
-                    return false;
-                };
-                unify_generic_instantiation(formal, actual, &mut substitutions)
-            });
-            if !parameters_match {
-                continue;
-            }
-            let concrete_return = match observed_return {
-                Some(concrete_return) => {
-                    if !unify_generic_instantiation(&seed_function.return_type, &concrete_return, &mut substitutions) {
-                        continue;
-                    }
-                    concrete_return
-                }
-                None => apply_type_substitution(&seed_function.return_type, &substitutions),
-            };
-            if substitutions.is_empty() {
-                continue;
-            }
-            sites.push((block_index, instruction_index, *seed, concrete_return, substitutions));
-        }
-    }
-    sites
-}
-
-fn specialize_function(
-    seed: &MirFunction,
-    concrete_return: &ValkyrieType,
-    substitutions: &BTreeMap<GenericBinderId, ValkyrieType>,
-    instance_index: u32,
-) -> MirFunction {
-    let instance = ItemInstanceId::from_index(instance_index).expect("ItemInstanceId overflow");
-    let mut specialized = seed.clone();
-    specialized.instance = Some(instance);
-    // monomorph 必须使用独立 ABI 诊断标签，避免覆盖种子 callable_symbols 条目。
-    specialized.display_symbol = format!("{}#{}", seed.display_symbol, instance_index);
-    specialized.return_type = concrete_return.clone();
-    specialized.param_types = seed.param_types.iter().map(|ty| apply_type_substitution(ty, substitutions)).collect();
-    specialized.value_types = seed.value_types.iter().map(|(value, ty)| (*value, apply_type_substitution(ty, substitutions))).collect();
-    for block in &mut specialized.blocks {
-        for instruction in &mut block.instructions {
-            specialize_operation(&mut instruction.kind, substitutions);
-        }
-    }
-    specialized
-}
-
-fn specialize_operation(operation: &mut MirOperation, substitutions: &BTreeMap<GenericBinderId, ValkyrieType>) {
-    match operation {
-        MirOperation::LoadConstant { ty: Some(ty), .. }
-        | MirOperation::StoreVar { ty: Some(ty), .. }
-        | MirOperation::Cast { ty, .. }
-        | MirOperation::ArrayNew { array_type: ty, .. }
-        | MirOperation::ArrayFromElements { array_type: ty, .. } => {
-            *ty = apply_type_substitution(ty, substitutions);
-        }
-        MirOperation::SumNew { type_args, payload_type, .. } => {
-            for argument in type_args.iter_mut() {
-                *argument = apply_type_substitution(argument, substitutions);
-            }
-            if let Some(payload) = payload_type.as_mut() {
-                *payload = apply_type_substitution(payload, substitutions);
-            }
-        }
-        MirOperation::SumPayloadGet { type_args, payload_type, .. } => {
-            for argument in type_args.iter_mut() {
-                *argument = apply_type_substitution(argument, substitutions);
-            }
-            *payload_type = apply_type_substitution(payload_type, substitutions);
-        }
-        MirOperation::SumVariantIs { type_args, .. } => {
-            for argument in type_args.iter_mut() {
-                *argument = apply_type_substitution(argument, substitutions);
-            }
-        }
-        _ => {}
     }
 }

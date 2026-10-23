@@ -23,43 +23,21 @@ pub struct MirLowerer;
 impl MirLowerer {
     /// Lowers HIR to semantic MIR (PerformEffect intact, no state-machine rewrite).
     ///
-    /// 单模块路径：monomorph `ItemInstanceId` 从本模块已有实例之后分配。
-    /// 跨包闭包须用 [`Self::lower_module_semantic_with_closure_context`]。
+    /// 单模块路径：仅覆盖本模块的分派表；跨包闭包须用
+    /// [`Self::lower_module_semantic_with_host`]。
     pub fn lower_module_semantic(module: &HirModule) -> MirModule {
-        let mut next_mono = None;
         let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_closure_context(module, &mut next_mono, &[], &dispatch, None, true)
+        Self::lower_module_semantic_with_host(module, None, true, &dispatch)
     }
 
-    /// 跨包闭包：`mono_counter` 为全局实例游标；`None` 时回退为本模块 `max+1`。
+    /// 跨包闭包入口：携带程序级 host runtime 身份，供外部调用合同合并使用。
     ///
-    /// 单模块入口：种子池与分派表仅覆盖本模块；依赖模块的泛型种子须用
-    /// [`Self::lower_module_semantic_with_closure_context`]。
-    pub fn lower_module_semantic_with_mono_counter(module: &HirModule, mono_counter: &mut Option<u32>) -> MirModule {
-        let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch, None, true)
-    }
-
-    /// 跨包闭包 lowering；`shared_host` 为程序级冻结的 workload phase 身份。
-    pub fn lower_module_semantic_with_mono_counter_and_host(
+    /// 分派表必须覆盖完整源码闭包（由调用方预先拼好再传入），不再在 MIR 层做后置泛型物化。
+    pub fn lower_module_semantic_with_host(
         module: &HirModule,
-        mono_counter: &mut Option<u32>,
         shared_host: Option<&HostRuntimeCallables>,
         attach_host_contracts: bool,
-    ) -> MirModule {
-        let dispatch = generic_call_instantiation::collect_dispatch_entries(&[module]);
-        Self::lower_module_semantic_with_closure_context(module, mono_counter, &[], &dispatch, shared_host, attach_host_contracts)
-    }
-
-    /// 跨包闭包上下文：`seed_pool` 提供已 lowering 的依赖模块函数，
-    /// `dispatch` 提供完整源码闭包冻结的成员分派表。
-    pub fn lower_module_semantic_with_closure_context(
-        module: &HirModule,
-        mono_counter: &mut Option<u32>,
-        seed_pool: &[MirFunction],
         dispatch: &[generic_call_instantiation::MirDispatchEntry],
-        shared_host: Option<&HostRuntimeCallables>,
-        attach_host_contracts: bool,
     ) -> MirModule {
         let singleton_accessor_instances = crate::valkyrie::mir::singleton_accessor_instance_map(module);
         let mut aggregate_layouts = value_semantics::compute_aggregate_layout_plan(module);
@@ -139,22 +117,6 @@ impl MirLowerer {
             }
             _ => true,
         });
-        // 泛型种子调用点：为具体代入分配 ItemInstanceId，供 Canonical Invoke 精确匹配返回 TypeId。
-        let accessor_instances = crate::valkyrie::mir::collect_singleton_accessor_contracts(module);
-        let local_floor = functions
-            .iter()
-            .filter_map(|function| function.instance)
-            .chain(external_calls.iter().filter_map(|contract| contract.instance))
-            .chain(accessor_instances.iter().map(|(instance, _)| *instance))
-            .map(|instance| instance.index())
-            .max()
-            .map(|index| index.saturating_add(1))
-            .unwrap_or(0);
-        let next_mono = mono_counter.get_or_insert(local_floor);
-        if *next_mono < local_floor {
-            *next_mono = local_floor;
-        }
-        generic_call_instantiation::materialize_generic_call_instances(&mut functions, next_mono, seed_pool, dispatch, &mut diagnostics);
         // MirFunction 不再携带 per-function diagnostics。
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
@@ -172,6 +134,7 @@ impl MirLowerer {
                     .expect("duplicate callable symbol during lowering");
             }
         }
+        let accessor_instances = crate::valkyrie::mir::collect_singleton_accessor_contracts(module);
         for (instance, symbol) in accessor_instances {
             super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                 .expect("duplicate singleton accessor symbol during lowering");

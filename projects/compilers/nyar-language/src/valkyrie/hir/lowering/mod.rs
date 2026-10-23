@@ -750,24 +750,16 @@ impl ValkyrieCompiler {
         let final_hir = hir_groups.pop().ok_or_else(|| HirError::lowering_failed("semantic source group plan is empty"))?;
         let all_hirs = std::iter::once(&final_hir).chain(hir_groups.iter()).collect::<Vec<_>>();
         let host_runtime = crate::valkyrie::mir::ssa::contracts::allocate_program_host_runtime(&all_hirs);
-        // monomorph 与 host runtime 均接在整份闭包 HIR 实例池之后，避免跨组撞号。
-        let mut mono_counter = Some(
-            host_runtime
-                .by_name
-                .values()
-                .map(|instance| instance.index())
-                .max()
-                .map(|index| index.saturating_add(1))
-                .unwrap_or(0),
-        );
+        // 分派表覆盖完整源码闭包，frontend 固定点内完成成员查找。
+        let dispatch = crate::valkyrie::mir::ssa::generic_call_instantiation::collect_dispatch_entries(&all_hirs);
         let mut mir_groups = hir_groups
             .iter()
             .map(|hir| {
-                crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter_and_host(hir, &mut mono_counter, Some(&host_runtime), false)
+                crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch)
             })
             .collect::<Vec<_>>();
         let mut final_mir =
-            crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_mono_counter_and_host(&final_hir, &mut mono_counter, Some(&host_runtime), true);
+            crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch);
         // 程序模块是全部入口组共同的链接根宿主：非末尾入口组的 `[export]` / `[main]`
         // 必须按已冻结合同身份并入，而不是只让最后一个组决定产物表面。
         for index in entry_indices {
@@ -1145,26 +1137,18 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
                     *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
                 }
             }
-            ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
-                let path = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
-                let Some(declaration) = resolve_declaration(name, &path, structs, enums)? else {
-                    return Err(HirError::lowering_failed(format!(
-                        "限定类型路径 `{}` 未绑定声明身份",
-                        ValkyrieType::qualified_path_label(path_namespace, name)
-                    )));
-                };
-                *ty = ValkyrieType::Nominal { declaration, arguments: Vec::new() };
-            }
+            // 停线清理：QualifiedPath 不再是 bind_type 的成功输入。
+            // 多段限定类型名必须在 lowering 阶段已解析为 Named（供 bind 按声明冻结），
+            // 或直接解析为 Nominal。若 QualifiedPath 意外到达这里，说明前端生成路径
+            // 未切断，应由修改源头处理。
             ValkyrieType::Apply(base, args) => {
                 for arg in args.iter_mut() {
                     bind_type(arg, namespace, structs, enums)?;
                 }
                 let resolved_declaration = match base.as_ref() {
                     ValkyrieType::Named(name) => resolve_declaration(name, namespace, structs, enums)?,
-                    ValkyrieType::QualifiedPath { namespace: path_namespace, name } => {
-                        let path_namespace = NamePath::new(path_namespace.iter().map(|segment| Identifier::new(segment.as_str())).collect());
-                        resolve_declaration(name, &path_namespace, structs, enums)?
-                    }
+                    // 停线清理：QualifiedPath base 在 Apply 中不再是合法成功路径。
+                    // 必须已在 lowering 阶段解析为 Named 或 Nominal。
                     _ => None,
                 };
                 if let Some(declaration) = resolved_declaration {
