@@ -336,6 +336,189 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// 生成源码组缺少显式 producer 身份。
+    SourceGroupProducerMissing {
+        /// 涉及的源码组依赖身份（未知时为 `None`）。
+        dependency_key: Option<String>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 生成源码组没有显式标记为入口。
+    SourceGroupNotEntry {
+        /// 源码组依赖身份。
+        dependency_key: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 源码组依赖身份为空或与已提供组重复。
+    SourceGroupIdentityInvalid {
+        /// 请求的依赖身份（为空时携带空串）。
+        dependency_key: String,
+        /// 身份是否为空（否则为重复）。
+        empty: bool,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 源码组依赖的组尚未在之前提供。
+    SourceGroupDependencyUnavailable {
+        /// 消费依赖的组。
+        group: String,
+        /// 缺失的依赖组。
+        dependency: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 组内源码文件身份为空或重复。
+    SourceFileIdentityInvalid {
+        /// 所属组依赖身份。
+        group: String,
+        /// 请求的文件路径（为空时携带空串）。
+        path: String,
+        /// 身份是否为空（否则为重复）。
+        empty: bool,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 入口组没有任何源码文件。
+    EntryGroupWithoutFiles {
+        /// 入口组依赖身份。
+        group: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// Compiler 源码快照没有入口组（或缺少显式入口组）。
+    SourceInputEntryGroupMissing {
+        /// 是否缺少显式入口标记（否则快照完全为空）。
+        explicit: bool,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 读取源码文件失败。
+    SourceReadFailed {
+        /// 请求的文件路径。
+        path: String,
+        /// 底层 IO 失败种类。
+        kind: std::io::ErrorKind,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 语义源码组计划为空，无法确定链接根。
+    EmptySemanticSourceGroupPlan {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// frontend 拒绝源文件；原样转发其结构化解析失败。
+    SourceFileRejected {
+        /// 所属组依赖身份。
+        dependency_key: String,
+        /// 被拒绝的文件路径。
+        path: String,
+        /// frontend 生产的结构化解析失败。
+        error: crate::valkyrie::frontend::ParseError,
+    },
+    /// 依赖导出的语义事实不可用。
+    DependencyExportUnavailable {
+        /// 消费依赖的组。
+        group: String,
+        /// 缺失的依赖组。
+        dependency: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 同一依赖身份被重复注册语义导出。
+    DependencyExportIdentityCollision {
+        /// 冲突的依赖身份。
+        dependency_key: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 声明 / 实例 / 字段身份空间耗尽或索引非法。
+    DeclarationIndexExhausted {
+        /// 耗尽的索引空间。
+        space: IndexSpace,
+        /// 正在注册的声明所有者。
+        owner: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 已分配的声明 / 实例 / 字段身份被重复注册。
+    DeclarationIdentityDuplicated {
+        /// 冲突的索引空间。
+        space: IndexSpace,
+        /// 声明所有者。
+        owner: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 依赖声明的身份注册必须由完整 Compiler 源码闭包拥有。
+    DependencyDeclarationsRequireSourceClosure {
+        /// 已提供的依赖导出数量。
+        imported_export_count: usize,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 命名 `union` 尚未进入 HIR lowering。
+    UnionNotLowered {
+        /// union 声明名。
+        union_name: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 必须在宏/模板展开后消失的 TGrammar 模板残留到 HIR lowering。
+    UnexpandedTemplateItem {
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 根条目类型不属于 HIR lowering 的输入面。
+    UnsupportedRootItem {
+        /// Oak 根条目的稳定种类名。
+        item_kind: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 下游 compile pipeline 拒绝已 lowering 的输入。
+    ///
+    /// 原样转发下游已冻结的诊断 code 与 module 身份，不在 HIR 侧重新拼装失败文本。
+    PipelineRejected {
+        /// 下游诊断 code 列表。
+        codes: Vec<String>,
+        /// owning module 符号。
+        module: String,
+    },
     /// HIR lowering 失败（通用 fallback，携带已解析的结构化信息）。
     LoweringFailed {
         /// 场景标识。
@@ -515,6 +698,17 @@ pub enum PropagateProtocol {
     Result,
 }
 
+/// 声明身份索引空间。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexSpace {
+    /// `ItemId` 声明空间。
+    Item,
+    /// `ItemInstanceId` 实例空间。
+    ItemInstance,
+    /// `FieldId` 字段空间。
+    Field,
+}
+
 impl HirError {
     /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
     pub fn lowering_failed(message: impl Into<String>) -> Self {
@@ -590,6 +784,25 @@ impl HirError {
             Self::YieldFromOperandNotGenerator { .. } => "valkyrie.hir.yield_from_operand_not_generator",
             Self::YieldFromItemTypeMismatch { .. } => "valkyrie.hir.yield_from_item_type_mismatch",
             Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
+            Self::SourceGroupProducerMissing { .. } => "valkyrie.hir.source_group_producer_missing",
+            Self::SourceGroupNotEntry { .. } => "valkyrie.hir.source_group_not_entry",
+            Self::SourceGroupIdentityInvalid { .. } => "valkyrie.hir.source_group_identity_invalid",
+            Self::SourceGroupDependencyUnavailable { .. } => "valkyrie.hir.source_group_dependency_unavailable",
+            Self::SourceFileIdentityInvalid { .. } => "valkyrie.hir.source_file_identity_invalid",
+            Self::EntryGroupWithoutFiles { .. } => "valkyrie.hir.entry_group_without_files",
+            Self::SourceInputEntryGroupMissing { .. } => "valkyrie.hir.source_input_entry_group_missing",
+            Self::SourceReadFailed { .. } => "valkyrie.hir.source_read_failed",
+            Self::EmptySemanticSourceGroupPlan { .. } => "valkyrie.hir.empty_semantic_source_group_plan",
+            Self::SourceFileRejected { .. } => "valkyrie.hir.source_file_rejected",
+            Self::DependencyExportUnavailable { .. } => "valkyrie.hir.dependency_export_unavailable",
+            Self::DependencyExportIdentityCollision { .. } => "valkyrie.hir.dependency_export_identity_collision",
+            Self::DeclarationIndexExhausted { .. } => "valkyrie.hir.declaration_index_exhausted",
+            Self::DeclarationIdentityDuplicated { .. } => "valkyrie.hir.declaration_identity_duplicated",
+            Self::DependencyDeclarationsRequireSourceClosure { .. } => "valkyrie.hir.dependency_declarations_require_source_closure",
+            Self::UnionNotLowered { .. } => "valkyrie.hir.union_not_lowered",
+            Self::UnexpandedTemplateItem { .. } => "valkyrie.hir.unexpanded_template_item",
+            Self::UnsupportedRootItem { .. } => "valkyrie.hir.unsupported_root_item",
+            Self::PipelineRejected { .. } => "valkyrie.hir.pipeline_rejected",
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
@@ -771,6 +984,80 @@ impl From<HirError> for DiagnosticRow {
             HirError::AmbiguousBareNamePattern { name, .. } => {
                 row = row.with_arg("name", DiagnosticArg::String(name.clone()));
             }
+            HirError::SourceGroupProducerMissing { dependency_key, .. } => {
+                if let Some(dependency_key) = dependency_key {
+                    row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
+                }
+            }
+            HirError::SourceGroupNotEntry { dependency_key, .. } => {
+                row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
+            }
+            HirError::SourceGroupIdentityInvalid { dependency_key, empty, .. } => {
+                row = row
+                    .with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()))
+                    .with_arg("empty", DiagnosticArg::String(empty.to_string()));
+            }
+            HirError::SourceGroupDependencyUnavailable { group, dependency, .. } => {
+                row = row
+                    .with_arg("group", DiagnosticArg::DependencyKey(group.clone()))
+                    .with_arg("dependency", DiagnosticArg::DependencyKey(dependency.clone()));
+            }
+            HirError::SourceFileIdentityInvalid { group, path, empty, .. } => {
+                row = row
+                    .with_arg("group", DiagnosticArg::DependencyKey(group.clone()))
+                    .with_arg("path", DiagnosticArg::String(path.clone()))
+                    .with_arg("empty", DiagnosticArg::String(empty.to_string()));
+            }
+            HirError::EntryGroupWithoutFiles { group, .. } => {
+                row = row.with_arg("group", DiagnosticArg::DependencyKey(group.clone()));
+            }
+            HirError::SourceInputEntryGroupMissing { explicit, .. } => {
+                row = row.with_arg("explicit", DiagnosticArg::String(explicit.to_string()));
+            }
+            HirError::SourceReadFailed { path, kind, .. } => {
+                row = row
+                    .with_arg("path", DiagnosticArg::String(path.clone()))
+                    .with_arg("kind", DiagnosticArg::String(io_error_kind_name(*kind).to_string()));
+            }
+            HirError::EmptySemanticSourceGroupPlan { .. } | HirError::UnexpandedTemplateItem { .. } => {}
+            HirError::SourceFileRejected { dependency_key, path, error } => {
+                row = row
+                    .with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()))
+                    .with_arg("path", DiagnosticArg::String(path.clone()))
+                    .with_cause(error.to_string());
+            }
+            HirError::DependencyExportUnavailable { group, dependency, .. } => {
+                row = row
+                    .with_arg("group", DiagnosticArg::DependencyKey(group.clone()))
+                    .with_arg("dependency", DiagnosticArg::DependencyKey(dependency.clone()));
+            }
+            HirError::DependencyExportIdentityCollision { dependency_key, .. } => {
+                row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
+            }
+            HirError::DeclarationIndexExhausted { space, owner, .. } => {
+                row = row
+                    .with_arg("space", DiagnosticArg::String(index_space_name(*space).to_string()))
+                    .with_arg("owner", DiagnosticArg::CallableShort(owner.clone()));
+            }
+            HirError::DeclarationIdentityDuplicated { space, owner, .. } => {
+                row = row
+                    .with_arg("space", DiagnosticArg::String(index_space_name(*space).to_string()))
+                    .with_arg("owner", DiagnosticArg::CallableShort(owner.clone()));
+            }
+            HirError::DependencyDeclarationsRequireSourceClosure { imported_export_count, .. } => {
+                row = row.with_arg("imported_export_count", DiagnosticArg::Int(*imported_export_count as i64));
+            }
+            HirError::UnionNotLowered { union_name, .. } => {
+                row = row.with_arg("union", DiagnosticArg::Aggregate(union_name.clone()));
+            }
+            HirError::UnsupportedRootItem { item_kind, .. } => {
+                row = row.with_arg("item_kind", DiagnosticArg::String(item_kind.clone()));
+            }
+            HirError::PipelineRejected { codes, module } => {
+                row = row
+                    .with_arg("module", DiagnosticArg::String(module.clone()))
+                    .with_arg("codes", DiagnosticArg::Aggregate(codes.join(",")));
+            }
             HirError::FallthroughWithoutNextArm { .. } | HirError::FallthroughOutsideCaseChain { .. } | HirError::BreakValueRejected { .. } => {}
             HirError::LoweringFailed { scenario, details, .. } => {
                 row = row.with_arg("scenario", DiagnosticArg::String(scenario.clone()));
@@ -949,6 +1236,26 @@ fn propagate_protocol_name(protocol: PropagateProtocol) -> &'static str {
     }
 }
 
+/// IO 失败种类的稳定短名（用于诊断参数）。
+fn io_error_kind_name(kind: std::io::ErrorKind) -> &'static str {
+    match kind {
+        std::io::ErrorKind::NotFound => "not_found",
+        std::io::ErrorKind::PermissionDenied => "permission_denied",
+        std::io::ErrorKind::InvalidData => "invalid_data",
+        std::io::ErrorKind::InvalidInput => "invalid_input",
+        _ => "other",
+    }
+}
+
+/// 声明索引空间的稳定短名（用于诊断参数）。
+fn index_space_name(space: IndexSpace) -> &'static str {
+    match space {
+        IndexSpace::Item => "item",
+        IndexSpace::ItemInstance => "item_instance",
+        IndexSpace::Field => "field",
+    }
+}
+
 /// MIR 侧失败事实的缺省 source 身份（MIR 结构本身不携带源码身份）。
 fn mir_source() -> DiagnosticSource {
     DiagnosticSource { id: "<mir>".into(), revision: None }
@@ -1021,6 +1328,25 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::YieldFromOperandNotGenerator { source, .. } => source.clone(),
         HirError::YieldFromItemTypeMismatch { source, .. } => source.clone(),
         HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
+        HirError::SourceGroupProducerMissing { source, .. } => source.clone(),
+        HirError::SourceGroupNotEntry { source, .. } => source.clone(),
+        HirError::SourceGroupIdentityInvalid { source, .. } => source.clone(),
+        HirError::SourceGroupDependencyUnavailable { source, .. } => source.clone(),
+        HirError::SourceFileIdentityInvalid { source, .. } => source.clone(),
+        HirError::EntryGroupWithoutFiles { source, .. } => source.clone(),
+        HirError::SourceInputEntryGroupMissing { source, .. } => source.clone(),
+        HirError::SourceReadFailed { source, .. } => source.clone(),
+        HirError::EmptySemanticSourceGroupPlan { source, .. } => source.clone(),
+        HirError::SourceFileRejected { error, .. } => frontend_source(error),
+        HirError::DependencyExportUnavailable { source, .. } => source.clone(),
+        HirError::DependencyExportIdentityCollision { source, .. } => source.clone(),
+        HirError::DeclarationIndexExhausted { source, .. } => source.clone(),
+        HirError::DeclarationIdentityDuplicated { source, .. } => source.clone(),
+        HirError::DependencyDeclarationsRequireSourceClosure { source, .. } => source.clone(),
+        HirError::UnionNotLowered { source, .. } => source.clone(),
+        HirError::UnexpandedTemplateItem { source, .. } => source.clone(),
+        HirError::UnsupportedRootItem { source, .. } => source.clone(),
+        HirError::PipelineRejected { .. } => DiagnosticSource { id: "<pipeline>".into(), revision: None },
         HirError::LoweringFailed { source, .. } => source.clone(),
         HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -1063,6 +1389,25 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::YieldFromOperandNotGenerator { span, .. } => span.clone(),
         HirError::YieldFromItemTypeMismatch { span, .. } => span.clone(),
         HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
+        HirError::SourceGroupProducerMissing { span, .. } => span.clone(),
+        HirError::SourceGroupNotEntry { span, .. } => span.clone(),
+        HirError::SourceGroupIdentityInvalid { span, .. } => span.clone(),
+        HirError::SourceGroupDependencyUnavailable { span, .. } => span.clone(),
+        HirError::SourceFileIdentityInvalid { span, .. } => span.clone(),
+        HirError::EntryGroupWithoutFiles { span, .. } => span.clone(),
+        HirError::SourceInputEntryGroupMissing { span, .. } => span.clone(),
+        HirError::SourceReadFailed { span, .. } => span.clone(),
+        HirError::EmptySemanticSourceGroupPlan { span, .. } => span.clone(),
+        HirError::SourceFileRejected { error, .. } => frontend_span(error),
+        HirError::DependencyExportUnavailable { span, .. } => span.clone(),
+        HirError::DependencyExportIdentityCollision { span, .. } => span.clone(),
+        HirError::DeclarationIndexExhausted { span, .. } => span.clone(),
+        HirError::DeclarationIdentityDuplicated { span, .. } => span.clone(),
+        HirError::DependencyDeclarationsRequireSourceClosure { span, .. } => span.clone(),
+        HirError::UnionNotLowered { span, .. } => span.clone(),
+        HirError::UnexpandedTemplateItem { span, .. } => span.clone(),
+        HirError::UnsupportedRootItem { span, .. } => span.clone(),
+        HirError::PipelineRejected { .. } => empty_span(),
         HirError::LoweringFailed { span, .. } => span.clone(),
         HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
@@ -1200,6 +1545,79 @@ impl std::fmt::Display for HirError {
                 f,
                 "bare lowercase single-segment pattern `{name}` is ambiguous with a variable binding, use a variant form instead"
             ),
+            Self::SourceGroupProducerMissing { dependency_key, .. } => {
+                write!(f, "generated source group has no producer identity")?;
+                match dependency_key {
+                    Some(dependency_key) => write!(f, " (group `{dependency_key}`)"),
+                    None => Ok(()),
+                }
+            }
+            Self::SourceGroupNotEntry { dependency_key, .. } => {
+                write!(f, "generated source group `{dependency_key}` must be explicitly marked as entry")
+            }
+            Self::SourceGroupIdentityInvalid { dependency_key, empty, .. } => {
+                if *empty {
+                    write!(f, "source group dependency identity is empty")
+                }
+                else {
+                    write!(f, "source group dependency identity `{dependency_key}` is duplicated")
+                }
+            }
+            Self::SourceGroupDependencyUnavailable { group, dependency, .. } => {
+                write!(f, "source group `{group}` depends on `{dependency}`, which was not provided before it")
+            }
+            Self::SourceFileIdentityInvalid { group, path, empty, .. } => {
+                if *empty {
+                    write!(f, "source group `{group}` contains a source file with an empty path")
+                }
+                else {
+                    write!(f, "source group `{group}` contains duplicated source file `{path}`")
+                }
+            }
+            Self::EntryGroupWithoutFiles { group, .. } => write!(f, "entry source group `{group}` declares no source file"),
+            Self::SourceInputEntryGroupMissing { explicit, .. } => {
+                if *explicit {
+                    write!(f, "compiler source snapshot has no explicitly marked entry group")
+                }
+                else {
+                    write!(f, "compiler source snapshot has no entry group")
+                }
+            }
+            Self::SourceReadFailed { path, kind, .. } => {
+                write!(f, "failed to read source file `{path}` ({})", io_error_kind_name(*kind))
+            }
+            Self::EmptySemanticSourceGroupPlan { .. } => write!(f, "semantic source group plan is empty"),
+            Self::SourceFileRejected { dependency_key, path, error } => {
+                write!(f, "source group `{dependency_key}` file `{path}` was rejected: {error}")
+            }
+            Self::DependencyExportUnavailable { group, dependency, .. } => {
+                write!(f, "source group `{group}` requires the semantic export of `{dependency}`, which is unavailable")
+            }
+            Self::DependencyExportIdentityCollision { dependency_key, .. } => {
+                write!(f, "dependency `{dependency_key}` registered its semantic export twice")
+            }
+            Self::DeclarationIndexExhausted { space, owner, .. } => {
+                write!(f, "`{}` space is exhausted while registering `{owner}`", index_space_name(*space))
+            }
+            Self::DeclarationIdentityDuplicated { space, owner, .. } => {
+                write!(f, "`{}` identity of `{owner}` was already registered", index_space_name(*space))
+            }
+            Self::DependencyDeclarationsRequireSourceClosure { imported_export_count, .. } => write!(
+                f,
+                "dependency declaration registration requires the full compiler source closure, got {imported_export_count} imported exports"
+            ),
+            Self::UnionNotLowered { union_name, .. } => write!(f, "named union `{union_name}` is not lowered into HIR"),
+            Self::UnexpandedTemplateItem { .. } => write!(f, "TGrammar template item reached HIR lowering without expansion"),
+            Self::UnsupportedRootItem { item_kind, .. } => {
+                write!(f, "root item kind `{item_kind}` is not supported by HIR lowering")
+            }
+            Self::PipelineRejected { codes, module } => {
+                write!(f, "compile pipeline rejected module `{module}`")?;
+                if !codes.is_empty() {
+                    write!(f, " ({})", codes.join(","))?;
+                }
+                Ok(())
+            }
             Self::LoweringFailed { scenario, details, source, span, .. } => {
                 write!(f, "lowering failed: {scenario}")?;
                 if !details.is_empty() {
