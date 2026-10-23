@@ -18,7 +18,7 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), HirError> 
     let blocks: BTreeMap<_, _> = function.blocks.iter().map(|block| (block.id, block.parameters.len())).collect();
     let block_map: BTreeMap<_, _> = function.blocks.iter().map(|block| (block.id, block)).collect();
     if !blocks.contains_key(&function.entry) {
-        return Err(HirError::lowering_failed(format!("控制流调度校验失败：函数 `{}` 的 entry block 不存在", function.display_symbol)));
+        return Err(HirError::MirEntryBlockMissing { function: function.display_symbol.clone() });
     }
 
     let reachable_blocks = collect_reachable_blocks(function);
@@ -27,16 +27,29 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), HirError> 
             continue;
         }
         match &block.terminator {
-            MirTerminator::Jump { target, arguments } => validate_jump_target(function, block, *target, arguments, &blocks, &block_map)?,
+            MirTerminator::Jump { target, arguments } => validate_jump_target(
+                function,
+                block,
+                *target,
+                arguments,
+                &blocks,
+                &block_map,
+            )
+            .map_err(HirError::MirControlFlowRejected)?,
             MirTerminator::Branch { then_target, else_target, .. } => {
-                ensure_target_exists(&function.display_symbol, block.label.as_str(), *then_target, &blocks)?;
-                ensure_target_exists(&function.display_symbol, block.label.as_str(), *else_target, &blocks)?;
+                ensure_target_exists(&function.display_symbol, block.label.as_str(), *then_target, &blocks)
+                    .map_err(HirError::MirControlFlowRejected)?;
+                ensure_target_exists(&function.display_symbol, block.label.as_str(), *else_target, &blocks)
+                    .map_err(HirError::MirControlFlowRejected)?;
             }
             MirTerminator::PerformEffect { effect, payload, resume_target, .. } => {
-                validate_effect_payload(&function.display_symbol, block.label.as_str(), *effect, payload.is_some())?;
-                validate_effect_resume_target(&function.display_symbol, block.label.as_str(), *effect, *resume_target, &blocks)?;
+                validate_effect_payload(&function.display_symbol, block.label.as_str(), *effect, payload.is_some())
+                    .map_err(HirError::MirControlFlowRejected)?;
+                validate_effect_resume_target(&function.display_symbol, block.label.as_str(), *effect, *resume_target, &blocks)
+                    .map_err(HirError::MirControlFlowRejected)?;
                 if let Some(payload_type) = payload.as_ref().and_then(|payload| infer_operand_static_type(function, payload)) {
-                    validate_effect_payload_static_type(&function.display_symbol, block.label.as_str(), *effect, &payload_type)?;
+                    validate_effect_payload_static_type(&function.display_symbol, block.label.as_str(), *effect, &payload_type)
+                        .map_err(HirError::MirControlFlowRejected)?;
                 }
                 if let (Some(expected_type), Some(resume_block)) = (
                     infer_effect_resume_static_type(
@@ -51,27 +64,32 @@ pub(super) fn validate_function(function: &MirFunction) -> Result<(), HirError> 
                         function,
                         *resume_block,
                         &expected_type,
-                    )?;
+                    )
+                    .map_err(HirError::MirControlFlowRejected)?;
                 }
             }
             MirTerminator::StateDispatch { state, cases, default_target } => {
-                ensure_target_exists(&function.display_symbol, block.label.as_str(), *default_target, &blocks)?;
+                ensure_target_exists(&function.display_symbol, block.label.as_str(), *default_target, &blocks)
+                    .map_err(HirError::MirControlFlowRejected)?;
                 if !function.value_types.contains_key(state) {
-                    return Err(HirError::lowering_failed(format!(
-                        "控制流调度校验失败：函数 `{}` 的 dispatch block `{}` 引用了未知 state 值",
-                        function.display_symbol, block.label
-                    )));
+                    return Err(HirError::MirUnknownStateValue {
+                        function: function.display_symbol.clone(),
+                        block: block.label.to_string(),
+                    });
                 }
                 for (case_key, target) in cases {
-                    ensure_target_exists(&function.display_symbol, block.label.as_str(), *target, &blocks)?;
+                    ensure_target_exists(&function.display_symbol, block.label.as_str(), *target, &blocks)
+                        .map_err(HirError::MirControlFlowRejected)?;
                     let _ = case_key;
                 }
             }
             // suspend_plan / frame_layouts 不再挂在 Semantic MirFunction 上。
             MirTerminator::YieldToRuntime { effect, payload, resume_state: _ } => {
-                validate_effect_payload(&function.display_symbol, block.label.as_str(), *effect, payload.is_some())?;
+                validate_effect_payload(&function.display_symbol, block.label.as_str(), *effect, payload.is_some())
+                    .map_err(HirError::MirControlFlowRejected)?;
                 if let Some(payload_type) = payload.as_ref().and_then(|payload| infer_operand_static_type(function, payload)) {
-                    validate_effect_payload_static_type(&function.display_symbol, block.label.as_str(), *effect, &payload_type)?;
+                    validate_effect_payload_static_type(&function.display_symbol, block.label.as_str(), *effect, &payload_type)
+                        .map_err(HirError::MirControlFlowRejected)?;
                 }
             }
             MirTerminator::Return { .. } | MirTerminator::Unreachable => {}

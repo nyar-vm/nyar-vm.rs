@@ -2,39 +2,18 @@
 
 use super::{function_validation::validate_function, semantic_contract::validate_semantic_module};
 use crate::{
-    mir::{MirDiagnostic, MirModule},
+    mir::MirModule,
     valkyrie::HirError,
 };
 
 /// 校验 MIR 模块并在失败时返回前端解析错误。
 pub fn validate_module(module: &MirModule) -> Result<(), HirError> {
-    for diagnostic in &module.diagnostics {
-        match diagnostic {
-            MirDiagnostic::PatternLoweringFailed { reason, .. } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering 失败：{reason}")));
-            }
-            MirDiagnostic::UnsupportedExpression { span, kind } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")));
-            }
-            MirDiagnostic::UnresolvedValueType { context } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering missing value type fact: {context}")));
-            }
-            MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")));
-            }
-            MirDiagnostic::UnresolvedNominalIdentity { type_name } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering unresolved nominal identity `{type_name}`")));
-            }
-            MirDiagnostic::UnresolvedFieldIdentity { field } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering unresolved field identity `{field}`")));
-            }
-            MirDiagnostic::UnresolvedCallableIdentity { symbol } => {
-                return Err(HirError::lowering_failed(format!("MIR lowering unresolved callable identity `{symbol}`")));
-            }
-        }
+    // MIR lowering 已经把不可继续 lowering 的构造冻结成结构化诊断；
+    // 校验层只转发第一条本人生产的事实，不在 HIR 侧重拼场景字符串。
+    if let Some(diagnostic) = module.diagnostics.first() {
+        return Err(HirError::MirDiagnosticRejected { diagnostic: diagnostic.clone() });
     }
-    validate_semantic_module(module)
-        .map_err(|error| HirError::lowering_failed(format!("{} {} at {}: {}", error.code, error.function, error.location, error.detail)))?;
+    validate_semantic_module(module).map_err(HirError::MirContractFailed)?;
     for function in &module.functions {
         validate_function(function)?;
     }

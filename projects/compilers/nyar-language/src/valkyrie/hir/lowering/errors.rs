@@ -29,7 +29,9 @@ use nyar_types::{
 /// - severity 固定为 DiagnosticSeverity::Error
 /// - code 由 variant 确定性生成
 /// - variant 字段映射到 args BTreeMap
-#[derive(Debug, Clone, PartialEq, Eq)]
+// 该错误类型承载上游 `ParseError`（不可 `Clone`），因此不派生 `Clone` / `PartialEq`：
+// 失败事实由各自生产者持有，HIR 只读转发。
+#[derive(Debug)]
 pub enum HirError {
     /// SMIR003: call contract 未解析（选择名 + 调用上下文）。
     UnresolvedCall {
@@ -117,6 +119,32 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// MIR 校验拒绝 MIR 自己产出的结构化诊断。
+    ///
+    /// 该变体只承载 MIR lowering 已冻结的结构化诊断事实，不在 HIR 侧重新拼装场景字符串。
+    MirDiagnosticRejected {
+        /// MIR lowering 产出的原始诊断。
+        diagnostic: crate::mir::MirDiagnostic,
+    },
+    /// Semantic MIR 合同校验失败（由 `SemanticMirContractError` 生产）。
+    MirContractFailed(crate::valkyrie::mir::validation::SemanticMirContractError),
+    /// MIR 控制流图校验失败。
+    ///
+    /// 控制流校验器当前仍以 `ParseError` 生产失败事实，本变体原样转发其结构化错误，
+    /// 不由 HIR 重新解释或字符串化。
+    MirControlFlowRejected(crate::valkyrie::frontend::ParseError),
+    /// MIR 函数缺少 entry block。
+    MirEntryBlockMissing {
+        /// 函数符号。
+        function: String,
+    },
+    /// dispatch block 引用了函数未冻结的 state 值。
+    MirUnknownStateValue {
+        /// 函数符号。
+        function: String,
+        /// dispatch block 标签。
+        block: String,
+    },
     /// HIR lowering 失败（通用 fallback，携带已解析的结构化信息）。
     LoweringFailed {
         /// 场景标识。
@@ -185,6 +213,11 @@ impl HirError {
             Self::SumUniteMissingDeclaration { .. } => "valkyrie.hir.sum_unite_missing_declaration",
             Self::InvalidDiscriminator { .. } => "valkyrie.hir.invalid_discriminator",
             Self::NoBodySourceInGroup { .. } => "valkyrie.hir.no_body_source",
+            Self::MirDiagnosticRejected { .. } => "valkyrie.mir.diagnostic_rejected",
+            Self::MirContractFailed(_) => "valkyrie.mir.contract_failed",
+            Self::MirControlFlowRejected(_) => "valkyrie.mir.control_flow_rejected",
+            Self::MirEntryBlockMissing { .. } => "valkyrie.mir.entry_block_missing",
+            Self::MirUnknownStateValue { .. } => "valkyrie.mir.unknown_state_value",
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
@@ -198,11 +231,11 @@ impl From<HirError> for DiagnosticRow {
     fn from(error: HirError) -> Self {
         let source = match &error {
             HirError::VxUnsupported => DiagnosticSource { id: ".vx".into(), revision: None },
-            other => other_source(other).clone(),
+            other => other_source(other),
         };
         let span = match &error {
             HirError::VxUnsupported => DiagnosticSpan { start: 0, end: 0 },
-            other => other_span(other).clone(),
+            other => other_span(other),
         };
 
         let mut row = DiagnosticRow::new(
@@ -255,6 +288,27 @@ impl From<HirError> for DiagnosticRow {
             HirError::NoBodySourceInGroup { dependency_key, .. } => {
                 row = row.with_arg("dependency_key", DiagnosticArg::DependencyKey(dependency_key.clone()));
             }
+            HirError::MirDiagnosticRejected { diagnostic } => {
+                row = mir_diagnostic_args(row, diagnostic);
+            }
+            HirError::MirContractFailed(error) => {
+                row = row
+                    .with_arg("code", DiagnosticArg::String(error.code.to_string()))
+                    .with_arg("function", DiagnosticArg::CallableShort(error.function.clone()))
+                    .with_arg("location", DiagnosticArg::String(error.location.clone()))
+                    .with_cause(error.detail.clone());
+            }
+            HirError::MirControlFlowRejected(error) => {
+                row = row.with_cause(error.to_string());
+            }
+            HirError::MirEntryBlockMissing { function } => {
+                row = row.with_arg("function", DiagnosticArg::CallableShort(function.clone()));
+            }
+            HirError::MirUnknownStateValue { function, block } => {
+                row = row
+                    .with_arg("function", DiagnosticArg::CallableShort(function.clone()))
+                    .with_arg("block", DiagnosticArg::String(block.clone()));
+            }
             HirError::LoweringFailed { scenario, details, .. } => {
                 row = row.with_arg("scenario", DiagnosticArg::String(scenario.clone()));
                 for (k, v) in details {
@@ -280,36 +334,102 @@ impl From<HirError> for DiagnosticRow {
     }
 }
 
-fn other_source(error: &HirError) -> &DiagnosticSource {
+/// 把 MIR 生产的结构化诊断渲染为人类可读文本（仅用于 `Display`）。
+fn mir_diagnostic_message(diagnostic: &crate::mir::MirDiagnostic) -> String {
+    use crate::mir::MirDiagnostic;
+    match diagnostic {
+        MirDiagnostic::PatternLoweringFailed { reason, .. } => format!("MIR lowering failed: {reason}"),
+        MirDiagnostic::UnsupportedExpression { span, kind } => {
+            format!("MIR lowering rejected unsupported HIR expression `{kind}` at source span {span:?}")
+        }
+        MirDiagnostic::UnresolvedValueType { context } => format!("MIR lowering missing value type fact: {context}"),
+        MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => {
+            format!("MIR lowering unresolved variant identity `{sum_type}::{variant}`")
+        }
+        MirDiagnostic::UnresolvedNominalIdentity { type_name } => format!("MIR lowering unresolved nominal identity `{type_name}`"),
+        MirDiagnostic::UnresolvedFieldIdentity { field } => format!("MIR lowering unresolved field identity `{field}`"),
+        MirDiagnostic::UnresolvedCallableIdentity { symbol } => format!("MIR lowering unresolved callable identity `{symbol}`"),
+    }
+}
+
+/// MIR 侧失败事实的缺省 source 身份（MIR 结构本身不携带源码身份）。
+fn mir_source() -> DiagnosticSource {
+    DiagnosticSource { id: "<mir>".into(), revision: None }
+}
+
+/// 无源码定位时的空 span。
+fn empty_span() -> DiagnosticSpan {
+    DiagnosticSpan { start: 0, end: 0 }
+}
+
+/// 从 MIR 诊断中提取可定位的源码 span。
+fn mir_diagnostic_span(diagnostic: &crate::mir::MirDiagnostic) -> DiagnosticSpan {
+    match diagnostic {
+        crate::mir::MirDiagnostic::UnsupportedExpression { span, .. } => {
+            DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize }
+        }
+        _ => empty_span(),
+    }
+}
+
+/// 把 MIR 诊断的结构化字段映射为诊断参数。
+fn mir_diagnostic_args(row: DiagnosticRow, diagnostic: &crate::mir::MirDiagnostic) -> DiagnosticRow {
+    use crate::mir::MirDiagnostic;
+    match diagnostic {
+        MirDiagnostic::PatternLoweringFailed { reason, .. } => row.with_arg("reason", DiagnosticArg::String(reason.clone())),
+        MirDiagnostic::UnsupportedExpression { span, kind } => row
+            .with_arg("kind", DiagnosticArg::String(kind.clone()))
+            .with_arg("span", DiagnosticArg::Span(DiagnosticSpan { start: span.span.start as usize, end: span.span.end as usize })),
+        MirDiagnostic::UnresolvedValueType { context } => row.with_arg("context", DiagnosticArg::String(context.clone())),
+        MirDiagnostic::UnresolvedVariantIdentity { sum_type, variant } => row
+            .with_arg("sum_type", DiagnosticArg::Aggregate(sum_type.clone()))
+            .with_arg("variant", DiagnosticArg::CallableShort(variant.clone())),
+        MirDiagnostic::UnresolvedNominalIdentity { type_name } => row.with_arg("type_name", DiagnosticArg::TypeName(type_name.clone())),
+        MirDiagnostic::UnresolvedFieldIdentity { field } => row.with_arg("field", DiagnosticArg::String(field.clone())),
+        MirDiagnostic::UnresolvedCallableIdentity { symbol } => row.with_arg("symbol", DiagnosticArg::CallableShort(symbol.clone())),
+    }
+}
+
+fn other_source(error: &HirError) -> DiagnosticSource {
     match error {
-        HirError::UnresolvedCall { source, .. } => source,
-        HirError::UnresolvedConstructor { source, .. } => source,
-        HirError::NominalAmbiguous { source, .. } => source,
-        HirError::SumUniteAmbiguous { source, .. } => source,
-        HirError::StructureMissingConstructor { source, .. } => source,
-        HirError::SumUniteMissingDeclaration { source, .. } => source,
-        HirError::InvalidDiscriminator { source, .. } => source,
-        HirError::NoBodySourceInGroup { source, .. } => source,
-        HirError::LoweringFailed { source, .. } => source,
-        HirError::TypeNotFound { source, .. } => source,
+        HirError::UnresolvedCall { source, .. } => source.clone(),
+        HirError::UnresolvedConstructor { source, .. } => source.clone(),
+        HirError::NominalAmbiguous { source, .. } => source.clone(),
+        HirError::SumUniteAmbiguous { source, .. } => source.clone(),
+        HirError::StructureMissingConstructor { source, .. } => source.clone(),
+        HirError::SumUniteMissingDeclaration { source, .. } => source.clone(),
+        HirError::InvalidDiscriminator { source, .. } => source.clone(),
+        HirError::NoBodySourceInGroup { source, .. } => source.clone(),
+        HirError::MirDiagnosticRejected { .. } => mir_source(),
+        HirError::MirContractFailed(_) => mir_source(),
+        HirError::MirControlFlowRejected(_) => mir_source(),
+        HirError::MirEntryBlockMissing { .. } => mir_source(),
+        HirError::MirUnknownStateValue { .. } => mir_source(),
+        HirError::LoweringFailed { source, .. } => source.clone(),
+        HirError::TypeNotFound { source, .. } => source.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
     }
 }
 
-fn other_span(error: &HirError) -> &DiagnosticSpan {
+fn other_span(error: &HirError) -> DiagnosticSpan {
     match error {
-        HirError::UnresolvedCall { span, .. } => span,
-        HirError::UnresolvedConstructor { span, .. } => span,
-        HirError::NominalAmbiguous { span, .. } => span,
-        HirError::SumUniteAmbiguous { span, .. } => span,
-        HirError::StructureMissingConstructor { span, .. } => span,
-        HirError::SumUniteMissingDeclaration { span, .. } => span,
-        HirError::InvalidDiscriminator { span, .. } => span,
-        HirError::NoBodySourceInGroup { span, .. } => span,
-        HirError::LoweringFailed { span, .. } => span,
-        HirError::TypeNotFound { span, .. } => span,
+        HirError::UnresolvedCall { span, .. } => span.clone(),
+        HirError::UnresolvedConstructor { span, .. } => span.clone(),
+        HirError::NominalAmbiguous { span, .. } => span.clone(),
+        HirError::SumUniteAmbiguous { span, .. } => span.clone(),
+        HirError::StructureMissingConstructor { span, .. } => span.clone(),
+        HirError::SumUniteMissingDeclaration { span, .. } => span.clone(),
+        HirError::InvalidDiscriminator { span, .. } => span.clone(),
+        HirError::NoBodySourceInGroup { span, .. } => span.clone(),
+        HirError::MirDiagnosticRejected { diagnostic } => mir_diagnostic_span(diagnostic),
+        HirError::MirContractFailed(_) => empty_span(),
+        HirError::MirControlFlowRejected(_) => empty_span(),
+        HirError::MirEntryBlockMissing { .. } => empty_span(),
+        HirError::MirUnknownStateValue { .. } => empty_span(),
+        HirError::LoweringFailed { span, .. } => span.clone(),
+        HirError::TypeNotFound { span, .. } => span.clone(),
         HirError::VxUnsupported => unreachable!(),
         HirError::SourceGroupClosureFailed(_) => unreachable!(),
         HirError::DeriveResolutionFailed { .. } => unreachable!(),
@@ -388,6 +508,18 @@ impl std::fmt::Display for HirError {
             Self::NoBodySourceInGroup { dependency_key, .. } => {
                 write!(f, "no body source in group `{dependency_key}`")
             }
+            Self::MirDiagnosticRejected { diagnostic } => write!(f, "{}", mir_diagnostic_message(diagnostic)),
+            Self::MirContractFailed(error) => {
+                write!(f, "{} {} at {}: {}", error.code, error.function, error.location, error.detail)
+            }
+            Self::MirControlFlowRejected(error) => write!(f, "{error}"),
+            Self::MirEntryBlockMissing { function } => {
+                write!(f, "control-flow schedule validation failed: function `{function}` has no entry block")
+            }
+            Self::MirUnknownStateValue { function, block } => write!(
+                f,
+                "control-flow schedule validation failed: dispatch block `{block}` of function `{function}` references an unknown state value"
+            ),
             Self::LoweringFailed { scenario, details, source, span, .. } => {
                 write!(f, "lowering failed: {scenario}")?;
                 if !details.is_empty() {
