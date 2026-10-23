@@ -146,6 +146,21 @@ impl TypeRelationContext {
         }
     }
 
+    /// 字面量特化用：只有浮点形参接受浮点字面量。
+    ///
+    /// 整数形参不是浮点类型，浮点字面量不得按“同属数值”静默塞入整数类型；与
+    /// [`Self::is_numeric_type`] 同源：carrier、声明名与源码写的声明引用共用一份浮点名集合。
+    pub fn is_float_type(&self, ty: &ValkyrieType) -> bool {
+        match ty {
+            ValkyrieType::Nominal { declaration, .. } => {
+                self.structs_by_declaration.get(declaration).is_some_and(|item| is_float_type_name(item.name.as_str()))
+            }
+            ValkyrieType::Float32 | ValkyrieType::Float64 => true,
+            ValkyrieType::Named(name) => is_float_type_name(name.as_str()),
+            _ => false,
+        }
+    }
+
     /// 派生一份带可调用声明级 where 约束的上下文副本。
     pub fn with_callable_constraints(&self, constraints: &[HirWhereConstraint]) -> Self {
         let mut context = self.clone();
@@ -415,6 +430,11 @@ pub(crate) fn is_numeric_type_name(name: &str) -> bool {
             | "core::primitive::usize"
             | "core::primitive::isize"
     )
+}
+
+/// 浮点名集合：浮点字面量只认这几个名字，整数名不在其中。
+fn is_float_type_name(name: &str) -> bool {
+    matches!(name, "f32" | "f64" | "f128")
 }
 
 /// 数值类型判定（字面量特化与值位置字面量绑定共用同一份口径）。

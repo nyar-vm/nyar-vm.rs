@@ -2,6 +2,7 @@ use nyar_language::{
     Identifier, NamePath, ValkyrieCompiler,
     types::SourceID,
     valkyrie::{
+        HirError,
         hir::{
             overload::{OverloadCandidate, OverloadDomain, OverloadMatchKind},
             type_relation::{ParameterMatchResult, TypeRelationContext},
@@ -896,4 +897,89 @@ imply char {
     }
     eprintln!("constructs: {constructs:?}");
     assert!(constructs.iter().all(|line| !line.contains("unresolved")), "all constructs must resolve: {constructs:?}");
+}
+
+/// 正例：浮点字面量绑定到浮点形参（`f32` 与 `f64`），并保持同一声明身份。
+#[test]
+fn float_literal_binds_to_float_formal_parameter() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 4221 });
+    compiler
+        .compile_source(
+            r#"
+[primitive("core::primitive::f32")]
+structure f32 { }
+
+[primitive("core::primitive::f64")]
+structure f64 { }
+
+micro take_f64(x: f64) -> f64 {
+    return x
+}
+
+micro take_f32(x: f32) -> f32 {
+    return x
+}
+
+micro keep_f64() -> f64 {
+    return take_f64(1.0)
+}
+
+micro keep_f32() -> f32 {
+    return take_f32(1.0)
+}
+"#,
+        )
+        .expect("浮点字面量必须绑定到浮点形参");
+}
+
+/// 正例：整数字面量仍按数值材质绑定到整数形参。
+#[test]
+fn integer_literal_still_binds_to_integer_formal_parameter() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 4222 });
+    compiler
+        .compile_source(
+            r#"
+[primitive("core::primitive::i32")]
+structure i32 { }
+
+micro take_i32(x: i32) -> i32 {
+    return x
+}
+
+micro keep_i32() -> i32 {
+    return take_i32(1)
+}
+"#,
+        )
+        .expect("整数字面量必须绑定到整数形参");
+}
+
+/// 反例：浮点字面量不得按“同属数值”静默塞入整数形参，必须返回结构化失败。
+#[test]
+fn float_literal_does_not_bind_to_integer_formal_parameter() {
+    for primitive in ["i32", "usize"] {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id: 4223 });
+        let error = compiler
+            .compile_source(&format!(
+                r#"
+[primitive("core::primitive::{primitive}")]
+structure {primitive} {{ }}
+
+micro take(x: {primitive}) -> {primitive} {{
+    return x
+}}
+
+micro keep() -> {primitive} {{
+    return take(1.0)
+}}
+"#
+            ))
+            .expect_err("浮点字面量不得绑定到整数形参");
+        let rendered = format!("{error:?}");
+        assert!(
+            matches!(error, HirError::UnresolvedCall { .. }),
+            "浮点字面量绑定整数形参必须在 overload 阶段结构化失败: {rendered}"
+        );
+        assert!(rendered.contains("take"), "失败必须指出未解析的调用: {rendered}");
+    }
 }
