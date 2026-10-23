@@ -143,6 +143,15 @@ pub enum HirError {
     },
     /// `.vx` source 暂不支持。
     VxUnsupported,
+    /// 源码组语义闭包失败：入口声明缺失、HostProvider 未解析等。
+    /// 直接携带上游 `SemanticClosureError`，不在 lowering 阶段降级成字符串。
+    SourceGroupClosureFailed(crate::valkyrie::semantic_closure::SemanticClosureError),
+    /// DeriveInjector 注入失败：字段类型缺 trait、冲突等。
+    /// 直接携带上游 `DeriveError` 列表，不在 lowering 阶段拼接成字符串。
+    DeriveResolutionFailed {
+        /// 结构化 derive 错误列表。
+        errors: Vec<crate::valkyrie::derive::DeriveError>,
+    },
 }
 
 impl HirError {
@@ -179,6 +188,8 @@ impl HirError {
             Self::LoweringFailed { .. } => "valkyrie.hir.lowering_failed",
             Self::TypeNotFound { .. } => "valkyrie.hir.type_not_found",
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
+            Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
+            Self::DeriveResolutionFailed { .. } => "valkyrie.hir.derive_resolution_failed",
         }
     }
 }
@@ -254,6 +265,15 @@ impl From<HirError> for DiagnosticRow {
                 row = row.with_arg("name", DiagnosticArg::TypeName(name.clone()));
             }
             HirError::VxUnsupported => {}
+            HirError::SourceGroupClosureFailed(e) => {
+                row = row.with_arg("details", DiagnosticArg::String(e.to_string()));
+            }
+            HirError::DeriveResolutionFailed { errors } => {
+                row = row.with_arg("count", DiagnosticArg::Int(errors.len() as i64));
+                for (i, err) in errors.iter().enumerate() {
+                    row = row.with_arg(&format!("derive_{i}"), DiagnosticArg::String(err.to_string()));
+                }
+            }
         }
 
         row.with_internal_message(error.code().to_string())
@@ -273,6 +293,8 @@ fn other_source(error: &HirError) -> &DiagnosticSource {
         HirError::LoweringFailed { source, .. } => source,
         HirError::TypeNotFound { source, .. } => source,
         HirError::VxUnsupported => unreachable!(),
+        HirError::SourceGroupClosureFailed(_) => unreachable!(),
+        HirError::DeriveResolutionFailed { .. } => unreachable!(),
     }
 }
 
@@ -289,6 +311,8 @@ fn other_span(error: &HirError) -> &DiagnosticSpan {
         HirError::LoweringFailed { span, .. } => span,
         HirError::TypeNotFound { span, .. } => span,
         HirError::VxUnsupported => unreachable!(),
+        HirError::SourceGroupClosureFailed(_) => unreachable!(),
+        HirError::DeriveResolutionFailed { .. } => unreachable!(),
     }
 }
 
@@ -317,6 +341,12 @@ impl From<crate::valkyrie::frontend::ParseError> for HirError {
             source: DiagnosticSource { id: "<parse>".into(), revision: None },
             span,
         }
+    }
+}
+
+impl From<crate::valkyrie::semantic_closure::SemanticClosureError> for HirError {
+    fn from(error: crate::valkyrie::semantic_closure::SemanticClosureError) -> Self {
+        Self::SourceGroupClosureFailed(error)
     }
 }
 
@@ -367,6 +397,14 @@ impl std::fmt::Display for HirError {
             }
             Self::TypeNotFound { name, .. } => write!(f, "unknown type name `{name}`: not a module type alias or language builtin"),
             Self::VxUnsupported => write!(f, ".vx source is not supported"),
+            Self::SourceGroupClosureFailed(e) => write!(f, "source group closure failed: {e}"),
+            Self::DeriveResolutionFailed { errors } => {
+                write!(f, "derive injection failed: {} errors", errors.len())?;
+                for err in errors {
+                    write!(f, "; {err}")?;
+                }
+                Ok(())
+            }
         }
     }
 }

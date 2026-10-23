@@ -802,7 +802,7 @@ impl ValkyrieCompiler {
     ) -> Result<Vec<HirModule>, HirError> {
         validate_source_groups(groups)?;
         let closure =
-            source_group_closure_with_host_bindings(groups, host_bindings, arch).map_err(|error| HirError::lowering_failed(error.to_string()))?;
+            source_group_closure_with_host_bindings(groups, host_bindings, arch)?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
@@ -2468,7 +2468,7 @@ impl AstToHir {
         let mut injector = crate::valkyrie::derive::DeriveInjector::new();
         let derive_result = injector.inject_derives(&mut hir);
         if derive_result.has_errors() {
-            return Err(HirError::lowering_failed(derive_result.errors.into_iter().map(|error| error.to_string()).collect::<Vec<_>>().join("; ")));
+            return Err(HirError::DeriveResolutionFailed { errors: derive_result.errors });
         }
         hir.warnings = take_compile_warnings();
         Ok(hir)
