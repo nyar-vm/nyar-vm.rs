@@ -47,7 +47,7 @@ impl ValkyrieCompiler {
 
     /// 集成测试夹具：从单文件源码降低到 Semantic MIR；正式 Compiler 入口只接受源码闭包。
     #[doc(hidden)]
-    pub(crate) fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, HirError> {
+    pub fn compile_source_to_mir(&self, source: &str) -> Result<MirModule, HirError> {
         let hir = self.compile_source(source)?;
         self.lower_validated_hir_to_mir(&hir)
     }

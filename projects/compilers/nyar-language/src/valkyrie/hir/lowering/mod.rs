@@ -709,7 +709,7 @@ impl ValkyrieCompiler {
 
     /// 集成测试夹具：将单一源码降低为成功载荷。
     #[doc(hidden)]
-    pub(crate) fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, HirError> {
+    pub fn compile_source_to_program(&self, source: &str) -> Result<nyar_types::CompiledProgram, HirError> {
         let hir_module = self.compile_source(source)?;
         compiled_program_from_hir_module(hir_module)
     }
@@ -719,7 +719,7 @@ impl ValkyrieCompiler {
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
     #[doc(hidden)]
-    pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, HirError> {
+    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, HirError> {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
     }
 
@@ -727,7 +727,7 @@ impl ValkyrieCompiler {
     ///
     /// 生成组在这里合成到唯一源码闭包；不存在只编译应用组而静默丢弃生成源码的路径。
     #[doc(hidden)]
-    pub(crate) fn compile_source_input_to_program_with_host_bindings(
+    pub fn compile_source_input_to_program_with_host_bindings(
         &self,
         input: &CompilerSourceInput,
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
@@ -738,7 +738,7 @@ impl ValkyrieCompiler {
     }
     /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
     #[doc(hidden)]
-    pub(crate) fn compile_source_groups_to_program_with_host_bindings(
+    pub fn compile_source_groups_to_program_with_host_bindings(
         &self,
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
@@ -787,7 +787,7 @@ impl ValkyrieCompiler {
     }
 
     #[doc(hidden)]
-    pub(crate) fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, HirError> {
+    pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, HirError> {
         self.resolve_source_groups_with_host_bindings(groups, &[], arch)
     }
 
