@@ -2,13 +2,25 @@
 
 use std::collections::BTreeMap;
 
+use nyar_types::{DiagnosticSource, DiagnosticSpan};
+
 use crate::{
     types::{
         Identifier, NamePath,
         hir::{HirBlock, HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind, HirStruct, ValkyrieType},
     },
-    valkyrie::hir::HirError,
+    valkyrie::hir::{HirError, lowering::errors::PropagateProtocol},
 };
+
+/// `?` 校验产出的诊断 source。
+fn try_source() -> DiagnosticSource {
+    DiagnosticSource { id: "<try>".into(), revision: None }
+}
+
+/// `?` 表达式自身的 span。
+fn try_span(expr: &HirExpr) -> DiagnosticSpan {
+    DiagnosticSpan { start: expr.span.span.start as usize, end: expr.span.span.end as usize }
+}
 
 /// `?` 操作数形态。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,43 +146,50 @@ fn validate_try_propagate_expr(
     };
     let Some(kind) = classify_try_operand(&operand_type, module)
     else {
-        return Err(HirError::lowering_failed(format!("`?` cannot be applied to `{}`", render_type_name(&operand_type))));
+        return Err(HirError::TryPropagateOperandUnsupported {
+            operand_type: render_type_name(&operand_type),
+            source: try_source(),
+            span: try_span(expr),
+        });
     };
     match kind {
-        TryPropagateKind::Nullable(payload) => {
+        TryPropagateKind::Nullable(_) => {
             if try_scope_depth == 0 && !is_nullable_type(enclosing_return) {
-                return Err(HirError::lowering_failed(format!(
-                    "`?` on nullable `{}` requires enclosing return compatible with nullable or a `try` scope; got `{}`",
-                    render_type_name(&payload),
-                    render_type_name(enclosing_return)
-                )));
+                return Err(HirError::TryPropagateReturnMismatch {
+                    protocol: PropagateProtocol::Nullable,
+                    return_type: render_type_name(enclosing_return),
+                    source: try_source(),
+                    span: try_span(expr),
+                });
             }
         }
-        TryPropagateKind::Option(payload) => {
+        TryPropagateKind::Option(_) => {
             if try_scope_depth == 0 && !is_option_apply_type(enclosing_return) {
-                return Err(HirError::lowering_failed(format!(
-                    "`?` on `Option<{}>` requires enclosing `Option` return or a `try` scope; got `{}`",
-                    render_type_name(&payload),
-                    render_type_name(enclosing_return)
-                )));
+                return Err(HirError::TryPropagateReturnMismatch {
+                    protocol: PropagateProtocol::Option,
+                    return_type: render_type_name(enclosing_return),
+                    source: try_source(),
+                    span: try_span(expr),
+                });
             }
         }
-        TryPropagateKind::Result { ok, err } => {
+        TryPropagateKind::Result { err, .. } => {
             if !is_result_apply_type(enclosing_return) {
-                return Err(HirError::lowering_failed(format!(
-                    "`?` on `Result<{}, {}>` requires enclosing binary unity return; got `{}`",
-                    render_type_name(&ok),
-                    render_type_name(&err),
-                    render_type_name(enclosing_return)
-                )));
+                return Err(HirError::TryPropagateReturnMismatch {
+                    protocol: PropagateProtocol::Result,
+                    return_type: render_type_name(enclosing_return),
+                    source: try_source(),
+                    span: try_span(expr),
+                });
             }
             if let Some(enclosing_err) = result_err_type(enclosing_return) {
                 if enclosing_err != err {
-                    return Err(HirError::lowering_failed(format!(
-                        "`?` error type `{}` is incompatible with enclosing return error `{}`",
-                        render_type_name(&err),
-                        render_type_name(&enclosing_err)
-                    )));
+                    return Err(HirError::TryPropagateErrorTypeMismatch {
+                        error_type: render_type_name(&err),
+                        return_error: render_type_name(&enclosing_err),
+                        source: try_source(),
+                        span: try_span(expr),
+                    });
                 }
             }
         }

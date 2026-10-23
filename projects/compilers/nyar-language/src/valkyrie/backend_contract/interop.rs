@@ -1,10 +1,43 @@
-use crate::valkyrie::hir::HirError;
 use nyar::{CapabilityTag, ExternalImportLink, Identifier, QualifiedName, RuntimeRequirement};
+use nyar_types::DiagnosticSpan;
 
 use crate::valkyrie::types::{
     NamePath,
     hir::{HirArgument, HirAttribute, HirExprKind, HirFunction, HirLiteral, HirModule, HirStringSegment},
 };
+
+/// backend contract 对声明面互操作能力的事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackendContractError {
+    /// 声明使用了 WASI Preview1 host import 位置，Component Model 不支持。
+    WasiPreview1ImportForbidden {
+        /// 命中的禁用 locator 段。
+        segments: Vec<String>,
+        /// 属性参数 span。
+        span: DiagnosticSpan,
+    },
+}
+
+impl BackendContractError {
+    /// 诊断主定位 span。
+    pub fn span(&self) -> DiagnosticSpan {
+        match self {
+            Self::WasiPreview1ImportForbidden { span, .. } => span.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for BackendContractError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WasiPreview1ImportForbidden { segments, .. } => write!(
+                f,
+                "WASI supports Component Model only, `{}` must be replaced with a `wasi:...` component import",
+                segments.join("` / `")
+            ),
+        }
+    }
+}
 
 /// C ABI FFI 属性坝（`[c("lib", "sym")]`）。
 ///
@@ -24,7 +57,7 @@ pub(crate) fn runtime_requirement(_link: &ExternalImportLink) -> RuntimeRequirem
     RuntimeRequirement { key: "host-interop".to_string(), value: "required".to_string() }
 }
 
-pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), HirError> {
+pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), BackendContractError> {
     for function in &module.functions {
         validate_function_interop_surface(function)?;
     }
@@ -87,14 +120,14 @@ pub(crate) fn function_host_provider_target(function: &HirFunction) -> Option<Qu
     })
 }
 
-fn validate_function_interop_surface(function: &HirFunction) -> Result<(), HirError> {
+fn validate_function_interop_surface(function: &HirFunction) -> Result<(), BackendContractError> {
     for attribute in &function.annotations {
         validate_interop_attribute(attribute)?;
     }
     Ok(())
 }
 
-fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), HirError> {
+fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), BackendContractError> {
     let Some(name) = attribute_name(attribute)
     else {
         return Ok(());
@@ -105,17 +138,20 @@ fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), HirError> 
     }
 
     let locator_segments = attribute.arguments.iter().filter_map(argument_string_literal).collect::<Vec<_>>();
-    let forbidden_preview1 =
-        locator_segments.iter().any(|segment| segment == "wasi_snapshot_preview1" || segment == "fd_write" || segment == "fd_read");
-    if !forbidden_preview1 {
+    let forbidden_segments = locator_segments
+        .iter()
+        .filter(|segment| matches!(segment.as_str(), "wasi_snapshot_preview1" | "fd_write" | "fd_read"))
+        .cloned()
+        .collect::<Vec<_>>();
+    if forbidden_segments.is_empty() {
         return Ok(());
     }
 
     let span = attribute_argument_span(attribute);
-    Err(HirError::lowering_failed_at(
-        "WASI 坪支挝 Component Model；禝止使用 `wasi_snapshot_preview1` / `fd_write` / `fd_read`，请改为 `wasi:...` component import",
-        nyar_types::DiagnosticSpan { start: span.start, end: span.end },
-    ))
+    Err(BackendContractError::WasiPreview1ImportForbidden {
+        segments: forbidden_segments,
+        span: DiagnosticSpan { start: span.start, end: span.end },
+    })
 }
 
 fn attribute_argument_span(attribute: &HirAttribute) -> std::ops::Range<usize> {

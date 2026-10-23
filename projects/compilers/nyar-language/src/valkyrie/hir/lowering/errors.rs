@@ -255,6 +255,17 @@ pub enum HirError {
         /// 诊断主定位 span。
         span: DiagnosticSpan,
     },
+    /// `?` 的错误类型与父返回类型的错误类型不兼容。
+    TryPropagateErrorTypeMismatch {
+        /// 操作数携带的错误类型。
+        error_type: String,
+        /// 父返回类型的错误类型。
+        return_error: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
     /// `await` / `awake` / `block` 的操作数不是 `Future<T>` / `Promise<T>`。
     FutureControlOperandMismatch {
         /// 违规操作。
@@ -340,6 +351,39 @@ pub enum HirError {
     RefutableLetPattern {
         /// pattern 的渲染文本。
         pattern: String,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 多个语义检查器各自生产的违规集合。
+    SemanticCheckViolations {
+        /// 按检查器分组的违规消息。
+        checks: Vec<SemanticCheckFailure>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 值类型 copy 纪律违规集合。
+    CopyDisciplineViolations {
+        /// 逐条违规事实。
+        violations: Vec<CopyDisciplineViolation>,
+        /// 诊断引用的源码或 artifact 身份。
+        source: DiagnosticSource,
+        /// 诊断主定位 span。
+        span: DiagnosticSpan,
+    },
+    /// 同一 namespace 下出现重复类型声明。
+    DuplicateTypeDefinition {
+        /// 重复声明的短名。
+        name: String,
+        /// 声明所在 namespace。
+        namespace: String,
+        /// 先前声明的种类。
+        prior_kind: String,
+        /// 本次声明的种类。
+        current_kind: String,
         /// 诊断引用的源码或 artifact 身份。
         source: DiagnosticSource,
         /// 诊断主定位 span。
@@ -563,6 +607,9 @@ pub enum HirError {
         /// 结构化 derive 错误列表。
         errors: Vec<crate::valkyrie::derive::DeriveError>,
     },
+    /// backend contract 拒绝声明面的互操作能力。
+    /// 直接携带 backend contract 事实，不在 lowering 阶段重拼失败文本。
+    BackendContractRejected(crate::valkyrie::backend_contract::interop::BackendContractError),
 }
 
 /// TGrammar 模板构造类别。
@@ -718,6 +765,60 @@ pub enum IndexSpace {
     Field,
 }
 
+/// 生产语义违规的检查器身份。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticChecker {
+    /// 值类型语义检查。
+    ValueType,
+    /// `sealed match` 穷尽性检查。
+    SealedMatch,
+    /// 字面量穷尽性检查。
+    LiteralExhaustiveness,
+    /// 不可达 arm 检查。
+    UnreachableArm,
+    /// 复合模式穷尽性检查。
+    CompositePatternExhaustiveness,
+    /// singleton 检查。
+    Singleton,
+}
+
+/// 单个检查器生产的违规消息集合。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticCheckFailure {
+    /// 违规所属检查器。
+    pub checker: SemanticChecker,
+    /// 该检查器生产的违规消息。
+    pub messages: Vec<String>,
+}
+
+/// 值类型 copy 纪律违规原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyDisciplineReason {
+    /// 值类型含有引用类型字段。
+    ReferenceTypedField,
+    /// 参数是值类型但使用引用语义。
+    ParameterReferenceSemantics,
+    /// 参数使用含引用字段的值类型。
+    ParameterNonCopyValueType,
+    /// 返回类型是值类型但使用引用语义。
+    ReturnReferenceSemantics,
+    /// 返回类型使用含引用字段的值类型。
+    ReturnNonCopyValueType,
+}
+
+/// 单条值类型 copy 纪律违规事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyDisciplineViolation {
+    /// 违规所属函数 / 方法所有者。
+    pub owner: String,
+    /// 违规的参数名（仅参数违规携带）。
+    pub item: Option<String>,
+    /// 涉及的命名类型（仅类型传播违规携带）。
+    pub type_name: Option<String>,
+    /// 违规原因。
+    pub reason: CopyDisciplineReason,
+}
+
 impl HirError {
     /// Lowering 阶段通用 fallback（来自非法状态 / 前置条件失败）。
     pub fn lowering_failed(message: impl Into<String>) -> Self {
@@ -786,6 +887,7 @@ impl HirError {
             Self::BreakValueTypeMismatch { .. } => "valkyrie.hir.break_value_type_mismatch",
             Self::TryPropagateOperandUnsupported { .. } => "valkyrie.hir.try_propagate_operand_unsupported",
             Self::TryPropagateReturnMismatch { .. } => "valkyrie.hir.try_propagate_return_mismatch",
+            Self::TryPropagateErrorTypeMismatch { .. } => "valkyrie.hir.try_propagate_error_type_mismatch",
             Self::FutureControlOperandMismatch { .. } => "valkyrie.hir.future_control_operand_mismatch",
             Self::ControlFlowValueRequired { .. } => "valkyrie.hir.control_flow_value_required",
             Self::ReturnValueTypeMismatch { .. } => "valkyrie.hir.return_value_type_mismatch",
@@ -794,6 +896,9 @@ impl HirError {
             Self::YieldFromItemTypeMismatch { .. } => "valkyrie.hir.yield_from_item_type_mismatch",
             Self::AmbiguousBareNamePattern { .. } => "valkyrie.hir.ambiguous_bare_name_pattern",
             Self::RefutableLetPattern { .. } => "valkyrie.hir.refutable_let_pattern",
+            Self::SemanticCheckViolations { .. } => "valkyrie.hir.semantic_check_violations",
+            Self::CopyDisciplineViolations { .. } => "valkyrie.hir.copy_discipline_violations",
+            Self::DuplicateTypeDefinition { .. } => "valkyrie.hir.duplicate_type_definition",
             Self::SourceGroupProducerMissing { .. } => "valkyrie.hir.source_group_producer_missing",
             Self::SourceGroupNotEntry { .. } => "valkyrie.hir.source_group_not_entry",
             Self::SourceGroupIdentityInvalid { .. } => "valkyrie.hir.source_group_identity_invalid",
@@ -818,6 +923,7 @@ impl HirError {
             Self::VxUnsupported => "valkyrie.hir.vx_unsupported",
             Self::SourceGroupClosureFailed(_) => "valkyrie.hir.source_group_closure_failed",
             Self::DeriveResolutionFailed { .. } => "valkyrie.hir.derive_resolution_failed",
+            Self::BackendContractRejected(_) => "backend.contract.rejected",
         }
     }
 }
@@ -833,11 +939,16 @@ impl From<HirError> for DiagnosticRow {
             other => other_span(other),
         };
 
+        let (phase, owner) = match &error {
+            HirError::BackendContractRejected(_) => (DiagnosticPhase::Backend, DiagnosticOwner::Backend),
+            _ => (DiagnosticPhase::Hir, DiagnosticOwner::ValkyrieFrontend),
+        };
+
         let mut row = DiagnosticRow::new(
             error.code(),
             DiagnosticSeverity::Error,
-            DiagnosticPhase::Hir,
-            DiagnosticOwner::ValkyrieFrontend,
+            phase,
+            owner,
             source,
             span,
         );
@@ -955,6 +1066,11 @@ impl From<HirError> for DiagnosticRow {
                     .with_arg("protocol", DiagnosticArg::String(propagate_protocol_name(*protocol).to_string()))
                     .with_arg("return_type", DiagnosticArg::String(return_type.clone()));
             }
+            HirError::TryPropagateErrorTypeMismatch { error_type, return_error, .. } => {
+                row = row
+                    .with_arg("error_type", DiagnosticArg::TypeName(error_type.clone()))
+                    .with_arg("return_error", DiagnosticArg::TypeName(return_error.clone()));
+            }
             HirError::FutureControlOperandMismatch { operation, operand_type, .. } => {
                 row = row
                     .with_arg("operation", DiagnosticArg::String(control_flow_op_name(*operation).to_string()))
@@ -996,6 +1112,25 @@ impl From<HirError> for DiagnosticRow {
             }
             HirError::RefutableLetPattern { pattern, .. } => {
                 row = row.with_arg("pattern", DiagnosticArg::String(pattern.clone()));
+            }
+            HirError::SemanticCheckViolations { checks, .. } => {
+                row = row.with_arg("checker_count", DiagnosticArg::Int(checks.len() as i64));
+                for (index, check) in checks.iter().enumerate() {
+                    row = row.with_arg(
+                        format!("checker_{index}"),
+                        DiagnosticArg::String(semantic_checker_name(check.checker).to_string()),
+                    );
+                }
+            }
+            HirError::CopyDisciplineViolations { violations, .. } => {
+                row = row.with_arg("violation_count", DiagnosticArg::Int(violations.len() as i64));
+            }
+            HirError::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => {
+                row = row
+                    .with_arg("name", DiagnosticArg::String(name.clone()))
+                    .with_arg("namespace", DiagnosticArg::String(namespace.clone()))
+                    .with_arg("prior_kind", DiagnosticArg::String(prior_kind.clone()))
+                    .with_arg("current_kind", DiagnosticArg::String(current_kind.clone()));
             }
             HirError::SourceGroupProducerMissing { dependency_key, .. } => {
                 if let Some(dependency_key) = dependency_key {
@@ -1090,6 +1225,9 @@ impl From<HirError> for DiagnosticRow {
                 for (i, err) in errors.iter().enumerate() {
                     row = row.with_arg(&format!("derive_{i}"), DiagnosticArg::String(err.to_string()));
                 }
+            }
+            HirError::BackendContractRejected(error) => {
+                row = row.with_arg("details", DiagnosticArg::String(error.to_string()));
             }
         }
 
@@ -1269,6 +1407,27 @@ fn index_space_name(space: IndexSpace) -> &'static str {
     }
 }
 
+fn semantic_checker_name(checker: SemanticChecker) -> &'static str {
+    match checker {
+        SemanticChecker::ValueType => "value_type",
+        SemanticChecker::SealedMatch => "sealed_match",
+        SemanticChecker::LiteralExhaustiveness => "literal_exhaustiveness",
+        SemanticChecker::UnreachableArm => "unreachable_arm",
+        SemanticChecker::CompositePatternExhaustiveness => "composite_pattern_exhaustiveness",
+        SemanticChecker::Singleton => "singleton",
+    }
+}
+
+fn copy_discipline_reason_name(reason: CopyDisciplineReason) -> &'static str {
+    match reason {
+        CopyDisciplineReason::ReferenceTypedField => "value type has a reference-typed field",
+        CopyDisciplineReason::ParameterReferenceSemantics => "value-type parameter uses reference semantics",
+        CopyDisciplineReason::ParameterNonCopyValueType => "parameter uses a value type with reference fields",
+        CopyDisciplineReason::ReturnReferenceSemantics => "value-type return uses reference semantics",
+        CopyDisciplineReason::ReturnNonCopyValueType => "return uses a value type with reference fields",
+    }
+}
+
 /// MIR 侧失败事实的缺省 source 身份（MIR 结构本身不携带源码身份）。
 fn mir_source() -> DiagnosticSource {
     DiagnosticSource { id: "<mir>".into(), revision: None }
@@ -1342,6 +1501,11 @@ fn other_source(error: &HirError) -> DiagnosticSource {
         HirError::YieldFromItemTypeMismatch { source, .. } => source.clone(),
         HirError::AmbiguousBareNamePattern { source, .. } => source.clone(),
         HirError::RefutableLetPattern { source, .. } => source.clone(),
+        HirError::SemanticCheckViolations { source, .. } => source.clone(),
+        HirError::CopyDisciplineViolations { source, .. } => source.clone(),
+        HirError::DuplicateTypeDefinition { source, .. } => source.clone(),
+        HirError::TryPropagateErrorTypeMismatch { source, .. } => source.clone(),
+        HirError::BackendContractRejected(_) => DiagnosticSource { id: "<backend_contract>".into(), revision: None },
         HirError::SourceGroupProducerMissing { source, .. } => source.clone(),
         HirError::SourceGroupNotEntry { source, .. } => source.clone(),
         HirError::SourceGroupIdentityInvalid { source, .. } => source.clone(),
@@ -1404,6 +1568,11 @@ fn other_span(error: &HirError) -> DiagnosticSpan {
         HirError::YieldFromItemTypeMismatch { span, .. } => span.clone(),
         HirError::AmbiguousBareNamePattern { span, .. } => span.clone(),
         HirError::RefutableLetPattern { span, .. } => span.clone(),
+        HirError::SemanticCheckViolations { span, .. } => span.clone(),
+        HirError::CopyDisciplineViolations { span, .. } => span.clone(),
+        HirError::DuplicateTypeDefinition { span, .. } => span.clone(),
+        HirError::TryPropagateErrorTypeMismatch { span, .. } => span.clone(),
+        HirError::BackendContractRejected(error) => error.span(),
         HirError::SourceGroupProducerMissing { span, .. } => span.clone(),
         HirError::SourceGroupNotEntry { span, .. } => span.clone(),
         HirError::SourceGroupIdentityInvalid { span, .. } => span.clone(),
@@ -1529,6 +1698,10 @@ impl std::fmt::Display for HirError {
             Self::TryPropagateReturnMismatch { protocol, return_type, .. } => {
                 write!(f, "`?` on a `{}` operand requires a matching enclosing return type, got `{return_type}`", propagate_protocol_name(*protocol))
             }
+            Self::TryPropagateErrorTypeMismatch { error_type, return_error, .. } => write!(
+                f,
+                "`?` error type `{error_type}` is incompatible with enclosing return error `{return_error}`"
+            ),
             Self::FutureControlOperandMismatch { operation, operand_type, .. } => {
                 write!(f, "`{}` requires a `Future<T>` or `Promise<T>` operand, got `{operand_type}`", control_flow_op_name(*operation))
             }
@@ -1563,6 +1736,26 @@ impl std::fmt::Display for HirError {
             Self::RefutableLetPattern { pattern, .. } => write!(
                 f,
                 "refutable pattern `{pattern}` is not allowed in a `let` binding, use `if let` or `case` instead"
+            ),
+            Self::SemanticCheckViolations { checks, .. } => {
+                write!(f, "semantic checks rejected the module")?;
+                for check in checks {
+                    for message in &check.messages {
+                        write!(f, "; {}: {}", semantic_checker_name(check.checker), message)?;
+                    }
+                }
+                Ok(())
+            }
+            Self::CopyDisciplineViolations { violations, .. } => {
+                write!(f, "value type copy discipline is violated")?;
+                for violation in violations {
+                    write!(f, "; {} in `{}`", copy_discipline_reason_name(violation.reason), violation.owner)?;
+                }
+                Ok(())
+            }
+            Self::DuplicateTypeDefinition { name, namespace, prior_kind, current_kind, .. } => write!(
+                f,
+                "duplicate definition of `{name}` in namespace `{namespace}`: {prior_kind} and {current_kind}"
             ),
             Self::SourceGroupProducerMissing { dependency_key, .. } => {
                 write!(f, "generated source group has no producer identity")?;
@@ -1654,6 +1847,7 @@ impl std::fmt::Display for HirError {
                 }
                 Ok(())
             }
+            Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
         }
     }
 }

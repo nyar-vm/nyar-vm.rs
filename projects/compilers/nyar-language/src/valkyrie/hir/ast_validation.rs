@@ -8,6 +8,8 @@ use crate::valkyrie::{
 };
 use std::collections::BTreeMap;
 
+use nyar_types::{DiagnosticSource, DiagnosticSpan};
+
 /// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
 pub(crate) fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
     validate_duplicate_type_names(&root.items, &[])
@@ -32,14 +34,17 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &[St
                 }
             }
             other => {
-                if let Some((name, kind)) = type_declaration_identity(other) {
+                if let Some((name, kind, span)) = type_declaration_identity(other) {
                     let key = (current_namespace.clone(), name);
                     if let Some(prior) = seen.insert(key.clone(), kind) {
-                        return Err(HirError::lowering_failed(format!(
-                            "duplicate definition of `{}` in namespace `{}`: {prior} and {kind}",
-                            key.1,
-                            namespace_display(&key.0)
-                        )));
+                        return Err(HirError::DuplicateTypeDefinition {
+                            name: key.1.clone(),
+                            namespace: namespace_display(&key.0),
+                            prior_kind: prior.to_string(),
+                            current_kind: kind.to_string(),
+                            source: DiagnosticSource { id: "<ast>".into(), revision: None },
+                            span: DiagnosticSpan { start: span.start, end: span.end },
+                        });
                     }
                 }
             }
@@ -62,24 +67,24 @@ fn namespace_display(path: &[String]) -> String {
     path.join(".")
 }
 
-fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str)> {
+fn type_declaration_identity(item: &StatementNode) -> Option<(String, &'static str, oak_core::Range<usize>)> {
     match item {
-        StatementNode::Class(item) => Some((item.name.name.clone(), "class")),
-        StatementNode::Structure(item) => Some((item.name.name.clone(), "structure")),
-        StatementNode::Union(item) => Some((item.name.name.clone(), "union")),
-        StatementNode::Singleton(item) => Some((item.name.name.clone(), "singleton")),
-        StatementNode::Flags(item) => Some((item.name.name.clone(), "flags")),
+        StatementNode::Class(item) => Some((item.name.name.clone(), "class", item.span)),
+        StatementNode::Structure(item) => Some((item.name.name.clone(), "structure", item.span)),
+        StatementNode::Union(item) => Some((item.name.name.clone(), "union", item.span)),
+        StatementNode::Singleton(item) => Some((item.name.name.clone(), "singleton", item.span)),
+        StatementNode::Flags(item) => Some((item.name.name.clone(), "flags", item.span)),
         StatementNode::Enums(item) => {
             let kind = match item.kind {
                 EnumsKind::Unity => "unite",
                 EnumsKind::Enums | EnumsKind::Enum => "enums",
             };
-            Some((item.name.name.clone(), kind))
+            Some((item.name.name.clone(), kind, item.span))
         }
-        StatementNode::Variant(item) => Some((item.name.name.clone(), "unite")),
-        StatementNode::Trait(item) => Some((item.name.name.clone(), "trait")),
-        StatementNode::Widget(item) => Some((item.name.name.clone(), "widget")),
-        StatementNode::TypeAlias(item) => Some((item.name.name.clone(), "type alias")),
+        StatementNode::Variant(item) => Some((item.name.name.clone(), "unite", item.span)),
+        StatementNode::Trait(item) => Some((item.name.name.clone(), "trait", item.span)),
+        StatementNode::Widget(item) => Some((item.name.name.clone(), "widget", item.span)),
+        StatementNode::TypeAlias(item) => Some((item.name.name.clone(), "type alias", item.span)),
         _ => None,
     }
 }

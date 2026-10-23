@@ -717,7 +717,7 @@ impl ValkyrieCompiler {
     /// Semantic MIR. Cache consumers must use this instead of trusting the
     /// schema version of serialized HIR as a semantic guarantee.
     pub fn validate_hir_semantic_contract(&self, hir: &HirModule) -> Result<(), HirError> {
-        validate_interop_surface(hir)?;
+        validate_interop_surface(hir).map_err(HirError::BackendContractRejected)?;
         validate_hir_contract(hir)
     }
 
@@ -772,7 +772,7 @@ impl ValkyrieCompiler {
         let hir = source_context::with_hir_lower_source(source, || {
             AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)
         })?;
-        validate_interop_surface(&hir)?;
+        validate_interop_surface(&hir).map_err(HirError::BackendContractRejected)?;
         Ok(hir)
     }
 
@@ -1022,7 +1022,7 @@ impl ValkyrieCompiler {
             }
         }
         let hir = merged.expect("prepared source files imply a merged HirModule");
-        validate_interop_surface(&hir)?;
+        validate_interop_surface(&hir).map_err(HirError::BackendContractRejected)?;
         Ok(hir)
     }
 

@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use nyar_types::{DiagnosticSource, DiagnosticSpan};
+
 use crate::{
     hir::{validate_control_flow_module, validate_try_propagate_module},
     mir::{MirModule, validation::validate_module as validate_mir_module},
@@ -13,7 +15,12 @@ use crate::{
         Identifier,
         hir::{HirModule, ValkyrieType},
     },
-    valkyrie::HirError,
+    valkyrie::{
+        HirError,
+        hir::lowering::errors::{
+            CopyDisciplineReason, CopyDisciplineViolation, SemanticCheckFailure, SemanticChecker,
+        },
+    },
 };
 
 /// 语义层校验：sealed match 穷尽性、值类型 copy 纪律、字面量穷尽性等，并复用控制流校验。
@@ -22,43 +29,69 @@ use crate::{
 /// 以便一次性向用户呈现尽可能多的诊断信息。
 pub fn validate_semantic_module(module: &HirModule) -> Result<(), HirError> {
     validate_try_propagate_module(module)?;
-    let mut all_errors: Vec<String> = Vec::new();
+    let copy_violations = run_copy_semantics_validator(module);
+    if !copy_violations.is_empty() {
+        return Err(HirError::CopyDisciplineViolations {
+            violations: copy_violations,
+            source: DiagnosticSource { id: "<hir_module>".into(), revision: None },
+            span: DiagnosticSpan { start: 0, end: 0 },
+        });
+    }
+    let mut checks: Vec<SemanticCheckFailure> = Vec::new();
     let mut value_checker = ValueTypeChecker::new();
     let value_errors = value_checker.check_module(module);
-    for error in value_errors {
-        all_errors.push(error.to_string());
-    }
-    if let Err(error) = run_copy_semantics_validator(module) {
-        all_errors.push(error.to_string());
+    if !value_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::ValueType,
+            messages: value_errors.iter().map(|error| error.to_string()).collect(),
+        });
     }
     let mut sealed_checker = SealedMatchChecker::new();
     let sealed_errors = sealed_checker.check_module(module);
-    for error in sealed_errors {
-        all_errors.push(error.message);
+    if !sealed_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::SealedMatch,
+            messages: sealed_errors.into_iter().map(|error| error.message).collect(),
+        });
     }
     let mut literal_checker = LiteralExhaustivenessChecker::new();
     let literal_errors = literal_checker.check_module(module);
-    for error in literal_errors {
-        all_errors.push(error.message);
+    if !literal_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::LiteralExhaustiveness,
+            messages: literal_errors.into_iter().map(|error| error.message).collect(),
+        });
     }
     let mut unreachable_checker = UnreachableArmChecker::new();
     let unreachable_errors = unreachable_checker.check_module(module);
-    for error in unreachable_errors {
-        all_errors.push(error.message);
+    if !unreachable_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::UnreachableArm,
+            messages: unreachable_errors.into_iter().map(|error| error.message).collect(),
+        });
     }
     let mut composite_checker = CompositePatternExhaustivenessChecker::new();
     let composite_errors = composite_checker.check_module(module);
-    for error in composite_errors {
-        all_errors.push(error.message);
+    if !composite_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::CompositePatternExhaustiveness,
+            messages: composite_errors.into_iter().map(|error| error.message).collect(),
+        });
     }
     let mut singleton_checker = SingletonChecker::new();
     let singleton_errors = singleton_checker.check_module(module);
-    for error in singleton_errors {
-        all_errors.push(error.to_string());
+    if !singleton_errors.is_empty() {
+        checks.push(SemanticCheckFailure {
+            checker: SemanticChecker::Singleton,
+            messages: singleton_errors.iter().map(|error| error.to_string()).collect(),
+        });
     }
-    if !all_errors.is_empty() {
-        let joined = all_errors.join("; ");
-        return Err(HirError::lowering_failed(joined));
+    if !checks.is_empty() {
+        return Err(HirError::SemanticCheckViolations {
+            checks,
+            source: DiagnosticSource { id: "<hir_module>".into(), revision: None },
+            span: DiagnosticSpan { start: 0, end: 0 },
+        });
     }
     check_pattern_refutability(module)?;
     ControlFlowScheduler::validate_hir_module(module)
@@ -74,7 +107,7 @@ pub fn validate_semantic_module(module: &HirModule) -> Result<(), HirError> {
 ///    任何在参数/返回路径上使用该值类型的位置都会被标记为 copy discipline 违规；
 /// 2. 防御性检查：若值类型参数/返回被 `CopySemanticsValidator` 标记为 `Reference` 语义
 ///    （当前校验器逻辑下不会发生，但保留以应对未来分类逻辑变更）。
-fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
+fn run_copy_semantics_validator(module: &HirModule) -> Vec<CopyDisciplineViolation> {
     let mut validator = CopySemanticsValidator::new();
     for class in &module.structs {
         validator.register_value_type(class);
@@ -86,16 +119,18 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
             validator.register_value_type_declaration(class);
         }
     }
-    let mut violations: Vec<String> = Vec::new();
+    let mut violations: Vec<CopyDisciplineViolation> = Vec::new();
     let mut violating_types: BTreeSet<Identifier> = BTreeSet::new();
     for class in &module.structs {
         if class.is_value_type {
             if let Some(field) = validator.find_non_copy_field(class) {
                 violating_types.insert(class.name.clone());
-                violations.push(format!(
-                    "copy discipline violation: value type `{}` has reference-typed field `{}`, which breaks copy semantics on parameter/return paths",
-                    class.name, field.name
-                ));
+                violations.push(CopyDisciplineViolation {
+                    owner: class.name.to_string(),
+                    item: Some(field.name.to_string()),
+                    type_name: None,
+                    reason: CopyDisciplineReason::ReferenceTypedField,
+                });
             }
         }
     }
@@ -103,33 +138,41 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
         for param in &function.params {
             let semantics = validator.validate_parameter_passing(&param.ty);
             if validator.is_value_type(&param.ty) && semantics != ParameterSemantics::Copy {
-                violations.push(format!(
-                    "copy discipline violation: parameter `{}` of function `{}` is a value type but uses reference semantics",
-                    param.name.name, function.name
-                ));
+                violations.push(CopyDisciplineViolation {
+                    owner: function.name.to_string(),
+                    item: Some(param.name.name.to_string()),
+                    type_name: None,
+                    reason: CopyDisciplineReason::ParameterReferenceSemantics,
+                });
             }
             if let ValkyrieType::Named(name) = &param.ty {
                 if violating_types.contains(name) {
-                    violations.push(format!(
-                        "copy discipline violation: parameter `{}` of function `{}` uses value type `{}` which contains reference fields",
-                        param.name.name, function.name, name
-                    ));
+                    violations.push(CopyDisciplineViolation {
+                        owner: function.name.to_string(),
+                        item: Some(param.name.name.to_string()),
+                        type_name: Some(name.to_string()),
+                        reason: CopyDisciplineReason::ParameterNonCopyValueType,
+                    });
                 }
             }
         }
         let return_semantics = validator.validate_return(&function.return_type);
         if validator.is_value_type(&function.return_type) && return_semantics != ReturnSemantics::Copy {
-            violations.push(format!(
-                "copy discipline violation: return type of function `{}` is a value type but uses reference semantics",
-                function.name
-            ));
+            violations.push(CopyDisciplineViolation {
+                owner: function.name.to_string(),
+                item: None,
+                type_name: None,
+                reason: CopyDisciplineReason::ReturnReferenceSemantics,
+            });
         }
         if let ValkyrieType::Named(name) = &function.return_type {
             if violating_types.contains(name) {
-                violations.push(format!(
-                    "copy discipline violation: return type of function `{}` uses value type `{}` which contains reference fields",
-                    function.name, name
-                ));
+                violations.push(CopyDisciplineViolation {
+                    owner: function.name.to_string(),
+                    item: None,
+                    type_name: Some(name.to_string()),
+                    reason: CopyDisciplineReason::ReturnNonCopyValueType,
+                });
             }
         }
     }
@@ -139,31 +182,41 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
             for param in &method.params {
                 let semantics = validator.validate_parameter_passing(&param.ty);
                 if validator.is_value_type(&param.ty) && semantics != ParameterSemantics::Copy {
-                    violations.push(format!(
-                        "copy discipline violation: parameter `{}` of method `{}` is a value type but uses reference semantics",
-                        param.name.name, owner
-                    ));
+                    violations.push(CopyDisciplineViolation {
+                        owner: owner.clone(),
+                        item: Some(param.name.name.to_string()),
+                        type_name: None,
+                        reason: CopyDisciplineReason::ParameterReferenceSemantics,
+                    });
                 }
                 if let ValkyrieType::Named(name) = &param.ty {
                     if violating_types.contains(name) {
-                        violations.push(format!(
-                            "copy discipline violation: parameter `{}` of method `{}` uses value type `{}` which contains reference fields",
-                            param.name.name, owner, name
-                        ));
+                        violations.push(CopyDisciplineViolation {
+                            owner: owner.clone(),
+                            item: Some(param.name.name.to_string()),
+                            type_name: Some(name.to_string()),
+                            reason: CopyDisciplineReason::ParameterNonCopyValueType,
+                        });
                     }
                 }
             }
             let return_semantics = validator.validate_return(&method.return_type);
             if validator.is_value_type(&method.return_type) && return_semantics != ReturnSemantics::Copy {
-                violations
-                    .push(format!("copy discipline violation: return type of method `{}` is a value type but uses reference semantics", owner));
+                violations.push(CopyDisciplineViolation {
+                    owner: owner.clone(),
+                    item: None,
+                    type_name: None,
+                    reason: CopyDisciplineReason::ReturnReferenceSemantics,
+                });
             }
             if let ValkyrieType::Named(name) = &method.return_type {
                 if violating_types.contains(name) {
-                    violations.push(format!(
-                        "copy discipline violation: return type of method `{}` uses value type `{}` which contains reference fields",
-                        owner, name
-                    ));
+                    violations.push(CopyDisciplineViolation {
+                        owner,
+                        item: None,
+                        type_name: Some(name.to_string()),
+                        reason: CopyDisciplineReason::ReturnNonCopyValueType,
+                    });
                 }
             }
         }
@@ -174,39 +227,46 @@ fn run_copy_semantics_validator(module: &HirModule) -> Result<(), HirError> {
             for param in &method.params {
                 let semantics = validator.validate_parameter_passing(&param.ty);
                 if validator.is_value_type(&param.ty) && semantics != ParameterSemantics::Copy {
-                    violations.push(format!(
-                        "copy discipline violation: parameter `{}` of `{}` is a value type but uses reference semantics",
-                        param.name.name, owner
-                    ));
+                    violations.push(CopyDisciplineViolation {
+                        owner: owner.clone(),
+                        item: Some(param.name.name.to_string()),
+                        type_name: None,
+                        reason: CopyDisciplineReason::ParameterReferenceSemantics,
+                    });
                 }
                 if let ValkyrieType::Named(name) = &param.ty {
                     if violating_types.contains(name) {
-                        violations.push(format!(
-                            "copy discipline violation: parameter `{}` of `{}` uses value type `{}` which contains reference fields",
-                            param.name.name, owner, name
-                        ));
+                        violations.push(CopyDisciplineViolation {
+                            owner: owner.clone(),
+                            item: Some(param.name.name.to_string()),
+                            type_name: Some(name.to_string()),
+                            reason: CopyDisciplineReason::ParameterNonCopyValueType,
+                        });
                     }
                 }
             }
             let return_semantics = validator.validate_return(&method.return_type);
             if validator.is_value_type(&method.return_type) && return_semantics != ReturnSemantics::Copy {
-                violations.push(format!("copy discipline violation: return type of `{}` is a value type but uses reference semantics", owner));
+                violations.push(CopyDisciplineViolation {
+                    owner: owner.clone(),
+                    item: None,
+                    type_name: None,
+                    reason: CopyDisciplineReason::ReturnReferenceSemantics,
+                });
             }
             if let ValkyrieType::Named(name) = &method.return_type {
                 if violating_types.contains(name) {
-                    violations.push(format!(
-                        "copy discipline violation: return type of `{}` uses value type `{}` which contains reference fields",
-                        owner, name
-                    ));
+                    violations.push(CopyDisciplineViolation {
+                        owner,
+                        item: None,
+                        type_name: Some(name.to_string()),
+                        reason: CopyDisciplineReason::ReturnNonCopyValueType,
+                    });
                 }
             }
         }
     }
-    if !violations.is_empty() {
-        let joined = violations.join("; ");
-        return Err(HirError::lowering_failed(joined));
-    }
-    Ok(())
+    violations
 }
 
 /// 顶层控制流调度与一致性校验入口。
