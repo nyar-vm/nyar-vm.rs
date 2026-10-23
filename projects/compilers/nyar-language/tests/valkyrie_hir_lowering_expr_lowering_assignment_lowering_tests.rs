@@ -19,7 +19,7 @@ fn lower(source: &str) -> HirExpr {
     else {
         panic!("缺少表达式")
     };
-    lower_term_expression(&statement.expr, SourceID::default(), 0..source.len())
+    lower_term_expression(&statement.expr, SourceID::default(), 0..source.len()).expect("表达式 lowering")
 }
 
 #[test]
