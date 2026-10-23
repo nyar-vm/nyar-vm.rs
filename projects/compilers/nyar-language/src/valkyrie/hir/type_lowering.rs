@@ -491,12 +491,12 @@ fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
             type_arguments: Vec::new(),
         }));
     }
-    if parts.len() > 1 && !is_known_builtin_type_namespace(&parts, last) {
-        return ValkyrieType::QualifiedPath {
-            namespace: parts[..parts.len() - 1].iter().map(|segment| segment.to_string()).collect(),
-            name: Identifier::new(last),
-        };
-    }
+    // 停线清理：删除 QualifiedPath 作为语法类型进入 HIR 的路径。多段限定类型名
+    // 在 frontend 绑定阶段必须已完全解析为声明身份；无法解析时必须返回前端
+    // TypeError，不得带着 QualifiedPath 旁路进入后续 canonical / representation。
+    //
+    // 当前所有非内建、非 Self、非两段 Associated 的多段名直接按最后一段短名交给
+    // resolve_named_type 处理；若无法在当前作用域绑定，将在后续 bind_type 阶段失败。
     // 单段名与已知内建命名空间限定名共用同一解析顺序：作用域别名优先于内建类型。
     resolve_named_type(last)
 }

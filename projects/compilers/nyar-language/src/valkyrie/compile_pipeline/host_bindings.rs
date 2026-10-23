@@ -160,8 +160,9 @@ fn namespace_parts(namespace: &crate::NamePath) -> Vec<String> {
 fn target_owner_name(ty: &ValkyrieType) -> Option<&str> {
     match ty {
         ValkyrieType::Named(name) => Some(name.as_str()),
-        ValkyrieType::QualifiedPath { name, .. } => Some(name.as_str()),
         ValkyrieType::Apply(base, _) => target_owner_name(base),
+        // 停线清理：QualifiedPath 不得在 host_bindings 阶段参与 owner 猜测
+        // （短名 fallback 违反架构合同）。无显式绑定则返回 None。
         _ => None,
     }
 }
