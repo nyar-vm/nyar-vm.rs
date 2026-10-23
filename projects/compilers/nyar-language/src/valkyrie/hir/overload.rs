@@ -804,27 +804,25 @@ fn build_function_candidate(module_name: &NamePath, function: &HirFunction, impo
     candidate.with_where_constraints(function.where_constraints.clone())
 }
 
-/// 无限定自由函数调用：按当前模块结构化路径匹配，禁止末段字符串回退。
+/// 无限定自由函数调用：按当前模块结构化路径硬匹配完整 identity，禁止末段字符串兜底。
+/// 候选 symbol 必须等于 `[enclosing_module..., callee_name]`；单段 callee_name 不再兜底命中
+/// 带命名空间的候选——lowering 没绑定完整 identity 就是 lowering 的缺失。
 fn symbol_matches_unqualified_free_call(symbol: &NamePath, callee_name: &Identifier, enclosing_module: &NamePath) -> bool {
-    match symbol.parts() {
-        [name] => name == callee_name,
-        parts if parts.last() == Some(callee_name) => {
-            let mut expected = enclosing_module.parts().to_vec();
-            expected.push(callee_name.clone());
-            parts == expected.as_slice()
-        }
-        _ => false,
-    }
+    let mut expected = enclosing_module.parts().to_vec();
+    expected.push(callee_name.clone());
+    symbol.parts() == expected.as_slice()
 }
 
-/// 依赖语义导出中的顶层函数：consumer 内无限定调用只按导出名匹配，身份由 declaration/instance 冻结。
+/// 依赖语义导出中的顶层函数：consumer 内无限定调用只按导出名匹配完整声明身份。
+/// 禁止末段字符串兜底；symbol 必须是已冻结的单段导出名或带完整 namespace 的完整路径。
 fn symbol_matches_imported_dependency_export(candidate: &OverloadCandidate, callee_name: &Identifier) -> bool {
     if !candidate.imported_dependency_export {
         return false;
     }
     match candidate.symbol.parts() {
         [name] => name == callee_name,
-        parts => parts.last() == Some(callee_name),
+        // 多段 symbol 必须完整匹配，禁止末段兜底 app::helper 命中 std::helper。
+        parts => parts == &[callee_name.clone()][..],
     }
 }
 
@@ -865,22 +863,20 @@ fn candidate_variant_constructor_matches(candidate: &OverloadCandidate, variant_
         && matches!(candidate.symbol.parts(), [name] if name == variant_name)
 }
 
-/// 聚合构造候选：结构化路径对齐，禁止跨 owner 末段碰撞。
+/// 聚合构造候选：结构化路径硬对齐，禁止跨 owner 末段碰撞。
+/// lowering 必须把源码 short name 先绑定为带 namespace 的完整 identity；
+/// 这里不再兜底 `path.parts().last() == candidate.symbol.parts().last()`。
 fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &NamePath) -> bool {
     if candidate.domain != OverloadDomain::Constructor {
         return false;
     }
     if candidate.owner.is_some() {
+        // enum variant 构造：owner 已冻结，只匹配变体短名。
         return path.parts().last().is_some_and(|name| candidate_variant_constructor_matches(candidate, name));
     }
-    // path 是 lowering 从源码 Identifier 提取的短名（如 `ArrayList`），
-    // candidate.symbol 是带声明 namespace 的完整路径（如 `std.collection.ArrayList`）。
-    // 精确匹配不成立时，末段对齐允许短名命中带命名空间的候选，但 path 有多段时仍用精确匹配。
-    let symbol_parts = candidate.symbol.parts();
-    let path_parts = path.parts();
-    symbol_parts == path_parts
-        || (path_parts.len() == 1 && symbol_parts.last() == path_parts.last())
-        || matches!(symbol_parts, [single] if path_parts.last() == Some(single))
+    // free constructor：要求 lowering 已将 path 绑定为带完整声明 namespace 的完整路径，
+    // 与 candidate.symbol 硬匹配。单段 short name 不再兜底命中带命名空间的候选。
+    candidate.symbol.parts() == path.parts()
 }
 
 /// 模式 extractors：`Owner.member` 与候选 `owner` + 单段符号精确对齐。
@@ -2335,9 +2331,11 @@ fn try_resolve_call(
         .iter()
         .filter(|candidate| candidate.domain == OverloadDomain::Function && candidate.owner.is_none())
         .filter(|candidate| {
+            // 只接受已在 frontend 绑定到完整 identity 的候选。
+            // 禁止末段字符串兜底——单段短名必须先在 owner/namespace/package/visibility 环境中绑定为
+            // 完整声明身份； lowering 没绑定就是 lowering 的缺失，不得在这里猜。
             symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
                 || symbol_matches_imported_dependency_export(candidate, &callee_name)
-                || (candidate.intrinsic.is_some() && candidate.symbol.parts().last() == Some(&callee_name))
         })
         .filter_map(|candidate| {
             // Function 候选不做 contextual_type 反推——返回类型由声明决定，防止把裸泛型
@@ -2440,8 +2438,6 @@ fn try_resolve_qualified_free_function(
     singleton_names: &BTreeSet<Identifier>,
 ) -> Option<HirResolvedCall> {
     let canonical_key = crate::valkyrie::symbols::stable_symbol_key(path);
-    let path_parts = path.parts();
-    let path_last = path_parts.last();
     let filtered = candidates
         .iter()
         .filter(|candidate| {
@@ -2449,17 +2445,11 @@ fn try_resolve_qualified_free_function(
                 return false;
             }
             let candidate_key = crate::valkyrie::symbols::stable_symbol_key(&candidate.symbol);
-            // 多段限定路径（如 `std::helper`）必须精确匹配完整 namespace。
-            // 末段 fallback 只在 path 是单段短名（len==1）时允许——
-            // 那是 lowering 从源码 Identifier 提取短名的症状，调用者没写限定路径。
-            // 对于 qualified call（len>=2），调用者写了完整路径，
-            // 就必须精确命中，不能让 `app::helper` 误命中 `std::helper`。
-            if path_parts.len() >= 2 {
-                candidate_key == canonical_key
-            } else {
-                candidate_key == canonical_key
-                    || path_last.map(|p| candidate.symbol.parts().last() == Some(p)).unwrap_or(false)
-            }
+            // 硬匹配完整 canonical identity。
+            // 允许 qualified path（调用者写了完整 namespace），也允许 lowering 产出的完整 symbol；
+            // 禁止单段短名末段兜底——app::helper 不得命中 std::helper，
+            // package_a::Range 不得命中 package_b::Range，未声明依赖中的同名函数不得命中。
+            candidate_key == canonical_key
         })
         .filter_map(|candidate| match_call_candidate(candidate, args, &[], type_relations, locals, struct_fields, singleton_names))
         .collect::<Vec<_>>();
