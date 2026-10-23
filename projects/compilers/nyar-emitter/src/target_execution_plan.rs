@@ -9,6 +9,7 @@ use nyar_types::{
     CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value,
     ValueOrigin,
     layout_choice::{InvokeLowering, ValueRepresentation},
+    NyarFunctionType,
 };
 
 use crate::{
@@ -563,26 +564,66 @@ fn lower_constant(constant: &CanonicalConstant) -> Constant {
 
 fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<NyarType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| miette!("canonical 类型事实缺失"))?.kind;
-    Ok(match kind {
+    match kind {
         CanonicalTypeKind::Primitive(kind) => match kind {
-            nyar_types::CanonicalPrimitiveType::Void => NyarType::Bottom,
-            nyar_types::CanonicalPrimitiveType::Unit => NyarType::Unit,
-            nyar_types::CanonicalPrimitiveType::Bool => NyarType::Boolean,
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => NyarType::Integer32 { signed: *signed },
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => NyarType::Integer64 { signed: *signed },
-            nyar_types::CanonicalPrimitiveType::Utf8 => NyarType::Utf8,
-            nyar_types::CanonicalPrimitiveType::Utf16 => NyarType::Utf16,
-            unsupported => return Err(miette!("primitive 尚无目标合同: {unsupported:?}")),
+            nyar_types::CanonicalPrimitiveType::Void => Ok(NyarType::Bottom),
+            nyar_types::CanonicalPrimitiveType::Unit => Ok(NyarType::Unit),
+            nyar_types::CanonicalPrimitiveType::Bool => Ok(NyarType::Boolean),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(NyarType::Integer32 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
+            nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+            unsupported => Err(miette!("primitive 尚无目标合同: {unsupported:?}")),
         },
-        CanonicalTypeKind::Tuple(items) => NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?),
-        CanonicalTypeKind::Array { element, length: None } => NyarType::Array(Box::new(lower_type(program, *element)?)),
-        CanonicalTypeKind::Array { element, length: Some(length) } => NyarType::FixedArray {
+        CanonicalTypeKind::Tuple(items) => {
+            Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?))
+        }
+        CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
+        CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
             element: Box::new(lower_type(program, *element)?),
             length: usize::try_from(*length).map_err(|_| miette!("固定数组长度溢出"))?,
-        },
-        CanonicalTypeKind::Nullable(element) => NyarType::Nullable(Box::new(lower_type(program, *element)?)),
-        unsupported => return Err(miette!("canonical 类型尚无目标合同: {unsupported:?}")),
-    })
+        }),
+        CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_type(program, *element)?))),
+        CanonicalTypeKind::Nominal { declaration, arguments } => {
+            if !arguments.is_empty() {
+                return Ok(NyarType::Apply(
+                    Box::new(lower_type(program, *declaration)?),
+                    arguments.iter().map(|argument| lower_type(program, *argument)).collect::<Result<Vec<_>>>()?,
+                ));
+            }
+            let spelling = program
+                .linked
+                .type_surface_spellings
+                .get(if *declaration == id { &id } else { declaration })
+                .or_else(|| program.linked.type_surface_spellings.get(&id));
+            if let Some(name) = spelling {
+                if let Some(primitive) = NyarType::from_surface_primitive(name.as_str()) {
+                    return Ok(primitive);
+                }
+                if program.linked.aggregate_layout_by_type.contains_key(&id)
+                    || program.linked.nominal_instances.values().any(|record| record.ty == id)
+                {
+                    return Ok(NyarType::Named(name.clone()));
+                }
+                return Err(miette!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));
+            }
+            if *declaration != id {
+                return lower_type(program, *declaration);
+            }
+            Err(miette!("canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [] }}"))
+        }
+        CanonicalTypeKind::Function { parameters, return_type } => Ok(NyarType::Function(Box::new(NyarFunctionType {
+            params: parameters.iter().map(|parameter| lower_type(program, *parameter)).collect::<Result<Vec<_>>>()?,
+            return_type: lower_type(program, *return_type)?,
+        }))),
+        CanonicalTypeKind::Union(items) => {
+            Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
+        }
+        CanonicalTypeKind::Intersection(items) => {
+            Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
+        }
+        unsupported => Err(miette!("canonical 类型尚无目标合同: {unsupported:?}")),
+    }
 }
 
 fn lower_terminator(terminator: CanonicalTerminator) -> Result<Terminator> {
