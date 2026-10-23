@@ -849,16 +849,6 @@ impl HirError {
         }
     }
 
-    /// 带显式 span 的 lowering fallback。
-    pub fn lowering_failed_at(message: impl Into<String>, span: nyar_types::DiagnosticSpan) -> Self {
-        Self::LoweringFailed {
-            scenario: message.into(),
-            details: Vec::new(),
-            source: nyar_types::DiagnosticSource { id: "<unknown>".into(), revision: None },
-            span,
-        }
-    }
-
     /// TGrammar 模板展开失败；span 指向触发失败的模板 token 流。
     pub(crate) fn template_expansion_failed(construct: TemplateConstruct, failure: TemplateFailure, span: DiagnosticSpan) -> Self {
         Self::TemplateExpansionFailed {
