@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "examples/rusty-bash",
     "examples/rusty-valkyrie",
     "projects/formats/odin-bytecode",
     "projects/packages/valkyrie/crates/asgard",
@@ -69,6 +70,8 @@ nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
 # Valkyrie frontend（语言语义与 frontend-owned Semantic MIR）
 rusty-valkyrie = { path = "examples/rusty-valkyrie" }
+# Guest 语言前端（各自独立 crate）
+rusty-bash = { path = "examples/rusty-bash" }
 # Valkyrie 产品装配（Legion / Asgard CLI 与发行入口）
 legion = { path = "projects/packages/valkyrie/crates/legion" }
 legion-workspace = { path = "projects/packages/valkyrie/crates/legion-workspace" }

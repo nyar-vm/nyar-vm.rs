@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::transitional::guest_scripts::bash::{BashError, BashRedirect, BashScript, BashStmt};
+use crate::script::{BashError, BashRedirect, BashScript, BashStmt};
 
 /// Runtime value for the Bash tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

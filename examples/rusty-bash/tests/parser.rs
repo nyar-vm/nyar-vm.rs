@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::bash::{BashError, BashScript, BashStmt};
+use rusty_bash::script::{BashError, BashScript, BashStmt};
 
 #[test]
 fn parse_echo() {

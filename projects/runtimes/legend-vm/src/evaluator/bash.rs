@@ -1,8 +1,8 @@
-//! Bash evaluator thin adapter - delegates to `nyar-language::bash::interpret`.
+//! Bash evaluator thin adapter - delegates to `rusty-bash::interpret`.
 
 use std::collections::HashMap;
 
-use nyar_language::{BashValue, evaluate_bash_source};
+use rusty_bash::{BashValue, evaluate_bash_source};
 
 use crate::value::LegacyValue;
 

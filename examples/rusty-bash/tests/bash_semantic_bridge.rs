@@ -1,4 +1,4 @@
-use nyar_language::{transitional::guest_scripts::bash::BashScript, *};
+use rusty_bash::{BashSemanticBridge, script::BashScript};
 
 #[test]
 fn collects_top_level_functions() {

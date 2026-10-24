@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::transitional::guest_scripts::bash::BashScript;
+use crate::script::BashScript;
 
 /// `Bash` host script module.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

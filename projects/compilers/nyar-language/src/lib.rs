@@ -3,7 +3,6 @@
 
 pub mod transitional;
 
-pub mod bash;
 pub mod c;
 pub mod javascript;
 pub mod lua;
@@ -12,7 +11,6 @@ pub mod powershell;
 pub mod python;
 pub mod tcl;
 
-pub use bash::{BashModule, BashSemanticBridge, BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use c::{CModule, CSemanticBridge, CValue, evaluate_c_script, evaluate_c_source};
 pub use javascript::JavascriptModule;
 pub use lua::{LuaModule, LuaSemanticBridge, LuaValue, evaluate_lua_script, evaluate_lua_source, specialize_lua_into, specialize_lua_script};

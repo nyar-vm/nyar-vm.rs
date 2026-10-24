@@ -1,6 +1,6 @@
 //! Bash host-script semantic bridge.
 
-use crate::transitional::guest_scripts::bash::{BashScript, BashStmt};
+use crate::script::{BashScript, BashStmt};
 
 /// Bridge over a parsed Bash script.
 #[derive(Debug, Clone, PartialEq, Eq)]

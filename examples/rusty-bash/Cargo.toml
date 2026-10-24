@@ -2,15 +2,9 @@
 name = "rusty-bash"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 authors.workspace = true
+license.workspace = true
+description = "Bash guest frontend: script model, parser, semantic bridge and tree interpreter"
 
 [dependencies]
-odin-vm = { workspace = true }
-nyar-types = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-bash = { workspace = true }
-chomsky = { workspace = true }
-chomsky-uir = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
