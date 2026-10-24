@@ -2,7 +2,10 @@ use nyar::{CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 use nyar_language::{valkyrie::compile_pipeline::compile_source_groups_to_backend_bundle, *};
 
-const TEMPLATE_SOURCE: &str = r#"<% match arch %>
+const TEMPLATE_SOURCE: &str = r#"[primitive("core::primitive::i32")]
+structure i32 { }
+
+<% match arch %>
 <% case "wasm32" %>
 [main] micro main() -> i32 { return 23 }
 <% else %>

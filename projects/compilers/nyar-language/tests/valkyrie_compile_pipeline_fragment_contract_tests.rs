@@ -2,13 +2,17 @@ use std::collections::BTreeSet;
 
 use nyar_language::{ValkyrieCompiler, mir::MirLowerer, valkyrie::compile_pipeline::canonical_program_from_semantic_mir};
 
+/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+
 #[test]
 fn fragment_contract_ignores_colliding_diagnostic_labels() {
     let hir = ValkyrieCompiler::default()
-        .compile_source(
-            "micro leaf(value: i32) -> i32 { return value } \
-         [export(name: \"answer\")] micro answer(value: i32) -> i32 { return leaf(value) }",
-        )
+        .compile_source(&format!(
+            "{PRIMITIVE_I32}\
+         micro leaf(value: i32) -> i32 {{ return value }} \
+         [export(name: \"answer\")] micro answer(value: i32) -> i32 {{ return leaf(value) }}"
+        ))
         .expect("当前源码必须绑定声明及调用");
     let mut mir = MirLowerer::lower_module_semantic(&hir);
     let original = canonical_program_from_semantic_mir(&mir).expect("原始实例合同");

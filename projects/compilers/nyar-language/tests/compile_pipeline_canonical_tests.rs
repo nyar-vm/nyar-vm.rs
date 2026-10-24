@@ -12,7 +12,10 @@ use std::collections::BTreeMap;
 
 fn source_surface_module() -> MirModule {
     let hir = nyar_language::ValkyrieCompiler::default()
-        .compile_source("[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }")
+        .compile_source(
+            "[primitive(\"core::primitive::i32\")] structure i32 { } \
+             [export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }",
+        )
         .expect("源码导出及入口合同");
     nyar_language::MirLowerer::lower_module_semantic(&hir)
 }
@@ -155,14 +158,8 @@ fn source_entry_contract_rejects_missing_reordered_and_invalid_parameters() {
 
 #[test]
 fn producer_rejects_unresolved_callable_without_name_fallback() {
-    let module = module_with(
-        MirOperation::Call {
-            callee: MirOperand::Constant(MirConstant::Unit),
-            arguments: Vec::new(),
-        },
-        None,
-        BTreeMap::new(),
-    );
+    let module =
+        module_with(MirOperation::Call { callee: MirOperand::Constant(MirConstant::Unit), arguments: Vec::new() }, None, BTreeMap::new());
     let error = canonical_program_from_semantic_mir(&module).expect_err("未解析 callable 必须在 producer 失败");
 }
 

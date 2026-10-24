@@ -7,6 +7,9 @@ use nyar_types::CompileStage;
 
 use nyar_language::valkyrie::compile_pipeline::compile_linked_semantic_mir;
 
+/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+
 #[test]
 fn source_without_instance_facts_cannot_mint_identity_from_function_names() {
     let mut hir = ValkyrieCompiler::default().compile_source("micro identity(value: i32) -> i32 { return value }").expect("源码解析");
@@ -24,11 +27,12 @@ fn source_without_instance_facts_cannot_mint_identity_from_function_names() {
 #[test]
 fn source_calls_and_branch_values_reach_the_success_contract() {
     let output = ValkyrieCompiler::default()
-        .compile_source_to_program(
-            "micro identity(value: i32) -> i32 { return value } \
-             micro choose(flag: bool, value: i32) -> i32 { \
-                 if flag { return identity(value) } else { return value } }",
-        )
+        .compile_source_to_program(&format!(
+            "{PRIMITIVE_I32}\
+                 micro identity(value: i32) -> i32 {{ return value }} \
+                 micro choose(flag: bool, value: i32) -> i32 {{ \
+                     if flag {{ return identity(value) }} else {{ return value }} }}"
+        ))
         .expect("当前源码经过真实构建入口完成语义与表示合同");
     let program = &output;
     assert_eq!(program.canonical().mir.functions.len(), 2);

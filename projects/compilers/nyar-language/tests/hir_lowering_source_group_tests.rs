@@ -6,6 +6,9 @@ use nyar_language::{
     },
 };
 
+/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+
 #[test]
 fn entry_source_group_parse_failure_reports_file_and_reason() {
     let source = "micro broken() { value = }";
@@ -52,8 +55,12 @@ fn compiler_selects_reachable_files_from_inventory() {
 #[test]
 fn unresolved_qualified_type_path_fails_before_canonical() {
     let groups = vec![
-        CompilerSourceGroup::single_source("app", "app", "[export] micro run() -> i32 { let value: missing.module.Solution = 0; return value }")
-            .as_entry(),
+        CompilerSourceGroup::single_source(
+            "app",
+            "app",
+            "[export] micro run() -> i32 { let value: missing.module.Solution = 0; return value }",
+        )
+        .as_entry(),
     ];
     let error = ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
@@ -361,7 +368,7 @@ fn constructor_identities_are_registered_before_overload_selection() {
 #[test]
 fn compiler_carries_fragment_contracts_into_canonical_program() {
     let output = ValkyrieCompiler::default()
-        .compile_source_to_program("[export(name: \"answer\")] [main] micro answer() -> i32 { return 23 }")
+        .compile_source_to_program(&format!("{PRIMITIVE_I32}[export(name: \"answer\")] [main] micro answer() -> i32 {{ return 23 }}"))
         .expect("源码必须形成完整 Canonical 成功载荷");
     let linked = &output.canonical().linked;
     let fragment = linked.fragments.values().next().expect("Compiler 必须绑定至少一个语义片段");
@@ -410,7 +417,7 @@ fn compiler_rejects_dependency_identity_collision() {
 #[test]
 fn multiple_entry_groups_merge_their_frozen_surface_contracts() {
     let groups = vec![
-        CompilerSourceGroup::single_source("app", "app", "[main] micro start() -> i32 { return 23 }").as_entry(),
+        CompilerSourceGroup::single_source("app", "app", &format!("{PRIMITIVE_I32}[main] micro start() -> i32 {{ return 23 }}")).as_entry(),
         CompilerSourceGroup::single_source("awsl", "awsl", "[export(asgard)] micro hydrate() -> i32 { return 7 }")
             .as_entry()
             .with_direct_dependencies(vec!["app".into()]),

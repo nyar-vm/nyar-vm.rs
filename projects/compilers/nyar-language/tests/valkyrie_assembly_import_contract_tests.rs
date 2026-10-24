@@ -21,8 +21,9 @@ fn source_entry_survives_canonical_partition_planning() {
 
 #[test]
 fn function_without_entry_remains_a_non_entry_partition() {
-    let output =
-        nyar_language::ValkyrieCompiler::default().compile_source_to_program("micro answer() -> i32 { return 23 }").expect("当前源码必须编译");
+    let output = nyar_language::ValkyrieCompiler::default()
+        .compile_source_to_program("[primitive(\"core::primitive::i32\")] structure i32 { } micro answer() -> i32 { return 23 }")
+        .expect("当前源码必须编译");
     let plan = plan_artifacts_from_compiled_program(&output, CanonicalTarget::wasm(), ClrSuspendStrategy::default())
         .expect("无入口函数仍可形成明确的非入口分区");
     assert!(plan.partitions.iter().all(|partition| partition.entry_operation.is_none()));
