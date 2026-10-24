@@ -1,8 +1,8 @@
-//! PowerShell evaluator thin adapter — delegates to `nyar-language::powershell::interpret`.
+//! PowerShell evaluator thin adapter — delegates to `rusty-powershell::interpret`.
 
 use std::collections::HashMap;
 
-use nyar_language::{PowerShellValue, evaluate_powershell_source};
+use rusty_powershell::{PowerShellValue, evaluate_powershell_source};
 
 use crate::value::LegacyValue;
 

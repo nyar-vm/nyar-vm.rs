@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::powershell::{Lexer, TokenKind};
+use rusty_powershell::script::{Lexer, TokenKind};
 
 #[test]
 fn tokenizes_write_output() {

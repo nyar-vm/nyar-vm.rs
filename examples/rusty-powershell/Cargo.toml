@@ -1,0 +1,10 @@
+[package]
+name = "rusty-powershell"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PowerShell guest frontend: script model, parser, semantic bridge and tree interpreter"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }

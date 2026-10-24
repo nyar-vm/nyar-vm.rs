@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::powershell::PowerShellScript;
+use rusty_powershell::script::PowerShellScript;
 
 #[test]
 fn parse_fixture_line() {

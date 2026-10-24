@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::transitional::guest_scripts::powershell::{PowerShellError, PowerShellScript, PsExpr, PsStmt};
+use crate::script::{PowerShellError, PowerShellScript, PsExpr, PsStmt};
 
 /// Runtime value for the PowerShell tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

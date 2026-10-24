@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::powershell::{PowerShellScript, PsExpr, PsStmt};
+use rusty_powershell::script::{PowerShellScript, PsExpr, PsStmt};
 
 #[test]
 fn parse_write_output() {
