@@ -17,43 +17,45 @@ use nyar_bytecode::{
 use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
-use crate::{FragmentSubmission, TargetExecutionPlan};
+use crate::{
+    FragmentSubmission, TargetExecutionPlan,
+    target_instruction::{TargetInstruction, TargetInstructionEncoding, TargetOpcodeBinding, TargetOperandRecipe, TargetOperandType},
+};
 use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
 
-/// `[vm_opcode("...")]` 目标助记符到 NyarVM 指令的唯一编码表。
+/// `[vm_opcode("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
 /// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
-/// 未知助记符返回 `None`，由调用方结构化失败，禁止回落到宿主导入或默认指令。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NyarOpcodeEncoding {
-    /// 先发射两个实参，再发射该二元指令。
-    Binary(NyarHeadCode),
-    /// 先发射 `i32(0)`，再发射实参，再发射该二元指令（`0 - x`）。
-    Negate(NyarHeadCode),
-}
-
-/// `[vm_opcode]` 助记符到 NyarVM 指令的唯一映射表。
-fn nyar_opcode_encoding(mnemonic: &str) -> Option<NyarOpcodeEncoding> {
-    let encoding = match mnemonic {
-        "i32.add" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Add),
-        "i32.sub" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Sub),
-        "i32.mul" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Mul),
-        "i32.div" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32DivS),
-        "i32.rem" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32RemS),
-        "i32.eq" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Eq),
-        "i32.ne" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32Ne),
-        "i32.lt" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32LtS),
-        "i32.le" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32LeS),
-        "i32.gt" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32GtS),
-        "i32.ge" => NyarOpcodeEncoding::Binary(NyarHeadCode::I32GeS),
-        "i32.neg" => NyarOpcodeEncoding::Negate(NyarHeadCode::I32Sub),
+/// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
+/// 冻结为 `TargetOpcodeBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
+/// 或默认指令。
+pub(crate) fn freeze_nyar_vm_opcode_binding(mnemonic: &str) -> Option<TargetInstruction> {
+    let (arity, recipe, code) = match mnemonic {
+        "i32.add" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Add),
+        "i32.sub" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Sub),
+        "i32.mul" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Mul),
+        "i32.div" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32DivS),
+        "i32.rem" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32RemS),
+        "i32.eq" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Eq),
+        "i32.ne" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Ne),
+        "i32.lt" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32LtS),
+        "i32.le" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32LeS),
+        "i32.gt" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GtS),
+        "i32.ge" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GeS),
+        "i32.neg" => (1, TargetOperandRecipe::IntegerNegate, NyarHeadCode::I32Sub),
         _ => return None,
     };
-    Some(encoding)
+    Some(TargetInstruction {
+        arity,
+        operand_type: TargetOperandType::I32,
+        result_type: TargetOperandType::I32,
+        recipe,
+        encoding: TargetInstructionEncoding::NyarVm(code),
+    })
 }
 
 struct BytecodeEmitter<'a> {
@@ -188,6 +190,17 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         .iter()
         .map(|(instance, import)| (*instance, import.link.clone()))
         .collect::<BTreeMap<ItemInstanceId, ExternalImportLink>>();
+    // `[vm_opcode]` 绑定的冻结配方只从计划读取：助记符仅用于诊断，arity、操作数
+    // 改写与头码全部来自 `TargetExecutionPlan`。
+    let external_opcode_by_instance = submission
+        .backend_plan
+        .imports()
+        .iter()
+        .filter_map(|(instance, import)| {
+            let mnemonic = crate::lowering::shared::interop::vm_opcode_target(&import.link)?;
+            Some((*instance, (mnemonic.to_string(), import.target_instruction.unwrap_or(TargetOpcodeBinding::Unfrozen))))
+        })
+        .collect::<BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>>();
 
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
@@ -215,6 +228,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &function_index_by_instance,
                 &function_entry_arities,
                 &external_link_by_instance,
+                &external_opcode_by_instance,
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
@@ -299,6 +313,7 @@ fn lower_mir_function_to_bytecode(
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
@@ -316,6 +331,7 @@ fn lower_mir_function_to_bytecode(
         function_index_by_instance,
         function_entry_arities,
         external_link_by_instance,
+        external_opcode_by_instance,
         layouts,
         layout_index_by_id,
     };
@@ -338,6 +354,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
     layouts: &'a mut Vec<NyarLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
@@ -464,7 +481,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
                     if let Some(link) = self.external_link_by_instance.get(instance).cloned() {
-                        self.emit_external_call(&link, *instance, arguments, output)?;
+                        let opcode = self.external_opcode_by_instance.get(instance);
+                        self.emit_external_call(&link, *instance, opcode, arguments, output)?;
                         return Ok(());
                     }
                     let index = self
@@ -663,15 +681,16 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     /// 发射 `backend_plan.imports()` 中的外部 provider 调用。
     ///
-    /// 先按 `[vm_opcode("...")]` 目标助记符内联为指令：未知助记符结构化失败，
-    /// 不得回落为宿主导入或默认成功。其余已绑定目标 provider（`host` 边界 +
-    /// `vm` 目标标签 + 恰好一段符号）保持 `CallImport`，由 runtime `parse_host_op`
-    /// 判定。未绑定 `[host_contract]` 或其它目标标签必须失败，不得回落为空体、
-    /// 默认值或 `0`。
+    /// 先按计划冻结的 `[vm_opcode("...")]` 配方内联为指令：未冻结的绑定与 arity
+    /// 不符必须结构化失败，不得回落为宿主导入或默认成功。其余已绑定目标 provider
+    /// （`host` 边界 + `vm` 目标标签 + 恰好一段符号）保持 `CallImport`，由 runtime
+    /// `parse_host_op` 判定。未绑定 `[host_contract]` 或其它目标标签必须失败，
+    /// 不得回落为空体、默认值或 `0`。
     fn emit_external_call(
         &mut self,
         link: &ExternalImportLink,
         instance: ItemInstanceId,
+        opcode: Option<&(String, TargetOpcodeBinding)>,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
     ) -> miette::Result<()> {
@@ -682,38 +701,51 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             .map(|name| name.to_string())
             .unwrap_or_else(|| format!("{instance:?}"));
 
-        if let Some(mnemonic) = crate::lowering::shared::interop::vm_opcode_target(link) {
-            let Some(encoding) = nyar_opcode_encoding(mnemonic)
+        if let Some((mnemonic, binding)) = opcode {
+            let TargetOpcodeBinding::Frozen(instruction) = binding
             else {
                 return Err(miette::miette!(
                     "Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
-            match encoding {
-                NyarOpcodeEncoding::Binary(code) => {
-                    if arguments.len() != 2 {
-                        return Err(miette::miette!(
-                            "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 二元绑定不符: function=`{}` expected=2 actual={}",
-                            self.mir_fn.symbol,
-                            arguments.len()
-                        ));
-                    }
+            let TargetInstructionEncoding::NyarVm(code) = instruction.encoding
+            else {
+                return Err(miette::miette!(
+                    "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了非 NyarVM 编码: callee=`{callee_name}` function=`{}`",
+                    self.mir_fn.symbol
+                ));
+            };
+            if arguments.len() != instruction.arity {
+                return Err(miette::miette!(
+                    "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 冻结 arity 不符: function=`{}` expected={} actual={}",
+                    self.mir_fn.symbol,
+                    instruction.arity,
+                    arguments.len()
+                ));
+            }
+            match instruction.recipe {
+                TargetOperandRecipe::Operands => {
                     self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
                 }
-                NyarOpcodeEncoding::Negate(code) => {
-                    if arguments.len() != 1 {
+                TargetOperandRecipe::IntegerNegate => {
+                    if instruction.operand_type != TargetOperandType::I32 {
                         return Err(miette::miette!(
-                            "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 一元绑定不符: function=`{}` expected=1 actual={}",
-                            self.mir_fn.symbol,
-                            arguments.len()
+                            "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了整数取负配方但载体不是 i32: callee=`{callee_name}` function=`{}`",
+                            self.mir_fn.symbol
                         ));
                     }
                     let zero = self.emitter.intern_i32(0);
                     self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
                     self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
+                }
+                TargetOperandRecipe::NativeNegate => {
+                    return Err(miette::miette!(
+                        "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了原生取负配方，但 NyarVM 没有该指令: callee=`{callee_name}` function=`{}`",
+                        self.mir_fn.symbol
+                    ));
                 }
             }
         }

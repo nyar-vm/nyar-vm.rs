@@ -14,6 +14,7 @@ mod driver;
 pub mod lowering;
 mod nullable_profiles;
 mod target_execution_plan;
+pub mod target_instruction;
 
 use std::{
     path::{Path, PathBuf},

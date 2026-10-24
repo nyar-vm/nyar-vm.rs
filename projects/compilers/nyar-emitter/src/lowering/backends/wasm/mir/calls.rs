@@ -5,8 +5,17 @@
 //! **call encoding**, not a second MIR. Semantic MIR remains call-resolution
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
-use super::*;
-use super::numeric::{self, WasmNumericArity, WasmNumericBinding, WasmNumericResult};
+use super::{numeric, *};
+use crate::target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandType};
+
+/// 计划冻结的目标标量载体 → wasm 栈类型字节。
+fn wasm_stack_type(operand_type: TargetOperandType) -> u8 {
+    match operand_type {
+        TargetOperandType::I32 => VALTYPE_I32,
+        TargetOperandType::I64 => VALTYPE_I64,
+        TargetOperandType::F64 => VALTYPE_F64,
+    }
+}
 
 impl<'a> WasmMirLowerer<'a> {
     /// Lowers a non-builtin MIR call to WASM bytecode.
@@ -190,7 +199,8 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 只有 callee 携带已绑定 host contract 的实例身份时才命中；未绑定 provider
     /// 的 host contract 与普通函数调用都返回 `false`，走既有 import / local call
-    /// 路径。未知助记符与助记符 arity 不符必须返回结构化错误，禁止猜默认指令。
+    /// 路径。arity、操作数配方、结果载体与 opcode 全部来自计划冻结的
+    /// `TargetInstruction`；未冻结的绑定必须返回结构化错误，禁止从助记符猜语义。
     pub(super) fn try_emit_wasm_opcode_call(
         &mut self,
         callee: &MirOperand,
@@ -201,54 +211,55 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let Some(mnemonic) = self.callee_wasm_opcode.get(instance).cloned()
+        let Some((mnemonic, binding)) = self.callee_wasm_opcode.get(instance)
         else {
             return Ok(false);
         };
-        let Some(binding) = WasmNumericBinding::from_mnemonic(&mnemonic)
+        let TargetOpcodeBinding::Frozen(instruction) = binding
+        else {
+            return Err(miette!("WASM `wasm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
+        };
+        let TargetInstructionEncoding::Wasm(opcode) = instruction.encoding
         else {
             return Err(miette!(
-                "WASM `wasm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}",
+                "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
                 self.mir_fn.symbol
             ));
         };
-        let result_type = match binding.result {
-            WasmNumericResult::SameAsOperand => binding.scalar,
-            WasmNumericResult::I32 => VALTYPE_I32,
-        };
-        let expected_arity = match binding.arity {
-            WasmNumericArity::Binary { .. } => 2,
-            WasmNumericArity::IntegerNegate { .. } | WasmNumericArity::NativeNegate { .. } => 1,
-        };
-        if arguments.len() != expected_arity {
+        if arguments.len() != instruction.arity {
             return Err(miette!(
-                "WASM `wasm_opcode` 绑定 `{mnemonic}` 实参数量与助记符 arity 不符: callee={instance:?} function={} expected={expected_arity} actual={}",
+                "WASM `wasm_opcode` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
                 self.mir_fn.symbol,
+                instruction.arity,
                 arguments.len()
             ));
         }
-        match binding.arity {
-            WasmNumericArity::Binary { opcode } => {
-                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
+        let operand_type = wasm_stack_type(instruction.operand_type);
+        match instruction.recipe {
+            TargetOperandRecipe::Operands => {
+                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
                 numeric::emit_opcode(opcode, &mut self.code);
             }
-            WasmNumericArity::IntegerNegate { sub_opcode } => {
-                match binding.scalar {
-                    VALTYPE_I32 => self.emit_i32_const(0),
-                    VALTYPE_I64 => self.emit_i64_const(0),
-                    other => panic!(
-                        "WASM `wasm_opcode` 整数 neg 目标类型 `{other:#x}` 不受支持: `{mnemonic}` in {}",
-                        self.mir_fn.symbol
-                    ),
+            TargetOperandRecipe::IntegerNegate => {
+                match instruction.operand_type {
+                    TargetOperandType::I32 => self.emit_i32_const(0),
+                    TargetOperandType::I64 => self.emit_i64_const(0),
+                    TargetOperandType::F64 => {
+                        return Err(miette!(
+                            "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了整数取负配方但载体不是整数: callee={instance:?} function={}",
+                            self.mir_fn.symbol
+                        ));
+                    }
                 }
-                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
-                numeric::emit_opcode(sub_opcode, &mut self.code);
+                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
+                numeric::emit_opcode(opcode, &mut self.code);
             }
-            WasmNumericArity::NativeNegate { opcode } => {
-                self.emit_wasm_opcode_operands(&mnemonic, binding.scalar, arguments);
+            TargetOperandRecipe::NativeNegate => {
+                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
                 numeric::emit_opcode(opcode, &mut self.code);
             }
         }
+        let result_type = wasm_stack_type(instruction.result_type);
         match output {
             None => WasmOpcode::Drop.encode(&mut self.code),
             Some(output) => {
@@ -259,7 +270,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(true)
     }
 
-    /// 按自然栈类型发射绑定实参，并断言与目标标量类型一致。
+    /// 按自然栈类型发射绑定实参，并断言与计划冻结的实参载体一致。
     fn emit_wasm_opcode_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) {
         for argument in arguments {
             let actual = self.operand_wasm_stack_type(argument);

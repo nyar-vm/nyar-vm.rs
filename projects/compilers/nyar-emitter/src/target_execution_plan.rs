@@ -3,18 +3,18 @@
 use std::collections::BTreeMap;
 
 use miette::{Result, miette};
-use nyar::QualifiedName;
+use nyar::{ExternalImportLink, QualifiedName};
 use nyar_types::{
     CanonicalArrayInitialization, CanonicalCallee, CanonicalConstant, CanonicalOperation, CanonicalProgram, CanonicalTerminator,
-    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, Value,
-    ValueOrigin,
+    CanonicalTypeKind, CompiledProgram, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
+    Terminator, Value, ValueOrigin,
     layout_choice::{InvokeLowering, ValueRepresentation},
-    NyarFunctionType,
 };
 
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
+    target_instruction::{TargetInstruction, TargetOpcodeBinding},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -53,6 +53,8 @@ pub struct BackendImport {
     pub parameter_types: Vec<NyarType>,
     /// 返回类型。
     pub return_type: NyarType,
+    /// 计划冻结的目标指令绑定；`None` 表示该导入不是目标指令绑定。
+    pub target_instruction: Option<TargetOpcodeBinding>,
 }
 
 impl TargetExecutionPlan {
@@ -192,6 +194,7 @@ impl TargetExecutionPlan {
                         link: import.link.clone(),
                         parameter_types: import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<_>>()?,
                         return_type: lower_type(canonical, import.return_type)?,
+                        target_instruction: freeze_target_instruction(&import.link),
                     },
                 );
                 continue;
@@ -335,6 +338,36 @@ impl TargetExecutionPlan {
     /// 返回 sum 类型表示合同映射。
     pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
         &self.sum_reps
+    }
+}
+
+/// 计划构造时冻结 `[wasm_opcode]` / `[vm_opcode]` 的完整编码配方。
+///
+/// 助记符只在此处解析一次；backend 之后只消费 [`TargetOpcodeBinding`]，不得再从
+/// 助记符字符串推断 arity、操作数改写或结果类型。未解析的绑定保留为
+/// [`TargetOpcodeBinding::Unfrozen`]，由 emit 侧结构化失败。
+fn freeze_target_instruction(link: &ExternalImportLink) -> Option<TargetOpcodeBinding> {
+    if let Some(mnemonic) = crate::lowering::shared::interop::wasm_opcode_target(link) {
+        let resolved = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic);
+        return Some(frozen_opcode_binding(resolved));
+    }
+    let vm_mnemonic = crate::lowering::shared::interop::vm_opcode_target(link);
+    #[cfg(feature = "nyar-vm-lane")]
+    if let Some(mnemonic) = vm_mnemonic {
+        let resolved = crate::lowering::backends::nyar_vm_mir::freeze_nyar_vm_opcode_binding(mnemonic);
+        return Some(frozen_opcode_binding(resolved));
+    }
+    #[cfg(not(feature = "nyar-vm-lane"))]
+    if vm_mnemonic.is_some() {
+        return Some(TargetOpcodeBinding::Unfrozen);
+    }
+    None
+}
+
+fn frozen_opcode_binding(resolved: Option<TargetInstruction>) -> TargetOpcodeBinding {
+    match resolved {
+        Some(instruction) => TargetOpcodeBinding::Frozen(instruction),
+        None => TargetOpcodeBinding::Unfrozen,
     }
 }
 
@@ -500,22 +533,22 @@ fn lower_operation(
         // Intrinsic 专用 opcode 必须在 lowering 阶段降级为 Call { callee: Callable(instance) }
         // 让 linker adaptor / backend TargetExecutionPlan 链路消费。到达这里说明 lowering 没收紧。
         CanonicalOperation::ArrayGet { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayGet`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArraySet { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArraySet`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayLength { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayLength`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayPush { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `ArrayPush`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::NullIsNull { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullIsNull`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::NullUnwrap { .. } => {
-            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"))
+            return Err(miette!("backend 拒绝未绑定 adaptor 的 intrinsic opcode `NullUnwrap`；lowering 应降级为普通 Call"));
         }
         CanonicalOperation::ArrayNew { array_type, length, initialization } => InstructionKind::ArrayNew {
             array_type: lower_type(program, *array_type)?,
@@ -587,9 +620,7 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
             nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
             unsupported => Err(miette!("primitive 尚无目标合同: {unsupported:?}")),
         },
-        CanonicalTypeKind::Tuple(items) => {
-            Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?))
-        }
+        CanonicalTypeKind::Tuple(items) => Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
         CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
             element: Box::new(lower_type(program, *element)?),

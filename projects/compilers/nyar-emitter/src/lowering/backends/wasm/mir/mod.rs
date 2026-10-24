@@ -47,7 +47,7 @@ use super::{
 mod calls;
 mod control;
 mod library_glue;
-mod numeric;
+pub(crate) mod numeric;
 mod representation;
 mod type_registry;
 
@@ -57,6 +57,7 @@ use type_registry::*;
 use crate::{
     FragmentSubmission,
     contracts::{ArrayInitialization, instruction_primary_result},
+    target_instruction::TargetOpcodeBinding,
 };
 use acorn_wasm::{
     BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF_NULL, WasmExternalKind, WasmOpcode,
@@ -384,16 +385,20 @@ fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String
     callee_import_index
 }
 
-/// `[wasm_opcode]` 绑定的 provider 实例 → 目标助记符。
+/// `[wasm_opcode]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
 ///
-/// 只消费已完成 host provider 绑定后的导入合同；未绑定 provider 的 host contract
-/// 不在导入表中，因此不会被误当成目标指令。
-fn build_callee_wasm_opcode_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, String> {
+/// 助记符只用于诊断；arity、操作数配方、结果载体与 opcode 全部来自
+/// `TargetExecutionPlan`。未冻结的绑定保留为 `TargetOpcodeBinding::Unfrozen`，
+/// 由 emit 结构化失败。
+fn build_callee_wasm_opcode_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)> {
     let mut callee_wasm_opcode = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
-        if let Some(mnemonic) = wasm_opcode_target(&import.link) {
-            callee_wasm_opcode.insert(*callee, mnemonic.to_string());
-        }
+        let Some(mnemonic) = wasm_opcode_target(&import.link)
+        else {
+            continue;
+        };
+        let binding = import.target_instruction.unwrap_or(TargetOpcodeBinding::Unfrozen);
+        callee_wasm_opcode.insert(*callee, (mnemonic.to_string(), binding));
     }
     callee_wasm_opcode
 }
@@ -1175,7 +1180,7 @@ fn lower_mir_function_to_wasm_bytes(
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
-    callee_wasm_opcode: &BTreeMap<ItemInstanceId, String>,
+    callee_wasm_opcode: &BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
@@ -1259,8 +1264,8 @@ struct WasmMirLowerer<'a> {
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
     gc_array_type_indices: &'a BTreeMap<String, u32>,
     callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-    /// `[wasm_opcode]` 绑定的 provider 实例 → 目标助记符。
-    callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, String>,
+    /// `[wasm_opcode]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
+    callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     host_imports: &'a [(String, String)],
     string_literal_index: &'a BTreeMap<String, u32>,
@@ -1292,7 +1297,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-        callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, String>,
+        callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,

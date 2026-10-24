@@ -14,7 +14,7 @@ use crate::{DriverBackendInput, FragmentSubmission};
 pub mod backends;
 #[doc(hidden)]
 pub mod features;
-mod shared;
+pub(crate) mod shared;
 pub(crate) use self::features::pattern_matching_contract;
 
 #[cfg(not(feature = "nyar-vm-lane"))]
