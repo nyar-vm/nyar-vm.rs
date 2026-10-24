@@ -48,7 +48,7 @@ pub use legion_workspace::{
     },
     script,
 };
-pub use nyar_language::printer::{to_string as write_von, to_string_indented as write_von_indented};
+pub use nyar_format::printer::{to_string as write_von, to_string_indented as write_von_indented};
 pub use rusty_valkyrie::{
     ArtifactPolicy, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor,
     EntryPolicy, PublishFormat, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,

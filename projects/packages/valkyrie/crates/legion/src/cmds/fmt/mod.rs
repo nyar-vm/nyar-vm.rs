@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::Args;
 use miette::{Result, miette};
-use nyar_language::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
+use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
 
 /// `legion fmt` 参数。
 #[derive(Debug, Clone, Args)]

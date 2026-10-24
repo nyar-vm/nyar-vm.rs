@@ -1,7 +1,7 @@
-use crate::state::ServerState;
 use core::range::Range;
-use nyar_analyzer::format::ByteRange;
-use nyar_language::formatter::{FormatConfigLoader, FormatOptions, SourceKind, format_source, format_source_range, source_kind_from_extension};
+
+use crate::{source_surface::SourceKind, state::ServerState};
+use nyar_analyzer::format::{ByteRange, FormatConfigLoader, FormatError, FormatOptions, FormattedOutput, SourceFormatter};
 use oak_lsp::types::*;
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub struct FormattingOptions {
     pub trim_final_newlines: Option<bool>,
 }
 
-/// 格式化处理器（正规 SourceFormatter + `.editorconfig`）。
+/// 单文件格式化处理器（正规 SourceFormatter + `.editorconfig`）。
 pub struct FormattingHandler;
 
 impl FormattingHandler {
@@ -57,7 +57,8 @@ impl FormattingHandler {
         };
         let options = resolve_options(uri, &lsp_options);
 
-        let output = match format_source_range(kind, &doc.text, ByteRange::new(range.clone()), &options) {
+        let formatter = formatter_for(kind);
+        let output = match formatter.format_range(&doc.text, ByteRange::new(range.clone()), &options) {
             Ok(out) => out,
             Err(_) => return vec![],
         };
@@ -70,14 +71,9 @@ impl FormattingHandler {
     }
 }
 
-fn resolve_options(uri: &str, lsp: &FormattingOptions) -> FormatOptions {
-    let resolution = FormatConfigLoader::for_uri(uri);
-    FormatConfigLoader::merge_lsp(resolution, lsp.tab_size, lsp.insert_spaces, lsp.insert_final_newline)
-}
-
+/// 由路径后缀决定源码种类（`.valkyrie` 先于 `.v`）。
 fn source_kind_from_uri(uri: &str) -> Option<SourceKind> {
     let path = uri.to_ascii_lowercase();
-    // Order: longest suffix first (`.valkyrie` before `.v`).
     if path.ends_with(".awsl") {
         Some(SourceKind::Awsl)
     }
@@ -94,6 +90,69 @@ fn source_kind_from_uri(uri: &str) -> Option<SourceKind> {
         Some(SourceKind::V)
     }
     else {
-        path.rsplit('.').next().and_then(source_kind_from_extension)
+        path.rsplit('.').next().and_then(crate::source_surface::source_kind_from_extension)
     }
+}
+
+/// 语言文件格式化器：只注册 Valkyrie family 与同仓格式协议。
+fn formatter_for(kind: SourceKind) -> LanguageFormatter {
+    let id = match kind {
+        SourceKind::V => "v",
+        SourceKind::Vx => "vx",
+        SourceKind::Von => "von",
+        SourceKind::Awsl => "awsl",
+        _ => "unsupported",
+    };
+    LanguageFormatter { language_id: id }
+}
+
+/// 本服务支持的语言格式化器。
+struct LanguageFormatter {
+    language_id: &'static str,
+}
+
+impl SourceFormatter for LanguageFormatter {
+    fn language_id(&self) -> &str {
+        self.language_id
+    }
+
+    fn format_document(&self, source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
+        match self.language_id {
+            "v" => crate::source_format::format_valkyrie(source, options, false),
+            "vx" => crate::source_format::format_valkyrie(source, options, true),
+            "von" => format_with_oak(
+                oak_von::formatter::format_source(
+                    source,
+                    &oak_von::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width },
+                ),
+                options,
+            ),
+            "awsl" => format_with_oak(
+                oak_awsl::formatter::format_source(
+                    source,
+                    &oak_awsl::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width },
+                ),
+                options,
+            ),
+            other => Err(FormatError::unsupported_language(other)),
+        }
+    }
+}
+
+fn format_source(kind: SourceKind, source: &str, options: &FormatOptions) -> Result<String, FormatError> {
+    formatter_for(kind).format(source, options)
+}
+
+fn format_with_oak<T>(result: Result<T, impl ToString>, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
+    let text = result.map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
+    let mut out = text.to_string();
+    if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(FormattedOutput::text_only(out))
+}
+
+fn resolve_options(uri: &str, lsp: &FormattingOptions) -> FormatOptions {
+    let resolution = FormatConfigLoader::for_uri(uri);
+    FormatConfigLoader::merge_lsp(resolution, lsp.tab_size, lsp.insert_spaces, lsp.insert_final_newline)
 }

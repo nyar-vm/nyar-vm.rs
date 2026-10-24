@@ -15,11 +15,7 @@ ovm-lane = ["nyar-emitter/ovm-lane"]
 
 [dependencies]
 # 分层：Oak 文本前端 → language 语义层；guest/tgrammar 等待 Oak 接管。
-acorn-pe = { workspace = true }
-oak-valkyrie = { workspace = true }
 oak-core = { workspace = true }
-oak-von = { workspace = true, features = ["serde"] }
-oak-awsl = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
@@ -33,5 +29,6 @@ syntect = { workspace = true }
 katex-rs = { workspace = true }
 
 [dev-dependencies]
+oak-valkyrie = { workspace = true }
 odin-bytecode = { workspace = true }
 odin-vm = { workspace = true }

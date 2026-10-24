@@ -3,7 +3,7 @@
 use std::{fs, path::PathBuf};
 
 use nyar_analyzer::format::FormatConfigLoader;
-use nyar_language::formatter::{FormatOptions, SourceKind, format_source};
+use nyar_format::formatter::{FormatOptions, SourceKind, format_source};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("nyar_fmt_parity_{name}_{}", std::process::id()))

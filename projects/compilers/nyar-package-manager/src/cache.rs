@@ -74,7 +74,7 @@ impl PackageCache {
 
     fn save_index(&self) -> Result<()> {
         let path = self.root.join("cache-index.von");
-        let content = nyar_language::printer::to_string_indented(&self.index)?;
+        let content = nyar_format::printer::to_string_indented(&self.index)?;
         std::fs::write(path, content)?;
         Ok(())
     }

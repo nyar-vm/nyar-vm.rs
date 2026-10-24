@@ -4,7 +4,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use miette::{Result, miette};
-use nyar_language::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
+use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
 use rusty_valkyrie::CanonicalTarget;
 
 use crate::{
@@ -368,7 +368,7 @@ pub fn run_plan(args: &AsgardPlanArgs) -> Result<ExitCode> {
     }
 }
 
-/// 执行 `asgard fmt` / `asgard format`（与 `legion fmt` 共用 `nyar_language::formatter`）。
+/// 执行 `asgard fmt` / `asgard format`（与 `legion fmt` 共用 `nyar_format::formatter`）。
 pub fn run_fmt(args: &AsgardFmtArgs) -> Result<ExitCode> {
     let options = args.to_cli_options();
     let report = run_format_cli_with(&options).map_err(|error| miette!("{error}"))?;

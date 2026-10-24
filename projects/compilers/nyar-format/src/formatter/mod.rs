@@ -19,7 +19,6 @@ use std::{
     sync::OnceLock,
 };
 
-pub use rusty_valkyrie::text::{FormatSyntax, ToDocument};
 pub use batch::{FormatBatchOptions, FormatBatchReport, format_paths};
 pub use cli::{
     FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli, report_format_cli_with, run_format_cli,
@@ -29,9 +28,12 @@ pub use nyar_analyzer::format::{
     ByteRange, Document, FormatConfigLoader, FormatConfigResolution, FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer,
     PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
 };
-pub use rusty_valkyrie::source_surface::{
-    AWSL_EXTENSIONS, SourceKind, V_EXTENSIONS, VON_EXTENSIONS, VX_EXTENSIONS, is_valkyrie_family_extension, source_kind_from_extension,
-    valkyrie_family_extensions,
+pub use rusty_valkyrie::{
+    source_surface::{
+        AWSL_EXTENSIONS, SourceKind, V_EXTENSIONS, VON_EXTENSIONS, VX_EXTENSIONS, is_valkyrie_family_extension, source_kind_from_extension,
+        valkyrie_family_extensions,
+    },
+    text::{FormatSyntax, ToDocument},
 };
 
 /// 单文件格式化结果（不写盘）。

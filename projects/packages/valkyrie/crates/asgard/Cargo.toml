@@ -16,6 +16,7 @@ acorn-host = { workspace = true }
 oak-awsl = { workspace = true }
 oak-von = { workspace = true }
 nyar-language = { workspace = true, features = ["serde"] }
+nyar-format = { workspace = true, features = ["serde"] }
 legion-workspace = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }

@@ -1,6 +1,4 @@
-use crate::transitional::msil::{
-    MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilModule, MsilTypeDef,
-};
+use acorn_pe::msil::{MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilModule, MsilTypeDef};
 
 /// MSIL 文本格式写入器。
 pub struct MsilTextWriter {

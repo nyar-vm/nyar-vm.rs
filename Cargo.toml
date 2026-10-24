@@ -17,6 +17,7 @@ members = [
     "projects/compilers/nyar",
     "projects/compilers/nyar-analyzer",
     "projects/compilers/nyar-emitter",
+    "projects/compilers/nyar-format",
     "projects/compilers/nyar-language",
     "projects/compilers/nyar-optimizer",
     "projects/compilers/nyar-package-manager",
@@ -58,6 +59,7 @@ nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
 nyar-optimizer = { path = "projects/compilers/nyar-optimizer" }
 nyar-types = { path = "projects/compilers/nyar-types" }
 nyar-language = { path = "projects/compilers/nyar-language" }
+nyar-format = { path = "projects/compilers/nyar-format" }
 nyar-runner = { path = "projects/compilers/nyar-runner" }
 nyar-package-manager = { path = "projects/compilers/nyar-package-manager" }
 nyar-package-registry = { path = "projects/compilers/nyar-package-registry" }

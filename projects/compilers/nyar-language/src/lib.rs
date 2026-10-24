@@ -3,24 +3,15 @@
 
 pub mod transitional;
 
-pub mod awsl;
 pub mod bash;
 pub mod c;
-/// 跨语言源码格式化注册表与 CLI；Valkyrie 语义本身在 `rusty-valkyrie`。
-pub mod formatter;
 pub mod javascript;
 pub mod lua;
-pub mod msil;
 pub mod notedown;
 pub mod pe;
 pub mod powershell;
-/// 跨语言 AST pretty printer 注册表；Valkyrie 语义本身在 `rusty-valkyrie`。
-pub mod printer;
 pub mod python;
 pub mod tcl;
-pub mod von;
-pub mod wat;
-pub mod wit;
 
 pub use bash::{BashModule, BashSemanticBridge, BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use c::{CModule, CSemanticBridge, CValue, evaluate_c_script, evaluate_c_source};

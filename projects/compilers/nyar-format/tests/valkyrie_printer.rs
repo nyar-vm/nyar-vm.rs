@@ -1,9 +1,11 @@
 use oak_von::language::value::{VonField, VonObject};
 
-use nyar_language::formatter::{FormatError, FormatOptions, PrintStyle, ToDocument};
-use nyar_language::printer::{print_document, print_valkyrie, print_valkyrie_source, print_von, render_document, to_document};
-use rusty_valkyrie::frontend::parse_source;
+use nyar_format::{
+    formatter::{FormatError, FormatOptions, PrintStyle, ToDocument},
+    printer::{print_document, print_valkyrie, print_valkyrie_source, print_von, render_document, to_document},
+};
 use oak_von::language::value::VonValue;
+use rusty_valkyrie::frontend::parse_source;
 
 #[test]
 fn von_print_via_registry() {

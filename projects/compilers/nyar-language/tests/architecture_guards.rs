@@ -170,7 +170,7 @@ fn cst_formatter_rules_must_not_spread_beyond_transitional() {
     collect_rs_files(&src_root, &mut files);
     for path in files {
         let rel = path.strip_prefix(&src_root).unwrap().to_string_lossy().replace('\\', "/");
-        if rel.starts_with("transitional/") || rel == "valkyrie/formatter/mod.rs" {
+        if rel.starts_with("transitional/") {
             continue;
         }
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
@@ -199,53 +199,6 @@ fn workspace_must_not_alias_vcc_data_as_std_data() {
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert!(!source.contains("std_data::"), "{} must not import `std_data`", path.display());
         assert!(!source.contains("use std_data"), "{} must not import `std_data`", path.display());
-    }
-}
-
-#[test]
-fn production_compile_pipeline_must_not_preprocess_tgrammar_text() {
-    let pipeline_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie");
-    let mut files = Vec::new();
-    collect_rs_files(&pipeline_root.join("compile_pipeline"), &mut files);
-    collect_rs_files(&pipeline_root.join("hir/lowering"), &mut files);
-    collect_rs_files(&pipeline_root.join("frontend"), &mut files);
-    for path in files {
-        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-        assert!(!source.contains("transitional::tgrammar"), "{} must not call transitional tgrammar text preprocessing", path.display());
-        assert!(!source.contains("preprocess_target_templates"), "{} must not expand `<% match arch %>` inside Compiler", path.display());
-        assert!(!source.contains("expand_tgrammar_in_root"), "{} must not expand tgrammar inside Oak AST lowering", path.display());
-    }
-}
-
-#[test]
-fn valkyrie_ast_printer_must_use_oak_document_path() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let printer = fs::read_to_string(manifest_dir.join("src/valkyrie/printer/mod.rs"))
-        .unwrap_or_else(|error| panic!("failed to read valkyrie printer: {error}"));
-    let to_document = fs::read_to_string(manifest_dir.join("src/valkyrie/text/to_document.rs"))
-        .unwrap_or_else(|error| panic!("failed to read valkyrie to_document: {error}"));
-
-    assert!(printer.contains("oak_valkyrie::printer"), "valkyrie printer must delegate to `oak_valkyrie::printer`");
-    assert!(
-        printer.contains("oak_pretty_print::Document") || printer.contains("PrettyDocument"),
-        "valkyrie printer must surface `oak_pretty_print::Document`"
-    );
-    assert!(
-        to_document.contains("oak_valkyrie::printer") && to_document.contains("to_document as oak_to_document"),
-        "valkyrie ToDocument must delegate to `oak_valkyrie::printer::to_document`"
-    );
-    for (label, source) in [("printer", &printer), ("to_document", &to_document)] {
-        for line in source.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("//") || trimmed.starts_with("//!") || trimmed.starts_with('*') {
-                continue;
-            }
-            assert!(
-                !trimmed.contains("nyar_analyzer::format::Document"),
-                "{} must not use CST formatter `nyar_analyzer::format::Document` in code",
-                label
-            );
-        }
     }
 }
 

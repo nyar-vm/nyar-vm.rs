@@ -40,6 +40,7 @@ acorn-pe = { workspace = true }
 acorn-x64 = { workspace = true, features = ["serde"] }
 
 nyar-language = { workspace = true, features = ["serde"] }
+nyar-format = { workspace = true, features = ["serde"] }
 nyar-analyzer = { workspace = true }
 nyar-runner = { workspace = true }
 nyar-types = { workspace = true }

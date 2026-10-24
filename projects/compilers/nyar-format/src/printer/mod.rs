@@ -20,8 +20,14 @@ use oak_von::{
     printer::{PrintOptions as VonPrintOptions, PrintStyle as VonPrintStyle, print_value},
 };
 
-use crate::{msil::MsilTextWriter, transitional::msil::MsilModule, wat::{WatDocument, format_wat_document}, wit::{WitPackage, format_wit_package}};
+use acorn_pe::msil::MsilModule;
 use rusty_valkyrie::frontend::ValkyrieRoot;
+
+use crate::{
+    msil::MsilTextWriter,
+    wat::{WatDocument, format_wat_document},
+    wit::{WitPackage, format_wit_package},
+};
 
 /// Oak pretty-print 布局文档（AST printer 路径；非 `nyar_analyzer::format::Document`）。
 pub type Document = PrettyDocument<'static>;

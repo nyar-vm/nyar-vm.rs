@@ -1,0 +1,22 @@
+[package]
+name = "nyar-format"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "跨语言源码格式化与 AST pretty printer 注册表"
+license.workspace = true
+repository = "https://github.com/valkyrie-language/valkyrie.rs"
+
+[features]
+default = []
+serde = ["oak-von/serde"]
+
+[dependencies]
+acorn-pe = { workspace = true }
+oak-awsl = { workspace = true }
+oak-core = { workspace = true }
+oak-valkyrie = { workspace = true }
+oak-von = { workspace = true }
+nyar-analyzer = { workspace = true }
+rusty-valkyrie = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
