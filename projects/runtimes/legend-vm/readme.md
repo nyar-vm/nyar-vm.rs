@@ -64,7 +64,7 @@ interpret subject ──specialize──► NativeResidualModule ──emit─�
                                       └── NOT nyar-vm / `.nyar` (product)
 ```
 
-- Guest residualizes interpreter match arms into `nyar_language::ResidualSink`.
+- Guest residualizes interpreter match arms into `nyar_analyzer::residual::ResidualSink`.
 - Product sink: `compiler/native_residual.rs` (`NativeResidualSink` → `NativeResidualModule`).
 - Windows PE wrap: `compiler/pe.rs` (`PeCompiler`).
 - `StackResidualSink` / `.nyar` / `nyar-vm` are **probe-only** (e.g. JS/Python stubs), not the host-script PE destination.

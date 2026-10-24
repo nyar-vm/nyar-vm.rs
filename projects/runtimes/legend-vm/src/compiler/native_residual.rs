@@ -1,6 +1,6 @@
 //! Native-bound PE residual (Futamura 1st projection product for `legacy-vm`).
 //!
-//! Guests residualize into [`nyar_language::ResidualSink`]; this crate's **product**
+//! Guests residualize into [`nyar_analyzer::residual::ResidualSink`]; this crate's **product**
 //! sink records ops for **native / x64 → Windows PE**, not NyarVM bytecode.
 //!
 //! Full x64 lowering is still incomplete; specialization always produces a
@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use miette::{Result, miette};
-use nyar_language::ResidualSink;
+use nyar_analyzer::residual::ResidualSink;
 
 use super::PeCompiler;
 

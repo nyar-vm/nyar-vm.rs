@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::transitional::guest_scripts::lua::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
 
-use crate::pe::ResidualSink;
+use nyar_analyzer::residual::ResidualSink;
 
 /// Specialize Lua `source` into `sink` (Futamura projection 1).
 pub fn specialize_lua_into(source: &str, sink: &mut dyn ResidualSink) -> Result<(), String> {

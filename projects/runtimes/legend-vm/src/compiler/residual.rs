@@ -4,7 +4,7 @@
 //! [`super::native_residual`] (`NativeResidualSink` → native / x64 / PE).
 //! Kept for JS/Python bytecode-pipe probes and temporary stack→`.nyar` experiments.
 
-use nyar_language::ResidualSink;
+use nyar_analyzer::residual::ResidualSink;
 use odin_bytecode::NyarHeadCode;
 
 use super::{GenerateModule, StackCompiler};

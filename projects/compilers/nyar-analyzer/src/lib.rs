@@ -7,6 +7,8 @@ pub mod format;
 pub mod highlight;
 /// 前端无关报告 / SSG / hydrate 岛契约（平台层）。
 pub mod report;
+/// 前端无关 PE 残化接收端契约（平台层）。
+pub mod residual;
 
 use nyar_types::{CapabilityTag, ExternalImportLink, Identifier, NamePath, QualifiedName, ReferenceManagement};
 
