@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::lua::{LuaNode, LuaScript};
+use rusty_lua::script::{LuaNode, LuaScript};
 
 #[test]
 fn parse_local_and_print() {

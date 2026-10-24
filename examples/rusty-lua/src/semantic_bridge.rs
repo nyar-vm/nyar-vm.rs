@@ -1,6 +1,6 @@
 //! Lua host script semantic bridge skeleton.
 
-use crate::transitional::guest_scripts::lua::LuaScript;
+use crate::script::LuaScript;
 
 /// Lua module semantic bridge result.
 #[derive(Debug, Clone, PartialEq)]

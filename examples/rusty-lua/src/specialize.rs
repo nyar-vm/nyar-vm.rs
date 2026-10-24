@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::transitional::guest_scripts::lua::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
+use crate::script::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
 
 use nyar_analyzer::residual::ResidualSink;
 

@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::lua::{LuaError, LuaScript};
+use rusty_lua::script::{LuaError, LuaScript};
 
 #[test]
 fn parse_minimal_script() {

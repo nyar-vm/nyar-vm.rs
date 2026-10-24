@@ -1,21 +1,11 @@
 //! Simple script language adapters must stay independent of Valkyrie IR.
 
 use nyar_language::{
-    CModule, CSemanticBridge, LuaModule, LuaSemanticBridge, PowerShellModule, PowerShellSemanticBridge, TclModule, TclSemanticBridge,
-    evaluate_c_source, evaluate_lua_source, evaluate_powershell_source, evaluate_tcl_source,
-    transitional::guest_scripts::{c::CScript, lua::LuaScript, powershell::PowerShellScript, tcl::TclScript},
+    CModule, CSemanticBridge, PowerShellModule, PowerShellSemanticBridge, TclModule, TclSemanticBridge, evaluate_c_source,
+    evaluate_powershell_source, evaluate_tcl_source,
+    transitional::guest_scripts::{c::CScript, powershell::PowerShellScript, tcl::TclScript},
 };
 use std::collections::HashMap;
-
-#[test]
-fn lua_adapter_builds_from_script_without_mir() {
-    let script = LuaScript::parse("print('hello')").expect("parse lua");
-    let module = LuaModule::new(script.clone());
-    let bridge = LuaSemanticBridge::from_script(script);
-    assert_eq!(module.language_id(), "lua");
-    assert!(module.script.statements.len() == 1);
-    assert!(bridge.exported_symbols().is_empty());
-}
 
 #[test]
 fn tcl_adapter_builds_from_script_without_mir() {
@@ -82,13 +72,6 @@ int main(void) {
     "#;
     let mut env = HashMap::new();
     let result = evaluate_c_source(source, &mut env).expect("evaluate c");
-    assert_eq!(result.to_string_value(), "3");
-}
-
-#[test]
-fn lua_interpreter_runs_print_demo() {
-    let mut env = HashMap::new();
-    let result = evaluate_lua_source("local x = 1 + 2\nprint(x)", &mut env).expect("evaluate lua");
     assert_eq!(result.to_string_value(), "3");
 }
 

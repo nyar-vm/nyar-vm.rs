@@ -285,7 +285,7 @@ pub fn specialize_language(language: &str, source: &str, module_name: &str) -> R
     match language {
         "lua" => {
             let mut sink = NativeResidualSink::new(module_name);
-            nyar_language::specialize_lua_into(source, &mut sink)?;
+            rusty_lua::specialize_lua_into(source, &mut sink)?;
             Ok(sink.finish())
         }
         "bash" | "sh" | "powershell" | "ps1" | "pwsh" | "tcl" | "c" => {

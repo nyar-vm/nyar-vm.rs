@@ -2,17 +2,10 @@
 name = "rusty-lua"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 authors.workspace = true
+license.workspace = true
+description = "Lua guest frontend: script model, parser, semantic bridge, tree interpreter and PE residualization"
 
 [dependencies]
-nyar-types = { workspace = true }
-nyar-aot = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-lua = { workspace = true }
-chomsky-uir = { workspace = true }
-chomsky-types = { workspace = true }
-chomsky-extract = { workspace = true }
-chomsky-cost = { workspace = true }
-odin-vm = { workspace = true }
+nyar-analyzer = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

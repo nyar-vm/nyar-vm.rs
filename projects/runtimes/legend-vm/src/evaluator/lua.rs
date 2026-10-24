@@ -1,8 +1,8 @@
-//! Lua evaluator thin adapter — delegates to `nyar-language::lua::interpret`.
+//! Lua evaluator thin adapter — delegates to `rusty-lua::interpret`.
 
 use std::collections::HashMap;
 
-use nyar_language::{LuaValue, evaluate_lua_source};
+use rusty_lua::{LuaValue, evaluate_lua_source};
 
 use crate::value::LegacyValue;
 

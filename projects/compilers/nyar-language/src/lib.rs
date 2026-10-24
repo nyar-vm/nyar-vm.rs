@@ -5,7 +5,6 @@ pub mod transitional;
 
 pub mod c;
 pub mod javascript;
-pub mod lua;
 pub mod notedown;
 pub mod powershell;
 pub mod python;
@@ -13,7 +12,6 @@ pub mod tcl;
 
 pub use c::{CModule, CSemanticBridge, CValue, evaluate_c_script, evaluate_c_source};
 pub use javascript::JavascriptModule;
-pub use lua::{LuaModule, LuaSemanticBridge, LuaValue, evaluate_lua_script, evaluate_lua_source, specialize_lua_into, specialize_lua_script};
 pub use nyar_analyzer::residual::ResidualSink;
 pub use powershell::{PowerShellModule, PowerShellSemanticBridge, PowerShellValue, evaluate_powershell_script, evaluate_powershell_source};
 pub use python::PythonModule;

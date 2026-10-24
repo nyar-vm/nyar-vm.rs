@@ -1,4 +1,5 @@
-use nyar_language::*;
+use nyar_analyzer::residual::ResidualSink;
+use rusty_lua::*;
 
 struct CountingSink {
     ops: usize,

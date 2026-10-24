@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::transitional::guest_scripts::lua::{LuaError, LuaExpr, LuaLValue, LuaScript, LuaStmt, LuaTableField};
+use crate::script::{LuaError, LuaExpr, LuaLValue, LuaScript, LuaStmt, LuaTableField};
 
 /// Runtime table (array part + string-keyed map).
 #[derive(Debug, Clone, Default, PartialEq)]

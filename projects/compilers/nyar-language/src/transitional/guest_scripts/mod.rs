@@ -3,9 +3,6 @@
 /// C script model and parser（已自 vcc-data 迁入）。
 pub mod c;
 
-/// Lua script model and parser（已自 vcc-data 迁入）。
-pub mod lua;
-
 /// PowerShell script model and parser（已自 vcc-data 迁入）。
 pub mod powershell;
 
