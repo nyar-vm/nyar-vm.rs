@@ -54,12 +54,12 @@ nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
 # Nyar Runtime（Nyar 平台的私有运行时）
+legend-vm = { path = "projects/runtimes/legend-vm" }
+odin-vm = { path = "projects/runtimes/odin-vm" }
 odin-bytecode = { path = "projects/formats/odin-bytecode" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
-odin-vm = { path = "projects/runtimes/odin-vm" }
-legend-vm = { path = "projects/runtimes/legend-vm" }
-
+# 外部依赖
 miette = "7.6.0"
 ordered-float = "5.5.0"
 clap = { version = "4.6.7", features = ["derive"] }
