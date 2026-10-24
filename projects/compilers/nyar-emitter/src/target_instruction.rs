@@ -19,15 +19,28 @@ pub enum TargetOperandType {
     F64,
 }
 
+/// 已冻结配方中的一步发射动作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetOperandStep {
+    /// 按实参顺序发射全部实参。
+    Arguments,
+    /// 发射一个载体化的整数常量；整数取负所需的零常量在此显式冻结。
+    IntegerConstant {
+        /// 常量在目标栈上的标量载体。
+        operand_type: TargetOperandType,
+        /// 常量值。
+        value: i32,
+    },
+}
+
 /// 已冻结的操作数发射配方。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetOperandRecipe {
     /// 按实参顺序发射全部实参，再执行冻结指令。
     Operands,
-    /// 先发射目标载体零常量，再发射唯一的实参，再执行二元减法（`0 - x`）。
-    IntegerNegate,
-    /// 发射唯一的实参后执行原生取负（保留 `-0.0`）。
-    NativeNegate,
+    /// 按给定顺序发射每一步，再执行冻结指令；backend 只机械执行配方，不按助记符
+    /// 推断取负、零常量或减法。
+    Steps(&'static [TargetOperandStep]),
 }
 
 /// 已冻结的指令编码。

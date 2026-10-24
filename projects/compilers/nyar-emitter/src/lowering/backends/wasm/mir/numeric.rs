@@ -17,7 +17,19 @@
 
 use acorn_wasm::WasmOpcode;
 
-use crate::target_instruction::{TargetInstruction, TargetInstructionEncoding, TargetOperandRecipe, TargetOperandType};
+use crate::target_instruction::{
+    TargetInstruction, TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType,
+};
+
+/// 整数取负没有原生指令：计划显式冻结 `0 - x` 的发射配方。
+const I32_NEGATE_STEPS: &[TargetOperandStep] = &[
+    TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 },
+    TargetOperandStep::Arguments,
+];
+const I64_NEGATE_STEPS: &[TargetOperandStep] = &[
+    TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 },
+    TargetOperandStep::Arguments,
+];
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetInstruction {
     TargetInstruction {
@@ -29,23 +41,23 @@ const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType,
     }
 }
 
-const fn integer_negate(operand_type: TargetOperandType, sub_opcode: u8) -> TargetInstruction {
+const fn unary(operand_type: TargetOperandType, opcode: u8) -> TargetInstruction {
     TargetInstruction {
         arity: 1,
         operand_type,
         result_type: operand_type,
-        recipe: TargetOperandRecipe::IntegerNegate,
-        encoding: TargetInstructionEncoding::Wasm(sub_opcode),
+        recipe: TargetOperandRecipe::Operands,
+        encoding: TargetInstructionEncoding::Wasm(opcode),
     }
 }
 
-const fn native_negate(operand_type: TargetOperandType, opcode: u8) -> TargetInstruction {
+const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: u8) -> TargetInstruction {
     TargetInstruction {
         arity: 1,
         operand_type,
         result_type: operand_type,
-        recipe: TargetOperandRecipe::NativeNegate,
-        encoding: TargetInstructionEncoding::Wasm(opcode),
+        recipe: TargetOperandRecipe::Steps(steps),
+        encoding: TargetInstructionEncoding::Wasm(sub_opcode),
     }
 }
 
@@ -77,8 +89,8 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetInstru
         "i32.le_u" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x4D),
         "i32.ge_s" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x4E),
         "i32.ge_u" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x4F),
-        // 整数 neg 没有原生指令，按 `const 0` + `sub` 编码。
-        "i32.neg" => integer_negate(TargetOperandType::I32, 0x6B),
+        // 整数 neg 没有原生指令，计划冻结为 `const 0` + `sub` 的显式发射配方。
+        "i32.neg" => integer_negate(TargetOperandType::I32, I32_NEGATE_STEPS, 0x6B),
 
         // i64 算术 / 位运算：acorn 目前只导出 I64ShrU，其余按标准字节发射。
         "i64.add" => binary(TargetOperandType::I64, TargetOperandType::I64, 0x7C),
@@ -105,7 +117,7 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetInstru
         "i64.le_u" => binary(TargetOperandType::I64, TargetOperandType::I32, 0x58),
         "i64.ge_s" => binary(TargetOperandType::I64, TargetOperandType::I32, 0x59),
         "i64.ge_u" => binary(TargetOperandType::I64, TargetOperandType::I32, 0x5A),
-        "i64.neg" => integer_negate(TargetOperandType::I64, 0x7D),
+        "i64.neg" => integer_negate(TargetOperandType::I64, I64_NEGATE_STEPS, 0x7D),
 
         // f64 算术：acorn 有 add/sub/mul/div 变体。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, 0xA0),
@@ -120,7 +132,7 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetInstru
         "f64.gt" => binary(TargetOperandType::F64, TargetOperandType::I32, 0x64),
         "f64.ge" => binary(TargetOperandType::F64, TargetOperandType::I32, 0x66),
         // 浮点 neg 必须保留 -0.0，走原生 f64.neg 而不是 `0.0 - x`。
-        "f64.neg" => native_negate(TargetOperandType::F64, 0x9A),
+        "f64.neg" => unary(TargetOperandType::F64, 0x9A),
 
         _ => return None,
     })

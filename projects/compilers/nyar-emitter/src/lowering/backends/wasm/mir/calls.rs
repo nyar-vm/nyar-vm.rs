@@ -6,7 +6,7 @@
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
 use super::{numeric, *};
-use crate::target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandType};
+use crate::target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType};
 
 /// 计划冻结的目标标量载体 → wasm 栈类型字节。
 fn wasm_stack_type(operand_type: TargetOperandType) -> u8 {
@@ -236,29 +236,10 @@ impl<'a> WasmMirLowerer<'a> {
         }
         let operand_type = wasm_stack_type(instruction.operand_type);
         match instruction.recipe {
-            TargetOperandRecipe::Operands => {
-                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
-                numeric::emit_opcode(opcode, &mut self.code);
-            }
-            TargetOperandRecipe::IntegerNegate => {
-                match instruction.operand_type {
-                    TargetOperandType::I32 => self.emit_i32_const(0),
-                    TargetOperandType::I64 => self.emit_i64_const(0),
-                    TargetOperandType::F64 => {
-                        return Err(miette!(
-                            "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了整数取负配方但载体不是整数: callee={instance:?} function={}",
-                            self.mir_fn.symbol
-                        ));
-                    }
-                }
-                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
-                numeric::emit_opcode(opcode, &mut self.code);
-            }
-            TargetOperandRecipe::NativeNegate => {
-                self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments);
-                numeric::emit_opcode(opcode, &mut self.code);
-            }
+            TargetOperandRecipe::Operands => self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments),
+            TargetOperandRecipe::Steps(steps) => self.emit_wasm_opcode_recipe(mnemonic, operand_type, steps, arguments)?,
         }
+        numeric::emit_opcode(opcode, &mut self.code);
         let result_type = wasm_stack_type(instruction.result_type);
         match output {
             None => WasmOpcode::Drop.encode(&mut self.code),
@@ -268,6 +249,44 @@ impl<'a> WasmMirLowerer<'a> {
             }
         }
         Ok(true)
+    }
+
+    /// 按计划冻结的步骤顺序机械编码常量与实参，再执行冻结 opcode。
+    ///
+    /// `i32.neg` 的 `0 - x` 配方已在此前的计划构造期展开为常量步骤 + 实参步骤；
+    /// backend 不再按助记符判断取负，也不自行决定零常量。
+    fn emit_wasm_opcode_recipe(
+        &mut self,
+        mnemonic: &str,
+        expected: u8,
+        steps: &'static [TargetOperandStep],
+        arguments: &[MirOperand],
+    ) -> miette::Result<()> {
+        for step in steps {
+            match step {
+                TargetOperandStep::Arguments => self.emit_wasm_opcode_operands(mnemonic, expected, arguments),
+                TargetOperandStep::IntegerConstant { operand_type, value } => {
+                    let carrier = wasm_stack_type(*operand_type);
+                    if carrier != expected {
+                        return Err(miette!(
+                            "WASM `wasm_opcode` 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={} expected={expected:#x} actual={carrier:#x}",
+                            self.mir_fn.symbol
+                        ));
+                    }
+                    match operand_type {
+                        TargetOperandType::I32 => self.emit_i32_const(*value),
+                        TargetOperandType::I64 => self.emit_i64_const(i64::from(*value)),
+                        TargetOperandType::F64 => {
+                            return Err(miette!(
+                                "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了浮点常量配方，但配方只支持整数常量: function={}",
+                                self.mir_fn.symbol
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// 按自然栈类型发射绑定实参，并断言与计划冻结的实参载体一致。

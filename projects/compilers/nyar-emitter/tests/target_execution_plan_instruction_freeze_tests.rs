@@ -6,7 +6,7 @@
 
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandType, TargetOpcodeBinding},
+    target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType, TargetOpcodeBinding},
 };
 use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
 
@@ -91,6 +91,77 @@ fn frozen_wasm_numeric_recipe_is_consumed_without_backend_inference() {
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
     assert!(bytes.contains(&0x6A), "backend 必须编码计划冻结的 0x6A，而不是重新推导");
+}
+
+/// 整数取负的目标改写是计划事实：`i32.neg` 冻结为 `const 0` + `sub` 的显式
+/// 发射步骤，backend 只按步骤编码，不再自行判断取负或零常量。
+#[test]
+fn frozen_wasm_i32_neg_recipe_is_zero_const_then_sub() {
+    let source = r#"
+[primitive("core::primitive::i32")]
+structure i32 { }
+
+[wasm_opcode("i32.neg")]
+abstract micro i32_neg(a: i32): i32
+
+[main]
+micro main() -> i32 {
+    return i32_neg(5)
+}
+"#;
+    let plan = plan_from_source(source).expect("一元取负实现必须生成目标计划");
+    assert_eq!(plan.imports().len(), 1, "只应有一个目标指令绑定导入");
+    let import = plan.imports().values().next().expect("导入必须存在");
+    let Some(TargetOpcodeBinding::Frozen(instruction)) = import.target_instruction
+    else {
+        panic!("`i32.neg` 必须在计划里冻结成完整配方");
+    };
+    assert_eq!(instruction.arity, 1);
+    assert_eq!(instruction.operand_type, TargetOperandType::I32);
+    assert_eq!(instruction.result_type, TargetOperandType::I32);
+    assert_eq!(
+        instruction.recipe,
+        TargetOperandRecipe::Steps(&[
+            TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 },
+            TargetOperandStep::Arguments,
+        ]),
+        "`i32.neg` 的配方必须是先压 zero 常量、再发实参"
+    );
+    assert_eq!(instruction.encoding, TargetInstructionEncoding::Wasm(0x6B));
+
+    let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
+    let bytes = lower(&submission).expect("已冻结配方必须可编码");
+    assert!(bytes.contains(&0x6B), "backend 必须编码配方冻结的 i32.sub 0x6B");
+    assert!(
+        bytes.windows(2).any(|window| window == [0x41, 0x00].as_slice()),
+        "配方必须先发射 i32.const 0（0x41 0x00）作为减法的零常量"
+    );
+}
+
+/// 声明的操作数载体与冻结配方常量载体不一致时，计划构造必须结构化失败。
+#[test]
+fn declared_operand_carrier_mismatch_fails_plan_construction() {
+    let source = r#"
+[primitive("core::primitive::i32")]
+structure i32 { }
+
+[primitive("core::primitive::i64")]
+structure i64 { }
+
+[wasm_opcode("i32.neg")]
+abstract micro i32_neg(a: i64): i64
+
+[main]
+micro main() -> i64 {
+    return i32_neg(5)
+}
+"#;
+    let error = plan_from_source(source).expect_err("i64 操作数载体与冻结的 i32 配方不符必须失败");
+    let message = error.to_string();
+    assert!(message.contains("i32.neg"), "{message}");
+    assert!(message.contains("操作数载体"), "错误必须指出操作数载体不符: {message}");
+    assert!(message.contains("expected=I32"), "错误必须带冻结载体: {message}");
+    assert!(message.contains("actual=I64"), "错误必须带声明载体: {message}");
 }
 
 /// 声明的返回槽载体与冻结结果载体不一致时，计划构造必须结构化失败。

@@ -14,7 +14,7 @@ use nyar_types::{
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
-    target_instruction::{TargetInstruction, TargetOperandType, TargetOpcodeBinding},
+    target_instruction::{TargetInstruction, TargetOperandRecipe, TargetOperandStep, TargetOperandType, TargetOpcodeBinding},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -422,6 +422,19 @@ fn validate_frozen_instruction(
             instruction.result_type,
             result_carrier
         ));
+    }
+    if let TargetOperandRecipe::Steps(steps) = instruction.recipe {
+        for step in steps {
+            if let TargetOperandStep::IntegerConstant { operand_type: constant_type, .. } = step {
+                if *constant_type != instruction.operand_type {
+                    return Err(miette!(
+                        "目标指令绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+                        instruction.operand_type,
+                        constant_type
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }

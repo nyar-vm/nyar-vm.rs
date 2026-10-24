@@ -19,12 +19,20 @@ use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
     FragmentSubmission, TargetExecutionPlan,
-    target_instruction::{TargetInstruction, TargetInstructionEncoding, TargetOpcodeBinding, TargetOperandRecipe, TargetOperandType},
+    target_instruction::{
+        TargetInstruction, TargetInstructionEncoding, TargetOpcodeBinding, TargetOperandRecipe, TargetOperandStep, TargetOperandType,
+    },
 };
 use miette::Result;
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
 const HOST_IMPORT_MODULE: &str = "nyar.host";
+
+/// 整数取负没有原生头码：计划显式冻结 `0 - x` 的发射配方。
+const I32_NEGATE_STEPS: &[TargetOperandStep] = &[
+    TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 },
+    TargetOperandStep::Arguments,
+];
 
 /// `[vm_opcode("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
@@ -46,7 +54,7 @@ pub(crate) fn freeze_nyar_vm_opcode_binding(mnemonic: &str) -> Option<TargetInst
         "i32.le" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32LeS),
         "i32.gt" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GtS),
         "i32.ge" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GeS),
-        "i32.neg" => (1, TargetOperandRecipe::IntegerNegate, NyarHeadCode::I32Sub),
+        "i32.neg" => (1, TargetOperandRecipe::Steps(I32_NEGATE_STEPS), NyarHeadCode::I32Sub),
         _ => return None,
     };
     Some(TargetInstruction {
@@ -729,23 +737,23 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
                 }
-                TargetOperandRecipe::IntegerNegate => {
-                    if instruction.operand_type != TargetOperandType::I32 {
-                        return Err(miette::miette!(
-                            "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了整数取负配方但载体不是 i32: callee=`{callee_name}` function=`{}`",
-                            self.mir_fn.symbol
-                        ));
+                TargetOperandRecipe::Steps(steps) => {
+                    for step in steps {
+                        match step {
+                            TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments),
+                            TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value } => {
+                                let index = self.emitter.intern_i32(*value);
+                                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
+                            }
+                            TargetOperandStep::IntegerConstant { operand_type, .. } => {
+                                return Err(miette::miette!(
+                                    "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了非 i32 常量配方 {operand_type:?}，NyarVM 没有该常量载体: callee=`{callee_name}` function=`{}`",
+                                    self.mir_fn.symbol
+                                ));
+                            }
+                        }
                     }
-                    let zero = self.emitter.intern_i32(0);
-                    self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
-                    self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
-                }
-                TargetOperandRecipe::NativeNegate => {
-                    return Err(miette::miette!(
-                        "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了原生取负配方，但 NyarVM 没有该指令: callee=`{callee_name}` function=`{}`",
-                        self.mir_fn.symbol
-                    ));
                 }
             }
         }
