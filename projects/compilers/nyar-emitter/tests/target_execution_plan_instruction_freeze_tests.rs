@@ -138,6 +138,50 @@ micro main() -> i32 {
     );
 }
 
+/// `i64.neg` 与 `i32.neg` 同形：计划冻结 `i64 const 0` + `i64.sub` 的步骤，
+/// backend 不自行判断取负。
+#[test]
+fn frozen_wasm_i64_neg_recipe_is_zero_const_then_sub() {
+    let source = r#"
+[primitive("core::primitive::i64")]
+structure i64 { }
+
+[wasm_opcode("i64.neg")]
+abstract micro i64_neg(a: i64): i64
+
+[main]
+micro main() -> i64 {
+    return i64_neg(5)
+}
+"#;
+    let plan = plan_from_source(source).expect("一元取负实现必须生成目标计划");
+    let import = plan.imports().values().next().expect("导入必须存在");
+    let Some(TargetOpcodeBinding::Frozen(instruction)) = import.target_instruction
+    else {
+        panic!("`i64.neg` 必须在计划里冻结成完整配方");
+    };
+    assert_eq!(instruction.arity, 1);
+    assert_eq!(instruction.operand_type, TargetOperandType::I64);
+    assert_eq!(instruction.result_type, TargetOperandType::I64);
+    assert_eq!(
+        instruction.recipe,
+        TargetOperandRecipe::Steps(&[
+            TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 },
+            TargetOperandStep::Arguments,
+        ]),
+        "`i64.neg` 的配方必须是先压 i64 zero 常量、再发实参"
+    );
+    assert_eq!(instruction.encoding, TargetInstructionEncoding::Wasm(0x7D));
+
+    let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
+    let bytes = lower(&submission).expect("已冻结配方必须可编码");
+    assert!(bytes.contains(&0x7D), "backend 必须编码配方冻结的 i64.sub 0x7D");
+    assert!(
+        bytes.windows(2).any(|window| window == [0x42, 0x00].as_slice()),
+        "配方必须先发射 i64.const 0（0x42 0x00）作为减法的零常量"
+    );
+}
+
 /// 声明的操作数载体与冻结配方常量载体不一致时，计划构造必须结构化失败。
 #[test]
 fn declared_operand_carrier_mismatch_fails_plan_construction() {

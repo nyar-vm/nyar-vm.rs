@@ -214,3 +214,33 @@ micro main() -> i64 {
     let call_import = call_import.expect("i64_add 调用必须发射 CallImport");
     assert_eq!(call_import.operand2, 2, "CallImport argc 必须等于实参个数");
 }
+
+/// `i32.neg` 在 nyar-vm lane 同样按计划冻结的步骤发射：先 `Constant 0`，再 `I32Sub`，
+/// backend 不自行判断取负。
+#[test]
+fn vm_i32_neg_recipe_emits_zero_constant_before_sub() {
+    let groups = numeric_groups(
+        r#"[primitive("core::primitive::i32")]
+structure i32 { }"#,
+        r#"
+[host_contract]
+[vm_opcode("i32.neg")]
+micro i32_neg(a: i32): i32
+
+[main]
+micro main() -> i32 {
+    return i32_neg(7)
+}
+"#,
+    );
+    let module = lower_source_groups(&groups);
+    let codes = decoded_codes(&module);
+    let constant = codes.iter().position(|code| *code == NyarHeadCode::Constant).expect("配方必须先压零常量");
+    let sub = codes.iter().position(|code| *code == NyarHeadCode::I32Sub).expect("配方必须发射 I32Sub");
+    assert!(constant < sub, "零常量必须先于 I32Sub，实际 {codes:?}");
+    assert!(
+        module.imports.iter().all(|import| import.symbol_name != "i32_neg"),
+        "已内联的取负实现不得留下宿主导入: {:?}",
+        module.imports
+    );
+}
