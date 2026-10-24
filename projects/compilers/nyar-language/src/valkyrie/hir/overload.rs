@@ -396,14 +396,8 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let element_type = ValkyrieType::Named(element.clone());
     let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
     let index_type = ValkyrieType::Named(Identifier::new("usize"));
-    let mut length = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("length")]),
-        OverloadDomain::Function,
-        vec![array_type.clone()],
-        index_type.clone(),
-        OverloadMatchKind::NominalExact,
-    );
-    length.intrinsic = Some(IntrinsicId::ArrayLen);
+    // 数组长度不再由 frontend 合成：唯一来源是 core `[intrinsic("builtin.array.length")]`
+    // 声明，intrinsic 身份由 `declaration_intrinsic` 冻结。
     let mut push = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
         OverloadDomain::Function,
@@ -448,7 +442,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         OverloadMatchKind::NominalExact,
     );
     cardinal_set.intrinsic = Some(IntrinsicId::ArraySet);
-    vec![length, push, get, set, cardinal_get, cardinal_set]
+    vec![push, get, set, cardinal_get, cardinal_set]
 }
 
 /// 按候选的结构化 intrinsic 身份做形实参合同。
@@ -878,7 +872,9 @@ fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &Name
         // enum variant 构造：完整 identity 是 [owner, variant_name]，
         // 不得只用 path 末段短名兜底。path 必须是 lowering 已绑定的完整路径。
         let Some(variant_name) = candidate.symbol.parts().first()
-            else { return false };
+        else {
+            return false;
+        };
         matches!(path.parts(), [owner, variant] if owner == expected_owner && variant == variant_name)
     }
     else {
@@ -1236,21 +1232,12 @@ fn try_resolve_value_member_access(
         return false;
     }
     // 优先按成员方法解析（实例方法），再 fallback 到普通 call 解析（处理 singleton method 等）。
-    let resolved = try_resolve_instance_method(
-        &receiver,
-        &member,
-        &[],
-        candidates,
-        type_relations,
-        locals,
-        struct_fields,
-        singleton_names,
-    )
-    .or_else(|| {
-        let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
-        let args = vec![HirCallArgument::positional(receiver.clone())];
-        try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
-    });
+    let resolved = try_resolve_instance_method(&receiver, &member, &[], candidates, type_relations, locals, struct_fields, singleton_names)
+        .or_else(|| {
+            let callee = HirExpr { kind: HirExprKind::Path(NamePath::new(vec![member.clone()])), span: span.clone() };
+            let args = vec![HirCallArgument::positional(receiver.clone())];
+            try_resolve_call(&callee, &args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+        });
     let Some(resolved) = resolved
     else {
         return false;
@@ -2023,8 +2010,13 @@ fn try_resolve_constructor_call(
             if let Some(context) = contextual_type
                 && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
                 && let Some(matched) = match_call_candidate(
-                    &instantiated, args, &explicit_generic_arguments,
-                    type_relations, locals, struct_fields, singleton_names,
+                    &instantiated,
+                    args,
+                    &explicit_generic_arguments,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
                 )
             {
                 return Some(matched);
@@ -2034,7 +2026,14 @@ fn try_resolve_constructor_call(
         .collect::<Vec<_>>();
     if let Ok(resolved) = resolve_overload(&owned_variant_constructors) {
         return Some(build_constructor_resolved_call(
-            callee, args, resolved, contextual_type, candidates, locals, struct_fields, singleton_names,
+            callee,
+            args,
+            resolved,
+            contextual_type,
+            candidates,
+            locals,
+            struct_fields,
+            singleton_names,
         ));
     }
 
@@ -2047,8 +2046,13 @@ fn try_resolve_constructor_call(
             if let Some(context) = contextual_type
                 && let Some(instantiated) = instantiate_candidate_for_context(candidate, context)
                 && let Some(matched) = match_call_candidate(
-                    &instantiated, args, &explicit_generic_arguments,
-                    type_relations, locals, struct_fields, singleton_names,
+                    &instantiated,
+                    args,
+                    &explicit_generic_arguments,
+                    type_relations,
+                    locals,
+                    struct_fields,
+                    singleton_names,
                 )
             {
                 return Some(matched);
@@ -2058,7 +2062,14 @@ fn try_resolve_constructor_call(
         .collect::<Vec<_>>();
     if let Ok(resolved) = resolve_overload(&free_constructors) {
         return Some(build_constructor_resolved_call(
-            callee, args, resolved, contextual_type, candidates, locals, struct_fields, singleton_names,
+            callee,
+            args,
+            resolved,
+            contextual_type,
+            candidates,
+            locals,
+            struct_fields,
+            singleton_names,
         ));
     }
 
@@ -2092,9 +2103,7 @@ fn build_constructor_resolved_call(
         extractor_payload_type: None,
     };
     // enrichment 仅在 Constructor 专属路径调用，Function 候选不会被误改写
-    enrich_unite_variant_constructor_facts(
-        callee, args, &mut call, contextual_type, candidates, locals, struct_fields, singleton_names,
-    );
+    enrich_unite_variant_constructor_facts(callee, args, &mut call, contextual_type, candidates, locals, struct_fields, singleton_names);
     call
 }
 
@@ -2300,9 +2309,9 @@ fn try_resolve_call(
     // 统一处理所有 Constructor 候选，包括 owned variant (Some/Fine) 和 free constructor (Range/ArrayList)。
     // 必须在 Function 主路径之前尝试，因为 Constructor 和 Function 可能同名，且 Constructor 需要独立的
     // contextual_type 反推 + aggregate_constructor_matches_name 末段对齐符号匹配。
-    if let Some(resolved) = try_resolve_constructor_call(
-        callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type,
-    ) {
+    if let Some(resolved) =
+        try_resolve_constructor_call(callee, args, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type)
+    {
         return Some(resolved);
     }
 
@@ -2386,7 +2395,6 @@ fn is_text_type(ty: &ValkyrieType) -> bool {
         _ => false,
     }
 }
-
 
 fn try_resolve_qualified_free_function(
     path: &NamePath,
@@ -4276,14 +4284,20 @@ fn diagnose_pattern_extractor_failure(
         if is_builtin_von_value_pattern(canonical_callee, actual_type) {
             return None;
         }
-        return Some(ParseError::Invalid { message: format!("unknown pattern extractor `{extractor_name}` for scrutinee type `{type_name}`"), span: None });
+        return Some(ParseError::Invalid {
+            message: format!("unknown pattern extractor `{extractor_name}` for scrutinee type `{type_name}`"),
+            span: None,
+        });
     }
 
     if matching
         .iter()
         .any(|candidate| candidate.param_specs.first().is_some_and(|param| is_extractor_receiver_param(param) && param.is_mutable))
     {
-        return Some(ParseError::Invalid { message: format!("pattern extractor `{extractor_name}` must not use `mut self` on `{type_name}`"), span: None });
+        return Some(ParseError::Invalid {
+            message: format!("pattern extractor `{extractor_name}` must not use `mut self` on `{type_name}`"),
+            span: None,
+        });
     }
 
     if matching.iter().all(|candidate| nullable_payload_type(&candidate.signature.return_type).is_none()) {
@@ -4291,9 +4305,10 @@ fn diagnose_pattern_extractor_failure(
             .first()
             .map(|candidate| render_valkyrie_type_name(&candidate.signature.return_type))
             .unwrap_or_else(|| "unknown".to_string());
-        return Some(ParseError::Invalid { message: format!(
-            "pattern extractor `{extractor_name}` must return a nullable type (`T?`); got `{return_type}` for `{type_name}`"
-        ), span: None });
+        return Some(ParseError::Invalid {
+            message: format!("pattern extractor `{extractor_name}` must return a nullable type (`T?`); got `{return_type}` for `{type_name}`"),
+            span: None,
+        });
     }
 
     None
@@ -4307,7 +4322,10 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
 
     let head = canonical_callee.parts().first().map(|p| p.as_str()).unwrap_or("");
     if matches!(head, "Fine" | "Fail" | "Some" | "None") {
-        return Some(ParseError::Invalid { message: format!("pattern extractor `{head}` 需要已解析的 scrutinee 类型，不能仅凭变体名放行"), span: None });
+        return Some(ParseError::Invalid {
+            message: format!("pattern extractor `{head}` 需要已解析的 scrutinee 类型，不能仅凭变体名放行"),
+            span: None,
+        });
     }
     // VonValue unite arms (`case Object(fields):` in legion.tools manifest.v).
     // Same class as Result: variant-head extractors are valid even when local
@@ -4326,7 +4344,10 @@ fn diagnose_unresolved_extractor_without_scrutinee_type(
     }
 
     let extractor_name = canonical_callee.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
-    Some(ParseError::Invalid { message: format!("cannot validate pattern extractor `{extractor_name}` without a known scrutinee type"), span: None })
+    Some(ParseError::Invalid {
+        message: format!("cannot validate pattern extractor `{extractor_name}` without a known scrutinee type"),
+        span: None,
+    })
 }
 
 fn diagnose_unresolved_arm_extractor(pattern: &HirPattern, candidates: &[OverloadCandidate]) -> Option<crate::valkyrie::frontend::ParseError> {
