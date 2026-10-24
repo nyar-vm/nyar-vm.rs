@@ -544,14 +544,13 @@ fn build_return_types_by_instance(
 pub(crate) fn lower_fragment_mir_to_wasm_module(
     submission: &FragmentSubmission,
     export_name: &str,
-) -> (WasmBinaryModule, Vec<(String, String)>) {
+) -> miette::Result<(WasmBinaryModule, Vec<(String, String)>)> {
     lower_fragment_mir_to_wasm_module_for(
         submission,
         export_name,
         crate::nyar_backend_wasi::WasiPreview::Preview2,
         crate::nyar_backend_wasi::WasmPackageKind::Binary,
     )
-    .expect("测试 Wasm MIR 输入必须满足完整 lowering 合同")
 }
 
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
@@ -727,7 +726,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &string_literal_index,
             &string_literal_offset,
             const_utf8_import,
-        )));
+        )?));
         eprintln!("[wasm::function-lower-done] dense={dense}/{} symbol={full}", mir_operations.len());
         mir_wasm_functions.push((wasm_index, full.clone()));
         if let Some(public_name) = submission.backend_plan.wasm_export_names().get(instance) {
@@ -1181,7 +1180,7 @@ fn lower_mir_function_to_wasm_bytes(
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
     const_utf8_import: Option<u32>,
-) -> Vec<u8> {
+) -> miette::Result<Vec<u8>> {
     if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
         debug_assert!(false, "pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol);
     }
@@ -1211,8 +1210,8 @@ fn lower_mir_function_to_wasm_bytes(
         string_literal_offset,
         const_utf8_import,
     );
-    lowerer.emit_function_body();
-    lowerer.finish()
+    lowerer.emit_function_body()?;
+    Ok(lowerer.finish())
 }
 
 struct WasmMirLowerer<'a> {
@@ -1500,7 +1499,7 @@ impl<'a> WasmMirLowerer<'a> {
         local
     }
 
-    fn emit_instruction(&mut self, instruction: &MirInstruction) {
+    fn emit_instruction(&mut self, instruction: &MirInstruction) -> miette::Result<()> {
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
                 // Int 常量在字节码层默认是 i32.const，但 plan 可能?value_types
@@ -1536,7 +1535,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::StructNew { fields, nominal } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let layout = self.resolve_layout(*nominal);
                 let use_gc_struct = self.struct_new_uses_gc_struct(&layout);
@@ -1544,7 +1543,7 @@ impl<'a> WasmMirLowerer<'a> {
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "StructNew");
-                        return;
+                        return Ok(());
                     };
                     self.validate_output_slot_type(output, WASM_GC_ANYREF);
                     let local = self.planned_value_local(output);
@@ -1565,7 +1564,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else if layout.storage == StorageKind::Value {
                     let Some(&local) = self.value_locals.get(&output)
                     else {
-                        return;
+                        return Ok(());
                     };
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
@@ -1584,12 +1583,12 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     let Some(&local) = self.reference_locals.get(&output)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "StructNew/Reference");
-                        return;
+                        return Ok(());
                     };
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
@@ -1608,17 +1607,17 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::TupleNew { layout_id, fields } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
                 else {
                     eprintln!("[wasm::mir] TupleNew missing layout from result type in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
-                    return;
+                    return Ok(());
                 };
                 let Some(&local) = self.value_locals.get(&output)
                 else {
-                    return;
+                    return Ok(());
                 };
                 self.bump_allocate(layout.size, layout.align);
                 self.emit_local_set(local);
@@ -1637,11 +1636,11 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::ArrayNew { array_type, length, initialization } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let Some(&local) = self.reference_locals.get(&output)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
@@ -1676,7 +1675,7 @@ impl<'a> WasmMirLowerer<'a> {
             MirInstructionKind::ArrayFromElements { layout_id, array_type, elements } => {
                 let Some(output) = instruction_primary_result(instruction)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let Some(element_type) = array_element_type(array_type)
                 else {
@@ -1690,7 +1689,7 @@ impl<'a> WasmMirLowerer<'a> {
                     if let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() {
                         let Some(&local) = self.value_locals.get(&output)
                         else {
-                            return;
+                            return Ok(());
                         };
                         self.bump_allocate(layout.size, layout.align);
                         self.emit_local_set(local);
@@ -1705,12 +1704,12 @@ impl<'a> WasmMirLowerer<'a> {
                             self.emit_operand_coerced(value, self.field_store_stack_type(field));
                             self.emit_store_at_field(field);
                         }
-                        return;
+                        return Ok(());
                     }
                 }
                 let Some(&local) = self.reference_locals.get(&output)
                 else {
-                    return;
+                    return Ok(());
                 };
                 let Some(type_index) = self.resolve_gc_array_type_index(element_type)
                 else {
@@ -1732,7 +1731,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     eprintln!("[wasm::mir] AggregateCopy layout identity is not registered in `{}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
-                    return;
+                    return Ok(());
                 };
                 // 判定是否走 gc_struct 深拷贝路径。
                 // 不能只靠 `gc_struct_type_indices.contains_key`——Value layout 也可能
@@ -1751,11 +1750,11 @@ impl<'a> WasmMirLowerer<'a> {
                     // 注意:这是语义上的"值拷贝",即产生新对象而非共享引用。
                     let Some(dest_local) = self.operand_reference_local(dest)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(source_local) = self.operand_reference_local(source)
                     else {
-                        return;
+                        return Ok(());
                     };
                     // Physical unite/Result rule: Value-storage payloads that
                     // already live in anyref slots keep payload identity via
@@ -1764,12 +1763,12 @@ impl<'a> WasmMirLowerer<'a> {
                     if layout.storage == StorageKind::Value {
                         self.emit_local_get(source_local);
                         self.emit_local_set(dest_local);
-                        return;
+                        return Ok(());
                     }
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "AggregateCopy");
-                        return;
+                        return Ok(());
                     };
                     // 先构造 dest 对象(字段全默认),再逐字段从 source 拷入。
                     self.emit_struct_new_default(type_index);
@@ -1806,22 +1805,22 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     eprintln!("[wasm::mir] FieldGet missing layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
-                    return;
+                    return Ok(());
                 };
                 let use_gc_struct = self.struct_new_uses_gc_struct(&layout);
                 if use_gc_struct && self.operand_reference_local(object).is_some() {
                     let Some(object_local) = self.operand_reference_local(object)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
-                        return;
+                        return Ok(());
                     };
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
@@ -1839,7 +1838,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_address_local(object) {
                     let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
@@ -1872,12 +1871,12 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_reference_local(object) {
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldGet");
-                        return;
+                        return Ok(());
                     };
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
@@ -1901,12 +1900,12 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     eprintln!("[wasm::mir] FieldSet missing layout in `{}`: field=`{field}`", self.mir_fn.symbol);
                     encode_unreachable(&mut self.code);
-                    return;
+                    return Ok(());
                 };
                 if let Some(object_local) = self.operand_address_local(object) {
                     let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
@@ -1917,16 +1916,16 @@ impl<'a> WasmMirLowerer<'a> {
                 else if let Some(object_local) = self.operand_reference_local(object) {
                     let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(type_index) = self.resolve_gc_struct_type_index(layout.id, &layout.name)
                     else {
                         self.trap_missing_gc_struct(layout.id, &layout.name, "FieldSet");
-                        return;
+                        return Ok(());
                     };
                     let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
                     else {
-                        return;
+                        return Ok(());
                     };
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
@@ -1970,7 +1969,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirInstructionKind::Call { callee, arguments } => {
                 // Slim Call has no dispatch/witness/intrinsic_opcode; route as Static.
-                self.emit_call_lowering(callee, arguments, MirDispatchKind::Static, None, None, instruction_primary_result(instruction));
+                self.emit_call_lowering(callee, arguments, MirDispatchKind::Static, None, None, instruction_primary_result(instruction))?;
             }
             // pattern 无法 lowering：extractor ?resolved 或类型推断失败，
             // 运行?trap——emit wasm `unreachable` (0x00) 立即触发 trap?
@@ -1980,6 +1979,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn emit_intrinsic_array_get(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) {

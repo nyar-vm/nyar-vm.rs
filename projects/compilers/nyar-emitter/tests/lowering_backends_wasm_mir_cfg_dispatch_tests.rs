@@ -37,7 +37,7 @@ fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), leaf_i32_fn("main", blocks))]));
     plan.testing_module_name("cfg_exec").testing_entry_operation(main);
     let submission = FragmentSubmission::from_backend_plan(plan);
-    lower_fragment_to_wasm_mir_module(&submission, "main")
+    lower_fragment_to_wasm_mir_module(&submission, "main").expect("CFG 调度模块必须完成 lowering")
 }
 
 /// Instantiate with Node (Wasm GC capable) and read `exports.main()` as i32.

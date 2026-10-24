@@ -109,7 +109,7 @@ pub mod testing {
 
     /// Lower a fragment submission to a WASM module via MIR.
     /// GC is mandatory for wasm/wasi targets (language specification).
-    pub fn lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> WasmBinaryModule {
+    pub fn lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
         super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
     }
 

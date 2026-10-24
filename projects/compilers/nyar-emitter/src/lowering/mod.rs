@@ -22,8 +22,8 @@ use self::backends::wasm;
 #[cfg(feature = "nyar-vm-lane")]
 use self::backends::{nyar_vm, wasm};
 
-pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> WasmBinaryModule {
-    backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).0
+pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
+    backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
 }
 
 #[cfg(feature = "nyar-vm-lane")]

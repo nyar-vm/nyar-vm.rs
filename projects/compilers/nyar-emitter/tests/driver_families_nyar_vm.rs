@@ -5,8 +5,6 @@
 //! feature 时可编译；断言与生产代码不变。
 #![cfg(feature = "nyar-vm-lane")]
 
-use std::panic::{AssertUnwindSafe, catch_unwind};
-
 use nyar_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData};
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
 use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
@@ -57,7 +55,7 @@ fn entry_contract_preserves_all_declared_library_exports() {
 }
 
 /// 沿 Compiler 产出的目标私有计划降低到 `.nyar`，不重放调用边。
-fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
+fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<NyarModuleData, String> {
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(groups, &[], "native")
         .expect("源码闭包必须完成 Compiler 链路");
@@ -66,7 +64,11 @@ fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
     let plan =
         TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots).expect("目标私有计划必须可表达");
     nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
-        .expect("只允许沿已绑定实例发射")
+        .map_err(|error| error.to_string())
+}
+
+fn lower_source_groups(groups: &[CompilerSourceGroup]) -> NyarModuleData {
+    try_lower_source_groups(groups).expect("只允许沿已绑定实例发射")
 }
 
 fn decoded_codes(module: &NyarModuleData) -> Vec<NyarHeadCode> {
@@ -121,7 +123,7 @@ micro main() -> i32 {
     );
 }
 
-/// 未知 `vm_opcode` 助记符不得回落为宿主导入或默认指令。
+/// 未知 `vm_opcode` 助记符不得回落为宿主导入或默认指令，必须返回结构化 backend error。
 #[test]
 fn unknown_vm_opcode_mnemonic_fails_structurally() {
     let groups = numeric_groups(
@@ -144,17 +146,34 @@ micro main() -> i32 {
 }
 "#,
     );
-    let panic = catch_unwind(AssertUnwindSafe(|| {
-        let _ = lower_source_groups(&groups);
-    }))
-    .expect_err("未知 `vm_opcode` 助记符必须结构化失败");
-    let message = panic
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| panic.downcast_ref::<&str>().map(|text| text.to_string()))
-        .expect("panic 载荷必须是文本");
+    let message = try_lower_source_groups(&groups).expect_err("未知 `vm_opcode` 助记符必须结构化失败");
     assert!(message.contains("vm_opcode"), "{message}");
     assert!(message.contains("i32.unknown"), "{message}");
+    assert!(message.contains("function="), "错误必须带函数符号: {message}");
+}
+
+/// 助记符 arity 与实参数量不符时不得发射指令，必须返回结构化 backend error。
+#[test]
+fn vm_opcode_arity_mismatch_fails_structurally() {
+    let groups = numeric_groups(
+        r#"[primitive("core::primitive::i32")]
+structure i32 { }"#,
+        r#"
+[host_contract]
+[vm_opcode("i32.neg")]
+micro i32_neg(a: i32, b: i32): i32
+
+[main]
+micro main() -> i32 {
+    return i32_neg(1, 2)
+}
+"#,
+    );
+    let message = try_lower_source_groups(&groups).expect_err("助记符 arity 与实参数量不符必须结构化失败");
+    assert!(message.contains("i32.neg"), "{message}");
+    assert!(message.contains("expected=1"), "错误必须带期望 arity: {message}");
+    assert!(message.contains("actual=2"), "错误必须带实际实参数: {message}");
+    assert!(message.contains("function="), "错误必须带函数符号: {message}");
 }
 
 #[test]

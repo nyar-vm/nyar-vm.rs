@@ -218,7 +218,7 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
                 &mut emitter,
                 &mut module.layouts,
                 &mut layout_index_by_id,
-            );
+            )?;
 
             module.constants.extend(emitter.constants);
             module.code_bytes.extend_from_slice(&emitter.code_bytes);
@@ -302,7 +302,7 @@ fn lower_mir_function_to_bytecode(
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
-) {
+) -> miette::Result<()> {
     let ctx = ExecutableLoweringContext::new(submission);
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
@@ -322,10 +322,11 @@ fn lower_mir_function_to_bytecode(
     for block_id in block_order {
         lowerer.emitter.block_starts.insert(block_id, lowerer.emitter.code_bytes.len());
         if let Some(block) = mir_fn.blocks.get(block_id.0 as usize) {
-            lowerer.emit_block(block);
+            lowerer.emit_block(block)?;
         }
     }
     lowerer.emitter.patch_pending_jumps();
+    Ok(())
 }
 
 struct NyarMirLowerer<'a, 'e> {
@@ -342,15 +343,16 @@ struct NyarMirLowerer<'a, 'e> {
 }
 
 impl<'a, 'e> NyarMirLowerer<'a, 'e> {
-    fn emit_block(&mut self, block: &MirBlock) {
+    fn emit_block(&mut self, block: &MirBlock) -> miette::Result<()> {
         let _ = block_label(block.id);
         for instruction in &block.instructions {
-            self.emit_instruction(instruction);
+            self.emit_instruction(instruction)?;
         }
         self.emit_terminator(block);
+        Ok(())
     }
 
-    fn emit_instruction(&mut self, instruction: &MirInstruction) {
+    fn emit_instruction(&mut self, instruction: &MirInstruction) -> miette::Result<()> {
         let output = self.slots.instruction_output(instruction);
         match &instruction.kind {
             MirInstructionKind::LoadConstant { constant, .. } => {
@@ -406,7 +408,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::ArrayFromElements { layout_id, elements, .. } => {
                 let Some(output) = output
                 else {
-                    return;
+                    return Ok(());
                 };
                 let layout = self
                     .ctx
@@ -462,8 +464,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
                     if let Some(link) = self.external_link_by_instance.get(instance).cloned() {
-                        self.emit_external_call(&link, *instance, arguments, output);
-                        return;
+                        self.emit_external_call(&link, *instance, arguments, output)?;
+                        return Ok(());
                     }
                     let index = self
                         .function_index_by_instance
@@ -477,7 +479,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         .unwrap_or_else(|| panic!("validated callable identity has no diagnostic name: {instance:?}"));
                     let path = NamePath::new(name.parts().to_vec());
                     self.emit_direct_call(index, &path, arguments, output);
-                    return;
+                    return Ok(());
                 }
                 panic!("Semantic MIR 调用未绑定 ItemInstanceId，拒绝进入 Nyar 后端: {callee:?}");
             }
@@ -536,6 +538,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn emit_terminator(&mut self, block: &MirBlock) {
@@ -671,7 +674,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         instance: ItemInstanceId,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
-    ) {
+    ) -> miette::Result<()> {
         let callee_name = self
             .submission
             .backend_plan
@@ -682,16 +685,31 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         if let Some(mnemonic) = crate::lowering::shared::interop::vm_opcode_target(link) {
             let Some(encoding) = nyar_opcode_encoding(mnemonic)
             else {
-                panic!("Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`", self.mir_fn.symbol);
+                return Err(miette::miette!(
+                    "Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
+                    self.mir_fn.symbol
+                ));
             };
             match encoding {
                 NyarOpcodeEncoding::Binary(code) => {
-                    assert_eq!(arguments.len(), 2, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{mnemonic}` 二元绑定不符");
+                    if arguments.len() != 2 {
+                        return Err(miette::miette!(
+                            "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 二元绑定不符: function=`{}` expected=2 actual={}",
+                            self.mir_fn.symbol,
+                            arguments.len()
+                        ));
+                    }
                     self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
                 }
                 NyarOpcodeEncoding::Negate(code) => {
-                    assert_eq!(arguments.len(), 1, "Nyar 目标外部数值调用 `{callee_name}` 实参个数与 `{mnemonic}` 一元绑定不符");
+                    if arguments.len() != 1 {
+                        return Err(miette::miette!(
+                            "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 一元绑定不符: function=`{}` expected=1 actual={}",
+                            self.mir_fn.symbol,
+                            arguments.len()
+                        ));
+                    }
                     let zero = self.emitter.intern_i32(0);
                     self.emitter.emit_imm1(NyarHeadCode::Constant, zero);
                     self.emit_external_arguments(&callee_name, arguments);
@@ -722,6 +740,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         else {
             self.emitter.emit_plain(NyarHeadCode::Pop);
         }
+        Ok(())
     }
 
     fn emit_external_arguments(&mut self, callee_name: &str, arguments: &[MirOperand]) {
