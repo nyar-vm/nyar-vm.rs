@@ -108,14 +108,11 @@ micro main() -> i32 {
         .expect("i32 数值源码必须完成 Compiler 分析");
     let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
-    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
-        .expect("`[wasm_opcode]` 声明必须进入目标计划导入表");
-    let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
-    let error = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main")
-        .expect_err("助记符 arity 与实参数量不符必须结构化失败");
+    let error = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .expect_err("声明 arity 与冻结配方不符必须在计划构造阶段结构化失败");
     let message = error.to_string();
     assert!(message.contains("i32.neg"), "{message}");
-    assert!(message.contains("expected=1"), "错误必须带期望 arity: {message}");
-    assert!(message.contains("actual=2"), "错误必须带实际实参数: {message}");
+    assert!(message.contains("expected=1"), "错误必须带冻结 arity: {message}");
+    assert!(message.contains("actual=2"), "错误必须带声明参数数: {message}");
     assert!(message.contains("function="), "错误必须带函数符号: {message}");
 }

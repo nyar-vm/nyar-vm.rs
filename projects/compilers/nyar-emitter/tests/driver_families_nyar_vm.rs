@@ -61,8 +61,8 @@ fn try_lower_source_groups(groups: &[CompilerSourceGroup]) -> Result<NyarModuleD
         .expect("源码闭包必须完成 Compiler 链路");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let fragment = program.canonical().linked.fragments.keys().next().expect("测试程序具有片段").clone();
-    let plan =
-        TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots).expect("目标私有计划必须可表达");
+    let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
+        .map_err(|error| error.to_string())?;
     nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .map_err(|error| error.to_string())
 }

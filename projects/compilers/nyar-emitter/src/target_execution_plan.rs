@@ -14,7 +14,7 @@ use nyar_types::{
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
-    target_instruction::{TargetInstruction, TargetOpcodeBinding},
+    target_instruction::{TargetInstruction, TargetOperandType, TargetOpcodeBinding},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -187,15 +187,16 @@ impl TargetExecutionPlan {
                 continue;
             }
             if let Some((index, import)) = declared_imports.get(&instance) {
+                let parameter_types = import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<Vec<_>>>()?;
+                let return_type = lower_type(canonical, import.return_type)?;
+                let target_instruction = freeze_target_instruction(&import.link);
+                if let Some(TargetOpcodeBinding::Frozen(instruction)) = target_instruction {
+                    let symbol = canonical.linked.callable_names.get(&instance).map(|name| name.to_string());
+                    validate_frozen_instruction(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &instruction)?;
+                }
                 imports.insert(
                     instance,
-                    BackendImport {
-                        index: *index,
-                        link: import.link.clone(),
-                        parameter_types: import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<_>>()?,
-                        return_type: lower_type(canonical, import.return_type)?,
-                        target_instruction: freeze_target_instruction(&import.link),
-                    },
+                    BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type, target_instruction },
                 );
                 continue;
             }
@@ -368,6 +369,76 @@ fn frozen_opcode_binding(resolved: Option<TargetInstruction>) -> TargetOpcodeBin
     match resolved {
         Some(instruction) => TargetOpcodeBinding::Frozen(instruction),
         None => TargetOpcodeBinding::Unfrozen,
+    }
+}
+
+/// 校验冻结配方与导入声明在 arity、操作数载体和结果槽载体上一致。
+///
+/// 导入声明是 Compiler 已绑定的调用合同，冻结配方是目标指令的物理形状；二者不一致
+/// 时计划不成立，必须在此结构化失败，不得让后端按声明槽位发射后再改写或补默认值。
+fn validate_frozen_instruction(
+    instance: ItemInstanceId,
+    symbol: Option<&str>,
+    link: &ExternalImportLink,
+    parameter_types: &[NyarType],
+    return_type: &NyarType,
+    instruction: &TargetInstruction,
+) -> Result<()> {
+    let mnemonic = crate::lowering::shared::interop::wasm_opcode_target(link)
+        .or_else(|| crate::lowering::shared::interop::vm_opcode_target(link))
+        .unwrap_or("<unknown>");
+    let function = symbol.unwrap_or("<unknown>");
+    if parameter_types.len() != instruction.arity {
+        return Err(miette!(
+            "目标指令绑定 `{mnemonic}` 的声明 arity 与冻结配方不符: function={function} expected={} actual={} instance={instance:?} link={link}",
+            instruction.arity,
+            parameter_types.len()
+        ));
+    }
+    for (index, ty) in parameter_types.iter().enumerate() {
+        let Some(carrier) = operand_carrier(ty)
+        else {
+            return Err(miette!(
+                "目标指令绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?} link={link}"
+            ));
+        };
+        if carrier != instruction.operand_type {
+            return Err(miette!(
+                "目标指令绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结配方不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+                instruction.operand_type,
+                carrier
+            ));
+        }
+    }
+    let Some(result_carrier) = result_carrier(return_type)
+    else {
+        return Err(miette!(
+            "目标指令绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?} link={link}"
+        ));
+    };
+    if result_carrier != instruction.result_type {
+        return Err(miette!(
+            "目标指令绑定 `{mnemonic}` 的结果槽载体与冻结配方不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+            instruction.result_type,
+            result_carrier
+        ));
+    }
+    Ok(())
+}
+
+fn operand_carrier(ty: &NyarType) -> Option<TargetOperandType> {
+    match ty {
+        NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
+        NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
+        NyarType::Float64 => Some(TargetOperandType::F64),
+        _ => None,
+    }
+}
+
+fn result_carrier(ty: &NyarType) -> Option<TargetOperandType> {
+    match ty {
+        NyarType::Boolean => Some(TargetOperandType::I32),
+        _ => operand_carrier(ty),
     }
 }
 
