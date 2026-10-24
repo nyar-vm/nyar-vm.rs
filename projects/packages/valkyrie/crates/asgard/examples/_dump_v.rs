@@ -1,19 +1,13 @@
 use asgard::{
     awsl::{LoweringOptions, lower_component},
     codegen::build_awsl_wasm_source,
+    ssg::project::valkyrie_v_roots,
 };
 use oak_awsl::AwslParser;
-use std::path::PathBuf;
-
-fn valkyrie_v_root() -> PathBuf {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let submodule = manifest.join("../../../../valkyrie.v");
-    assert!(submodule.is_dir(), "missing `projects/valkyrie.v` submodule");
-    submodule
-}
 
 fn main() {
-    let path = valkyrie_v_root().join("projects/asgard._/projects/asgard.plotter/source/components/interactive-col-plot.awsl");
+    let roots = valkyrie_v_roots().expect("valkyrie.v 源码库根目录须由 `VALKYRIE_V_ROOT` 显式提供");
+    let path = roots[0].join("projects/asgard._/projects/asgard.plotter/source/components/interactive-col-plot.awsl");
     let source = std::fs::read_to_string(&path).unwrap();
     let root = AwslParser::parse_root(&source).unwrap();
     let lowered = lower_component(&root, "interactive-col-plot", "interactive-col-plot.awsl", &LoweringOptions::default());

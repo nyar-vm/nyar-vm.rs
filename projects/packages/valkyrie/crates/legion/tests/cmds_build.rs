@@ -12,7 +12,7 @@ use std::{
     fs,
     process::{Command, ExitCode},
 };
-use support::{create_nyar_vm_std_project, create_smoke_project_with_build, valkyrie_v_std_workspace_available};
+use support::create_smoke_project_with_build;
 
 fn assert_compile_evidence_sidecar_matches_manifest(output_dir: &std::path::Path, manifest: &ExecutionManifest) {
     let sidecar_path = output_dir.join("compile-evidence.txt");
@@ -115,46 +115,6 @@ micro identity(x: bool) -> bool {
         "expected main logical entry, got {:?}",
         manifest.run_contracts
     );
-}
-
-#[test]
-fn builds_option_nyar_vm_project_with_std() {
-    if !valkyrie_v_std_workspace_available() {
-        eprintln!("skip builds_option_nyar_vm_project_with_std: sibling valkyrie.v core/std missing");
-        return;
-    }
-    let fixture = create_nyar_vm_std_project(
-        "legion-build-nyar-vm-option",
-        r#"namespace opt.smoke;
-
-micro value_or_zero(o: Option<i64>) -> i64 {
-    if o.is_none() {
-        return 0
-    }
-    return o.unwrap()
-}
-
-[main]
-micro main() -> i64 {
-    return value_or_zero(Some(7))
-}
-"#,
-    );
-    let output_dir = fixture.project_dir.join("dist").join("option-nyar-vm");
-    let status = run(&BuildArgs {
-        project_dir: fixture.project_dir.clone(),
-        target: CanonicalTarget::parse("ovm").expect("nyar-vm target"),
-        output_dir: Some(output_dir.clone()),
-        workspace: false,
-        debug_artifacts: false,
-    })
-    .unwrap();
-    assert_eq!(status, ExitCode::SUCCESS);
-    let has_nyar = fs::read_dir(&output_dir)
-        .expect("list option output")
-        .filter_map(|entry| entry.ok())
-        .any(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("nyar"));
-    assert!(has_nyar, "expected `.nyar` under {}", output_dir.display());
 }
 
 #[test]

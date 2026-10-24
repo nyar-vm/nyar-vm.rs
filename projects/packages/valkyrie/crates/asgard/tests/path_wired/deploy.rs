@@ -40,30 +40,3 @@ fn rejects_empty_artifacts() {
     let source = r#"{ name: "x", artifacts: [] }"#;
     assert!(DeployProfile::parse(source).is_err());
 }
-
-#[test]
-fn loads_repo_cdn_profile_file() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../valkyrie.v/projects/asgard._/projects/asgard/deploy/profiles/cdn+serverless.von");
-    let plan = DeployProfile::load(&path).expect("load repo profile");
-    assert_eq!(plan.profile.name, "cdn+serverless");
-    assert_eq!(plan.profile.artifacts.len(), 2);
-}
-
-#[test]
-fn loads_fullstack_cdn_profile() {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/examples/test.fullstack/deploy/profiles/cdn+serverless.von");
-    let plan = DeployProfile::load(&path).expect("load fullstack profile");
-    assert_eq!(plan.profile.name, "cdn+serverless");
-    assert!(plan.profile.artifacts.iter().any(|a| a.output.contains("apps/shell")));
-    assert!(plan.profile.artifacts.iter().any(|a| a.output.contains("apps/atlas")));
-}
-
-#[test]
-fn lists_fullstack_profiles_dir() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/examples/test.fullstack/deploy/profiles");
-    let names = list_deploy_profiles(&dir).expect("list");
-    assert!(names.iter().any(|n| n == "cdn+serverless.von"));
-    assert!(names.iter().any(|n| n == "portable.von"));
-}

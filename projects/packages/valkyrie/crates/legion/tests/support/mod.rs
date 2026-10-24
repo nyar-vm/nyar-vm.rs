@@ -230,67 +230,7 @@ fn default_build_manifest() -> &'static str {
         }"#
 }
 
-/// Sibling `valkyrie.v` project path (workspace-relative from this crate).
-pub fn sibling_valkyrie_v_project(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/projects").join(name)
-}
-
-/// True when local `valkyrie.v` core/std/adaptors checkout is present for std-backed smoke.
-pub fn valkyrie_v_std_workspace_available() -> bool {
-    ["core", "std", "std.adaptors._"].iter().all(|name| sibling_valkyrie_v_project(name).is_dir())
-}
-
-/// Smoke project with `core`/`std` workspace deps and `target: "ovm"`.
-pub fn create_nyar_vm_std_project(prefix: &str, source: &str) -> SmokeProject {
-    let core = von_path(&canonicalize_lossy(&sibling_valkyrie_v_project("core")));
-    let std = von_path(&canonicalize_lossy(&sibling_valkyrie_v_project("std")));
-    let adaptors = von_path(&canonicalize_lossy(&sibling_valkyrie_v_project("std.adaptors._")));
-    let temp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
-    let root = temp_dir.path();
-    let project_dir = root.join("app");
-    let source_dir = project_dir.join("source");
-    fs::create_dir_all(&source_dir).unwrap();
-    fs::write(
-        root.join("legions.von"),
-        format!(
-            r#"{{
-    name: "runtime-smoke",
-    members: [
-        "app",
-        "{core}",
-        "{std}",
-        "{adaptors}"
-    ]
-}}
-"#
-        ),
-    )
-    .unwrap();
-    fs::write(
-        project_dir.join("legion.von"),
-        r#"{
-    name: "app",
-    dependencies: {
-        core: true,
-        std: true
-    },
-    build: [
-        {
-            target: "ovm"
-        }
-    ]
-}
-"#,
-    )
-    .unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
-    SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&project_dir) }
-}
-
-fn von_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
+/// 规范化路径（失败时保留原路径）。
 fn canonicalize_lossy(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }

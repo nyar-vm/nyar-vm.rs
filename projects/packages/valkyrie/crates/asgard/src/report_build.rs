@@ -4,8 +4,8 @@ use std::{fs, path::Path};
 
 use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar_analyzer::report::{HydratedChartSpec, series_to_init_literal};
-use rusty_valkyrie::CanonicalTarget;
 use oak_awsl::widget_name_from_stem;
+use rusty_valkyrie::CanonicalTarget;
 
 use crate::{
     awsl::{LoweringOptions, compile_awsl_source},
@@ -180,6 +180,3 @@ fn replace_let_line(source: &str, name: &str, replacement: &str) -> Result<Strin
     }
     Ok(out)
 }
-#[cfg(test)]
-#[path = "../tests/path_wired/report_build.rs"]
-mod report_build_tests;

@@ -10,14 +10,26 @@ use serde_json::Value;
 
 use crate::{codegen::StaticRenderResult, ssg::render_awsl_static};
 
-/// 定位 `projects/valkyrie.v` 子模块根目录。
+/// `valkyrie.v` 源码库根目录的显式配置环境变量。
+pub const VALKYRIE_V_ROOT_ENV: &str = "VALKYRIE_V_ROOT";
+
+/// 读取显式配置的 `valkyrie.v` 源码库根目录。
+///
+/// Asgard 不携带、也不猜测语言源码库位置：模板与工程源码由调用方通过
+/// `VALKYRIE_V_ROOT` 显式提供。未配置或目录不存在时返回结构化失败。
 pub fn valkyrie_v_roots() -> Result<Vec<PathBuf>> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let submodule = manifest.join("../../../../valkyrie.v");
-    if submodule.is_dir() {
-        return Ok(vec![submodule]);
+    let Some(raw) = std::env::var_os(VALKYRIE_V_ROOT_ENV)
+    else {
+        return Err(miette::miette!("未配置 `{VALKYRIE_V_ROOT_ENV}`：请显式指定 valkyrie.v 源码库根目录"));
+    };
+    if raw.is_empty() {
+        return Err(miette::miette!("`{VALKYRIE_V_ROOT_ENV}` 为空：请显式指定 valkyrie.v 源码库根目录"));
     }
-    Err(miette::miette!("cannot locate `projects/valkyrie.v` submodule (run `git submodule update --init`)"))
+    let root = PathBuf::from(raw);
+    if !root.is_dir() {
+        return Err(miette::miette!("`{VALKYRIE_V_ROOT_ENV}` 指向的目录不存在: {}", root.display()));
+    }
+    Ok(vec![root])
 }
 
 /// 读取工程 `source/{relative}` 文本。

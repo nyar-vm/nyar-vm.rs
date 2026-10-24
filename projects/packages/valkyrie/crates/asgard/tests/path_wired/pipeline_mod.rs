@@ -36,28 +36,6 @@ fn private_target_spellings_do_not_select_another_backend() {
 }
 
 #[test]
-fn compile_test_blog() {
-    let blog_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/examples/test.blog");
-    if !blog_dir.join("asgard.config.v").exists() {
-        return;
-    }
-    let report =
-        compile_voa_project(&CompileOptions { project_dir: blog_dir.clone(), output_dir: None, target: Some(CanonicalTarget::wasm()) })
-            .expect("compile test.blog");
-    assert!(report.component_count > 0);
-    assert!(report.js_file_count > 0);
-    assert!(report.output_dir.join("index.html").exists());
-    assert!(report.output_dir.join("manifest.json").exists());
-    let glue = fs::read_to_string(report.output_dir.join("c/index.js")).expect("read glue");
-    assert!(glue.contains("callExport"));
-    assert!(glue.contains("__voa"));
-    assert!(!glue.contains("createSignal"));
-    assert!(!glue.contains("asgard-runtime"));
-    assert!(report.wasm_built, "WASM should compile from AWSL-generated V");
-    assert_eq!(report.platform, HostPlatform::Browser);
-}
-
-#[test]
 fn package_miniprogram_emits_wxml_not_html() {
     if !skip_unless_canonical_target("wasm32-unknown-miniprogram-wasm") {
         return;

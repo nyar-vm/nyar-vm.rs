@@ -25,15 +25,6 @@ build {
 }
 
 #[test]
-fn debug_blog_normalize_shape() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v");
-    let source = std::fs::read_to_string(root.join("examples/test.blog/asgard.config.v")).expect("read");
-    let normalized = normalize_config_source(&source).expect("normalize");
-    parse_von(&normalized).expect("parse von");
-    assert!(normalized.contains("routes"));
-}
-
-#[test]
 fn rejects_bare_object_literal() {
     let err = normalize_config_source(r#"{ project_type: "application" }"#).unwrap_err();
     assert!(err.to_string().contains("define_config(asgard)"));

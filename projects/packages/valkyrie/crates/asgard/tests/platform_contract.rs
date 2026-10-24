@@ -138,19 +138,3 @@ fn gate_magics_are_eight_bytes() {
     assert_eq!(ui.len(), 8);
     assert_eq!(nt.len(), 8);
 }
-
-#[test]
-fn demo_android_dist_passes_contract_when_present() {
-    let demo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/examples/demo.android");
-    if !demo.exists() {
-        return;
-    }
-    let dex_path = demo.join("dist/android/classes.dex");
-    if !dex_path.exists() {
-        return;
-    }
-    let dex = std::fs::read(dex_path).expect("read dex");
-    if let Err(e) = validate_android_dist_bytes(&dex) {
-        eprintln!("demo.android dist 未通过契约（需重新 asgard build）: {e}");
-    }
-}

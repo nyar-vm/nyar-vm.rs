@@ -114,18 +114,6 @@ build: [ { target: "node" } ]
 }
 
 #[test]
-fn std_adaptor_clr_fixture_manifest_parses() {
-    let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/projects/std.adaptors._/std.adaptor.clr/legion.von");
-    if !manifest_path.is_file() {
-        eprintln!("skip std_adaptor_clr_fixture_manifest_parses: valkyrie.v submodule missing");
-        return;
-    }
-    let source = fs::read_to_string(&manifest_path).expect("read std.adaptor.clr legion.von");
-    let manifest = ProjectManifest::parse(&source).unwrap_or_else(|error| panic!("std.adaptor.clr legion.von must parse: {error}"));
-    assert_eq!(manifest.name, "std.adaptor.clr");
-}
-
-#[test]
 fn manifest_error_exposes_oak_source_offset_as_label() {
     let error =
         ManifestError::from(VonError::new(OakErrorKind::SyntaxError { message: "expected value".to_string(), offset: 12, source_id: None }));

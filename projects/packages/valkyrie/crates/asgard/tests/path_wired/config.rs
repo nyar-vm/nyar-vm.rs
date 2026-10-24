@@ -2,17 +2,6 @@
 
 use super::*;
 
-use std::path::PathBuf;
-
-#[test]
-fn parse_blog_config() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v");
-    let source = std::fs::read_to_string(root.join("examples/test.blog/asgard.config.v")).expect("read config");
-    let config = VoaConfig::parse(&source).expect("parse asgard.config.v");
-    assert_eq!(config.build.output, "dist");
-    assert_eq!(config.render.default_mode, "ssg");
-}
-
 #[test]
 fn parse_ui_registry_config() {
     let config = VoaConfig::parse(

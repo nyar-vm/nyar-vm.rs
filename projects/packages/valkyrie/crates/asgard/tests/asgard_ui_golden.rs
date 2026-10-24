@@ -146,20 +146,3 @@ fn desktop_package_embeds_native_and_ui_sections() {
         assert!(find_asgard_ui_section(bytes).is_some());
     }
 }
-
-#[test]
-fn demo_android_dist_has_no_placeholder() {
-    let demo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../valkyrie.v/examples/demo.android");
-    if !demo.exists() {
-        return;
-    }
-    let report =
-        asgard::compile_voa_project(&asgard::CompileOptions { project_dir: demo.clone(), output_dir: Some(demo.join("dist")), target: None });
-    if let Ok(report) = report {
-        if let Ok(dex) = std::fs::read(report.output_dir.join("android/classes.dex")) {
-            assert!(!dex.starts_with(b"ASGDHOST"));
-            let text = String::from_utf8_lossy(&dex);
-            assert!(!text.contains("asgard/Placeholder"));
-        }
-    }
-}

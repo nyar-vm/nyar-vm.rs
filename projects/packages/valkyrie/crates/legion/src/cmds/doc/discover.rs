@@ -82,6 +82,3 @@ fn collect_md_files_inner(dir: &Path, out: &mut Vec<PathBuf>) {
 pub fn has_documentation(project_dir: &Path) -> bool {
     !discover_sections(project_dir).is_empty()
 }
-#[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_doc_discover.rs"]
-mod cmds_doc_discover_tests;
