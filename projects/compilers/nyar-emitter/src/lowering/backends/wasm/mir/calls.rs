@@ -6,7 +6,7 @@
 //! authority; this module only maps already-resolved calls to Wasm opcodes.
 
 use super::{numeric, *};
-use crate::target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType};
+use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorRecipe};
 
 /// 计划冻结的目标标量载体 → wasm 栈类型字节。
 fn wasm_stack_type(operand_type: TargetOperandType) -> u8 {
@@ -200,7 +200,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 只有 callee 携带已绑定 host contract 的实例身份时才命中；未绑定 provider
     /// 的 host contract 与普通函数调用都返回 `false`，走既有 import / local call
     /// 路径。arity、操作数配方、结果载体与 opcode 全部来自计划冻结的
-    /// `TargetInstruction`；未冻结的绑定必须返回结构化错误，禁止从助记符猜语义。
+    /// `TargetOperatorPlan`；未冻结的绑定必须返回结构化错误，禁止从助记符猜语义。
     pub(super) fn try_emit_wasm_opcode_call(
         &mut self,
         callee: &MirOperand,
@@ -215,32 +215,32 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let TargetOpcodeBinding::Frozen(instruction) = binding
+        let TargetOperatorBinding::Frozen(plan) = binding
         else {
             return Err(miette!("WASM `wasm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
-        let TargetInstructionEncoding::Wasm(opcode) = instruction.encoding
+        let TargetOperatorEncoding::Wasm(opcode) = plan.encoding
         else {
             return Err(miette!(
                 "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
                 self.mir_fn.symbol
             ));
         };
-        if arguments.len() != instruction.arity {
+        if arguments.len() != plan.arity {
             return Err(miette!(
                 "WASM `wasm_opcode` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
                 self.mir_fn.symbol,
-                instruction.arity,
+                plan.arity,
                 arguments.len()
             ));
         }
-        let operand_type = wasm_stack_type(instruction.operand_type);
-        match instruction.recipe {
-            TargetOperandRecipe::Operands => self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments),
-            TargetOperandRecipe::Steps(steps) => self.emit_wasm_opcode_recipe(mnemonic, operand_type, steps, arguments)?,
+        let operand_type = wasm_stack_type(plan.operand_type);
+        match plan.recipe {
+            TargetOperatorRecipe::Operands => self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments),
+            TargetOperatorRecipe::Steps(steps) => self.emit_wasm_opcode_recipe(mnemonic, operand_type, steps, arguments)?,
         }
         numeric::emit_opcode(opcode, &mut self.code);
-        let result_type = wasm_stack_type(instruction.result_type);
+        let result_type = wasm_stack_type(plan.result_type);
         match output {
             None => WasmOpcode::Drop.encode(&mut self.code),
             Some(output) => {

@@ -6,7 +6,7 @@
 //! 从助记符字符串推断 arity 或操作数改写。
 //!
 //! 本模块只接受下表列出的助记符，未知助记符返回 `None`，计划据此冻结为
-//! `TargetOpcodeBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
+//! `TargetOperatorBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
 //!
 //! pin 的 `acorn_wasm`（e7ed84a）只导出部分 I32 / F64 变体与 `VALTYPE_I32/I64/F64`，
 //! 没有 `VALTYPE_F32`；wasm 后端的 `Float32` 也归一到 `f64` 载体（见
@@ -17,8 +17,8 @@
 
 use acorn_wasm::WasmOpcode;
 
-use crate::target_instruction::{
-    TargetInstruction, TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType,
+use crate::target_operator::{
+    TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
 };
 
 /// 整数取负没有原生指令：计划显式冻结 `0 - x` 的发射配方。
@@ -31,38 +31,38 @@ const I64_NEGATE_STEPS: &[TargetOperandStep] = &[
     TargetOperandStep::Arguments,
 ];
 
-const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetInstruction {
-    TargetInstruction {
+const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetOperatorPlan {
+    TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
-        recipe: TargetOperandRecipe::Operands,
-        encoding: TargetInstructionEncoding::Wasm(opcode),
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Wasm(opcode),
     }
 }
 
-const fn unary(operand_type: TargetOperandType, opcode: u8) -> TargetInstruction {
-    TargetInstruction {
+const fn unary(operand_type: TargetOperandType, opcode: u8) -> TargetOperatorPlan {
+    TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
-        recipe: TargetOperandRecipe::Operands,
-        encoding: TargetInstructionEncoding::Wasm(opcode),
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: TargetOperatorEncoding::Wasm(opcode),
     }
 }
 
-const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: u8) -> TargetInstruction {
-    TargetInstruction {
+const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: u8) -> TargetOperatorPlan {
+    TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
-        recipe: TargetOperandRecipe::Steps(steps),
-        encoding: TargetInstructionEncoding::Wasm(sub_opcode),
+        recipe: TargetOperatorRecipe::Steps(steps),
+        encoding: TargetOperatorEncoding::Wasm(sub_opcode),
     }
 }
 
 /// 唯一助记符表。未知助记符返回 `None`。
-pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetInstruction> {
+pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     Some(match mnemonic {
         // i32 算术 / 位运算：结果与实参同型。
         "i32.add" => binary(TargetOperandType::I32, TargetOperandType::I32, 0x6A),

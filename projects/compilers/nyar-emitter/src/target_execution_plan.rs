@@ -14,7 +14,7 @@ use nyar_types::{
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
-    target_instruction::{TargetInstruction, TargetOperandRecipe, TargetOperandStep, TargetOperandType, TargetOpcodeBinding},
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorPlan, TargetOperatorRecipe},
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -53,8 +53,8 @@ pub struct BackendImport {
     pub parameter_types: Vec<NyarType>,
     /// 返回类型。
     pub return_type: NyarType,
-    /// 计划冻结的目标指令绑定；`None` 表示该导入不是目标指令绑定。
-    pub target_instruction: Option<TargetOpcodeBinding>,
+    /// 计划冻结的目标 operator 绑定；`None` 表示该导入不是目标 operator 绑定。
+    pub target_operator: Option<TargetOperatorBinding>,
 }
 
 impl TargetExecutionPlan {
@@ -189,14 +189,14 @@ impl TargetExecutionPlan {
             if let Some((index, import)) = declared_imports.get(&instance) {
                 let parameter_types = import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<Vec<_>>>()?;
                 let return_type = lower_type(canonical, import.return_type)?;
-                let target_instruction = freeze_target_instruction(&import.link);
-                if let Some(TargetOpcodeBinding::Frozen(instruction)) = target_instruction {
+                let target_operator = freeze_target_operator(&import.link);
+                if let Some(TargetOperatorBinding::Frozen(plan)) = target_operator {
                     let symbol = canonical.linked.callable_names.get(&instance).map(|name| name.to_string());
-                    validate_frozen_instruction(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &instruction)?;
+                    validate_frozen_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
                 }
                 imports.insert(
                     instance,
-                    BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type, target_instruction },
+                    BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type, target_operator },
                 );
                 continue;
             }
@@ -342,56 +342,56 @@ impl TargetExecutionPlan {
     }
 }
 
-/// 计划构造时冻结 `[wasm_opcode]` / `[vm_opcode]` 的完整编码配方。
+/// 计划构造时冻结 `[wasm_opcode]` / `[vm_opcode]` 的完整 operator 计划。
 ///
-/// 助记符只在此处解析一次；backend 之后只消费 [`TargetOpcodeBinding`]，不得再从
+/// 助记符只在此处解析一次；backend 之后只消费 [`TargetOperatorBinding`]，不得再从
 /// 助记符字符串推断 arity、操作数改写或结果类型。未解析的绑定保留为
-/// [`TargetOpcodeBinding::Unfrozen`]，由 emit 侧结构化失败。
-fn freeze_target_instruction(link: &ExternalImportLink) -> Option<TargetOpcodeBinding> {
+/// [`TargetOperatorBinding::Unfrozen`]，由 emit 侧结构化失败。
+fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBinding> {
     if let Some(mnemonic) = crate::lowering::shared::interop::wasm_opcode_target(link) {
         let resolved = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic);
-        return Some(frozen_opcode_binding(resolved));
+        return Some(frozen_operator_binding(resolved));
     }
     let vm_mnemonic = crate::lowering::shared::interop::vm_opcode_target(link);
     #[cfg(feature = "nyar-vm-lane")]
     if let Some(mnemonic) = vm_mnemonic {
         let resolved = crate::lowering::backends::nyar_vm_mir::freeze_nyar_vm_opcode_binding(mnemonic);
-        return Some(frozen_opcode_binding(resolved));
+        return Some(frozen_operator_binding(resolved));
     }
     #[cfg(not(feature = "nyar-vm-lane"))]
     if vm_mnemonic.is_some() {
-        return Some(TargetOpcodeBinding::Unfrozen);
+        return Some(TargetOperatorBinding::Unfrozen);
     }
     None
 }
 
-fn frozen_opcode_binding(resolved: Option<TargetInstruction>) -> TargetOpcodeBinding {
+fn frozen_operator_binding(resolved: Option<TargetOperatorPlan>) -> TargetOperatorBinding {
     match resolved {
-        Some(instruction) => TargetOpcodeBinding::Frozen(instruction),
-        None => TargetOpcodeBinding::Unfrozen,
+        Some(plan) => TargetOperatorBinding::Frozen(plan),
+        None => TargetOperatorBinding::Unfrozen,
     }
 }
 
-/// 校验冻结配方与导入声明在 arity、操作数载体和结果槽载体上一致。
+/// 校验冻结计划与导入声明在 arity、操作数载体和结果槽载体上一致。
 ///
-/// 导入声明是 Compiler 已绑定的调用合同，冻结配方是目标指令的物理形状；二者不一致
+/// 导入声明是 Compiler 已绑定的调用合同，冻结计划是目标 operator 的物理形状；二者不一致
 /// 时计划不成立，必须在此结构化失败，不得让后端按声明槽位发射后再改写或补默认值。
-fn validate_frozen_instruction(
+fn validate_frozen_operator(
     instance: ItemInstanceId,
     symbol: Option<&str>,
     link: &ExternalImportLink,
     parameter_types: &[NyarType],
     return_type: &NyarType,
-    instruction: &TargetInstruction,
+    plan: &TargetOperatorPlan,
 ) -> Result<()> {
     let mnemonic = crate::lowering::shared::interop::wasm_opcode_target(link)
         .or_else(|| crate::lowering::shared::interop::vm_opcode_target(link))
         .unwrap_or("<unknown>");
     let function = symbol.unwrap_or("<unknown>");
-    if parameter_types.len() != instruction.arity {
+    if parameter_types.len() != plan.arity {
         return Err(miette!(
-            "目标指令绑定 `{mnemonic}` 的声明 arity 与冻结配方不符: function={function} expected={} actual={} instance={instance:?} link={link}",
-            instruction.arity,
+            "目标 operator 绑定 `{mnemonic}` 的声明 arity 与冻结计划不符: function={function} expected={} actual={} instance={instance:?} link={link}",
+            plan.arity,
             parameter_types.len()
         ));
     }
@@ -399,13 +399,13 @@ fn validate_frozen_instruction(
         let Some(carrier) = operand_carrier(ty)
         else {
             return Err(miette!(
-                "目标指令绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?} link={link}"
+                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?} link={link}"
             ));
         };
-        if carrier != instruction.operand_type {
+        if carrier != plan.operand_type {
             return Err(miette!(
-                "目标指令绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结配方不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                instruction.operand_type,
+                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+                plan.operand_type,
                 carrier
             ));
         }
@@ -413,23 +413,23 @@ fn validate_frozen_instruction(
     let Some(result_carrier) = result_carrier(return_type)
     else {
         return Err(miette!(
-            "目标指令绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?} link={link}"
+            "目标 operator 绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?} link={link}"
         ));
     };
-    if result_carrier != instruction.result_type {
+    if result_carrier != plan.result_type {
         return Err(miette!(
-            "目标指令绑定 `{mnemonic}` 的结果槽载体与冻结配方不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-            instruction.result_type,
+            "目标 operator 绑定 `{mnemonic}` 的结果槽载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+            plan.result_type,
             result_carrier
         ));
     }
-    if let TargetOperandRecipe::Steps(steps) = instruction.recipe {
+    if let TargetOperatorRecipe::Steps(steps) = plan.recipe {
         for step in steps {
             if let TargetOperandStep::IntegerConstant { operand_type: constant_type, .. } = step {
-                if *constant_type != instruction.operand_type {
+                if *constant_type != plan.operand_type {
                     return Err(miette!(
-                        "目标指令绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                        instruction.operand_type,
+                        "目标 operator 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
+                        plan.operand_type,
                         constant_type
                     ));
                 }

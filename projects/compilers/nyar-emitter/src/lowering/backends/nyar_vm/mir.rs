@@ -19,8 +19,8 @@ use nyar_types::{AggregateLayout, IntrinsicId, ItemInstanceId, LayoutId};
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
     FragmentSubmission, TargetExecutionPlan,
-    target_instruction::{
-        TargetInstruction, TargetInstructionEncoding, TargetOpcodeBinding, TargetOperandRecipe, TargetOperandStep, TargetOperandType,
+    target_operator::{
+        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
     },
 };
 use miette::Result;
@@ -39,30 +39,30 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] = &[
 /// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
-/// 冻结为 `TargetOpcodeBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
+/// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
-pub(crate) fn freeze_nyar_vm_opcode_binding(mnemonic: &str) -> Option<TargetInstruction> {
+pub(crate) fn freeze_nyar_vm_opcode_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     let (arity, recipe, code) = match mnemonic {
-        "i32.add" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Add),
-        "i32.sub" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Sub),
-        "i32.mul" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Mul),
-        "i32.div" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32DivS),
-        "i32.rem" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32RemS),
-        "i32.eq" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Eq),
-        "i32.ne" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32Ne),
-        "i32.lt" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32LtS),
-        "i32.le" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32LeS),
-        "i32.gt" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GtS),
-        "i32.ge" => (2, TargetOperandRecipe::Operands, NyarHeadCode::I32GeS),
-        "i32.neg" => (1, TargetOperandRecipe::Steps(I32_NEGATE_STEPS), NyarHeadCode::I32Sub),
+        "i32.add" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Add),
+        "i32.sub" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Sub),
+        "i32.mul" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Mul),
+        "i32.div" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32DivS),
+        "i32.rem" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32RemS),
+        "i32.eq" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Eq),
+        "i32.ne" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Ne),
+        "i32.lt" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32LtS),
+        "i32.le" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32LeS),
+        "i32.gt" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32GtS),
+        "i32.ge" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32GeS),
+        "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), NyarHeadCode::I32Sub),
         _ => return None,
     };
-    Some(TargetInstruction {
+    Some(TargetOperatorPlan {
         arity,
         operand_type: TargetOperandType::I32,
         result_type: TargetOperandType::I32,
         recipe,
-        encoding: TargetInstructionEncoding::NyarVm(code),
+        encoding: TargetOperatorEncoding::NyarVm(code),
     })
 }
 
@@ -206,9 +206,9 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         .iter()
         .filter_map(|(instance, import)| {
             let mnemonic = crate::lowering::shared::interop::vm_opcode_target(&import.link)?;
-            Some((*instance, (mnemonic.to_string(), import.target_instruction.unwrap_or(TargetOpcodeBinding::Unfrozen))))
+            Some((*instance, (mnemonic.to_string(), import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen))))
         })
-        .collect::<BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>>();
+        .collect::<BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>>();
 
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
     {
@@ -321,7 +321,7 @@ fn lower_mir_function_to_bytecode(
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
-    external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
+    external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<NyarLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
@@ -362,7 +362,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
-    external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOpcodeBinding)>,
+    external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     layouts: &'a mut Vec<NyarLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
 }
@@ -698,7 +698,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         &mut self,
         link: &ExternalImportLink,
         instance: ItemInstanceId,
-        opcode: Option<&(String, TargetOpcodeBinding)>,
+        opcode: Option<&(String, TargetOperatorBinding)>,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
     ) -> miette::Result<()> {
@@ -710,34 +710,34 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             .unwrap_or_else(|| format!("{instance:?}"));
 
         if let Some((mnemonic, binding)) = opcode {
-            let TargetOpcodeBinding::Frozen(instruction) = binding
+            let TargetOperatorBinding::Frozen(plan) = binding
             else {
                 return Err(miette::miette!(
                     "Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
-            let TargetInstructionEncoding::NyarVm(code) = instruction.encoding
+            let TargetOperatorEncoding::NyarVm(code) = plan.encoding
             else {
                 return Err(miette::miette!(
                     "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了非 NyarVM 编码: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
-            if arguments.len() != instruction.arity {
+            if arguments.len() != plan.arity {
                 return Err(miette::miette!(
                     "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 冻结 arity 不符: function=`{}` expected={} actual={}",
                     self.mir_fn.symbol,
-                    instruction.arity,
+                    plan.arity,
                     arguments.len()
                 ));
             }
-            match instruction.recipe {
-                TargetOperandRecipe::Operands => {
+            match plan.recipe {
+                TargetOperatorRecipe::Operands => {
                     self.emit_external_arguments(&callee_name, arguments);
                     self.emitter.emit_plain(code);
                 }
-                TargetOperandRecipe::Steps(steps) => {
+                TargetOperatorRecipe::Steps(steps) => {
                     for step in steps {
                         match step {
                             TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, arguments),

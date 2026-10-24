@@ -6,7 +6,7 @@
 
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    target_instruction::{TargetInstructionEncoding, TargetOperandRecipe, TargetOperandStep, TargetOperandType, TargetOpcodeBinding},
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorRecipe},
 };
 use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
 
@@ -78,15 +78,15 @@ fn frozen_wasm_numeric_recipe_is_consumed_without_backend_inference() {
     let plan = plan_from_source(&numeric_source("i32.add", "i32")).expect("兼容签名必须生成目标计划");
     assert_eq!(plan.imports().len(), 1, "只应有一个目标指令绑定导入");
     let import = plan.imports().values().next().expect("导入必须存在");
-    let Some(TargetOpcodeBinding::Frozen(instruction)) = import.target_instruction
+    let Some(TargetOperatorBinding::Frozen(operator)) = import.target_operator
     else {
         panic!("`i32.add` 必须在计划里冻结成完整配方");
     };
-    assert_eq!(instruction.arity, 2);
-    assert_eq!(instruction.operand_type, TargetOperandType::I32);
-    assert_eq!(instruction.result_type, TargetOperandType::I32);
-    assert_eq!(instruction.recipe, TargetOperandRecipe::Operands);
-    assert_eq!(instruction.encoding, TargetInstructionEncoding::Wasm(0x6A));
+    assert_eq!(operator.arity, 2);
+    assert_eq!(operator.operand_type, TargetOperandType::I32);
+    assert_eq!(operator.result_type, TargetOperandType::I32);
+    assert_eq!(operator.recipe, TargetOperatorRecipe::Operands);
+    assert_eq!(operator.encoding, TargetOperatorEncoding::Wasm(0x6A));
 
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
@@ -112,22 +112,22 @@ micro main() -> i32 {
     let plan = plan_from_source(source).expect("一元取负实现必须生成目标计划");
     assert_eq!(plan.imports().len(), 1, "只应有一个目标指令绑定导入");
     let import = plan.imports().values().next().expect("导入必须存在");
-    let Some(TargetOpcodeBinding::Frozen(instruction)) = import.target_instruction
+    let Some(TargetOperatorBinding::Frozen(operator)) = import.target_operator
     else {
         panic!("`i32.neg` 必须在计划里冻结成完整配方");
     };
-    assert_eq!(instruction.arity, 1);
-    assert_eq!(instruction.operand_type, TargetOperandType::I32);
-    assert_eq!(instruction.result_type, TargetOperandType::I32);
+    assert_eq!(operator.arity, 1);
+    assert_eq!(operator.operand_type, TargetOperandType::I32);
+    assert_eq!(operator.result_type, TargetOperandType::I32);
     assert_eq!(
-        instruction.recipe,
-        TargetOperandRecipe::Steps(&[
+        operator.recipe,
+        TargetOperatorRecipe::Steps(&[
             TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 },
             TargetOperandStep::Arguments,
         ]),
         "`i32.neg` 的配方必须是先压 zero 常量、再发实参"
     );
-    assert_eq!(instruction.encoding, TargetInstructionEncoding::Wasm(0x6B));
+    assert_eq!(operator.encoding, TargetOperatorEncoding::Wasm(0x6B));
 
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
@@ -156,22 +156,22 @@ micro main() -> i64 {
 "#;
     let plan = plan_from_source(source).expect("一元取负实现必须生成目标计划");
     let import = plan.imports().values().next().expect("导入必须存在");
-    let Some(TargetOpcodeBinding::Frozen(instruction)) = import.target_instruction
+    let Some(TargetOperatorBinding::Frozen(operator)) = import.target_operator
     else {
         panic!("`i64.neg` 必须在计划里冻结成完整配方");
     };
-    assert_eq!(instruction.arity, 1);
-    assert_eq!(instruction.operand_type, TargetOperandType::I64);
-    assert_eq!(instruction.result_type, TargetOperandType::I64);
+    assert_eq!(operator.arity, 1);
+    assert_eq!(operator.operand_type, TargetOperandType::I64);
+    assert_eq!(operator.result_type, TargetOperandType::I64);
     assert_eq!(
-        instruction.recipe,
-        TargetOperandRecipe::Steps(&[
+        operator.recipe,
+        TargetOperatorRecipe::Steps(&[
             TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 },
             TargetOperandStep::Arguments,
         ]),
         "`i64.neg` 的配方必须是先压 i64 zero 常量、再发实参"
     );
-    assert_eq!(instruction.encoding, TargetInstructionEncoding::Wasm(0x7D));
+    assert_eq!(operator.encoding, TargetOperatorEncoding::Wasm(0x7D));
 
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
@@ -246,8 +246,8 @@ micro main() -> i32 {
 #[test]
 fn unfrozen_wasm_opcode_recipe_fails_structurally() {
     let plan = plan_from_source(&numeric_source("i32.unbound_add", "i32")).expect("缺配方只应在编码阶段失败");
-    let binding = plan.imports().values().next().and_then(|import| import.target_instruction);
-    assert_eq!(binding, Some(TargetOpcodeBinding::Unfrozen), "未知助记符不得被冻结为任何指令");
+    let binding = plan.imports().values().next().and_then(|import| import.target_operator);
+    assert_eq!(binding, Some(TargetOperatorBinding::Unfrozen), "未知助记符不得被冻结为任何指令");
 
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let error = lower(&submission).expect_err("缺配方不得编码为默认指令");
