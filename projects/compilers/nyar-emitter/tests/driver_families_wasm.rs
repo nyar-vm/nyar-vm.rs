@@ -64,6 +64,15 @@ fn source_i32_add_lowers_to_wasm_opcode_binding() {
     assert!(bytes.contains(&0x6A), "i32 `+` 的 `[wasm_opcode(\"i32.add\")]` 绑定必须编码为 0x6A");
 }
 
+/// 无符号助记符必须由 backend 表编码，不得退化为有符号指令。
+#[test]
+fn unsigned_wasm_opcode_mnemonic_lowers_to_unsigned_instruction() {
+    let submission = numeric_submission("i32.div_u");
+    let module = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main");
+    let bytes = module.to_bytes().expect("无符号数值绑定产物必须可编码");
+    assert!(bytes.contains(&0x6E), "`i32.div_u` 必须编码为无符号除法 0x6E");
+}
+
 /// 未知助记符不得回落到默认指令或宿主导入。
 #[test]
 fn unknown_wasm_opcode_mnemonic_fails_structurally() {
