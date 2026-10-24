@@ -1,8 +1,8 @@
-//! Tcl evaluator thin adapter — delegates to `nyar-language::tcl::interpret`.
+//! Tcl evaluator thin adapter — delegates to `rusty-tcl::interpret`.
 
 use std::collections::HashMap;
 
-use nyar_language::{TclValue, evaluate_tcl_source};
+use rusty_tcl::{TclValue, evaluate_tcl_source};
 
 use crate::value::LegacyValue;
 

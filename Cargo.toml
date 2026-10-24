@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "examples/rusty-bash",
     "examples/rusty-lua",
+    "examples/rusty-tcl",
     "examples/rusty-valkyrie",
     "projects/formats/odin-bytecode",
     "projects/packages/valkyrie/crates/asgard",
@@ -74,6 +75,7 @@ rusty-valkyrie = { path = "examples/rusty-valkyrie" }
 # Guest 语言前端（各自独立 crate）
 rusty-bash = { path = "examples/rusty-bash" }
 rusty-lua = { path = "examples/rusty-lua" }
+rusty-tcl = { path = "examples/rusty-tcl" }
 # Valkyrie 产品装配（Legion / Asgard CLI 与发行入口）
 legion = { path = "projects/packages/valkyrie/crates/legion" }
 legion-workspace = { path = "projects/packages/valkyrie/crates/legion-workspace" }

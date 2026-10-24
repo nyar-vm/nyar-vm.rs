@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::tcl::{TclCommand, TclScript};
+use rusty_tcl::script::{TclCommand, TclScript};
 
 #[test]
 fn parse_if_while() {

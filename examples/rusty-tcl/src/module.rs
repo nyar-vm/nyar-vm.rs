@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::transitional::guest_scripts::tcl::TclScript;
+use crate::script::TclScript;
 
 /// `Tcl` host script module.
 #[derive(Debug, Clone, PartialEq, Default)]

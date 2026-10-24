@@ -1,4 +1,4 @@
-use nyar_language::transitional::guest_scripts::tcl::tokenize_words;
+use rusty_tcl::script::tokenize_words;
 
 #[test]
 fn tokenizes_puts_and_set() {

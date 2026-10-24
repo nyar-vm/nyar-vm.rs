@@ -18,6 +18,7 @@ nyar-language = { workspace = true }
 odin-bytecode = { workspace = true }
 rusty-bash = { workspace = true }
 rusty-lua = { workspace = true }
+rusty-tcl = { workspace = true }
 
 # OVM is a Futamura *sink* for probes only — not a lib dependency of the PE substrate.
 [dev-dependencies]

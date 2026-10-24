@@ -5,6 +5,3 @@ pub mod c;
 
 /// PowerShell script model and parser（已自 vcc-data 迁入）。
 pub mod powershell;
-
-/// Tcl script model and parser（已自 vcc-data 迁入）。
-pub mod tcl;

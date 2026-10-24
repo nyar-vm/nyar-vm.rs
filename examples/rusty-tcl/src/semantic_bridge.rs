@@ -1,6 +1,6 @@
 //! Tcl host script semantic bridge.
 
-use crate::transitional::guest_scripts::tcl::{TclCommand, TclScript};
+use crate::script::{TclCommand, TclScript};
 
 /// Tcl module semantic bridge result.
 #[derive(Debug, Clone, PartialEq)]
