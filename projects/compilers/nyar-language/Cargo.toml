@@ -16,7 +16,6 @@ ovm-lane = ["nyar-emitter/ovm-lane"]
 [dependencies]
 # 分层：Oak 文本前端 → language 语义层；guest/tgrammar 等待 Oak 接管。
 oak-core = { workspace = true }
-nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
 nyar-types = { workspace = true }

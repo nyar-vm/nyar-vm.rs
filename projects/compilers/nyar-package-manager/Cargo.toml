@@ -10,6 +10,7 @@ description = "Nyar package manager core (install / resolve / publish)"
 base64 = { workspace = true }
 flate2 = { workspace = true }
 miette = { workspace = true }
+nyar = { workspace = true }
 nyar-language = { workspace = true, features = ["serde"] }
 nyar-format = { workspace = true, features = ["serde"] }
 nyar-package-registry = { workspace = true }

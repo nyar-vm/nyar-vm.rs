@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use nyar_language::CanonicalTarget;
+use nyar::CanonicalTarget;
 
 use crate::{PackageManagerError, Result};
 

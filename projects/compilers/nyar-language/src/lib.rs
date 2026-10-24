@@ -21,9 +21,3 @@ pub use pe::ResidualSink;
 pub use powershell::{PowerShellModule, PowerShellSemanticBridge, PowerShellValue, evaluate_powershell_script, evaluate_powershell_source};
 pub use python::PythonModule;
 pub use tcl::{TclModule, TclSemanticBridge, TclValue, evaluate_tcl_script, evaluate_tcl_source};
-
-pub use nyar::{
-    self, ArtifactKind, ArtifactPartitionPlan, ArtifactPolicy, ArtifactSet, CanonicalAbi, CanonicalArch, CanonicalSpecification,
-    CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary, ProgramFacts,
-    PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
-};
