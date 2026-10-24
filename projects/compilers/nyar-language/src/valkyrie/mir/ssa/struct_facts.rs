@@ -9,12 +9,8 @@ fn struct_matches_parent_path(structure: &crate::types::hir::HirStruct, parent: 
     if path.is_empty() {
         return false;
     }
-    let (namespace_parts, name) = if path.len() == 1 {
-        (&[] as &[crate::Identifier], &path[0])
-    }
-    else {
-        (&path[..path.len() - 1], &path[path.len() - 1])
-    };
+    let (namespace_parts, name) =
+        if path.len() == 1 { (&[] as &[crate::Identifier], &path[0]) } else { (&path[..path.len() - 1], &path[path.len() - 1]) };
     structure.name.as_str() == name.as_str()
         && structure.namespace.len() == namespace_parts.len()
         && structure.namespace.iter().zip(namespace_parts).all(|(left, right)| left.as_str() == right.as_str())
@@ -47,7 +43,8 @@ pub(super) fn lower_struct(
         .fields
         .iter()
         .filter_map(|field| {
-            let Some(id) = field.id else {
+            let Some(id) = field.id
+            else {
                 diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
                 return None;
             };
@@ -68,12 +65,7 @@ pub(super) fn lower_struct(
 }
 
 pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut Vec<MirDiagnostic>) -> Vec<MirStruct> {
-    fn collect(
-        module: &HirModule,
-        declarations: &mut Vec<MirStruct>,
-        next_nominal: &mut usize,
-        diagnostics: &mut Vec<MirDiagnostic>,
-    ) {
+    fn collect(module: &HirModule, declarations: &mut Vec<MirStruct>, next_nominal: &mut usize, diagnostics: &mut Vec<MirDiagnostic>) {
         for hir_struct in &module.structs {
             declarations.push(lower_struct(module, hir_struct, *next_nominal, diagnostics));
             *next_nominal += 1;
@@ -89,7 +81,8 @@ pub(super) fn collect_field_declarations(module: &HirModule, diagnostics: &mut V
                 .fields
                 .iter()
                 .filter_map(|field| {
-                    let Some(id) = field.id else {
+                    let Some(id) = field.id
+                    else {
                         diagnostics.push(MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
                         return None;
                     };
@@ -154,4 +147,3 @@ pub(super) fn resolve_self_type_with_owner(ty: &ValkyrieType, owner: Option<&Val
         _ => ty.clone(),
     }
 }
-

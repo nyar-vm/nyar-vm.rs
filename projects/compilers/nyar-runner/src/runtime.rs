@@ -20,8 +20,8 @@ pub enum RuntimeFamily {
     Windows,
     /// `WASI / wasmtime`
     Wasi,
-    /// `NyarVM`
-    NyarVm,
+    /// `OVM`
+    Ovm,
 }
 
 impl RuntimeFamily {
@@ -33,7 +33,7 @@ impl RuntimeFamily {
             "node" => Some(Self::Node),
             "windows" => Some(Self::Windows),
             "wasi" => Some(Self::Wasi),
-            "nyar-vm" | "nyarvm" | "nyar" | "nvm" => Some(Self::NyarVm),
+            "ovm" | "odin-vm" | "legion" => Some(Self::Ovm),
             _ => None,
         }
     }
@@ -46,7 +46,7 @@ impl RuntimeFamily {
             Self::Node => "node",
             Self::Windows => "windows",
             Self::Wasi => "wasi",
-            Self::NyarVm => "nyar-vm",
+            Self::Ovm => "ovm",
         }
     }
 
@@ -89,10 +89,10 @@ impl RuntimeFamily {
                 }
                 RuntimeTemplate { family: Self::Wasi, command: "wasmtime".to_string(), args }
             }
-            Self::NyarVm => {
-                let command = std::env::var("NYAR_VM").unwrap_or_else(|_| "nyar-vm".to_string());
+            Self::Ovm => {
+                let command = std::env::var("ODIN_VM").unwrap_or_else(|_| "odin-vm".to_string());
                 RuntimeTemplate {
-                    family: Self::NyarVm,
+                    family: Self::Ovm,
                     command,
                     args: vec!["run".to_string(), "{artifact}".to_string(), "--entry".to_string(), "{entry}".to_string()],
                 }

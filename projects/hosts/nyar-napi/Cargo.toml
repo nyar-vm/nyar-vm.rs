@@ -12,6 +12,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+legend-vm = { workspace = true }
 nyar-runner = { workspace = true }
 napi.workspace = true
 napi-derive.workspace = true

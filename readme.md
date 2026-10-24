@@ -158,7 +158,7 @@ graph LR
 
 | 模块           | 路径                                                                           | 功能描述                                |
 |:---------------|:-------------------------------------------------------------------------------|:----------------------------------------|
-| **虚拟机核心** | [`nyar-vm`](./projects/runtimes/nyar-vm)                                       | 字节码解释器、异步运行时及驱动          |
+| **虚拟机核心** | [`odin-vm`](./projects/runtimes/odin-vm)                                       | 字节码解释器、异步运行时及驱动          |
 | **类型系统**   | [`nyar-types`](./projects/compilers/nyar-types)                                | NaN-Boxing 实现与核心类型定义           |
 | **垃圾回收**   | [`nyar-gc`](./projects/runtimes/nyar-gc)                                       | 高性能分块式垃圾回收器                  |
 | **加速引擎**   | [`nyar-jit`](./projects/runtimes/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链                |
@@ -166,7 +166,7 @@ graph LR
 | **语言主链**   | [`nyar-language`](./projects/compilers/nyar-language)                          | Valkyrie `HIR` / `MIR` 与多宿主脚本前端 |
 
 Per-crate docs live in each directory's `readme.md` (for example [
-`nyar-vm/readme.md`](./projects/runtimes/nyar-vm/readme.md)).
+`odin-vm/readme.md`](./projects/runtimes/odin-vm/readme.md)).
 
 ---
 
@@ -177,10 +177,10 @@ Per-crate docs live in each directory's `readme.md` (for example [
 cargo build --release
 
 # 运行基准测试
-cargo bench -p nyar-vm
+cargo bench -p odin-vm
 
 # 执行 Nyar 字节码程序
-cargo run -p nyar-vm -- <input_file>
+cargo run -p odin-vm -- <input_file>
 ```
 
 ## 📖 深入探索

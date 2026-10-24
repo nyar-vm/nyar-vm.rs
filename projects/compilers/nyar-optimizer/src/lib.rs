@@ -233,7 +233,7 @@ pub enum FutamuraProjectionFamily {
     /// `futa_native`
     Native,
     /// `futa_vm`
-    NyarVm,
+    Ovm,
     /// `futa_gpu`
     Gpu,
 }
@@ -246,7 +246,7 @@ impl FutamuraProjectionFamily {
             Self::Jvm => "futa_jvm",
             Self::Wasm => "futa_wasm",
             Self::Native => "futa_native",
-            Self::NyarVm => "futa_vm",
+            Self::Ovm => "futa_vm",
             Self::Gpu => "futa_gpu",
         }
     }

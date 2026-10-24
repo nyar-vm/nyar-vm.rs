@@ -1,9 +1,11 @@
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
-use nyar_language::valkyrie::hir::{build_generated_group, build_source_input_with_generated, compose_source_input_groups};
 use nyar_language::{
     CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler,
     nyar::{CanonicalTarget, ClrSuspendStrategy},
-    valkyrie::compile_pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
+    valkyrie::{
+        compile_pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts},
+        hir::{build_generated_group, build_source_input_with_generated, compose_source_input_groups},
+    },
     *,
 };
 

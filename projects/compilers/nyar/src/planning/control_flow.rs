@@ -2,7 +2,7 @@
 //!
 //! Backends fall into two consumption models:
 //! - [`SuspendConsumptionModel::FirstClass`]: native `PerformEffect` / `YieldToRuntime` + continuation runtime
-//!   (nyar-vm, future CLR coroutine runtime).
+//!   (ovm, future CLR coroutine runtime).
 //! - [`SuspendConsumptionModel::StateMachine`]: explicit `MoveNext` / asyncify lowering
 //!   (JVM, WASM, legacy MSIL PE writer).
 

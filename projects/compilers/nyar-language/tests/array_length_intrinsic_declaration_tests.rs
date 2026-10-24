@@ -16,8 +16,7 @@ const PRIMITIVES: &str = "[primitive(\"core::primitive::usize\")] structure usiz
     [primitive(\"core::primitive::i32\")] structure i32 { } ";
 
 /// 与 `valkyrie.v` core 声明逐字对齐的唯一前端来源。
-const ARRAY_LENGTH_INTRINSIC_DECLARATION: &str =
-    "[intrinsic(\"builtin.array.length\")] micro length<T>(array: [T]): usize { } ";
+const ARRAY_LENGTH_INTRINSIC_DECLARATION: &str = "[intrinsic(\"builtin.array.length\")] micro length<T>(array: [T]): usize { } ";
 
 /// 与 `asgard.router` 相同的调用形式：`length(segments)`。
 const PROBE: &str = "micro probe(values: [i32]) -> usize { return length(values) }";
@@ -82,11 +81,7 @@ fn declared_array_length_intrinsic_lowers_to_array_len_identity() {
         }
     }
     // 结果类型必须消费声明返回类型本身，不得按名字另造 `Named("usize")` 形成双 TypeId。
-    assert_eq!(
-        array_length_result_types,
-        vec![Some(declared_return_type)],
-        "ArrayLength 结果类型必须来自声明身份，不得回落为名字类型"
-    );
+    assert_eq!(array_length_result_types, vec![Some(declared_return_type)], "ArrayLength 结果类型必须来自声明身份，不得回落为名字类型");
 }
 
 #[test]
@@ -105,9 +100,10 @@ fn missing_array_length_return_type_fact_fails_structurally() {
 
     let semantic = MirLowerer::lower_module_semantic(&hir);
     assert!(
-        semantic.diagnostics.iter().any(|diagnostic| {
-            matches!(diagnostic, MirDiagnostic::UnresolvedValueType { context } if context.contains("array length"))
-        }),
+        semantic
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { matches!(diagnostic, MirDiagnostic::UnresolvedValueType { context } if context.contains("array length")) }),
         "缺失结果类型事实必须结构化失败，实际诊断: {:?}",
         semantic.diagnostics
     );
@@ -129,9 +125,8 @@ fn missing_array_length_return_type_fact_fails_structurally() {
 
 #[test]
 fn undeclared_array_length_intrinsic_fails_without_frontend_synthesis() {
-    let error = ValkyrieCompiler::default()
-        .compile_source_to_program(&probe_source(None))
-        .expect_err("缺少 intrinsic 声明时数组长度调用不得成功");
+    let error =
+        ValkyrieCompiler::default().compile_source_to_program(&probe_source(None)).expect_err("缺少 intrinsic 声明时数组长度调用不得成功");
     let rendered = format!("{error:?}");
     assert!(matches!(error, HirError::UnresolvedCall { .. }), "缺少声明必须结构化失败为 UnresolvedCall: {rendered}");
     assert!(rendered.contains("length"), "失败必须指出未解析的 length 调用: {rendered}");

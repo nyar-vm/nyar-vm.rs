@@ -6,7 +6,14 @@ use nyar_types::DiagnosticSpan;
 
 use crate::{
     types::hir::{HirLiteral, HirPattern},
-    valkyrie::{HirError, frontend::{ast::{MatchArm, StatementNode, TermExpression}, parse_source, ParseError}},
+    valkyrie::{
+        HirError,
+        frontend::{
+            ParseError,
+            ast::{MatchArm, StatementNode, TermExpression},
+            parse_source,
+        },
+    },
 };
 
 use super::errors::MatchRecoveryStage;
@@ -30,10 +37,7 @@ fn oak_lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
     if !matches!(arm.pattern, oak_valkyrie::ast::Pattern::Wildcard(_)) {
         return false;
     }
-    source
-        .get(arm.span.start..arm.span.end)
-        .and_then(extract_case_pattern_text)
-        .is_some_and(|pattern| !pattern.is_empty() && pattern != "_")
+    source.get(arm.span.start..arm.span.end).and_then(extract_case_pattern_text).is_some_and(|pattern| !pattern.is_empty() && pattern != "_")
 }
 
 fn extract_case_pattern_text(arm_text: &str) -> Option<String> {
@@ -51,16 +55,11 @@ fn extract_case_pattern_text(arm_text: &str) -> Option<String> {
 
 fn broken_wildcard_arm(source: &str, arm: &MatchArm) -> bool {
     matches!(arm.pattern, oak_valkyrie::ast::Pattern::Wildcard(_))
-        && source
-            .get(arm.span.start..arm.span.end)
-            .is_some_and(|text| text.trim_start().starts_with(':'))
+        && source.get(arm.span.start..arm.span.end).is_some_and(|text| text.trim_start().starts_with(':'))
 }
 
 /// 从 match 表达式 span 恢复 pattern 与 Oak body 表达式。
-pub fn recover_match_arms(
-    source: &str,
-    match_span: Range<usize>,
-) -> Result<Vec<(HirPattern, TermExpression)>, HirError> {
+pub fn recover_match_arms(source: &str, match_span: Range<usize>) -> Result<Vec<(HirPattern, TermExpression)>, HirError> {
     let span = DiagnosticSpan { start: match_span.start, end: match_span.end };
     let interior = extract_match_block_interior(source, match_span.clone())
         .ok_or_else(|| HirError::match_recovery_failed(MatchRecoveryStage::BlockInterior, None, span.clone()))?;
@@ -72,9 +71,8 @@ pub fn recover_match_arms(
         .into_iter()
         .map(|(pattern_text, body_text)| {
             let span = DiagnosticSpan { start: match_span.start, end: match_span.end };
-            let pattern = parse_recovered_pattern(&pattern_text).ok_or_else(|| {
-                HirError::match_recovery_failed(MatchRecoveryStage::Pattern, Some(pattern_text.clone()), span.clone())
-            })?;
+            let pattern = parse_recovered_pattern(&pattern_text)
+                .ok_or_else(|| HirError::match_recovery_failed(MatchRecoveryStage::Pattern, Some(pattern_text.clone()), span.clone()))?;
             let body = parse_arm_body_expression(&body_text, span)?;
             Ok((pattern, body))
         })
@@ -82,9 +80,7 @@ pub fn recover_match_arms(
 }
 
 fn count_match_arms_in_source(source: &str, match_span: Range<usize>) -> usize {
-    extract_match_block_interior(source, match_span)
-        .map(|interior| split_match_arms(&interior).len())
-        .unwrap_or(0)
+    extract_match_block_interior(source, match_span).map(|interior| split_match_arms(&interior).len()).unwrap_or(0)
 }
 
 fn extract_match_block_interior(source: &str, match_span: Range<usize>) -> Option<String> {
@@ -212,7 +208,8 @@ fn read_arm_body(text: &str, start: usize) -> (String, usize) {
 }
 
 fn starts_next_arm(text: &str, index: usize) -> bool {
-    let Some(rest) = text.get(index..) else {
+    let Some(rest) = text.get(index..)
+    else {
         return false;
     };
     if rest.starts_with("case ") {
@@ -239,7 +236,11 @@ fn parse_recovered_pattern(text: &str) -> Option<HirPattern> {
         return Some(HirPattern::Else);
     }
     if let Some((start, end, inclusive_end)) = parse_range_pattern(text) {
-        return Some(HirPattern::Range { start: start.and_then(|value| parse_hir_literal(value)), end: end.and_then(|value| parse_hir_literal(value)), inclusive_end });
+        return Some(HirPattern::Range {
+            start: start.and_then(|value| parse_hir_literal(value)),
+            end: end.and_then(|value| parse_hir_literal(value)),
+            inclusive_end,
+        });
     }
     parse_hir_literal(text).map(HirPattern::Literal)
 }

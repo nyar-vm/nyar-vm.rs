@@ -5,13 +5,13 @@
 
 use std::path::Path;
 
-use miette::{Result, Report};
+use miette::{Report, Result};
 use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
 use crate::valkyrie::{
-    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler,
-    assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program,
+    CompilerSourceGroup, CompilerSourceInput, ValkyrieCompiler, assemble_fragment, build_output_surface_counts,
+    plan_artifacts_from_compiled_program,
 };
 
 use super::{context::CompilerBuildContext, evidence::CompilerCompileEvidence};
@@ -73,8 +73,8 @@ pub fn compile_source_groups_to_backend_bundle(
     let compiled_program = compiler
         .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)
         .map_err(Report::new)?;
-    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
-        .map_err(Report::new)?;
+    let artifact_plan =
+        plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy).map_err(Report::new)?;
     let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind: context.wasm_package_kind };
     validate_artifact_surface(&bundle, context.wasm_package_kind)?;
     Ok(bundle)
@@ -92,8 +92,7 @@ pub fn compile_source_groups_to_artifacts(
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
 ) -> Result<CompilerArtifactReport> {
-    let groups = crate::valkyrie::hir::lowering::compose_source_input_groups(input)
-        .map_err(Report::new)?;
+    let groups = crate::valkyrie::hir::lowering::compose_source_input_groups(input).map_err(Report::new)?;
     let bundle = compile_source_groups_to_backend_bundle(compiler, &groups, context)?;
     let evidence = CompilerCompileEvidence::from_success_with_generated(
         &groups,

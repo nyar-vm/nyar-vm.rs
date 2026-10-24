@@ -1,0 +1,48 @@
+#![deny(missing_docs)]
+
+//! Nyar bytecode VM — language-agnostic `.nyar` / Nyar IR runtime.
+//!
+//! # Layering
+//!
+//! - This crate executes **decoded Nyar IR modules** only. It must not import concrete
+//!   language ASTs or compilers.
+//! - Managed heap / GC live in **`nyar-gc`**; optional JIT lives in **`nyar-jit`**.
+//! - This crate owns the interpreter loop.
+//! - Concrete languages lower through `emitter` into `.nyar` bytes before this VM sees them.
+//!
+//! # Naming
+//!
+//! Crate package: `odin-vm`. Rust import path: `odin_vm`. CLI binary: `odin-vm`.
+
+pub mod array_runtime;
+pub mod deopt_value;
+pub mod error;
+pub mod executable;
+pub mod executor;
+pub mod frame;
+pub mod host;
+pub mod jit;
+pub mod json_bridge;
+pub mod module;
+pub mod nj1_runtime;
+pub mod ops;
+pub mod stack;
+pub mod value;
+pub mod verify;
+pub mod vm;
+pub mod workload_json;
+
+pub use deopt_value::{decode_value_from_deopt, decode_value_from_deopt_with_roots, encode_value_for_deopt, encode_value_for_deopt_pinned};
+pub use error::NyarRuntimeError;
+pub use executable::{ExecOp, ExecutableFunction, InstructionIndex};
+pub use module::ModuleGlobals;
+pub use nj1_runtime::{execute_nj1_blob, execute_scalar_program};
+pub use nyar_gc::{
+    ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector, GcMode,
+    GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap, ObjectLifetimeHint,
+    ObjectPayload, PromotionFailure, RelocateMap, RootHandle, RootHandshakeReport, StrategyController, StrategyDecision, StrategyTransition,
+    TracePollReport, WorkloadHints, WorkloadIntent, WriteBarrier,
+};
+pub use value::{CoroutineState, ObjectId, Value};
+pub use vm::OdinVm;
+pub use workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence};

@@ -178,7 +178,7 @@ fn collapses_host_import_shapes_into_same_neutral_contract() {
         (805, "jvm", r#""java/lang/System", "currentTimeMillis""#),
         (806, "com", r#""Excel.Application", "Visible", "set""#),
         (810, "js_builtin", r#""console.log""#),
-        (811, "vm", r#""utf8_to_utf16""#),
+        (811, "ovm", r#""utf8_to_utf16""#),
     ] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
@@ -284,11 +284,23 @@ micro i32_add(a: i32, b: i32): i32;
 "#
             ))
             .unwrap();
-        assert!(
-            function_interop_contract(&module.functions[0]).is_none(),
-            "`[{attribute}]` 必须不再产生目标绑定"
-        );
+        assert!(function_interop_contract(&module.functions[0]).is_none(), "`[{attribute}]` 必须不再产生目标绑定");
     }
+}
+
+/// 旧 `[vm(...)]` 宿主标签不得再产生外部导入合同：OVM 宿主边界统一为 `[ovm]`。
+#[test]
+fn legacy_vm_surface_tag_does_not_bind_host_contract() {
+    let compiler = ValkyrieCompiler::new(SourceID { version_id: 920 });
+    let module = compiler
+        .compile_source(
+            r#"
+[vm("i64_add")]
+micro i64_add(a: i64, b: i64): i64;
+"#,
+        )
+        .unwrap();
+    assert!(function_interop_contract(&module.functions[0]).is_none(), "`[vm]` 必须不再产生宿主绑定，OVM 宿主边界只接受 `[ovm]`");
 }
 
 #[test]

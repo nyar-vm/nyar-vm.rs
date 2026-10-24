@@ -32,9 +32,7 @@ const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 // Declaration 索引中立数据结构（生产权在 nyar-language frontend inventory）
 // 定义在 nyar_types::compiler_input，本模块 re-export 供内部使用。
 // ---------------------------------------------------------------------------
-pub use nyar_types::compiler_input::{
-    DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath,
-};
+pub use nyar_types::compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};
 
 /// namespace 段 + 文件名路径引用的组合（文件级语句所属 namespace 与它引用的名字）。
 type ScopedReference = (Vec<String>, ReferencePath);

@@ -1,6 +1,6 @@
 //! Shared executable lowering utilities for backend drivers.
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 pub mod slots;
 
 use nyar::NyarType;

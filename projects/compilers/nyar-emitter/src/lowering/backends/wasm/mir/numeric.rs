@@ -17,19 +17,13 @@
 
 use acorn_wasm::WasmOpcode;
 
-use crate::target_operator::{
-    TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-};
+use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe};
 
 /// 整数取负没有原生指令：计划显式冻结 `0 - x` 的发射配方。
-const I32_NEGATE_STEPS: &[TargetOperandStep] = &[
-    TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 },
-    TargetOperandStep::Arguments,
-];
-const I64_NEGATE_STEPS: &[TargetOperandStep] = &[
-    TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 },
-    TargetOperandStep::Arguments,
-];
+const I32_NEGATE_STEPS: &[TargetOperandStep] =
+    &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 }, TargetOperandStep::Arguments];
+const I64_NEGATE_STEPS: &[TargetOperandStep] =
+    &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 }, TargetOperandStep::Arguments];
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: u8) -> TargetOperatorPlan {
     TargetOperatorPlan {

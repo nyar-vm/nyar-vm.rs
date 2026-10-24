@@ -35,8 +35,8 @@ use crate::{
         semantic_closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure_with_host_bindings},
     },
 };
-mod trait_binding;
 pub mod errors;
+mod trait_binding;
 pub use errors::HirError;
 use errors::{DiscriminatorFailure, IndexSpace};
 use nyar_types::{DiagnosticSource, DiagnosticSpan, NyarType};
@@ -169,7 +169,8 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
                     context: function.to_string(),
                     source: unknown_source.clone(),
                     span: unknown_span.clone(),
-                }.into());
+                }
+                .into());
             }
             validate_expr_call_contracts(callee, function)?;
             for arg in args {
@@ -183,7 +184,8 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
                     context: function.to_string(),
                     source: unknown_source.clone(),
                     span: unknown_span.clone(),
-                }.into());
+                }
+                .into());
             }
             for arg in args {
                 validate_expr_call_contracts(arg, function)?;
@@ -282,9 +284,9 @@ pub fn validate_expr_call_contracts(expr: &HirExpr, function: &str) -> Result<()
 }
 
 mod expr_lowering;
+mod macro_expand;
 mod match_pattern_recovery;
 mod source_context;
-mod macro_expand;
 mod template_const;
 pub(crate) mod template_expand;
 mod vx;
@@ -316,7 +318,6 @@ pub struct ValkyrieCompiler {
 // Compiler 输入数据结构（生产权在 Legion/Resolver，定义在 nyar_types::compiler_input）
 // 本模块 re-export 数据结构，并补充只属于 nyar-language 的验证自由函数。
 // ---------------------------------------------------------------------------
-
 pub use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
 
 /// 建立生成源码组；producer 与入口身份都由生成器显式提供，不接受缺省推断。
@@ -330,11 +331,7 @@ pub fn build_generated_group(producer: impl Into<String>, group: CompilerSourceG
         });
     }
     if !group.is_entry {
-        return Err(HirError::SourceGroupNotEntry {
-            dependency_key: group.dependency_key.clone(),
-            source: plan_source(),
-            span: plan_span(),
-        });
+        return Err(HirError::SourceGroupNotEntry { dependency_key: group.dependency_key.clone(), source: plan_source(), span: plan_span() });
     }
     Ok(GeneratedSourceGroup { producer, group })
 }
@@ -525,11 +522,7 @@ fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), HirError
             }
         }
         if group.is_entry && group.sources.is_empty() {
-            return Err(HirError::EntryGroupWithoutFiles {
-                group: group.dependency_key.clone(),
-                source: plan_source(),
-                span: plan_span(),
-            });
+            return Err(HirError::EntryGroupWithoutFiles { group: group.dependency_key.clone(), source: plan_source(), span: plan_span() });
         }
         completed.insert(group.dependency_key.clone());
     }
@@ -540,8 +533,7 @@ fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), HirError
 #[doc(hidden)]
 pub(crate) fn compiled_program_from_hir_module(hir_module: HirModule) -> Result<nyar_types::CompiledProgram, HirError> {
     let semantic_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic(&hir_module);
-    let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir)
-        .map_err(pipeline_rejected)?;
+    let compiled_program = crate::valkyrie::compile_pipeline::compile_linked_semantic_mir(&semantic_mir).map_err(pipeline_rejected)?;
     Ok(compiled_program)
 }
 
@@ -592,7 +584,8 @@ fn collect_sum_declarations(
                             .fields
                             .iter()
                             .filter_map(|field| {
-                                let Some(id) = field.id else {
+                                let Some(id) = field.id
+                                else {
                                     diagnostics.push(crate::mir::MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
                                     return None;
                                 };
@@ -638,7 +631,8 @@ fn collect_sum_declarations(
                             .fields
                             .iter()
                             .filter_map(|field| {
-                                let Some(id) = field.id else {
+                                let Some(id) = field.id
+                                else {
                                     diagnostics.push(crate::mir::MirDiagnostic::UnresolvedFieldIdentity { field: field.name.to_string() });
                                     return None;
                                 };
@@ -881,21 +875,16 @@ impl ValkyrieCompiler {
             .len()
             .checked_sub(1)
             .ok_or_else(|| HirError::EmptySemanticSourceGroupPlan { source: plan_source(), span: plan_span() })?;
-        let final_hir = hir_groups
-            .pop()
-            .ok_or_else(|| HirError::EmptySemanticSourceGroupPlan { source: plan_source(), span: plan_span() })?;
+        let final_hir = hir_groups.pop().ok_or_else(|| HirError::EmptySemanticSourceGroupPlan { source: plan_source(), span: plan_span() })?;
         let all_hirs = std::iter::once(&final_hir).chain(hir_groups.iter()).collect::<Vec<_>>();
         let host_runtime = crate::valkyrie::mir::ssa::contracts::allocate_program_host_runtime(&all_hirs);
         // 分派表覆盖完整源码闭包，frontend 固定点内完成成员查找。
         let dispatch = crate::valkyrie::mir::ssa::generic_call_instantiation::collect_dispatch_entries(&all_hirs);
         let mut mir_groups = hir_groups
             .iter()
-            .map(|hir| {
-                crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch)
-            })
+            .map(|hir| crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(hir, Some(&host_runtime), false, &dispatch))
             .collect::<Vec<_>>();
-        let mut final_mir =
-            crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch);
+        let mut final_mir = crate::valkyrie::mir::MirLowerer::lower_module_semantic_with_host(&final_hir, Some(&host_runtime), true, &dispatch);
         // 程序模块是全部入口组共同的链接根宿主：非末尾入口组的 `[export]` / `[main]`
         // 必须按已冻结合同身份并入，而不是只让最后一个组决定产物表面。
         for index in entry_indices {
@@ -934,8 +923,7 @@ impl ValkyrieCompiler {
         arch: &str,
     ) -> Result<Vec<HirModule>, HirError> {
         validate_source_groups(groups)?;
-        let closure =
-            source_group_closure_with_host_bindings(groups, host_bindings, arch)?;
+        let closure = source_group_closure_with_host_bindings(groups, host_bindings, arch)?;
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
@@ -1025,7 +1013,8 @@ impl ValkyrieCompiler {
                 dependency_key: group.dependency_key.clone(),
                 source: DiagnosticSource { id: group.dependency_key.clone(), revision: None },
                 span: DiagnosticSpan { start: 0, end: 0 },
-            }.into());
+            }
+            .into());
         }
         // 类型别名作用域是组级事实：本组全部文件的 `type` 声明 + 可见依赖导出的别名。
         let roots = prepared.iter().map(|(_, root)| root).collect::<Vec<_>>();
@@ -1187,7 +1176,8 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
                 candidate_count: exact.len(),
                 source: unknown_source.clone(),
                 span: unknown_span.clone(),
-            }.into());
+            }
+            .into());
         }
         if exact.len() == 1 {
             return Ok(Some(exact[0]));
@@ -1199,7 +1189,8 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
                 candidate_count: short.len(),
                 source: unknown_source.clone(),
                 span: unknown_span.clone(),
-            }.into());
+            }
+            .into());
         }
         Ok(short.into_iter().next())
     }
@@ -1213,7 +1204,8 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
                 candidate_count: matches.len(),
                 source: unknown_source.clone(),
                 span: unknown_span.clone(),
-            }.into());
+            }
+            .into());
         }
         Ok(matches.into_iter().next())
     }
@@ -1224,12 +1216,10 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirError> {
         enums: &[HirEnum],
     ) -> Result<Option<nyar_types::ItemId>, HirError> {
         if let Some(item) = unique_struct(name, namespace, structs)? {
-            return Ok(Some(item.constructor_declaration.ok_or_else(|| {
-                HirError::StructureMissingConstructor {
-                    qualified_name: qualified_struct(item).to_string(),
-                    source: plan_source(),
-                    span: plan_span(),
-                }
+            return Ok(Some(item.constructor_declaration.ok_or_else(|| HirError::StructureMissingConstructor {
+                qualified_name: qualified_struct(item).to_string(),
+                source: plan_source(),
+                span: plan_span(),
             })?));
         }
         if let Some(item) = unique_enum(name, enums)? {
@@ -1896,10 +1886,8 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
         // 顶层与单例成员在 MIR 中总会物化；泛型种子（如 `Some<T>` / `option_none<T>`）同样需要 callable instance。
         if owner_monomorphic {
             let following = next_instance.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?;
-            function.instance = Some(
-                nyar_types::ItemInstanceId::from_index(*next_instance)
-                    .ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?,
-            );
+            function.instance =
+                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?);
             *next_instance = following;
         }
         Ok(())
@@ -1916,10 +1904,8 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
             Some(nyar_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?);
         *next = next.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?;
         if structure.generics.is_empty() {
-            structure.constructor_instance = Some(
-                nyar_types::ItemInstanceId::from_index(*next_instance)
-                    .ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?,
-            );
+            structure.constructor_instance =
+                Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?);
             *next_instance = next_instance.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?;
         }
         for method in &mut structure.methods {
@@ -1959,9 +1945,8 @@ fn register_function_declarations(module: &mut HirModule, next: &mut u32, next_i
         if singleton.accessor_instance.is_some() {
             return Err(identity_duplicated(IndexSpace::ItemInstance, &owner));
         }
-        singleton.accessor_instance = Some(
-            nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?,
-        );
+        singleton.accessor_instance =
+            Some(nyar_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?);
         *next_instance = next_instance.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?;
         for method in singleton
             .methods
@@ -2730,11 +2715,9 @@ impl AstToHir {
                 impls.push(self.lower_imply(imply, namespace)?);
                 Ok(())
             }
-            StatementNode::Union(union_decl) => Err(HirError::UnionNotLowered {
-                union_name: union_decl.name.name.clone(),
-                source: plan_source(),
-                span: plan_span(),
-            }),
+            StatementNode::Union(union_decl) => {
+                Err(HirError::UnionNotLowered { union_name: union_decl.name.name.clone(), source: plan_source(), span: plan_span() })
+            }
             StatementNode::Using(_)
             | StatementNode::Namespace(_)
             | StatementNode::Let(_)
@@ -2753,7 +2736,11 @@ impl AstToHir {
         // 形参名先于返回值、参数、where 约束与 body 的类型降低进入作用域，函数体里的 `T` 才有声明事实。
         let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&function.generics), &[]);
         let span = frontend::std_range(&function.span);
-        let annotations = function.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?;
+        let annotations = function
+            .annotations
+            .iter()
+            .map(|attribute| lower_attribute(attribute, self.source_id, span.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
         let body = lower_block(&function.body, self.source_id, span.clone())?;
         // 无体且携带外部导入合同时，声明是外部导入：实现由已选 provider 提供。
         // 若降低成本地空体函数，调用会静默落到空实现，绑定链在链接阶段断开。
@@ -2852,7 +2839,11 @@ impl AstToHir {
             generics: lower_generic_parameters(generics),
             parents: parents.iter().map(lower_parent).collect(),
             fields: fields.iter().map(lower_field).collect::<Result<Vec<_>, _>>()?,
-            methods: methods.iter().filter(|method| !is_property_accessor(method)).map(|method| self.lower_method(method)).collect::<Result<Vec<_>, _>>()?,
+            methods: methods
+                .iter()
+                .filter(|method| !is_property_accessor(method))
+                .map(|method| self.lower_method(method))
+                .collect::<Result<Vec<_>, _>>()?,
             properties: self.lower_object_properties(methods)?,
             visibility: lower_visibility(annotations),
             is_value_type,
@@ -2993,7 +2984,12 @@ impl AstToHir {
             doc: lower_documentation(&trait_decl.annotations),
             generics: lower_generic_parameters(&trait_decl.generics),
             methods,
-            associated_types: trait_decl.body.associated_types.iter().map(|item| lower_trait_associated_type(item, self.source_id)).collect::<Result<Vec<_>, _>>()?,
+            associated_types: trait_decl
+                .body
+                .associated_types
+                .iter()
+                .map(|item| lower_trait_associated_type(item, self.source_id))
+                .collect::<Result<Vec<_>, _>>()?,
             associated_constants: Vec::new(),
             super_traits: Vec::new(),
             default_methods,
@@ -3011,7 +3007,8 @@ impl AstToHir {
         enum_def.doc = lower_documentation(&enum_decl.annotations);
         enum_def.visibility = lower_visibility(&enum_decl.annotations);
         enum_def.generics = lower_generic_parameters(&enum_decl.generics);
-        enum_def.variants = enum_decl.variants.iter().map(|variant| self.lower_enum_variant(variant, enum_decl.kind)).collect::<Result<Vec<_>, _>>()?;
+        enum_def.variants =
+            enum_decl.variants.iter().map(|variant| self.lower_enum_variant(variant, enum_decl.kind)).collect::<Result<Vec<_>, _>>()?;
         enum_def.is_unity = enum_decl.kind == EnumsKind::Unity;
         Ok(enum_def)
     }
@@ -3082,7 +3079,11 @@ impl AstToHir {
             name: operator_member_name(&method.name, &method.annotations),
             declaring_namespace: NamePath::default(),
             doc: lower_documentation(&method.annotations),
-            annotations: method.annotations.iter().map(|attribute| lower_attribute(attribute, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
+            annotations: method
+                .annotations
+                .iter()
+                .map(|attribute| lower_attribute(attribute, self.source_id, span.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
             generics: lower_generic_parameters(&method.generics),
             where_constraints: lower_where_constraints(&method.where_constraints, self.source_id)?,
             params: method.parameters.iter().map(|param| lower_param(param, self.source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
@@ -3169,9 +3170,10 @@ impl AstToHir {
 
     fn lower_enum_variant(&self, variant: &EnumVariant, kind: EnumsKind) -> Result<HirVariant, HirError> {
         let span = frontend::std_range(&variant.span);
-        let discriminator = variant.value.as_ref().map(|value| lower_term_expression(value, self.source_id, span.clone())).transpose()?.or_else(|| {
-            if kind == EnumsKind::Unity { tag_attribute_discriminator(&variant.annotations, self.source_id, span.clone()) } else { None }
-        });
+        let discriminator =
+            variant.value.as_ref().map(|value| lower_term_expression(value, self.source_id, span.clone())).transpose()?.or_else(|| {
+                if kind == EnumsKind::Unity { tag_attribute_discriminator(&variant.annotations, self.source_id, span.clone()) } else { None }
+            });
         Ok(HirVariant {
             declaration: None,
             instance: None,
@@ -3202,11 +3204,22 @@ impl AstToHir {
                 .collect::<Result<Vec<_>, _>>()?,
             generics: lower_generic_parameters(&method.generics),
             where_constraints: Vec::new(),
-            params: method.parameters.iter().map(|param| lower_param(param, self.source_id, frontend::std_range(&method.span))).collect::<Result<Vec<_>, _>>()?,
+            params: method
+                .parameters
+                .iter()
+                .map(|param| lower_param(param, self.source_id, frontend::std_range(&method.span)))
+                .collect::<Result<Vec<_>, _>>()?,
             return_type: method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
-            body: method.body.as_ref().map(|block| lower_block(block, self.source_id, frontend::std_range(&method.span))).transpose()?.unwrap_or_else(
-                || HirBlock { statements: Vec::new(), expr: None, span: with_source(&frontend::std_range(&method.span), self.source_id) },
-            ),
+            body: method
+                .body
+                .as_ref()
+                .map(|block| lower_block(block, self.source_id, frontend::std_range(&method.span)))
+                .transpose()?
+                .unwrap_or_else(|| HirBlock {
+                    statements: Vec::new(),
+                    expr: None,
+                    span: with_source(&frontend::std_range(&method.span), self.source_id),
+                }),
             span: with_source(&frontend::std_range(&method.span), self.source_id),
             visibility: lower_visibility(&method.annotations),
             is_abstract: method.body.is_none() || has_modifier(&method.annotations, "abstract"),
@@ -3413,12 +3426,9 @@ fn is_property_accessor(method: &MethodDeclaration) -> bool {
 fn lower_property_type(method: &MethodDeclaration, accessor_kind: PropertyMethodKind) -> Result<ValkyrieType, HirError> {
     Ok(match accessor_kind {
         PropertyMethodKind::Get => method.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::Unit),
-        PropertyMethodKind::Set => method
-            .parameters
-            .last()
-            .and_then(|param| param.ty.as_ref().map(lower_type_expression))
-            .transpose()?
-            .unwrap_or(ValkyrieType::Unit),
+        PropertyMethodKind::Set => {
+            method.parameters.last().and_then(|param| param.ty.as_ref().map(lower_type_expression)).transpose()?.unwrap_or(ValkyrieType::Unit)
+        }
     })
 }
 
@@ -3467,12 +3477,7 @@ fn lower_name_path(path: &AstNamePath) -> NamePath {
     // Oak 对 namespace library.console; 这类点分命名空间保留为单个语法片段，
     // 而调用点路径按段拆分。HIR 的 NamePath 以段为身份单位，因此在语法到语义
     // 边界统一按点号归一化，禁止让带分隔符的整串成为第二种名称形态。
-    let parts = path
-        .parts
-        .iter()
-        .flat_map(|part| part.name.split('.').filter(|segment| !segment.is_empty()))
-        .map(Identifier::new)
-        .collect();
+    let parts = path.parts.iter().flat_map(|part| part.name.split('.').filter(|segment| !segment.is_empty())).map(Identifier::new).collect();
     NamePath::new(parts)
 }
 
@@ -3516,10 +3521,7 @@ fn lower_where_constraints(
                         .associated_types
                         .iter()
                         .map(|equation| -> Result<_, HirError> {
-                            Ok(HirAssociatedTypeBinding {
-                                name: oak_identifier(&equation.name),
-                                ty: lower_type_expression(&equation.ty)?,
-                            })
+                            Ok(HirAssociatedTypeBinding { name: oak_identifier(&equation.name), ty: lower_type_expression(&equation.ty)? })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok::<_, HirError>(HirTraitBound {
@@ -3530,11 +3532,7 @@ fn lower_where_constraints(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(HirWhereConstraint {
-                target,
-                bounds,
-                span: with_source(&frontend::std_range(&constraint.span), source_id),
-            })
+            Ok(HirWhereConstraint { target, bounds, span: with_source(&frontend::std_range(&constraint.span), source_id) })
         })
         .collect()
 }

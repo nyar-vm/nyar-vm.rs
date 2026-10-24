@@ -12,7 +12,8 @@ use super::model::MirStruct;
 pub(crate) fn semantics_for_declared_aggregate(aggregate: &MirStruct) -> NominalValueSemantics {
     if aggregate.is_value_type {
         NominalValueSemantics::Value
-    } else {
+    }
+    else {
         panic!(
             "builtin nominal `{}` (declaration={:?}) 缺少明确值语义；builtin 不得默认 Reference 回填。\
              请在 lowering 阶段显式冻结 `NominalValueSemantics` 或修复 is_value_type 赋值路径。",

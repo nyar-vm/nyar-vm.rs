@@ -28,8 +28,8 @@ pub enum TargetMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetBackendFamily {
-    /// `NyarVM`
-    NyarVm,
+    /// `OVM`
+    Ovm,
     /// `CLR`
     Clr,
     /// `JVM`
@@ -52,8 +52,8 @@ pub enum TargetHostKind {
     /// 未知宿主。
     #[default]
     Unknown,
-    /// `NyarVM`
-    NyarVm,
+    /// `OVM`
+    Ovm,
     /// `JVM`
     Jvm,
     /// `.NET`
@@ -253,8 +253,8 @@ pub enum RunnerFamily {
     Windows,
     /// `WASI`
     Wasi,
-    /// `NyarVM`
-    NyarVm,
+    /// `OVM`
+    Ovm,
 }
 
 impl RunnerFamily {
@@ -266,7 +266,7 @@ impl RunnerFamily {
             "node" => Some(Self::Node),
             "windows" => Some(Self::Windows),
             "wasi" => Some(Self::Wasi),
-            "nyar-vm" | "nyarvm" | "nyar" | "nvm" => Some(Self::NyarVm),
+            "ovm" | "odin-vm" | "legion" => Some(Self::Ovm),
             _ => None,
         }
     }
@@ -279,7 +279,7 @@ impl RunnerFamily {
             Self::Node => "node",
             Self::Windows => "windows",
             Self::Wasi => "wasi",
-            Self::NyarVm => "nyar-vm",
+            Self::Ovm => "ovm",
         }
     }
 }
@@ -473,7 +473,7 @@ impl TargetProfile {
     /// 选择默认运行器家族。
     pub fn runner_family(&self) -> RunnerFamily {
         match self.host_kind {
-            TargetHostKind::NyarVm => RunnerFamily::NyarVm,
+            TargetHostKind::Ovm => RunnerFamily::Ovm,
             TargetHostKind::DotNet => RunnerFamily::Clr,
             TargetHostKind::Jvm => RunnerFamily::Jvm,
             TargetHostKind::Wasi => RunnerFamily::Wasi,
@@ -498,7 +498,7 @@ impl CanonicalTarget {
         match self.arch {
             CanonicalArch::Clr => CanonicalAbi::Clr,
             CanonicalArch::Jvm => CanonicalAbi::Jvm,
-            CanonicalArch::NyarVm => CanonicalAbi::Managed,
+            CanonicalArch::Ovm => CanonicalAbi::Managed,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => CanonicalAbi::WebAssembly,
             CanonicalArch::AArch64 => CanonicalAbi::Aapcs64,
             CanonicalArch::X86_64 if self.specification == CanonicalSpecification::Windows => CanonicalAbi::Msvc,
@@ -527,7 +527,7 @@ impl CanonicalTarget {
 
     fn derive_backend_family(self) -> TargetBackendFamily {
         match self.arch {
-            CanonicalArch::NyarVm => TargetBackendFamily::NyarVm,
+            CanonicalArch::Ovm => TargetBackendFamily::Ovm,
             CanonicalArch::Clr => TargetBackendFamily::Clr,
             CanonicalArch::Jvm => TargetBackendFamily::Jvm,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => TargetBackendFamily::Wasm,
@@ -537,7 +537,7 @@ impl CanonicalTarget {
 
     fn derive_host_kind(self, abi: CanonicalAbi) -> TargetHostKind {
         match self.arch {
-            CanonicalArch::NyarVm => return TargetHostKind::NyarVm,
+            CanonicalArch::Ovm => return TargetHostKind::Ovm,
             CanonicalArch::Clr => return TargetHostKind::DotNet,
             CanonicalArch::Jvm => return TargetHostKind::Jvm,
             _ => {}
@@ -563,7 +563,7 @@ impl CanonicalTarget {
 
     fn derive_host_flavor(self, abi: CanonicalAbi) -> &'static str {
         match self.arch {
-            CanonicalArch::NyarVm => "nyarvm",
+            CanonicalArch::Ovm => "ovm",
             CanonicalArch::Clr => "dotnet",
             CanonicalArch::Jvm => {
                 if self.specification == CanonicalSpecification::Android {
@@ -596,7 +596,7 @@ impl CanonicalTarget {
 
     fn derive_host_boundary(self, abi: CanonicalAbi) -> HostProjectionBoundary {
         match self.arch {
-            CanonicalArch::NyarVm => return HostProjectionBoundary::Vm,
+            CanonicalArch::Ovm => return HostProjectionBoundary::Vm,
             CanonicalArch::Clr => return HostProjectionBoundary::Clr,
             CanonicalArch::Jvm => return HostProjectionBoundary::Jvm,
             _ => {}
@@ -629,7 +629,7 @@ impl CanonicalTarget {
 
     fn derive_capability_tags(self) -> Vec<String> {
         let values: &[&str] = match self.arch {
-            CanonicalArch::NyarVm => &["vm", "module-loader", "precise-gc"],
+            CanonicalArch::Ovm => &["ovm", "module-loader", "precise-gc"],
             CanonicalArch::Clr => &["managed", "reflection", "filesystem", "precise-gc"],
             CanonicalArch::Jvm => {
                 if self.specification == CanonicalSpecification::Android {
@@ -684,11 +684,11 @@ impl CanonicalTarget {
 
     fn derive_artifact_policy(self, abi: CanonicalAbi) -> ArtifactPolicy {
         match self.arch {
-            CanonicalArch::NyarVm => ArtifactPolicy {
+            CanonicalArch::Ovm => ArtifactPolicy {
                 primary_extension: ".nyar".to_string(),
                 default_publish_format: PublishFormat::Bundle,
                 supported_publish_formats: vec![PublishFormat::Bundle],
-                required_adaptors: vec!["std:nyarvm".to_string()],
+                required_adaptors: vec!["std:ovm".to_string()],
                 generate_launch_scripts: false,
                 ..ArtifactPolicy::default()
             },
@@ -833,7 +833,7 @@ impl From<CanonicalTarget> for BinaryTarget {
             TargetBackendFamily::Clr => TargetFamily::Clr,
             TargetBackendFamily::Jvm => TargetFamily::Jvm,
             TargetBackendFamily::Wasm => TargetFamily::Wasm,
-            TargetBackendFamily::NyarVm => TargetFamily::NyarVm,
+            TargetBackendFamily::Ovm => TargetFamily::Ovm,
             _ => TargetFamily::Native,
         };
         let arch = match value.arch {
@@ -843,7 +843,7 @@ impl From<CanonicalTarget> for BinaryTarget {
             _ => BinaryArch::Any,
         };
         let flavor = match family {
-            TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::NyarVm => BinaryFlavor::ManagedClr,
+            TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::Ovm => BinaryFlavor::ManagedClr,
             _ => BinaryFlavor::Native,
         };
         BinaryTarget { family, arch, byte_order: ByteOrder::LittleEndian, flavor }

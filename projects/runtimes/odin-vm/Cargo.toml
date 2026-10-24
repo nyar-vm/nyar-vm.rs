@@ -1,0 +1,24 @@
+[package]
+name = "odin-vm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Odin VM (OVM) runtime — language-agnostic OVM bytecode executor"
+
+[lib]
+name = "odin_vm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "odin-vm"
+path = "src/main.rs"
+
+[dependencies]
+# 执行格式合同：`odin-bytecode`。不得依赖语言前端。
+odin-bytecode = { workspace = true }
+nyar-gc = { workspace = true }
+nyar-jit = { workspace = true }
+miette = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

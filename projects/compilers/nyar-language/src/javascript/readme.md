@@ -8,4 +8,4 @@ JavaScript / TypeScript frontend for the `nyar-language` analysis framework.
   There is no local formatter: source formatting for these languages belongs to Oak.
 - **Module**: concrete `JavascriptModule` with language id `javascript`.
 
-Not a `nyar-vm` compile target. Product CLI: `noodle`.
+Not a `ovm` compile target. Product CLI: `noodle`.

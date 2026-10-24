@@ -9,8 +9,8 @@ use crate::{
         },
     },
     valkyrie::{
-        control_flow::{ControlFlowContext, TryScopeData},
         HirError,
+        control_flow::{ControlFlowContext, TryScopeData},
         hir::{
             is_nullable_type, is_option_apply_type, is_result_apply_type,
             lowering::errors::{ControlFlowOp, LoopJumpOperation, PropagateProtocol, RequiredContext},

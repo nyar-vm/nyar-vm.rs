@@ -3,9 +3,9 @@ use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
-pub mod nyar_vm;
+pub mod ovm;
 mod wasm;
 
 trait BundledBackendCompiler: Sync {
@@ -30,16 +30,16 @@ impl DriverCompilerRegistration {
 }
 
 static WASM_COMPILER: wasm::WasmFamilyCompiler = wasm::WasmFamilyCompiler;
-#[cfg(feature = "nyar-vm-lane")]
-static NYAR_VM_COMPILER: nyar_vm::NyarVmFamilyCompiler = nyar_vm::NyarVmFamilyCompiler;
+#[cfg(feature = "ovm-lane")]
+static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 2] = [
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
-    DriverCompilerRegistration { name: "nyar-vm", priority: 100, supports: nyar_vm::supports_requirement, compiler: &NYAR_VM_COMPILER },
+    DriverCompilerRegistration { name: "ovm", priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
 ];
 
-#[cfg(not(feature = "nyar-vm-lane"))]
+#[cfg(not(feature = "ovm-lane"))]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 1] =
     [DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER }];
 

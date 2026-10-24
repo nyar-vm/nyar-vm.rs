@@ -1,10 +1,11 @@
 //! `AST -> HIR` 前的结构与语义预校验。
 
 use crate::valkyrie::{
-    hir::HirError,
-    frontend::{ValkyrieRoot,
+    frontend::{
+        ValkyrieRoot,
         ast::{EnumsKind, NamePath, StatementNode},
     },
+    hir::HirError,
 };
 use std::collections::BTreeMap;
 

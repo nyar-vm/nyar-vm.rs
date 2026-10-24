@@ -147,7 +147,7 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
     assert_eq!(metadata["glue"], serde_json::json!({}));
 }
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 #[test]
 fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     let source = source_program();
@@ -163,7 +163,7 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     *plan.testing_wasm_export_names_mut() =
         instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect();
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let module = nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&submission).expect("只允许沿已绑定实例发射");
+    let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("只允许沿已绑定实例发射");
     assert_eq!(module.functions.len(), 2);
     assert_eq!(module.exports.len(), 2);
     for (index, export) in module.exports.iter().enumerate() {
@@ -173,9 +173,9 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     let mut calls = Vec::new();
     let mut position = 0;
     while position < module.code_bytes.len() {
-        let instruction = nyar_bytecode::decode_at(&module.code_bytes, position);
+        let instruction = odin_bytecode::decode_at(&module.code_bytes, position);
         assert!(instruction.size > 0, "字节码必须可解码");
-        if instruction.code == nyar_bytecode::NyarHeadCode::Call {
+        if instruction.code == odin_bytecode::NyarHeadCode::Call {
             calls.push(instruction.operand1);
         }
         position += instruction.size as usize;

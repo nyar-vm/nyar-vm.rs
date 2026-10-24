@@ -9,17 +9,17 @@ license.workspace = true
 [features]
 default = []
 # 正式 Nyar 字节码编译与执行路径；Node/Wasm seed 默认不启用。
-nyar-vm-lane = []
+ovm-lane = []
 
 [dependencies]
-# Layering: language → emitter → acorn-wasm (Wasm) + acorn-jvm (class/jar) + acorn-pe (coff/elf/PE/msil) + nyar-bytecode.
+# Layering: language → emitter → acorn-wasm (Wasm) + acorn-jvm (class/jar) + acorn-pe (coff/elf/PE/msil) + odin-bytecode.
 # Emitter must not depend on nyar-language.
 acorn-jvm = { workspace = true }
 acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
 miette = { workspace = true }
 nyar = { workspace = true }
-nyar-bytecode = { workspace = true }
+odin-bytecode = { workspace = true }
 nyar-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

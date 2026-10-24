@@ -66,9 +66,9 @@ pub mod testing {
         DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
-    #[cfg(feature = "nyar-vm-lane")]
-    use nyar_bytecode::NyarModuleData;
     use nyar_types::SingletonInstancePlan;
+    #[cfg(feature = "ovm-lane")]
+    use odin_bytecode::NyarModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +115,7 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to a Nyar VM module.
-    #[cfg(feature = "nyar-vm-lane")]
+    #[cfg(feature = "ovm-lane")]
     pub fn lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData, miette::Report> {
         super::lowering::testing_lower_fragment_to_nyar_module(submission)
     }
@@ -165,12 +165,12 @@ pub mod testing {
     pub const NODE_UTF8_IMPORT_COUNT: u8 = 12;
 
     /// Re-export Nyar VM entry resolution for driver-family contract tests.
-    #[cfg(feature = "nyar-vm-lane")]
+    #[cfg(feature = "ovm-lane")]
     pub fn resolve_nyar_entry_symbols(
-        module: &nyar_bytecode::NyarModuleData,
+        module: &odin_bytecode::NyarModuleData,
         library_public_exports: &[String],
     ) -> miette::Result<Vec<String>> {
-        super::driver::families::nyar_vm::resolve_entry_symbols(module, library_public_exports)
+        super::driver::families::ovm::resolve_entry_symbols(module, library_public_exports)
     }
 
     /// Compile a previously lowered backend input with bundled backends.
@@ -252,7 +252,7 @@ impl BundledBackendCapabilityDescriptor {
 
 const WASM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent];
 const NATIVE_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Native];
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Vm];
 
 /// 返回 bundled backend family 对应的显式 capability 描述。
@@ -281,20 +281,20 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
-        #[cfg(feature = "nyar-vm-lane")]
-        TargetBackendFamily::NyarVm => Some(BundledBackendCapabilityDescriptor {
+        #[cfg(feature = "ovm-lane")]
+        TargetBackendFamily::Ovm => Some(BundledBackendCapabilityDescriptor {
             backend_family,
-            backend_name: "nyar-vm",
+            backend_name: "ovm",
             interpreter: "nyar.vm",
             lane: TargetLane::Vm,
-            input_kind: Some(BackendInputKind::NyarVm),
-            target_family: TargetFamily::NyarVm,
+            input_kind: Some(BackendInputKind::Ovm),
+            target_family: TargetFamily::Ovm,
             supported_host_boundaries: VM_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::Full,
         }),
-        #[cfg(not(feature = "nyar-vm-lane"))]
-        TargetBackendFamily::NyarVm => None,
+        #[cfg(not(feature = "ovm-lane"))]
+        TargetBackendFamily::Ovm => None,
         TargetBackendFamily::Unknown => None,
     }
 }
@@ -469,11 +469,11 @@ impl FragmentSubmission {
     }
 }
 
-/// First-class suspend backend input (nyar-vm / native continuation runtime).
+/// First-class suspend backend input (ovm / native continuation runtime).
 #[derive(Debug, Clone)]
-pub struct NyarVmBackendInput {
+pub struct OvmBackendInput {
     /// Optional Nyar module payload to emit as `.nyar`.
-    pub nyar_module: Option<nyar_bytecode::NyarModuleData>,
+    pub nyar_module: Option<odin_bytecode::NyarModuleData>,
     /// 库模式公开导出名（与 wasm `wasm_export_names` 对齐），用于 run-contract 入口。
     pub library_public_exports: Vec<String>,
     /// Output directory.
@@ -492,8 +492,8 @@ pub enum DriverBackendInput {
     Wasm(WasmBinaryBackendInput),
     /// `native` 二进制输入。
     Native(NativeBinaryBackendInput),
-    /// `nyar-vm` first-class suspend 输入。
-    NyarVm(NyarVmBackendInput),
+    /// `ovm` first-class suspend 输入。
+    Ovm(OvmBackendInput),
 }
 
 /// 前端已经完成的分区级 backend 输入。
@@ -528,9 +528,9 @@ impl LoweredBackendInput {
         Self::new(DriverBackendInput::Native(input))
     }
 
-    /// 直接提交 `nyar-vm` backend 输入。
-    pub fn nyar_vm(input: NyarVmBackendInput) -> Self {
-        Self::new(DriverBackendInput::NyarVm(input))
+    /// 直接提交 `ovm` backend 输入。
+    pub fn ovm(input: OvmBackendInput) -> Self {
+        Self::new(DriverBackendInput::Ovm(input))
     }
 
     /// 基于前端片段提交生成驱动层 backend 输入。
@@ -764,8 +764,8 @@ pub use backend::wasi::{WasiPreview, canonical_wasm_artifact_stem as wasm_physic
 pub use backend::wasm_js_glue::{build_node_launcher, collect_import_bindings};
 #[doc(hidden)]
 pub use driver::families::driver_compiler_names;
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
-pub use driver::families::nyar_vm::resolve_entry_symbols;
+pub use driver::families::ovm::resolve_entry_symbols;
 #[doc(hidden)]
 pub use lowering::features::semantic_mir_contract::{observation, validate_function, validate_submission};

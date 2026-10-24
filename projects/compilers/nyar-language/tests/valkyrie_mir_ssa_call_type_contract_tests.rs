@@ -129,9 +129,7 @@ micro apply(left: Number, right: Number) -> bool { left + right }
         .iter()
         .flat_map(|block| &block.instructions)
         .filter_map(|instruction| match &instruction.kind {
-            MirOperation::Call { callee: MirOperand::Callable(callee), arguments } if *callee == instance => {
-                Some((instruction, arguments))
-            }
+            MirOperation::Call { callee: MirOperand::Callable(callee), arguments } if *callee == instance => Some((instruction, arguments)),
             _ => None,
         })
         .collect::<Vec<_>>();

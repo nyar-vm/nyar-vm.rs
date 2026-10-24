@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use crate::nyar_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule};
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
-#[cfg(feature = "nyar-vm-lane")]
-use nyar_bytecode::NyarModuleData;
+#[cfg(feature = "ovm-lane")]
+use odin_bytecode::NyarModuleData;
 
-#[cfg(feature = "nyar-vm-lane")]
-use crate::NyarVmBackendInput;
+#[cfg(feature = "ovm-lane")]
+use crate::OvmBackendInput;
 use crate::{DriverBackendInput, FragmentSubmission};
 
 #[doc(hidden)]
@@ -17,18 +17,18 @@ pub mod features;
 pub(crate) mod shared;
 pub(crate) use self::features::pattern_matching_contract;
 
-#[cfg(not(feature = "nyar-vm-lane"))]
+#[cfg(not(feature = "ovm-lane"))]
 use self::backends::wasm;
-#[cfg(feature = "nyar-vm-lane")]
-use self::backends::{nyar_vm, wasm};
+#[cfg(feature = "ovm-lane")]
+use self::backends::{ovm, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
     backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
 }
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 pub(crate) fn testing_lower_fragment_to_nyar_module(submission: &FragmentSubmission) -> Result<NyarModuleData> {
-    nyar_vm::lower_fragment_to_nyar_module(submission)
+    ovm::lower_fragment_to_nyar_module(submission)
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
@@ -92,12 +92,12 @@ pub fn lower_fragment_to_driver_input(
                 wasm_package_kind,
             }))
         }
-        #[cfg(feature = "nyar-vm-lane")]
-        TargetBackendFamily::NyarVm => {
-            let nyar_module = Some(nyar_vm::lower_fragment_to_nyar_module(submission)?);
-            Ok(DriverBackendInput::NyarVm(NyarVmBackendInput {
+        #[cfg(feature = "ovm-lane")]
+        TargetBackendFamily::Ovm => {
+            let nyar_module = Some(ovm::lower_fragment_to_nyar_module(submission)?);
+            Ok(DriverBackendInput::Ovm(OvmBackendInput {
                 nyar_module,
-                library_public_exports: self::backends::nyar_vm_mir::nyar_library_public_export_names(submission),
+                library_public_exports: self::backends::ovm_mir::nyar_library_public_export_names(submission),
                 output_dir,
             }))
         }

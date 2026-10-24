@@ -48,28 +48,12 @@ pub struct CompilerSourceGroup {
 impl CompilerSourceGroup {
     /// 测试与单文件夹具用的最小源码组；默认不是入口组。
     pub fn single_source(dependency_key: &str, name: &str, source: &str) -> Self {
-        Self::from_source_files(
-            dependency_key,
-            name,
-            vec![CompilerSourceFile { path: format!("{name}.v"), source: source.into() }],
-            Vec::new(),
-        )
+        Self::from_source_files(dependency_key, name, vec![CompilerSourceFile { path: format!("{name}.v"), source: source.into() }], Vec::new())
     }
 
     /// 多文件输入组；语义选择由 Compiler 生产，调用方不得注入裁剪或摘要。
-    pub fn from_source_files(
-        dependency_key: &str,
-        name: &str,
-        sources: Vec<CompilerSourceFile>,
-        direct_dependencies: Vec<String>,
-    ) -> Self {
-        Self {
-            dependency_key: dependency_key.into(),
-            name: name.into(),
-            sources,
-            direct_dependencies,
-            is_entry: false,
-        }
+    pub fn from_source_files(dependency_key: &str, name: &str, sources: Vec<CompilerSourceFile>, direct_dependencies: Vec<String>) -> Self {
+        Self { dependency_key: dependency_key.into(), name: name.into(), sources, direct_dependencies, is_entry: false }
     }
 
     /// 覆盖直接依赖身份集合：仅供依赖顺序已固定的源码组夹具使用。
@@ -115,10 +99,7 @@ pub struct CompilerSourceInput {
 impl CompilerSourceInput {
     /// 只含应用源码的输入（无生成源码）。
     pub fn application(groups: Vec<CompilerSourceGroup>) -> Self {
-        Self {
-            groups,
-            generated: Vec::new(),
-        }
+        Self { groups, generated: Vec::new() }
     }
 
     /// 把生成组追加到应用组之后，返回唯一有序源码闭包。

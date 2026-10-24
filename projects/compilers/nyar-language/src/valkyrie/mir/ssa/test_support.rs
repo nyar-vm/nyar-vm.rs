@@ -12,7 +12,8 @@ use nyar_types::ItemInstanceId;
 
 use super::{
     AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirDiagnostic, MirFunction, MirInstruction, MirModule, MirOperand, MirOperation,
-    MirSuspendPoint, MirValue, MirValueOrigin, MirValueRef, generic_call_instantiation::MirDispatchEntry, lower_function_semantic, lower_literal,
+    MirSuspendPoint, MirValue, MirValueOrigin, MirValueRef, generic_call_instantiation::MirDispatchEntry, lower_function_semantic,
+    lower_literal,
 };
 
 /// `MIR` 集成测试使用的只读构建器包装。
@@ -69,12 +70,7 @@ impl TestMirBuilder {
 
     /// 登记成员分派表项，供模式比较测试使用。
     pub fn register_member_dispatch(&mut self, target: ValkyrieType, member: &str, instance: ItemInstanceId) {
-        self.inner.member_dispatch.push(MirDispatchEntry {
-            trait_declaration: None,
-            target,
-            member: Identifier::new(member),
-            instance,
-        });
+        self.inner.member_dispatch.push(MirDispatchEntry { trait_declaration: None, target, member: Identifier::new(member), instance });
     }
 
     /// 为 SSA 值操作数登记类型事实。

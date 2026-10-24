@@ -3,7 +3,7 @@
 //! Optional JIT acceleration for the Nyar bytecode runtime.
 //!
 //! Language-agnostic: consumes verified bytecode views only. Must not import
-//! `nyar-language`, `nyar-vm`, or concrete language frontends.
+//! `nyar-language`, `odin-vm`, or concrete language frontends.
 
 mod artifact;
 mod assumption;
