@@ -396,16 +396,8 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let element_type = ValkyrieType::Named(element.clone());
     let array_type = ValkyrieType::Array(Box::new(element_type.clone()));
     let index_type = ValkyrieType::Named(Identifier::new("usize"));
-    // 数组长度不再由 frontend 合成：唯一来源是 core `[intrinsic("builtin.array.length")]`
+    // 数组长度与 push 不再由 frontend 合成：唯一来源是 core/std 的 `[intrinsic(...)]`
     // 声明，intrinsic 身份由 `declaration_intrinsic` 冻结。
-    let mut push = OverloadCandidate::new(
-        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("push")]),
-        OverloadDomain::Function,
-        vec![array_type.clone(), element_type.clone()],
-        array_type.clone(),
-        OverloadMatchKind::NominalExact,
-    );
-    push.intrinsic = Some(IntrinsicId::ArrayPush);
     // 序数下标 `receiver[i]` 展开为成员名 `suffix []` / `suffix []=`；
     // 基数下标 `receiver::[i]` 展开为成员名 `suffix ⁅⁆` / `suffix ⁅⁆=`。
     // 成员名与 `operator_member_name` 的源码声明名一致，因此下标与用户声明的
@@ -442,7 +434,7 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         OverloadMatchKind::NominalExact,
     );
     cardinal_set.intrinsic = Some(IntrinsicId::ArraySet);
-    vec![push, get, set, cardinal_get, cardinal_set]
+    vec![get, set, cardinal_get, cardinal_set]
 }
 
 /// 按候选的结构化 intrinsic 身份做形实参合同。
