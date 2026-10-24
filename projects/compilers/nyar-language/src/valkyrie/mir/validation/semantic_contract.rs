@@ -1,9 +1,7 @@
 //! Semantic MIR 合同校验：stable-ID、聚合字段、名义结构与静态调用。
 
-use super::{
-    type_inference::{
-        bare_named_matches_generic_apply_return, call_site_type_compatible, infer_operand_static_type, mir_return_operand_type_compatible,
-    },
+use super::type_inference::{
+    bare_named_matches_generic_apply_return, call_site_type_compatible, infer_operand_static_type, mir_return_operand_type_compatible,
 };
 use crate::{
     mir::{MirConstant, MirFunction, MirModule, MirOperand, MirOperation, MirTerminator},

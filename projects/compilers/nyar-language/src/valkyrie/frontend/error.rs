@@ -29,7 +29,8 @@ impl ParseError {
         let message = error.to_string();
         if let Some(start) = error.source_offset() {
             Self::Invalid { message, span: Some(start..start.saturating_add(1)) }
-        } else {
+        }
+        else {
             Self::Invalid { message, span: None }
         }
     }

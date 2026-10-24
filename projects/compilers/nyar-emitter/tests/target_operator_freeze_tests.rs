@@ -66,9 +66,7 @@ micro main() -> {return_type} {{
 }
 
 fn lower(submission: &FragmentSubmission) -> Result<Vec<u8>, miette::Report> {
-    nyar_emitter::testing::lower_fragment_to_wasm_mir_module(submission, "main")?
-        .to_bytes()
-        .map_err(|error| miette::miette!("{error:?}"))
+    nyar_emitter::testing::lower_fragment_to_wasm_mir_module(submission, "main")?.to_bytes().map_err(|error| miette::miette!("{error:?}"))
 }
 
 /// 计划冻结的 `i32.add` 配方正好是 backend 编码的指令，backend 不按调用的
@@ -132,10 +130,7 @@ micro main() -> i32 {
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
     assert!(bytes.contains(&0x6B), "backend 必须编码配方冻结的 i32.sub 0x6B");
-    assert!(
-        bytes.windows(2).any(|window| window == [0x41, 0x00].as_slice()),
-        "配方必须先发射 i32.const 0（0x41 0x00）作为减法的零常量"
-    );
+    assert!(bytes.windows(2).any(|window| window == [0x41, 0x00].as_slice()), "配方必须先发射 i32.const 0（0x41 0x00）作为减法的零常量");
 }
 
 /// `i64.neg` 与 `i32.neg` 同形：计划冻结 `i64 const 0` + `i64.sub` 的步骤，
@@ -176,10 +171,7 @@ micro main() -> i64 {
     let submission = nyar_emitter::testing::fragment_submission_from_plan(plan);
     let bytes = lower(&submission).expect("已冻结配方必须可编码");
     assert!(bytes.contains(&0x7D), "backend 必须编码配方冻结的 i64.sub 0x7D");
-    assert!(
-        bytes.windows(2).any(|window| window == [0x42, 0x00].as_slice()),
-        "配方必须先发射 i64.const 0（0x42 0x00）作为减法的零常量"
-    );
+    assert!(bytes.windows(2).any(|window| window == [0x42, 0x00].as_slice()), "配方必须先发射 i64.const 0（0x42 0x00）作为减法的零常量");
 }
 
 /// 声明的操作数载体与冻结配方常量载体不一致时，计划构造必须结构化失败。

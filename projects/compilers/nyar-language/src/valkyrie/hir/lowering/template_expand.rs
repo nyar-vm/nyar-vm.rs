@@ -14,8 +14,10 @@ use oak_core::TokenType;
 
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
-use super::errors::{TemplateConstruct, TemplateFailure};
-use super::template_const::{const_value_to_source, eval_const_condition, eval_const_expr, parse_const_loop_range};
+use super::{
+    errors::{TemplateConstruct, TemplateFailure},
+    template_const::{const_value_to_source, eval_const_condition, eval_const_expr, parse_const_loop_range},
+};
 
 /// 默认架构键；单文件 `compile_source` 测试夹具使用。
 
@@ -296,18 +298,9 @@ fn statement_to_statement_node(statement: Statement) -> StatementNode {
     }
 }
 
-fn select_arch_match_body(
-    match_node: &TemplateMatch,
-    source: &str,
-    arch: &str,
-    span: DiagnosticSpan,
-) -> Result<Vec<StatementNode>, HirError> {
+fn select_arch_match_body(match_node: &TemplateMatch, source: &str, arch: &str, span: DiagnosticSpan) -> Result<Vec<StatementNode>, HirError> {
     if !is_arch_scrutinee(source, &match_node.header) {
-        return Err(HirError::template_expansion_failed(
-            TemplateConstruct::Match,
-            TemplateFailure::NonArchScrutinee,
-            span,
-        ));
+        return Err(HirError::template_expansion_failed(TemplateConstruct::Match, TemplateFailure::NonArchScrutinee, span));
     }
 
     for arm in &match_node.arms {

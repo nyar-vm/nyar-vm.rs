@@ -10,7 +10,7 @@
 //! [`TargetOperatorPlan`]。backend 只编码这里已冻结的配方，不得再从助记符字符串
 //! 推断 arity、操作数改写或结果类型，也不得为未冻结的绑定补默认指令。
 
-use nyar_bytecode::NyarHeadCode;
+use odin_bytecode::NyarHeadCode;
 
 /// 目标标量载体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,8 +54,8 @@ pub enum TargetOperatorRecipe {
 pub enum TargetOperatorEncoding {
     /// WASM 单字节 opcode。
     Wasm(u8),
-    /// NyarVM 头码。
-    NyarVm(NyarHeadCode),
+    /// OVM 头码。
+    Ovm(NyarHeadCode),
 }
 
 /// 一个已冻结的目标 operator 计划。

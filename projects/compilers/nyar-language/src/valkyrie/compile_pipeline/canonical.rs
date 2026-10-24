@@ -92,7 +92,8 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Canonic
             ValkyrieType::Nominal { declaration, arguments } if arguments.is_empty() => {
                 if let Some(aggregate) = module.structs.iter().find(|item| item.declaration == Some(*declaration)) {
                     linked.type_surface_spellings.insert(*id, Identifier::new(&aggregate.name));
-                } else if let Some(sum) = module.sum_types.iter().find(|item| item.declaration == Some(*declaration)) {
+                }
+                else if let Some(sum) = module.sum_types.iter().find(|item| item.declaration == Some(*declaration)) {
                     linked.type_surface_spellings.insert(*id, Identifier::new(&sum.name));
                 }
             }
@@ -321,12 +322,11 @@ fn collect_aggregate_identities(
         // canonical 不得用 Reference 默认值回填；值类型事实必须在上游由 `structure`/`class` 关键字明确冻结。
         let semantics = if aggregate.is_value_type {
             NominalValueSemantics::Value
-        } else {
+        }
+        else {
             return Err(error_without_module(
                 "CAN057",
-                format!(
-                    "聚合 `{qualified}` 缺少冻结的值语义事实；canonical 不得默认 Reference 回填。`class` 类型的引用语义必须在上游明确登记"
-                ),
+                format!("聚合 `{qualified}` 缺少冻结的值语义事实；canonical 不得默认 Reference 回填。`class` 类型的引用语义必须在上游明确登记"),
             ));
         };
         if nominals.insert(nominal, (declaration, semantics)).is_some() {
@@ -343,10 +343,7 @@ fn collect_aggregate_identities(
         let ty = ValkyrieType::Nominal { declaration: item, arguments: Vec::new() };
         let declaration = types.get(&ty).copied().ok_or_else(|| error_without_module("CAN018", format!("sum `{}` 缺少类型事实", sum.name)))?;
         // NominalValueSemantics 只能来自语言声明或已冻结的表示事实；canonical 不得默认 Reference 回填。
-        return Err(error_without_module(
-            "CAN056",
-            format!("sum `{}` 缺少冻结的值语义事实，无法登记 NominalValueSemantics", sum.name),
-        ));
+        return Err(error_without_module("CAN056", format!("sum `{}` 缺少冻结的值语义事实，无法登记 NominalValueSemantics", sum.name)));
     }
     Ok((nominals, field_records))
 }
@@ -523,10 +520,7 @@ fn register_sum_nominal_instances(
             NominalInstanceId::from_index(next_nominal).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
         next_nominal = next_nominal.checked_add(1).ok_or_else(|| error_without_module("CAN020", "sum instance identity 溢出"))?;
         // 泛型 sum 实例不得默认 Reference；必须从语言声明或冻结表示事实取得值语义。
-        return Err(error_without_module(
-            "CAN056",
-            format!("泛型 sum 实例缺少冻结的 NominalValueSemantics，无法登记: {nominal:?}"),
-        ));
+        return Err(error_without_module("CAN056", format!("泛型 sum 实例缺少冻结的 NominalValueSemantics，无法登记: {nominal:?}")));
         let mut layout_variants = Vec::with_capacity(sum.variants.len());
         for variant in &sum.variants {
             let instantiated = sum

@@ -1,0 +1,21 @@
+[package]
+name = "legend-vm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Legend VM — language-agnostic PE / Futamura interpreter substrate"
+
+[lib]
+name = "legend_vm"
+path = "src/lib.rs"
+
+[dependencies]
+acorn-pe = { workspace = true }
+miette = { workspace = true }
+nyar-language = { workspace = true }
+odin-bytecode = { workspace = true }
+
+# OVM is a Futamura *sink* for probes only — not a lib dependency of the PE substrate.
+[dev-dependencies]
+odin-vm = { workspace = true }

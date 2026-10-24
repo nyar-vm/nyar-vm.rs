@@ -164,7 +164,7 @@ pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> Res
         TargetBackendFamily::Wasm => Ok(FutamuraProjectionFamily::Wasm),
         TargetBackendFamily::Native => Ok(FutamuraProjectionFamily::Native),
         TargetBackendFamily::Gpu => Ok(FutamuraProjectionFamily::Gpu),
-        TargetBackendFamily::NyarVm => Ok(FutamuraProjectionFamily::NyarVm),
+        TargetBackendFamily::Ovm => Ok(FutamuraProjectionFamily::Ovm),
         TargetBackendFamily::Unknown => Err(miette!("未解析的后端家族不能进入 projection 装配")),
     }
 }

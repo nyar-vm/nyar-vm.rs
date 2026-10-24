@@ -20,7 +20,7 @@ multi-tier JIT and runtime optimization.
 
 - **Parser**: in development (currently uses `PlaceholderLanguage`).
 - **Lowering**: basic module structure generation is available.
-- **Execution**: initial integration with `nyar-vm` in progress.
+- **Execution**: initial integration with `odin-vm` in progress.
 
 ## Roadmap
 

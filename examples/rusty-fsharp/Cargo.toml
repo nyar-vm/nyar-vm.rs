@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-fsharp = { workspace = true }

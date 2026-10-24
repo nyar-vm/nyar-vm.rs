@@ -4,12 +4,12 @@ pub(crate) use crate::lowering::{
     shared::{executable, interop},
 };
 
-#[cfg(feature = "nyar-vm-lane")]
+#[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
-pub mod nyar_vm;
-#[cfg(feature = "nyar-vm-lane")]
-#[path = "nyar_vm/mir.rs"]
-pub(crate) mod nyar_vm_mir;
+pub mod ovm;
+#[cfg(feature = "ovm-lane")]
+#[path = "ovm/mir.rs"]
+pub(crate) mod ovm_mir;
 
 #[doc(hidden)]
 pub mod wasm;

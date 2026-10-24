@@ -17,7 +17,7 @@ fn nyar_singleton_export_name(plan: &SingletonInstancePlan) -> String {
     format!("{}__{}", plan.name, plan.accessor_method())
 }
 
-/// Builds the NyarVM export name for a lazy singleton's `unload` accessor.
+/// Builds the OVM export name for a lazy singleton's `unload` accessor.
 pub(crate) fn nyar_singleton_unload_export_name(plan: &SingletonInstancePlan) -> String {
     format!("{}__{}", plan.name, nyar_types::SINGLETON_UNLOAD_ACCESSOR)
 }

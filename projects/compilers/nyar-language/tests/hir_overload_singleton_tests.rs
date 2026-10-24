@@ -976,10 +976,7 @@ micro keep() -> {primitive} {{
             ))
             .expect_err("浮点字面量不得绑定到整数形参");
         let rendered = format!("{error:?}");
-        assert!(
-            matches!(error, HirError::UnresolvedCall { .. }),
-            "浮点字面量绑定整数形参必须在 overload 阶段结构化失败: {rendered}"
-        );
+        assert!(matches!(error, HirError::UnresolvedCall { .. }), "浮点字面量绑定整数形参必须在 overload 阶段结构化失败: {rendered}");
         assert!(rendered.contains("take"), "失败必须指出未解析的调用: {rendered}");
     }
 }

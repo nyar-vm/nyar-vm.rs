@@ -78,10 +78,10 @@ impl MirBuilder {
     }
 
     pub(super) fn emit_singleton_instance_operand(&mut self, singleton_name: &str) -> MirOperand {
-        let Some(instance) = self.singleton_accessor_instances.get(singleton_name) else {
-            self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                symbol: format!("singleton accessor `{singleton_name}`"),
-            });
+        let Some(instance) = self.singleton_accessor_instances.get(singleton_name)
+        else {
+            self.diagnostics
+                .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: format!("singleton accessor `{singleton_name}`") });
             return MirOperand::Constant(MirConstant::Unit);
         };
         let value = self.push_call(MirOperand::Callable(*instance), Vec::new());

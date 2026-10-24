@@ -4,7 +4,7 @@ Managed object heap and garbage collector for the Nyar bytecode runtime.
 
 ## Overview
 
-`nyar-gc` provides allocation, tracing, collection, and tuning hooks used by `nyar-vm::Executor`. It is
+`nyar-gc` provides allocation, tracing, collection, and tuning hooks used by `odin-vm::Executor`. It is
 **language-agnostic**: it never imports `nyar-language` or guest frontends. Object shapes arrive as `LayoutDescriptor`
 values registered by the loader; the heap stores dense slot vectors keyed by `layout_id`.
 
@@ -20,11 +20,11 @@ values registered by the loader; the heap stores dense slot vectors keyed by `la
 - **`ConcurrentMarkController` / `WriteBarrier`** — concurrent marking protocol skeleton and SATB barrier hooks.
 - **`StrategyController`** — bridges intent JSON into collector decisions.
 
-## Integration with `nyar-vm`
+## Integration with `odin-vm`
 
 The VM embeds `ObjectHeap` and `GarbageCollector` inside `Executor`. During interpretation, stack slots and global
 tables hold `Value` references; collection traces from roots through object graphs. Deoptimization paths use
-`encode_value_for_deopt` helpers exported from `nyar-vm`, not from this crate.
+`encode_value_for_deopt` helpers exported from `odin-vm`, not from this crate.
 
 ## Usage
 

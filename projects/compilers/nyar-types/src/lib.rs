@@ -3,18 +3,16 @@
 //! Rust seed 路径共用的最小类型与语义身份。
 
 pub use self::{
-    compiler_input::{
-        DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath,
-    },
     canonical_program::{
         CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
         CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperand,
         CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
-        CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner, DiagnosticPhase,
-        DiagnosticRecord, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, EvidenceRecord, FieldRecord,
-        ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics, StageResult,
-        StructuredDiagnosticSet, TypeRecord, VariantRecord, pipeline,
+        CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRecord,
+        DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord,
+        LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord,
+        pipeline,
     },
+    compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     digest::combined_content_hash,
     errors::{NyarError, NyarErrorKind},

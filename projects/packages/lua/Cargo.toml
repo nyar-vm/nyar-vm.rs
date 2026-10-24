@@ -1,0 +1,17 @@
+[package]
+name = "legend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "legend"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+legacy-vm = { workspace = true }
+[dev-dependencies]
+nyar = { workspace = true }

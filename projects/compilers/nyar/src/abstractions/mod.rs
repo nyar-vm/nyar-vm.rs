@@ -20,7 +20,7 @@ pub enum TargetFamily {
     /// `native`
     Native,
     /// `CPU/VM`
-    NyarVm,
+    Ovm,
     /// `GPU / Shader`
     Gpu,
 }
@@ -123,7 +123,7 @@ pub enum BackendInputKind {
     /// DXIL 容器输入。
     DxilContainer,
     /// Nyar VM 字节码模块输入。
-    NyarVm,
+    Ovm,
 }
 
 /// 目标描述。
@@ -175,7 +175,7 @@ pub enum CanonicalArch {
     /// `JVM`
     Jvm,
     /// `Nyar VM`
-    NyarVm,
+    Ovm,
     /// 宿主原生二进制占位。
     Native,
 }
@@ -193,7 +193,7 @@ impl CanonicalArch {
             "wasm64" => Some(Self::Wasm64),
             "clr" => Some(Self::Clr),
             "jvm" => Some(Self::Jvm),
-            "nyar" | "nyarvm" => Some(Self::NyarVm),
+            "ovm" | "odin-vm" => Some(Self::Ovm),
             "native" => Some(Self::Native),
             _ => None,
         }
@@ -212,7 +212,7 @@ impl CanonicalArch {
             Self::Wasm64 => "wasm64",
             Self::Clr => "clr",
             Self::Jvm => "jvm",
-            Self::NyarVm => "nyar",
+            Self::Ovm => "ovm",
             Self::Native => "native",
         }
     }
@@ -474,7 +474,7 @@ impl CanonicalTarget {
             CanonicalArch::Clr => TargetFamily::Clr,
             CanonicalArch::Jvm => TargetFamily::Jvm,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => TargetFamily::Wasm,
-            CanonicalArch::NyarVm => TargetFamily::NyarVm,
+            CanonicalArch::Ovm => TargetFamily::Ovm,
             _ => TargetFamily::Native,
         };
         let arch = match self.arch {
@@ -484,7 +484,7 @@ impl CanonicalTarget {
             _ => BinaryArch::Any,
         };
         let flavor = match family {
-            TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::NyarVm => BinaryFlavor::ManagedClr,
+            TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::Ovm => BinaryFlavor::ManagedClr,
             _ => BinaryFlavor::Native,
         };
         BinaryTarget { family, arch, byte_order: ByteOrder::LittleEndian, flavor }
@@ -515,8 +515,8 @@ impl CanonicalTarget {
             "bun" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
             }
-            "nyar" | "nyar-vm" | "nyarvm" | "legion" => {
-                Some(Self::new(CanonicalArch::NyarVm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
+            "ovm" | "odin-vm" | "legion" => {
+                Some(Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
             }
             "native" => Some(Self::host_native()),
             _ => None,
@@ -545,7 +545,7 @@ impl Display for CanonicalTarget {
             let abi_text = match (self.arch, abi) {
                 (CanonicalArch::Clr, CanonicalAbi::Clr)
                 | (CanonicalArch::Jvm, CanonicalAbi::Jvm)
-                | (CanonicalArch::NyarVm, CanonicalAbi::Managed) => "managed",
+                | (CanonicalArch::Ovm, CanonicalAbi::Managed) => "managed",
                 _ => abi.as_str(),
             };
             write!(f, "-{}", abi_text)?;
@@ -582,7 +582,7 @@ impl FromStr for CanonicalTarget {
                 "managed" => Some(match arch {
                     CanonicalArch::Clr => CanonicalAbi::Clr,
                     CanonicalArch::Jvm => CanonicalAbi::Jvm,
-                    CanonicalArch::NyarVm => CanonicalAbi::Managed,
+                    CanonicalArch::Ovm => CanonicalAbi::Managed,
                     _ => {
                         return Err(CanonicalTargetParseError::new(format!("target '{}' cannot use managed abi", trimmed)));
                     }

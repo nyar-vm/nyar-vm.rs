@@ -22,11 +22,11 @@ fn frozen_families_have_neither_capability_nor_lowering() {
         };
         assert!(error.to_string().contains("拒绝切换目标或补造产物"), "{error}");
     }
-    assert!(driver_compiler_names().iter().all(|name| matches!(*name, "wasm-binary" | "nyar-vm")));
+    assert!(driver_compiler_names().iter().all(|name| matches!(*name, "wasm-binary" | "ovm")));
 }
 
-#[cfg(not(feature = "nyar-vm-lane"))]
+#[cfg(not(feature = "ovm-lane"))]
 #[test]
 fn disabled_vm_does_not_advertise_capability() {
-    assert!(bundled_backend_capability_descriptor(TargetBackendFamily::NyarVm).is_none());
+    assert!(bundled_backend_capability_descriptor(TargetBackendFamily::Ovm).is_none());
 }

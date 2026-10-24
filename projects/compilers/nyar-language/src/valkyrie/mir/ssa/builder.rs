@@ -190,23 +190,14 @@ impl MirBuilder {
     }
 
     /// Emit `Call` and bind its SSA result (`instruction.results[0]`).
-    pub(super) fn push_call(
-        &mut self,
-        callee: MirOperand,
-        arguments: Vec<MirOperand>,
-    ) -> MirValueRef {
+    pub(super) fn push_call(&mut self, callee: MirOperand, arguments: Vec<MirOperand>) -> MirValueRef {
         let value = self.next_value(MirValueOrigin::CallResult);
         self.push_instruction(MirOperation::Call { callee, arguments }, vec![value]);
         value
     }
 
     /// Emit a call with known return type. `unit` 不得占用物理 value 槽（BPHYS001）。
-    pub(super) fn push_call_returning(
-        &mut self,
-        callee: MirOperand,
-        arguments: Vec<MirOperand>,
-        return_type: ValkyrieType,
-    ) -> MirOperand {
+    pub(super) fn push_call_returning(&mut self, callee: MirOperand, arguments: Vec<MirOperand>, return_type: ValkyrieType) -> MirOperand {
         if matches!(return_type, ValkyrieType::Unit) {
             self.push_instruction(MirOperation::Call { callee, arguments }, Vec::new());
             return MirOperand::Constant(MirConstant::Unit);

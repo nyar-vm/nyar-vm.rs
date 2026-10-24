@@ -7,9 +7,7 @@
 //! 3. args 是结构化 key-value（DiagnosticArg 枚举），不是已格式化的 String；
 //! 4. related_spans / notes / args 为空时不写入 JSON（skip_serializing_if）。
 
-use nyar_types::{
-    DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
-};
+use nyar_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
 
 #[test]
 fn diagnostic_row_json_round_trip_preserves_all_structured_fields() {
@@ -52,13 +50,14 @@ fn diagnostic_row_json_round_trip_preserves_all_structured_fields() {
     assert!(restored.notes.iter().any(|n| n.contains("跨 namespace")), "notes 必须保留");
     assert!(restored.help.as_ref().unwrap().contains("显式绑定"), "help 必须保留");
     assert!(restored.cause.as_ref().unwrap().contains("HIR lowering"), "cause 必须保留");
-    assert_eq!(restored.internal_message.as_ref().unwrap(), "TextSpan.as_range 必须通过 trait 约束解析", "internal_message 最后设置的值应被保留");
+    assert_eq!(
+        restored.internal_message.as_ref().unwrap(),
+        "TextSpan.as_range 必须通过 trait 约束解析",
+        "internal_message 最后设置的值应被保留"
+    );
 
     // args 必须是结构化 DiagnosticArg 枚举值，不是 String
-    assert!(
-        matches!(restored.args.get("owner_type").unwrap(), DiagnosticArg::TypeName(_)),
-        "owner_type 必须是 DiagnosticArg::TypeName"
-    );
+    assert!(matches!(restored.args.get("owner_type").unwrap(), DiagnosticArg::TypeName(_)), "owner_type 必须是 DiagnosticArg::TypeName");
     assert!(
         matches!(restored.args.get("defining_trait").unwrap(), DiagnosticArg::SymbolPath(_)),
         "defining_trait 必须是 DiagnosticArg::SymbolPath"

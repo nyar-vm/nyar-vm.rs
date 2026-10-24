@@ -1,10 +1,10 @@
-//! NyarVM backend suspend consumption strategy.
+//! OVM backend suspend consumption strategy.
 
 use serde::{Deserialize, Serialize};
 
 use crate::planning::SuspendConsumptionModel;
 
-/// NyarVM suspend consumption strategy (dual-path).
+/// OVM suspend consumption strategy (dual-path).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum VmSuspendStrategy {
     /// First-class continuation runtime (`SuspendRuntimePayload`).

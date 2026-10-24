@@ -84,7 +84,8 @@ pub(super) fn lower_impl_method_functions(
 ) -> Vec<MirFunction> {
     let mut functions = Vec::new();
     for impl_block in &module.impls {
-        let Some(type_name) = impl_owner_type_name(module, &impl_block.target) else {
+        let Some(type_name) = impl_owner_type_name(module, &impl_block.target)
+        else {
             continue;
         };
         for method in impl_block.methods.iter().filter(|method| !method.is_abstract) {

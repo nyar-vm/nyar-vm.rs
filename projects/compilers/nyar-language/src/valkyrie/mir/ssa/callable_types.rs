@@ -68,11 +68,8 @@ fn collect_callable_return_types_into(module: &HirModule, index: &mut CallableRe
     }
     for singleton in &module.singletons {
         let owner = ValkyrieType::Named(singleton.name.clone());
-        for method in singleton
-            .methods
-            .iter()
-            .chain(singleton.constructor.iter().map(Box::as_ref))
-            .chain(singleton.finalizer.iter().map(Box::as_ref))
+        for method in
+            singleton.methods.iter().chain(singleton.constructor.iter().map(Box::as_ref)).chain(singleton.finalizer.iter().map(Box::as_ref))
         {
             register_callable_return(
                 index,

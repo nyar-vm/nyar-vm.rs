@@ -353,12 +353,12 @@ fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBin
         return Some(frozen_operator_binding(resolved));
     }
     let vm_mnemonic = crate::lowering::shared::interop::ovm_operator_target(link);
-    #[cfg(feature = "nyar-vm-lane")]
+    #[cfg(feature = "ovm-lane")]
     if let Some(mnemonic) = vm_mnemonic {
-        let resolved = crate::lowering::backends::nyar_vm_mir::freeze_ovm_operator_binding(mnemonic);
+        let resolved = crate::lowering::backends::ovm_mir::freeze_ovm_operator_binding(mnemonic);
         return Some(frozen_operator_binding(resolved));
     }
-    #[cfg(not(feature = "nyar-vm-lane"))]
+    #[cfg(not(feature = "ovm-lane"))]
     if vm_mnemonic.is_some() {
         return Some(TargetOperatorBinding::Unfrozen);
     }

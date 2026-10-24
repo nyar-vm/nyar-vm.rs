@@ -266,9 +266,9 @@ fn c_binding_platform(library: &str) -> Option<&'static str> {
 }
 
 fn is_host_import_surface_tag(name: &str) -> bool {
-    // `js_builtin` / `vm`：抽象宿主绑定，须进入 external import 合同，
+    // `js_builtin` / `ovm`：抽象宿主绑定，须进入 external import 合同，
     // 否则 Invoke(ItemInstanceId) 在 link 阶段报「没有定义或显式导入合同」。
-    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js_builtin" | "vm")
+    matches!(name, "clr" | "wasm" | "wasi" | "jvm" | "com" | "js_builtin" | "ovm")
 }
 
 fn attribute_name(attribute: &HirAttribute) -> Option<&str> {

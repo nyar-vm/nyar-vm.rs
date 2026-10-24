@@ -1,0 +1,24 @@
+{
+    "cli.intro": "Nyar VM host CLI — runtime dispatch and collect diagnostics",
+    "cli.cmd.version": "Print package version and host protocol",
+    "cli.cmd.host-info": "Print resolved platform collect and native host metadata",
+    "cli.cmd.runtime": "Runtime family helpers",
+    "cli.cmd.runtime.list": "List supported runtime families",
+    "cli.cmd.runtime.prepare": "Expand a runtime template without executing",
+    "cli.cmd.runtime.run": "Prepare and execute a runtime command",
+    "cli.opt.family": "Runtime family id (clr, jvm, node, wasi, nyar-vm, …)",
+    "cli.opt.artifact": "Artifact path (binary, jar, wasm module, …)",
+    "cli.opt.classpath": "Classpath for JVM family",
+    "cli.opt.entry": "Logical entry symbol",
+    "cli.opt.wasi-p3": "Enable wasmtime -S p3 for WASI family",
+    "cli.opt.cwd": "Working directory for runtime run",
+
+    "commander.ui.usage": "Usage: {name} <command> [options]",
+    "commander.ui.commands": "Commands:",
+    "commander.ui.options": "Options:",
+    "commander.opt.locale": "Locale id",
+    "commander.err.unknown_command": "unknown command `{cmd}`",
+    "commander.err.unknown_option": "unknown option `{option}`",
+    "commander.err.missing_option_value": "missing value for `{option}`",
+    "commander.err.localize_required": "call .use(LocalizePlugin) or .locales(root) before parse()"
+}

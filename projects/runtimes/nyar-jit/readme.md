@@ -6,7 +6,7 @@ Optional just-in-time compiler for Nyar bytecode.
 
 `nyar-jit` accelerates hot functions by compiling verified bytecode views into machine code while preserving
 deoptimization back to the interpreter. It consumes **only** bytecode-level facts (function specs, stack maps, scalar
-programs) and must not depend on `nyar-language`, `nyar-vm`, or guest language crates—avoiding circular dependencies.
+programs) and must not depend on `nyar-language`, `odin-vm`, or guest language crates—avoiding circular dependencies.
 The VM injects a `JitCompiler` implementation via `Executor::with_jit`.
 
 ## Features
@@ -17,14 +17,14 @@ The VM injects a `JitCompiler` implementation via `Executor::with_jit`.
 - **`JitCompiledArtifact` / machine-code encoders** — ret/void, local/binop/cmp/select peephole sequences with
   `MACHINE_CODE_MAGIC`.
 - **`DeoptMap` / `RestoredInterpreterFrame`** — rebuild interpreter frames when assumptions break.
-- **`FunctionStackMaps` / `StackMapEntry`** — shared contract with `nyar-vm` for safe deopt.
+- **`FunctionStackMaps` / `StackMapEntry`** — shared contract with `odin-vm` for safe deopt.
 - **`JitAssumption` / `baseline_scalar_assumptions`** — document assumptions checked at runtime.
 
 ## Usage
 
 ```rust
 use nyar_jit::BaselineScalarJit;
-use nyar_vm::Executor;
+use odin_vm::Executor;
 
 let mut ex = Executor::with_jit(Box::new(BaselineScalarJit::new()));
 ```

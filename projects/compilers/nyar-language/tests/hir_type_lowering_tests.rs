@@ -125,19 +125,15 @@ fn bracket_sugar_lowers_to_array() {
     assert_eq!(lower_type_expression(&sugar).expect("bracket sugar lowers"), expected);
 }
 
-const NUMERIC_PRIMITIVE_NAMES: [&str; 16] = [
-    "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize", "f32", "f64", "f128", "byte",
-];
+const NUMERIC_PRIMITIVE_NAMES: [&str; 16] =
+    ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize", "f32", "f64", "f128", "byte"];
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
     ValkyrieCompiler::new(SourceID::default()).compile_source(source)
 }
 
 fn find_struct<'a>(hir: &'a HirModule, name: &str) -> &'a HirStruct {
-    hir.structs
-        .iter()
-        .find(|item| item.name.as_str() == name)
-        .unwrap_or_else(|| panic!("缺少结构 `{name}`"))
+    hir.structs.iter().find(|item| item.name.as_str() == name).unwrap_or_else(|| panic!("缺少结构 `{name}`"))
 }
 
 fn declaration_of(hir: &HirModule, name: &str) -> nyar_types::ItemId {

@@ -1,5 +1,5 @@
 use mini_typescript::{project::ProjectLoader, MiniTypescriptFrontend};
-use nyar_vm::vm::interpreter::NyarVM;
+use odin_vm::vm::interpreter::NyarVM;
 use std::path::Path;
 
 #[test]

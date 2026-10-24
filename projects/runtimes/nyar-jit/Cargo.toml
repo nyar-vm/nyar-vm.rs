@@ -11,6 +11,6 @@ name = "nyar_jit"
 path = "src/lib.rs"
 
 [dependencies]
-nyar-bytecode = { workspace = true }
+odin-bytecode = { workspace = true }
 
 [dev-dependencies]

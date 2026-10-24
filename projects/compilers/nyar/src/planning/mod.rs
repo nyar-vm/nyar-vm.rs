@@ -58,10 +58,7 @@ impl std::fmt::Display for PlanningError {
                 write!(f, "planning failed in stage `{stage:?}` of module `{module}`: {detail}")
             }
             Self::MissingBackendInterpreter { fragment, projection_family, host_boundary } => {
-                write!(
-                    f,
-                    "no backend interpreter for fragment `{fragment}` (family={projection_family:?}, host={host_boundary:?})"
-                )
+                write!(f, "no backend interpreter for fragment `{fragment}` (family={projection_family:?}, host={host_boundary:?})")
             }
         }
     }

@@ -21,7 +21,7 @@ use chomsky_types::Loc;
 use chomsky_uir::{Analysis, ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::NyarError;
-use nyar_vm::bytecode::format::NyarcModule;
+use odin_vm::bytecode::format::NyarcModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
 use oak_vfs::Vfs;

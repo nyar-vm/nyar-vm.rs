@@ -8,8 +8,7 @@ use crate::{
 use nyar_types::IntrinsicId;
 
 use super::{
-    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin,
-    callee_name_matches,
+    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,
     expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply},
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_type},
@@ -358,9 +357,8 @@ impl MirBuilder {
         // 结果类型只消费调用点/声明注解提供的整数事实（`resolved.return_type` 已由
         // `try_lower_array_len_intrinsic` 合入）。事实缺失时结构化失败；禁止按名字
         // 造 `Named("usize")` 再与 `Nominal{ItemId}` 形成双 TypeId（CAN015 StoreVar）。
-        let Some(length_ty) = expected_type
-            .filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
-            .cloned()
+        let Some(length_ty) =
+            expected_type.filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations)).cloned()
         else {
             self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType {
                 context: format!("array length result missing integer type fact: {array:?}"),
@@ -706,8 +704,7 @@ impl MirBuilder {
                     let resolved_call = resolved.as_ref().expect("Semantic MIR requires a resolved instance call contract");
                     let Some(callee) = lower_resolved_callee(resolved_call)
                     else {
-                        self.diagnostics
-                            .push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
+                        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: resolved_call.symbol.to_string() });
                         return MirOperand::Constant(MirConstant::Unit);
                     };
                     if let Some(operand) = self.try_lower_array_intrinsics(resolved.as_ref(), &callee, &arguments, expected_type) {
@@ -852,9 +849,7 @@ impl MirBuilder {
                         match lower_resolved_callee(call) {
                             Some(callee) => callee,
                             None => {
-                                self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity {
-                                    symbol: call.symbol.to_string(),
-                                });
+                                self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: call.symbol.to_string() });
                                 return MirOperand::Constant(MirConstant::Unit);
                             }
                         }

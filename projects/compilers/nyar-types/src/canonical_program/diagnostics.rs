@@ -361,10 +361,7 @@ pub struct DiagnosticRecord {
 }
 
 /// 遗留 structured diagnostics 集合（待全量迁移到 `Vec<DiagnosticRow>` 后废弃）。
-#[deprecated(
-    since = "S1-phase",
-    note = "Use Vec<DiagnosticRow> instead. This legacy type is kept for Pipeline trait interop."
-)]
+#[deprecated(since = "S1-phase", note = "Use Vec<DiagnosticRow> instead. This legacy type is kept for Pipeline trait interop.")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuredDiagnosticSet {
     /// 遗留诊断记录列表。

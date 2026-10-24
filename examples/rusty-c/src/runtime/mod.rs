@@ -1,7 +1,7 @@
 use chomsky::{cost::DefaultCostModel, extract::IKunExtractor};
 use chomsky_uir::{EGraph, IKun, Id};
 use nyar_types::NyarError;
-use nyar_vm::vm::NyarVM;
+use odin_vm::vm::NyarVM;
 use std::sync::Mutex;
 
 #[derive(Debug)]
@@ -10,11 +10,11 @@ pub struct RustyCRuntime {
     _switch_counter: Mutex<usize>,
 }
 
-impl nyar_vm::vm::traits::RuntimeProvider for RustyCRuntime {
-    fn resolve(&self, _name: &str) -> Option<nyar_vm::vm::traits::ExternFunc> {
+impl odin_vm::vm::traits::RuntimeProvider for RustyCRuntime {
+    fn resolve(&self, _name: &str) -> Option<odin_vm::vm::traits::ExternFunc> {
         None
     }
-    fn get_intrinsic(&self, _id: u32) -> Option<nyar_vm::vm::traits::ExternFunc> {
+    fn get_intrinsic(&self, _id: u32) -> Option<odin_vm::vm::traits::ExternFunc> {
         None
     }
 }
@@ -33,7 +33,7 @@ impl RustyCRuntime {
         let tree = extractor.extract(root_id);
 
         // 2. Translate IKunTree to Nyar Module
-        let mut backend = nyar_vm::NyarBackend::new();
+        let mut backend = odin_vm::NyarBackend::new();
         let module = backend.compile(&tree)?;
 
         // 3. Execute using Nyar VM

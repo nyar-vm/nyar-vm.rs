@@ -8,8 +8,8 @@ repository**.
 | Path         | Role                                                                     |
 |--------------|--------------------------------------------------------------------------|
 | `compilers/` | Nyar compiler stack: `nyar-language`, `nyar-emitter`, `nyar-analyzer`, … |
-| `formats/`   | On-disk bytecode contract (`nyar-bytecode`)                              |
-| `runtimes/`  | VM, GC, JIT (`nyar-vm`, `nyar-gc`, `nyar-jit`)                           |
+| `formats/`   | On-disk bytecode contract (`odin-bytecode`)                              |
+| `runtimes/`  | VM, GC, JIT (`odin-vm`, `nyar-gc`, `nyar-jit`)                           |
 | `hosts/`     | Node-API / Wasm host bindings (`nyar-napi`, `nyar-wasm`)                 |
 | `packages/`  | npm platform collect packages (`nyar-win32-x64`, …)                      |
 
@@ -35,4 +35,4 @@ cargo test -p nyar-language
 When unset, related cases are skipped and default CI is unaffected.
 
 Per-crate documentation lives in each crate's `readme.md` (for example [
-`nyar-vm/readme.md`](./runtimes/nyar-vm/readme.md)).
+`odin-vm/readme.md`](./runtimes/odin-vm/readme.md)).

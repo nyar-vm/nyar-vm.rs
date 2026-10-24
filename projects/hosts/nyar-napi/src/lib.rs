@@ -65,7 +65,7 @@ pub fn get_host_info() -> JsHostInfo {
 /// 列出支持的运行时家族 id。
 #[napi]
 pub fn list_runtime_families() -> Vec<String> {
-    [RuntimeFamily::Clr, RuntimeFamily::Jvm, RuntimeFamily::Node, RuntimeFamily::Windows, RuntimeFamily::Wasi, RuntimeFamily::NyarVm]
+    [RuntimeFamily::Clr, RuntimeFamily::Jvm, RuntimeFamily::Node, RuntimeFamily::Windows, RuntimeFamily::Wasi, RuntimeFamily::Ovm]
         .into_iter()
         .map(|family| family.as_str().to_string())
         .collect()

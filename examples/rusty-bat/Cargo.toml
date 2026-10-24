@@ -9,7 +9,7 @@ authors.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }

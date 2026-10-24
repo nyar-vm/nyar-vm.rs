@@ -1,0 +1,16 @@
+[package]
+name = "legacy-vm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+miette = { workspace = true }
+serde_json = { workspace = true }
+std-data = { workspace = true }
+nyar-language = { workspace = true }
+
+# Bytecode runtime is a Futamura *sink* for probes only — not a lib dependency of the PE substrate.
+[dev-dependencies]
+nyar-vm = { workspace = true }

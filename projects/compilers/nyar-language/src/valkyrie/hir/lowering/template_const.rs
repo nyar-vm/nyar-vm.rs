@@ -139,11 +139,7 @@ fn parse_const_range_tokens(
         let start = parse_const_int_token(source, &tokens[0])?;
         let end = parse_const_int_token(source, &tokens[2])?;
         if tokens.len() > 3 {
-            return Err(template_failure(
-                TemplateConstruct::Loop,
-                TemplateFailure::LoopHeaderTrailingTokens,
-                tokens_span(&tokens[3..]),
-            ));
+            return Err(template_failure(TemplateConstruct::Loop, TemplateFailure::LoopHeaderTrailingTokens, tokens_span(&tokens[3..])));
         }
         return Ok(start..end);
     }
@@ -165,9 +161,7 @@ pub fn parse_const_range_text(text: &str) -> Option<std::ops::Range<i64>> {
 }
 
 fn parse_const_int_token(source: &str, token: &Token<ValkyrieTokenType>) -> Result<i64, HirError> {
-    let endpoint_failure = || {
-        template_failure(TemplateConstruct::Loop, TemplateFailure::RangeEndpointNotInteger, token_span(token))
-    };
+    let endpoint_failure = || template_failure(TemplateConstruct::Loop, TemplateFailure::RangeEndpointNotInteger, token_span(token));
     match token.kind {
         ValkyrieTokenType::IntegerLiteral => {}
         ValkyrieTokenType::FloatLiteral => {

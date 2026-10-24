@@ -816,16 +816,9 @@ impl MirBuilder {
         MirOperand::Value(value)
     }
 
-    fn lower_binary_operator_operand(
-        &mut self,
-        member: &str,
-        lhs: MirOperand,
-        rhs: MirOperand,
-        subject: &ValkyrieType,
-    ) -> MirOperand {
+    fn lower_binary_operator_operand(&mut self, member: &str, lhs: MirOperand, rhs: MirOperand, subject: &ValkyrieType) -> MirOperand {
         let member_id = Identifier::new(member);
-        let Some(instance) =
-            super::generic_call_instantiation::lookup_member_dispatch(&self.member_dispatch, subject, &member_id, None)
+        let Some(instance) = super::generic_call_instantiation::lookup_member_dispatch(&self.member_dispatch, subject, &member_id, None)
         else {
             return self.reject_unbound_member_call(member);
         };
@@ -1147,7 +1140,9 @@ impl MirBuilder {
     /// 由 emit 阶段决定 trap 还是保留 `PatternMatch` 检查。
     pub(super) fn lower_fallback_pattern_match(&mut self, pattern: HirPattern, _value: MirOperand) -> MirOperand {
         self.diagnostics
-            .push(MirDiagnostic::PatternLoweringFailed { pattern, reason: "模式 lowering 缺少 MIR 可验证的 extractor 身份".to_string() });
+            .push(MirDiagnostic::PatternLoweringFailed {
+                pattern, reason: "模式 lowering 缺少 MIR 可验证的 extractor 身份".to_string()
+            });
         MirOperand::Constant(MirConstant::Bool(false))
     }
 }

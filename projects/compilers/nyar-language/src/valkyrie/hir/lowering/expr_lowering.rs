@@ -53,7 +53,12 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
-                    initializer: binding.expr.as_ref().map(|expr| lower_term_expression(expr, source_id, span_range.clone())).transpose()?.map(Box::new),
+                    initializer: binding
+                        .expr
+                        .as_ref()
+                        .map(|expr| lower_term_expression(expr, source_id, span_range.clone()))
+                        .transpose()?
+                        .map(Box::new),
                     ty: binding.ty.as_ref().map(lower_type_expression).transpose()?,
                 },
                 span,
@@ -158,10 +163,16 @@ fn lower_term_expression_with_context(
     let span = with_source(&span_range, source_id);
     let kind = match expression {
         TermExpression::ArrayLiteral { items, .. } => HirExprKind::ArrayLiteral {
-            items: items.iter().map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false)).collect::<Result<Vec<_>, _>>()?,
+            items: items
+                .iter()
+                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
+                .collect::<Result<Vec<_>, _>>()?,
         },
         TermExpression::TupleLiteral { items, .. } => HirExprKind::TupleLiteral {
-            items: items.iter().map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false)).collect::<Result<Vec<_>, _>>()?,
+            items: items
+                .iter()
+                .map(|item| lower_term_expression_with_context(item, source_id, span_range.clone(), false))
+                .collect::<Result<Vec<_>, _>>()?,
         },
         TermExpression::NamePath(path) => lower_name_expression(path, span.clone()),
         TermExpression::StringLiteral(literal) => lower_string_literal_kind(literal, source_id, span_range.clone())?,
@@ -190,24 +201,36 @@ fn lower_term_expression_with_context(
             let member = field.name.as_str();
             if let Some(kind) = lower_postfix_effect_member(member, object.clone()) {
                 kind
-            } else {
+            }
+            else {
                 HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member), field_id: None }
             }
         }
         TermExpression::Index { receiver, index, .. } => {
             let receiver = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)?;
             let index = lower_term_expression_with_context(index, source_id, span_range.clone(), false)?;
-            lower_operator_member_call(SUBSCRIPT_MEMBER, vec![HirCallArgument::positional(receiver), HirCallArgument::positional(index)], span.clone())
+            lower_operator_member_call(
+                SUBSCRIPT_MEMBER,
+                vec![HirCallArgument::positional(receiver), HirCallArgument::positional(index)],
+                span.clone(),
+            )
         }
         TermExpression::Offset { receiver, offset, .. } => {
             let receiver = lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)?;
             let offset = lower_term_expression_with_context(offset, source_id, span_range.clone(), false)?;
-            lower_operator_member_call(CARDINAL_SUBSCRIPT_MEMBER, vec![HirCallArgument::positional(receiver), HirCallArgument::positional(offset)], span.clone())
+            lower_operator_member_call(
+                CARDINAL_SUBSCRIPT_MEMBER,
+                vec![HirCallArgument::positional(receiver), HirCallArgument::positional(offset)],
+                span.clone(),
+            )
         }
-        TermExpression::Group { expr, .. } => lower_term_expression_with_context(expr, source_id, span_range.clone(), preserve_member_access)?.kind,
+        TermExpression::Group { expr, .. } => {
+            lower_term_expression_with_context(expr, source_id, span_range.clone(), preserve_member_access)?.kind
+        }
         TermExpression::Block(block) => HirExprKind::Block(Box::new(lower_block(block, source_id, span_range.clone())?)),
         TermExpression::Micro(lambda) => {
-            let hir_params = lambda.params.iter().map(|param| lower_param(param, source_id, span_range.clone())).collect::<Result<Vec<_>, _>>()?;
+            let hir_params =
+                lambda.params.iter().map(|param| lower_param(param, source_id, span_range.clone())).collect::<Result<Vec<_>, _>>()?;
             let hir_return_type = lambda.return_type.as_ref().map(lower_type_expression).transpose()?.unwrap_or(ValkyrieType::AutoType);
             let hir_body = lower_block(&lambda.body, source_id, span_range.clone())?;
             HirExprKind::Lambda { generics: Vec::new(), params: hir_params, return_type: hir_return_type, body: Box::new(hir_body) }
@@ -223,7 +246,8 @@ fn lower_term_expression_with_context(
                     then_branch: Box::new(lower_block(then_branch, source_id, span_range.clone())?),
                     else_branch: else_branch.as_ref().map(|body| lower_block(body, source_id, span_range.clone())).transpose()?.map(Box::new),
                 }
-            } else {
+            }
+            else {
                 HirExprKind::If {
                     condition: Box::new(lower_term_expression_with_context(condition, source_id, span_range.clone(), false)?),
                     then_branch: Box::new(lower_block(then_branch, source_id, span_range.clone())?),
@@ -239,25 +263,55 @@ fn lower_term_expression_with_context(
             label: label.as_ref().map(|value| Identifier::new(value)),
             pattern: pattern.as_ref().map(|pat| lower_pattern(pat, source_id, span.clone())),
             iterator: if pattern.is_some() {
-                condition.as_ref().map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false)).transpose()?.map(|e| Box::new(e))
-            } else { None },
+                condition
+                    .as_ref()
+                    .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                    .transpose()?
+                    .map(|e| Box::new(e))
+            }
+            else {
+                None
+            },
             condition: if pattern.is_none() {
-                condition.as_ref().map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false)).transpose()?.map(|e| Box::new(e))
-            } else { None },
+                condition
+                    .as_ref()
+                    .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                    .transpose()?
+                    .map(|e| Box::new(e))
+            }
+            else {
+                None
+            },
             body: Box::new(lower_block(body, source_id, span_range.clone())?),
         },
         TermExpression::Return(node) => HirExprKind::Return(
-            node.base.as_ref().map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false)).transpose()?.map(|e| Box::new(e))
+            node.base
+                .as_ref()
+                .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                .transpose()?
+                .map(|e| Box::new(e)),
         ),
         TermExpression::Break(node) => HirExprKind::Break {
             label: node.label.as_ref().map(|value| Identifier::new(value)),
-            expr: node.base.as_ref().map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false)).transpose()?.map(|e| Box::new(e)),
+            expr: node
+                .base
+                .as_ref()
+                .map(|expr| lower_term_expression_with_context(expr, source_id, span_range.clone(), false))
+                .transpose()?
+                .map(|e| Box::new(e)),
         },
         TermExpression::Continue(node) => HirExprKind::Continue { label: node.label.as_ref().map(|value| Identifier::new(value)) },
-        TermExpression::Raise(node) => HirExprKind::Raise(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?)),
-        TermExpression::Resume(node) => HirExprKind::Resume(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?)),
+        TermExpression::Raise(node) => {
+            HirExprKind::Raise(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?))
+        }
+        TermExpression::Resume(node) => {
+            HirExprKind::Resume(Box::new(lower_optional_term_expression(node.base.as_ref(), source_id, span_range.clone(), span.clone())?))
+        }
         TermExpression::Yield { expr, .. } => HirExprKind::Yield(
-            expr.as_ref().map(|value| lower_term_expression_with_context(value, source_id, span_range.clone(), false)).transpose()?.map(|e| Box::new(e))
+            expr.as_ref()
+                .map(|value| lower_term_expression_with_context(value, source_id, span_range.clone(), false))
+                .transpose()?
+                .map(|e| Box::new(e)),
         ),
         TermExpression::Catch { expr, arms, span: catch_span, .. } => HirExprKind::Catch {
             expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
@@ -287,7 +341,8 @@ fn lower_term_expression_with_context(
                 kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("super"), Identifier::new(&method.name)])),
                 span: span.clone(),
             };
-            let arg_exprs: Vec<_> = args.iter()
+            let arg_exprs: Vec<_> = args
+                .iter()
                 .map(|arg| lower_term_expression_with_context(arg, source_id, span_range.clone(), false))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
@@ -299,7 +354,12 @@ fn lower_term_expression_with_context(
     Ok(HirExpr { kind, span })
 }
 
-fn lower_unary_expression(node: &TermUnaryNode, source_id: SourceID, fallback_span: Range<usize>, span: SourceSpan) -> Result<HirExprKind, HirError> {
+fn lower_unary_expression(
+    node: &TermUnaryNode,
+    source_id: SourceID,
+    fallback_span: Range<usize>,
+    span: SourceSpan,
+) -> Result<HirExprKind, HirError> {
     let folded_neg_literal = matches!(node.operator, ValkyrieTokenType::Minus)
         .then(|| {
             if let TermExpression::IntegerLiteral { value, .. } = &node.base {
@@ -307,21 +367,31 @@ fn lower_unary_expression(node: &TermUnaryNode, source_id: SourceID, fallback_sp
                     let folded = -(value as i128);
                     (folded >= i64::MIN as i128 && folded <= i64::MAX as i128).then(|| folded as i64)
                 })
-            } else { None }
+            }
+            else {
+                None
+            }
         })
         .flatten();
     if let Some(value) = folded_neg_literal {
         Ok(HirExprKind::Literal(HirLiteral::Integer64(value)))
-    } else if matches!(node.operator, ValkyrieTokenType::Star) {
+    }
+    else if matches!(node.operator, ValkyrieTokenType::Star) {
         let base = lower_term_expression_with_context(&node.base, source_id, fallback_span, false)?;
         Ok(lower_method_call_kind(DEREF_READ_MEMBER, vec![HirCallArgument::positional(base)], span))
-    } else {
+    }
+    else {
         let base = lower_term_expression_with_context(&node.base, source_id, fallback_span, false)?;
         Ok(lower_operator_member_call(&prefix_member_name(&node.operator), vec![HirCallArgument::positional(base)], span))
     }
 }
 
-fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_span: Range<usize>, span: SourceSpan) -> Result<HirExprKind, HirError> {
+fn lower_binary_expression(
+    node: &TermBinaryNode,
+    source_id: SourceID,
+    fallback_span: Range<usize>,
+    span: SourceSpan,
+) -> Result<HirExprKind, HirError> {
     let lhs = &node.lhs;
     let rhs = &node.rhs;
     match node.operator {
@@ -349,7 +419,11 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
         _ => {
             let lhs = lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), false)?;
             let rhs = lower_term_expression_with_context(rhs, source_id, fallback_span, false)?;
-            Ok(lower_operator_member_call(&infix_member_name(&node.operator), vec![HirCallArgument::positional(lhs), HirCallArgument::positional(rhs)], span))
+            Ok(lower_operator_member_call(
+                &infix_member_name(&node.operator),
+                vec![HirCallArgument::positional(lhs), HirCallArgument::positional(rhs)],
+                span,
+            ))
         }
     }
 }
@@ -442,7 +516,11 @@ fn lower_inline_object_method(method: &frontend::ast::MethodDeclaration, source_
         name: Identifier::new(&method.name.name),
         declaring_namespace: NamePath::default(),
         doc: lower_documentation(&method.annotations),
-        annotations: method.annotations.iter().map(|attribute| lower_attribute(attribute, source_id, span_range.clone())).collect::<Result<Vec<_>, _>>()?,
+        annotations: method
+            .annotations
+            .iter()
+            .map(|attribute| lower_attribute(attribute, source_id, span_range.clone()))
+            .collect::<Result<Vec<_>, _>>()?,
         generics: lower_generic_parameters(&method.generics),
         where_constraints: Vec::new(),
         params: lower_method_params(method, source_id)?,
@@ -620,7 +698,11 @@ fn parse_integer_literal(text: &str) -> Result<i64, std::num::ParseIntError> {
     text.parse::<i64>()
 }
 
-fn lower_string_literal(literal: &StringLiteral, source_id: SourceID, fallback_span: Range<usize>) -> Result<crate::types::hir::HirStringLiteral, HirError> {
+fn lower_string_literal(
+    literal: &StringLiteral,
+    source_id: SourceID,
+    fallback_span: Range<usize>,
+) -> Result<crate::types::hir::HirStringLiteral, HirError> {
     let segments = literal
         .segments
         .iter()

@@ -41,15 +41,15 @@ fn nyar_jit_src_must_not_import_concrete_languages() {
 }
 
 #[test]
-fn nyar_jit_must_not_depend_on_nyar_language_or_nyar_vm() {
+fn nyar_jit_must_not_depend_on_nyar_language_or_odin_vm() {
     let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read nyar-jit Cargo.toml");
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
         !trimmed.starts_with('#')
             && (trimmed.starts_with("nyar-language")
-                || trimmed.starts_with("nyar-vm")
+                || trimmed.starts_with("odin-vm")
                 || trimmed.contains("nyar_language")
-                || trimmed.contains("nyar_vm"))
+                || trimmed.contains("odin_vm"))
     });
-    assert!(!has_dep, "nyar-jit Cargo.toml must not depend on nyar-language or nyar-vm");
+    assert!(!has_dep, "nyar-jit Cargo.toml must not depend on nyar-language or odin-vm");
 }

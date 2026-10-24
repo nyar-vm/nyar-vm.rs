@@ -75,8 +75,8 @@ fn unsigned_wasm_operator_mnemonic_lowers_to_unsigned_instruction() {
 #[test]
 fn unknown_wasm_operator_mnemonic_fails_structurally() {
     let submission = numeric_submission("i32.unbound_add");
-    let error = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main")
-        .expect_err("未知 `wasm_operator` 助记符必须结构化失败");
+    let error =
+        nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main").expect_err("未知 `wasm_operator` 助记符必须结构化失败");
     let message = error.to_string();
     assert!(message.contains("wasm_operator"), "{message}");
     assert!(message.contains("i32.unbound_add"), "{message}");

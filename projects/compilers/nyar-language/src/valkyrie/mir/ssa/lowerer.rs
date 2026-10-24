@@ -44,8 +44,7 @@ impl MirLowerer {
         let mut diagnostics = Vec::new();
         let structs = collect_field_declarations(module, &mut diagnostics);
         let nominal_offset = u32::try_from(structs.len()).expect("aggregate nominal identity overflow");
-        let (sum_types, flags_types) =
-            crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
+        let (sum_types, flags_types) = crate::valkyrie::hir::lowering::compute_nominal_declarations(module, nominal_offset, &mut diagnostics);
         value_semantics::ensure_unite_layouts_for_sums(&mut aggregate_layouts, &sum_types);
         let imports: Vec<_> = module.imports.iter().map(|import| import.path.to_string()).collect();
         let mut external_calls = collect_external_call_contracts(module);
@@ -112,9 +111,7 @@ impl MirLowerer {
             })
             .collect::<std::collections::BTreeSet<_>>();
         external_calls.retain(|contract| match contract.instance {
-            Some(instance) if host_runtime_callables.values().any(|host| *host == instance) => {
-                used_callable_instances.contains(&instance)
-            }
+            Some(instance) if host_runtime_callables.values().any(|host| *host == instance) => used_callable_instances.contains(&instance),
             _ => true,
         });
         // MirFunction 不再携带 per-function diagnostics。

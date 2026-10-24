@@ -8,4 +8,4 @@ Python frontend for the `nyar-language` analysis framework.
   There is no local formatter: source formatting for Python belongs to Oak.
 - **Module**: concrete `PythonModule` with language id `python`.
 
-Not a `nyar-vm` compile target. Product CLI: `panda`.
+Not a `ovm` compile target. Product CLI: `panda`.
