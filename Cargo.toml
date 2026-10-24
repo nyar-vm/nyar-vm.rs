@@ -53,7 +53,7 @@ nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
-# OVM Runtime（Nyar 平台的 OVM backend 私有运行时）
+# Nyar Runtime（Nyar 平台的私有运行时）
 odin-bytecode = { path = "projects/formats/odin-bytecode" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
