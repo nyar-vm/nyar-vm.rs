@@ -8,8 +8,11 @@ export {
     listRuntimeFamilies,
     loadNative,
     prepareRuntimeCommand,
+    runHostScript,
     runPreparedCommand,
     type HostInfo,
+    type HostScriptOptions,
+    type HostScriptResult,
     type PrepareRuntimeOptions,
     type PreparedRuntimeCommand,
 } from './native.ts';

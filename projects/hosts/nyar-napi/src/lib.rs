@@ -4,7 +4,7 @@
 
 #![deny(missing_docs)]
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -87,6 +87,35 @@ pub fn prepare_runtime_command(options: JsPrepareRuntimeOptions) -> Result<JsPre
     let classpath = options.classpath.as_deref().unwrap_or(".");
     let prepared = template.prepare_command(Path::new(&options.artifact), Path::new(classpath), &options.entry);
     Ok(to_js_prepared(prepared))
+}
+
+/// 执行宿主脚本的输入。
+#[napi(object)]
+pub struct JsHostScriptOptions {
+    /// 语言 id（`bash` / `sh` / `lua` / `tcl` 等）。
+    pub language: String,
+    /// 脚本源码。
+    pub source: String,
+    /// 脚本路径；仅用于诊断，可留空。
+    pub file: Option<String>,
+}
+
+/// 宿主脚本执行结果。
+#[napi(object)]
+pub struct JsHostScriptResult {
+    /// 脚本最终值的字符串表示。
+    pub value: String,
+}
+
+/// 执行宿主脚本源码，返回脚本最终值。
+#[napi]
+pub fn run_host_script(options: JsHostScriptOptions) -> Result<JsHostScriptResult> {
+    let runner = legend_vm::LegacyVmRunner::new();
+    let mut env = HashMap::new();
+    let value = runner
+        .run(&options.language, &options.source, &mut env)
+        .map_err(|error| Error::from_reason(error.to_string()))?;
+    Ok(JsHostScriptResult { value: value.to_string_value() })
 }
 
 /// 在指定工作目录执行已准备好的命令并返回退出码。
