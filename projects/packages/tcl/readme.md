@@ -1,35 +1,21 @@
-# legend
+# @nyar/tcl
 
-多语言统一运行时 CLI（demo）。证明 host-script **guest** 可经 `legacy-vm`（PE 基板）插拔执行，**不是**各语言完整实现的宿主。
+Tcl 语言包。只声明语言身份并把宿主能力委托给 `@nyar/nyar`；解析与求值在 `nyar-language` 的 tcl guest 中实现，本包不重复实现。
 
-## 职责（只做这些）
-
-- 读源文件 / eval 片段、解析 `--language` 与短 flag
-- 调用 `LegacyVmRunner` 执行或列出支持语言
-- 维护 `fixtures` + `fixtures/manifest.yaml` 与 sidecar 期望
-- 目标别名展示（`legacy-vm` / `native` / `nyar-vm` / …）
-
-## 两条路径（不要混）
-
-| CLI | 走什么 | 说明 |
-| --- | --- | --- |
-| `run` / `eval` | **interpret**（`LegacyVmRunner::run`） | 日常 demo / fixture；`--target` 在 run 上被忽略 |
-| `build --target native`（`pe` / `exe`） | **specialize → native residual → PE** | host-script PE 产品路径 |
-| `build --target nyar-vm` | **拒绝** host-script | PE 终点不是 nyar-vm；`.nyar` 至多是其它探针 |
-
-心智模型与分层全文：[`../host-script-languages.md`](../host-script-languages.md)、[`../../runtimes/legend-vm`](../../runtimes/legend-vm/readme.md)。
-
-## 禁止
-
-- 不在 `legend/src` 实现 lexer / parser / AST / interpret
-- 不为某语言加「特殊求值分支」；语言逻辑落在 `std-data` → `nyar-language`（guest）→ `legacy-vm`（薄适配）
-- 解释型 host script fixture 的 `targets` 使用 `legacy-vm`，不要标成 `nyar-vm`
-- 不要把 host-script PE 产品说成「编到 nyar-vm」
-
-## 测试
+## 依赖顺序
 
 ```text
-cargo test -p legend --test host_script_fixtures
+@nyar/tcl ──► @nyar/nyar ──► @nyar/nyar-<platform>
 ```
 
-再生 sidecar：`LEGEND_TEST_REGENERATE=1` 或 `NYAR_TEST_REGENERATE=1`。
+`@nyar/nyar` 按当前 OS/arch 选择已安装的平台 collect（原生优先、Wasm 兜底），因此本包不直接依赖任何平台包。
+
+## 导出
+
+- `LANGUAGE`：语言 id 与源文件扩展名
+- `guestArtifact()`：该语言 guest 模块的约定路径 `guest/tcl.nyar`
+- `createNyarHost()` / `resolveCollect`：来自 `@nyar/nyar` 的宿主入口
+
+## License
+
+MIT

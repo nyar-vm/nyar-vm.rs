@@ -54,12 +54,16 @@ export function resolveCollect(): NyarCollect {
     }
 
     const wasmReq = requireOptional(WASM_PACKAGE);
-    if (!wasmReq) {
-        throw new Error(`missing required dependency ${WASM_PACKAGE}; install workspace collects before publishing`);
+    if (wasmReq) {
+        return {
+            kind: 'wasm',
+            packageName: WASM_PACKAGE,
+            entry: wasmReq.resolve(`${WASM_PACKAGE}/nyar.wasm`),
+        };
     }
-    return {
-        kind: 'wasm',
-        packageName: WASM_PACKAGE,
-        entry: wasmReq.resolve(`${WASM_PACKAGE}/nyar.wasm`),
-    };
+
+    throw new Error(
+        `no Nyar collect installed for host ${HOST_KEY}; install one of the optional platform packages ` +
+            `(${nativePackage ?? '@nyar/nyar-<platform>'}, ${WASM_PACKAGE})`,
+    );
 }

@@ -25,7 +25,7 @@ const cmd = prepareRuntimeCommand({
 });
 ```
 
-Platform collects (`nyar-win32-x64`, `nyar-linux-x64`, `nyar-darwin-*`, `nyar-unknown-wasm32`) are resolved automatically when installed on a matching host.
+Platform collects (`nyar-win32-x64`, `nyar-linux-x64`, `nyar-darwin-*`, `nyar-unknown-wasm32`) are all optional dependencies: the host picks the collect matching the current OS/arch, falls back to the Wasm collect when available, and reports a clear error when none is installed.
 
 ## License
 
