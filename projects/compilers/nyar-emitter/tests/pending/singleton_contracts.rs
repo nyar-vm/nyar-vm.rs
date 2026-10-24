@@ -11,7 +11,7 @@ use nyar_emitter::{
         decode_wasm_uleb128, singleton_metadata_line,
     },
 };
-use nyar_language::{
+use rusty_valkyrie::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, MirStorageKind, SingletonInstancePlan,
     mir::singleton::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME, SINGLETON_UNLOAD_ACCESSOR},
     types::hir::ValkyrieType,

@@ -9,7 +9,7 @@ use nyar_emitter::{
     nyar_backend_clr::{MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilModule, MsilOpcode},
     testing::lower_fragment_to_clr_msil,
 };
-use nyar_language::{
+use rusty_valkyrie::{
     CanonicalTarget, ValkyrieCompiler, assemble_fragment_submission, nyar::ClrSuspendStrategy, plan_artifacts_from_build_output,
     types::SourceID,
 };

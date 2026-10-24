@@ -7,7 +7,7 @@ use nyar_emitter::{
     nyar_backend_clr::{MsilInstructionOperand, MsilOpcode, MsilType},
     testing::{lower_fragment_to_clr_msil, lower_mir_to_clr_method},
 };
-use nyar_language::{
+use rusty_valkyrie::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, MirBlock, MirBlockRef, MirDispatchKind, MirFunction, MirInstruction, MirInstructionKind,
     MirLowerer, MirOperand, MirStorageKind, MirTerminator, MirValue, MirValueOrigin, MirValueRef, SingletonInstancePlan, ValkyrieCompiler,
     types::{
@@ -44,7 +44,7 @@ fn rejects_unknown_call_signature_instead_of_guessing_object_object() {
                 output: None,
                 kind: MirInstructionKind::Call {
                     dispatch: MirDispatchKind::Static,
-                    callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![Identifier::new("missing")])),
+                    callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![Identifier::new("missing")])),
                     arguments: Vec::new(),
                     witness: None,
                     effect: None,
@@ -100,7 +100,7 @@ fn lowers_vm_i64_to_i32_as_conv_i4_not_a_local_call() {
                 output: Some(MirValueRef(1)),
                 kind: MirInstructionKind::Call {
                     dispatch: MirDispatchKind::Static,
-                    callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![Identifier::new("i64_to_i32")])),
+                    callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![Identifier::new("i64_to_i32")])),
                     arguments: vec![MirOperand::Value(MirValueRef(0))],
                     witness: None,
                     effect: None,
@@ -210,7 +210,7 @@ fn emits_msil_type_defs_for_value_layout_plan() {
             parameters: Vec::new(),
             instructions: vec![MirInstruction {
                 output: None,
-                kind: MirInstructionKind::LoadConstant { constant: nyar_language::MirConstant::Unit, ty: None },
+                kind: MirInstructionKind::LoadConstant { constant: rusty_valkyrie::MirConstant::Unit, ty: None },
             }],
             terminator: MirTerminator::Return { value: None },
         }],
@@ -263,7 +263,7 @@ fn clr_singleton_accessor_call_emits_call() {
                 output: Some(MirValueRef(0)),
                 kind: MirInstructionKind::Call {
                     dispatch: MirDispatchKind::Static,
-                    callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![
+                    callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![
                         Identifier::new("Counter"),
                         Identifier::new("instance"),
                     ])),
@@ -358,7 +358,7 @@ fn clr_singleton_instance_method_call_emits_callvirt() {
                     output: Some(MirValueRef(0)),
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![
                             Identifier::new("Counter"),
                             Identifier::new("instance"),
                         ])),
@@ -374,7 +374,7 @@ fn clr_singleton_instance_method_call_emits_callvirt() {
                     output: Some(MirValueRef(1)),
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![
                             Identifier::new("Counter"),
                             Identifier::new("increment"),
                         ])),
@@ -437,7 +437,7 @@ fn clr_basic_ffi_preserves_byte_array_parameters_and_returns() {
                     output: Some(MirValueRef(1)),
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(read.parts().to_vec())),
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(read.parts().to_vec())),
                         arguments: vec![MirOperand::Value(MirValueRef(0))],
                         witness: None,
                         effect: None,
@@ -450,7 +450,7 @@ fn clr_basic_ffi_preserves_byte_array_parameters_and_returns() {
                     output: None,
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(write.parts().to_vec())),
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(write.parts().to_vec())),
                         arguments: vec![MirOperand::Value(MirValueRef(0)), MirOperand::Value(MirValueRef(1))],
                         witness: None,
                         effect: None,
@@ -506,7 +506,7 @@ fn array_len_intrinsic_binding_emits_ldlen() {
     // Closed loop: Call to a symbol registered from `[intrinsic("array.len")]` → ArrayLen → ldlen.
     let operation = QualifiedName::new(vec![Identifier::new("build_backend_execution_request")]);
     let array_ty = ValkyrieType::Array(Box::new(ValkyrieType::Utf8));
-    let len_symbol = nyar_language::types::NamePath::new(vec![Identifier::new("__array_len")]);
+    let len_symbol = rusty_valkyrie::types::NamePath::new(vec![Identifier::new("__array_len")]);
     let mir_fn = MirFunction {
         symbol: "build_backend_execution_request".to_string(),
         return_type: ValkyrieType::Integer64 { signed: true },
@@ -579,7 +579,7 @@ fn unbound_length_call_fails_closed_without_guessing() {
                 output: None,
                 kind: MirInstructionKind::Call {
                     dispatch: MirDispatchKind::Static,
-                    callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![
+                    callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![
                         Identifier::new("plan"),
                         Identifier::new("source_closure"),
                         Identifier::new("package_names"),
@@ -609,7 +609,7 @@ fn ref_deref_intrinsic_binding_emits_identity() {
     // Closed loop: Call to `__ref_deref` registered as IntrinsicOpcode::Deref → ldloc identity (no MethodDef).
     let operation = QualifiedName::new(vec![Identifier::new("directed_graph_add_edge")]);
     let graph_ty = ValkyrieType::Named(Identifier::new("DirectedGraph"));
-    let deref_symbol = nyar_language::types::NamePath::new(vec![Identifier::new("__ref_deref")]);
+    let deref_symbol = rusty_valkyrie::types::NamePath::new(vec![Identifier::new("__ref_deref")]);
     let mir_fn = MirFunction {
         symbol: "directed_graph_add_edge".to_string(),
         return_type: graph_ty.clone(),
@@ -774,7 +774,7 @@ fn prefers_attached_call_parameter_types_over_name_lookup() {
                 output: Some(out),
                 kind: MirInstructionKind::Call {
                     dispatch: MirDispatchKind::Static,
-                    callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![Identifier::new("helper")])),
+                    callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![Identifier::new("helper")])),
                     arguments: vec![MirOperand::Value(arg)],
                     witness: None,
                     effect: None,
@@ -845,7 +845,7 @@ fn lowers_nullable_none_and_some_without_methoddef() {
                     output: Some(none_out),
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![Identifier::new("None")])),
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![Identifier::new("None")])),
                         arguments: Vec::new(),
                         witness: None,
                         effect: None,
@@ -858,7 +858,7 @@ fn lowers_nullable_none_and_some_without_methoddef() {
                     output: Some(some_out),
                     kind: MirInstructionKind::Call {
                         dispatch: MirDispatchKind::Static,
-                        callee: MirOperand::Symbol(nyar_language::types::NamePath::new(vec![Identifier::new("Some")])),
+                        callee: MirOperand::Symbol(rusty_valkyrie::types::NamePath::new(vec![Identifier::new("Some")])),
                         arguments: vec![MirOperand::Value(payload)],
                         witness: None,
                         effect: None,

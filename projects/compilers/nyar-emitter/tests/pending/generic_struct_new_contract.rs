@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, testing::semantic_mir_observation};
-use nyar_language::{SourceID, ValkyrieCompiler, mir::ssa::MirLowerer};
+use rusty_valkyrie::{SourceID, ValkyrieCompiler, mir::ssa::MirLowerer};
 
 fn qualified_symbol_from_string(symbol: &str) -> QualifiedName {
     QualifiedName::new(symbol.split([':', '.']).filter(|part| !part.is_empty()).map(Identifier::new).collect::<Vec<_>>())

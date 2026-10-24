@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "examples/rusty-valkyrie",
     "projects/formats/odin-bytecode",
     "projects/runtimes/legend-vm",
     "projects/runtimes/nyar-gc",
@@ -53,6 +54,8 @@ nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
+# Valkyrie frontend（语言语义与 frontend-owned Semantic MIR）
+rusty-valkyrie = { path = "examples/rusty-valkyrie" }
 # Nyar Runtime（Nyar 平台的私有运行时）
 legend-vm = { path = "projects/runtimes/legend-vm" }
 odin-vm = { path = "projects/runtimes/odin-vm" }

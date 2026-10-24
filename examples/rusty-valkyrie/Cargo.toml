@@ -1,0 +1,34 @@
+[package]
+name = "rusty-valkyrie"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Valkyrie frontend: binding, types, evidence and frontend-owned Semantic MIR"
+
+[features]
+default = []
+serde = ["nyar-types/serde", "ordered-float/serde"]
+# NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
+ovm-lane = ["nyar-emitter/ovm-lane"]
+
+[dependencies]
+acorn-pe = { workspace = true }
+nyar = { workspace = true }
+nyar-analyzer = { workspace = true }
+nyar-emitter = { workspace = true }
+nyar-types = { workspace = true }
+oak-awsl = { workspace = true }
+oak-core = { workspace = true }
+oak-valkyrie = { workspace = true }
+oak-von = { workspace = true, features = ["serde"] }
+katex-rs = { workspace = true }
+miette = { workspace = true }
+ordered-float = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+syntect = { workspace = true }
+
+[dev-dependencies]
+odin-bytecode = { workspace = true }
+odin-vm = { workspace = true }

@@ -1,5 +1,5 @@
 use nyar_emitter::*;
-use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
+use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 /// 验证 `wasm_physical_artifact_name` 对任意项目名原样返回，无特殊分支。
 #[test]

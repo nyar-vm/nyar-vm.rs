@@ -9,7 +9,7 @@ use nyar::{
     QualifiedName, WitnessCallEdge,
 };
 use nyar_emitter::{FragmentSubmission, testing::lower_fragment_to_wasm_module};
-use nyar_language::{ValkyrieCompiler, assemble_fragment_submission, plan_artifacts_from_build_output};
+use rusty_valkyrie::{ValkyrieCompiler, assemble_fragment_submission, plan_artifacts_from_build_output};
 
 fn source_submission(source: &str) -> FragmentSubmission {
     let output = ValkyrieCompiler::default().compile_source_to_build_output(source).expect("当前源码必须完成 Compiler 分析");

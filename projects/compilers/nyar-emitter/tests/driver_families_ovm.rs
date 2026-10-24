@@ -6,7 +6,7 @@
 #![cfg(feature = "ovm-lane")]
 
 use nyar_emitter::{FragmentSubmission, TargetExecutionPlan, resolve_entry_symbols};
-use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
+use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 use odin_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarImport, NyarImportKind, NyarModuleData};
 
 fn module() -> NyarModuleData {

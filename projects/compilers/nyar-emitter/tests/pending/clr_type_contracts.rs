@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_emitter::{nyar_backend_clr::MsilType, testing::build_clr_type_defs};
-use nyar_language::{AggregateLayout, AggregateLayoutPlan, FieldLayout, MirStorageKind, types::hir::ValkyrieType};
+use rusty_valkyrie::{AggregateLayout, AggregateLayoutPlan, FieldLayout, MirStorageKind, types::hir::ValkyrieType};
 
 #[test]
 fn value_storage_emits_msil_value_type_def() {

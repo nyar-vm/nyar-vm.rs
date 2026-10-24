@@ -1,5 +1,5 @@
 use nyar_emitter::testing::build_clr_nominal_type_defs;
-use nyar_language::{FlagsLayout, SumTypeLayout};
+use rusty_valkyrie::{FlagsLayout, SumTypeLayout};
 
 #[test]
 fn sum_types_emit_tag_and_payload_fields() {

@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 
 use nyar_analyzer::highlight::{HighlightRequest, HighlighterKind, HighlighterRegistry, escape_html, render_spans_html};
 
-use crate::valkyrie::highlight::ValkyrieHighlighterProvider;
+use rusty_valkyrie::highlight::ValkyrieHighlighterProvider;
 
 fn registry() -> &'static HighlighterRegistry {
     static REGISTRY: OnceLock<HighlighterRegistry> = OnceLock::new();

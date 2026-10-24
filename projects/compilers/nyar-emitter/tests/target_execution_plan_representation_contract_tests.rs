@@ -4,10 +4,7 @@ use nyar_emitter::{
     CompiledProgram, FragmentSubmission, TargetExecutionPlan,
     contracts::{InstructionKind, Operand},
 };
-use nyar_types::{
-    CanonicalCallee, CanonicalOperation, ItemInstanceId,
-    layout_choice::{InvokeLowering, ValueRepresentation},
-};
+use nyar_types::{ItemInstanceId, layout_choice::{InvokeLowering, ValueRepresentation}};
 
 fn source_program() -> CompiledProgram {
     source_program_from(
@@ -16,14 +13,26 @@ fn source_program() -> CompiledProgram {
     )
 }
 
+/// 与生产 `core/primitive` 同构的最小前导。
+///
+/// 数值 primitive 名不是内建，必须由可见的 `structure` 声明冻结为声明身份；
+/// 缺少声明时 `i32`/`i64` 只残留待绑定的 `Named`，会被 canonical 以 CAN003 拒绝。
+const PRIMITIVE_DECLARATIONS: &str = r#"[primitive("core::primitive::i32")]
+structure i32 { }
+
+[primitive("core::primitive::i64")]
+structure i64 { }
+"#;
+
 fn source_program_from(source: &str) -> CompiledProgram {
     use nyar_types::pipeline::RepresentationPlanStage;
-    let hir = nyar_language::ValkyrieCompiler::default().compile_source(source).expect("单测源码必须完成 HIR 分析");
-    let mir = nyar_language::MirLowerer::lower_module_semantic(&hir);
+    let source = format!("{PRIMITIVE_DECLARATIONS}\n{source}");
+    let hir = rusty_valkyrie::ValkyrieCompiler::default().compile_source(&source).expect("单测源码必须完成 HIR 分析");
+    let mir = rusty_valkyrie::MirLowerer::lower_module_semantic(&hir);
     let canonical =
-        nyar_language::valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir).expect("单测 MIR 必须满足 Canonical 合同");
+        rusty_valkyrie::compile_pipeline::canonical_program_from_semantic_mir(&mir).expect("单测 MIR 必须满足 Canonical 合同");
     let representation =
-        nyar_language::valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical).expect("单测 Canonical 必须形成表示计划");
+        rusty_valkyrie::compile_pipeline::CanonicalRepresentationPlanner.plan(&canonical).expect("单测 Canonical 必须形成表示计划");
     CompiledProgram::new(canonical, representation).expect("单测表示输入必须一致，不代表生产流水线验收")
 }
 
@@ -150,6 +159,8 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
 #[cfg(feature = "ovm-lane")]
 #[test]
 fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
+    use nyar_types::{CanonicalCallee, CanonicalOperation};
+
     let source = source_program();
     let mut canonical = source.canonical().clone();
     let instances = canonical.mir.functions.keys().copied().collect::<Vec<_>>();

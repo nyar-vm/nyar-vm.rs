@@ -1,7 +1,4 @@
-use nyar_language::{
-    valkyrie::formatter::{FormatBatchOptions, FormatOptions, SourceKind, format_paths, format_source},
-    *,
-};
+use nyar_language::formatter::{FormatBatchOptions, FormatOptions, SourceKind, format_paths, format_source};
 
 fn assert_idempotent(kind: SourceKind, source: &str) {
     let options = FormatOptions::default();

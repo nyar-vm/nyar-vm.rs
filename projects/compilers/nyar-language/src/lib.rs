@@ -6,20 +6,21 @@ pub mod transitional;
 pub mod awsl;
 pub mod bash;
 pub mod c;
+/// 跨语言源码格式化注册表与 CLI；Valkyrie 语义本身在 `rusty-valkyrie`。
+pub mod formatter;
 pub mod javascript;
 pub mod lua;
 pub mod msil;
 pub mod notedown;
 pub mod pe;
 pub mod powershell;
+/// 跨语言 AST pretty printer 注册表；Valkyrie 语义本身在 `rusty-valkyrie`。
+pub mod printer;
 pub mod python;
 pub mod tcl;
-pub mod valkyrie;
 pub mod von;
 pub mod wat;
 pub mod wit;
-
-pub use valkyrie::{formatter, optimizer, printer, text};
 
 pub use bash::{BashModule, BashSemanticBridge, BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use c::{CModule, CSemanticBridge, CValue, evaluate_c_script, evaluate_c_source};
@@ -35,30 +36,3 @@ pub use nyar::{
     CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, CompilationOptions, EntryPolicy, HostProjectionBoundary, ProgramFacts,
     PublishFormat, ReferenceManagement, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
 };
-pub use valkyrie::{
-    compile_pipeline::{
-        CompilerArtifactReport, CompilerBuildContext, CompilerCompileEvidence, CompilerHostProviderBinding, compile_source_groups_to_artifacts,
-        generated_source_hash, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
-    },
-    derive,
-    frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type},
-    hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, ValkyrieCompiler},
-    lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
-    mir,
-    mir::{
-        AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,
-        MirEffectKind, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValue,
-        MirValueOrigin, MirValueRef, SingletonInstancePlan, SumTypeLayout, SumVariantLayout, collect_singleton_instance_plans,
-        compute_aggregate_layout_plan, layout_id_for_type, storage_kind_for_type,
-    },
-    module,
-    semantic_closure::{
-        ClosureGroupInput, DeclarationIndexEntry, DeclarationKey, DeclarationKind, EntryPointKind, GroupSemanticClosure, SemanticClosure,
-        SemanticClosureError, plan_semantic_closure,
-    },
-    type_checker, types,
-    types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
-    typing, validation,
-    validation::ControlFlowScheduler,
-};
-pub(crate) use valkyrie::{frontend_contract, hir, symbols};

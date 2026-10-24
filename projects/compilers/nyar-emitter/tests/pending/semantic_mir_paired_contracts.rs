@@ -7,7 +7,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use nyar_emitter::{FragmentSubmission, executable_provider::MirFunctionMapProvider, testing::semantic_mir_observation};
-use nyar_language::valkyrie::mir::{
+use rusty_valkyrie::mir::{
     SumTypeLayout, SumVariantLayout,
     ssa::test_support::lower_test_module,
     validation::{semantic_observation, validate_semantic_module},
@@ -32,7 +32,7 @@ fn rust_sum(name: &str, tag_width: u32, variants: Vec<(&str, u32, Option<NyarTyp
     submission
 }
 
-fn valkyrie_sum(name: &str, tag_width: u32, variants: Vec<(&str, u32, Option<NyarType>)>) -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_sum(name: &str, tag_width: u32, variants: Vec<(&str, u32, Option<NyarType>)>) -> rusty_valkyrie::mir::MirModule {
     let mut module = lower_test_module(Vec::new(), Vec::new());
     module.sum_types.push(SumTypeLayout {
         name: name.to_string(),
@@ -50,8 +50,8 @@ fn named_type(name: &str) -> NyarType {
     NyarType::Named(nyar_types::Identifier::new(name))
 }
 
-fn valkyrie_type(ty: &NyarType) -> nyar_language::types::hir::ValkyrieType {
-    use nyar_language::types::hir::ValkyrieType;
+fn valkyrie_type(ty: &NyarType) -> rusty_valkyrie::types::hir::ValkyrieType {
+    use rusty_valkyrie::types::hir::ValkyrieType;
     match ty {
         NyarType::Boolean => ValkyrieType::Boolean,
         NyarType::Integer32 { signed } => ValkyrieType::Integer32 { signed: *signed },
@@ -143,8 +143,8 @@ fn valkyrie_array_intrinsic_module(
     index_type: NyarType,
     value_type: NyarType,
     output_type: NyarType,
-) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::valkyrie::mir::{MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
+) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::mir::{MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
     let receiver = MirValueRef(0);
     let index = MirValueRef(1);
     let value = MirValueRef(2);
@@ -169,8 +169,8 @@ fn valkyrie_array_intrinsic_module(
         })
         .collect();
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = output_type.clone();
     function.param_types = vec![receiver_type.clone(), index_type.clone(), value_type.clone()];
@@ -180,7 +180,7 @@ fn valkyrie_array_intrinsic_module(
     function.blocks[0].instructions = vec![MirInstruction {
         output: Some(output),
         kind: MirInstructionKind::Call {
-            dispatch: nyar_language::valkyrie::mir::MirDispatchKind::Static,
+            dispatch: rusty_valkyrie::mir::MirDispatchKind::Static,
             callee: MirOperand::Symbol(nyar_types::NamePath::new(vec![
                 nyar_types::Identifier::new("neutral"),
                 nyar_types::Identifier::new("operation"),
@@ -281,8 +281,8 @@ fn rust_control_submission(case: ControlCase) -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_control_module(case: ControlCase) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::{
+fn valkyrie_control_module(case: ControlCase) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::{
         types::hir::ValkyrieType,
         valkyrie::mir::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef},
     };
@@ -335,8 +335,8 @@ fn valkyrie_control_module(case: ControlCase) -> nyar_language::valkyrie::mir::M
         ),
     };
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = return_type;
     function.param_types = vec![int.clone()];
@@ -386,14 +386,14 @@ fn rust_control_submission_with_types(parameter_type: NyarType, return_type: Nya
     submission
 }
 
-fn valkyrie_control_module_with_types(parameter_type: NyarType, return_type: NyarType) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::valkyrie::mir::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef};
+fn valkyrie_control_module_with_types(parameter_type: NyarType, return_type: NyarType) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::mir::{MirBlock, MirBlockRef, MirOperand, MirTerminator, MirValueRef};
     let value = MirValueRef(0);
     let parameter_type = valkyrie_type(&parameter_type);
     let return_type = valkyrie_type(&return_type);
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = return_type;
     function.param_types = vec![parameter_type.clone()];
@@ -467,15 +467,15 @@ fn valkyrie_sum_payload_module(
     payload_type: NyarType,
     receiver_type: NyarType,
     output_type: NyarType,
-) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::valkyrie::mir::{MirBlockRef, MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
+) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::mir::{MirBlockRef, MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
     let receiver = MirValueRef(0);
     let output = MirValueRef(1);
     let receiver_type = valkyrie_type(&receiver_type);
     let output_type = valkyrie_type(&output_type);
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = output_type.clone();
     function.param_types = vec![receiver_type.clone()];
@@ -617,8 +617,8 @@ fn rust_aggregate_array_sum_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_aggregate_array_sum_module() -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::{
+fn valkyrie_aggregate_array_sum_module() -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::{
         types::hir::ValkyrieType,
         valkyrie::mir::{
             MirBlock, MirBlockRef, MirDispatchKind, MirInstruction, MirInstructionKind, MirOperand, MirStorageKind, MirTerminator, MirValueRef,
@@ -636,8 +636,8 @@ fn valkyrie_aggregate_array_sum_module() -> nyar_language::valkyrie::mir::MirMod
     let sum = MirValueRef(5);
     let payload = MirValueRef(6);
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = record.clone();
     function.param_types = vec![integer.clone()];
@@ -731,7 +731,7 @@ fn valkyrie_aggregate_array_sum_module() -> nyar_language::valkyrie::mir::MirMod
     module
 }
 
-fn assert_same_observation(case_id: &str, submission: FragmentSubmission, module: nyar_language::valkyrie::mir::MirModule) -> String {
+fn assert_same_observation(case_id: &str, submission: FragmentSubmission, module: rusty_valkyrie::mir::MirModule) -> String {
     let rust = semantic_mir_observation(&submission, case_id);
     let valkyrie_result = validate_semantic_module(&module);
     let valkyrie = semantic_observation(case_id, valkyrie_result.as_ref().map(|_| ()).map_err(|error| error));
@@ -794,18 +794,18 @@ fn rust_static_call_submission(with_external_contract: bool) -> FragmentSubmissi
     submission
 }
 
-fn valkyrie_static_call_module(with_external_contract: bool) -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_static_call_module(with_external_contract: bool) -> rusty_valkyrie::mir::MirModule {
     let symbol = nyar_types::NamePath::new(vec![nyar_types::Identifier::new("dependency"), nyar_types::Identifier::new("run")]);
-    let mut module = nyar_language::valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
+    let mut module = rusty_valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
-    function.blocks[0].instructions.push(nyar_language::valkyrie::mir::MirInstruction {
+    function.blocks[0].instructions.push(rusty_valkyrie::mir::MirInstruction {
         output: None,
-        kind: nyar_language::valkyrie::mir::MirInstructionKind::Call {
-            dispatch: nyar_language::valkyrie::mir::MirDispatchKind::Static,
-            callee: nyar_language::valkyrie::mir::MirOperand::Symbol(symbol.clone()),
+        kind: rusty_valkyrie::mir::MirInstructionKind::Call {
+            dispatch: rusty_valkyrie::mir::MirDispatchKind::Static,
+            callee: rusty_valkyrie::mir::MirOperand::Symbol(symbol.clone()),
             arguments: Vec::new(),
             witness: None,
             effect: None,
@@ -816,11 +816,11 @@ fn valkyrie_static_call_module(with_external_contract: bool) -> nyar_language::v
     });
     module.functions.push(function);
     if with_external_contract {
-        module.external_calls.push(nyar_language::valkyrie::mir::ssa::MirExternalCallContract {
+        module.external_calls.push(rusty_valkyrie::mir::ssa::MirExternalCallContract {
             symbol,
-            dispatch: nyar_language::valkyrie::mir::MirDispatchKind::Static,
+            dispatch: rusty_valkyrie::mir::MirDispatchKind::Static,
             parameter_types: Vec::new(),
-            return_type: nyar_language::types::hir::ValkyrieType::Unit,
+            return_type: rusty_valkyrie::types::hir::ValkyrieType::Unit,
         });
     }
     module
@@ -862,18 +862,18 @@ fn rust_text_encoding_mismatch_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_text_encoding_mismatch_module() -> nyar_language::valkyrie::mir::MirModule {
-    let mut module = nyar_language::valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
+fn valkyrie_text_encoding_mismatch_module() -> rusty_valkyrie::mir::MirModule {
+    let mut module = rusty_valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
-    let nyar_language::valkyrie::mir::MirInstructionKind::LoadConstant { constant, ty } = &mut function.blocks[0].instructions[0].kind
+    let rusty_valkyrie::mir::MirInstructionKind::LoadConstant { constant, ty } = &mut function.blocks[0].instructions[0].kind
     else {
         panic!("test fixture requires a materialized literal");
     };
-    *constant = nyar_language::valkyrie::mir::MirConstant::Utf8("text".to_string());
-    *ty = Some(nyar_language::types::hir::ValkyrieType::Utf16);
+    *constant = rusty_valkyrie::mir::MirConstant::Utf8("text".to_string());
+    *ty = Some(rusty_valkyrie::types::hir::ValkyrieType::Utf16);
     module.functions.push(function);
     module
 }
@@ -893,15 +893,15 @@ fn rust_utf16_literal_type_mismatch_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_utf16_literal_type_mismatch_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_utf16_literal_type_mismatch_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_text_encoding_mismatch_module();
-    let nyar_language::valkyrie::mir::MirInstructionKind::LoadConstant { constant, ty } =
+    let rusty_valkyrie::mir::MirInstructionKind::LoadConstant { constant, ty } =
         &mut module.functions[0].blocks[0].instructions[0].kind
     else {
         panic!("fixture requires literal")
     };
-    *constant = nyar_language::valkyrie::mir::MirConstant::Utf16("text".to_string());
-    *ty = Some(nyar_language::types::hir::ValkyrieType::Utf8);
+    *constant = rusty_valkyrie::mir::MirConstant::Utf16("text".to_string());
+    *ty = Some(rusty_valkyrie::types::hir::ValkyrieType::Utf8);
     module
 }
 
@@ -918,13 +918,13 @@ fn rust_residual_pattern_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_residual_pattern_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_residual_pattern_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    module.functions[0].blocks[0].instructions.push(nyar_language::valkyrie::mir::MirInstruction {
+    module.functions[0].blocks[0].instructions.push(rusty_valkyrie::mir::MirInstruction {
         output: None,
-        kind: nyar_language::valkyrie::mir::MirInstructionKind::PatternMatch {
-            value: nyar_language::valkyrie::mir::MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Unit),
-            pattern: nyar_language::types::hir::HirPattern::Wildcard,
+        kind: rusty_valkyrie::mir::MirInstructionKind::PatternMatch {
+            value: rusty_valkyrie::mir::MirOperand::Constant(rusty_valkyrie::mir::MirConstant::Unit),
+            pattern: rusty_valkyrie::types::hir::HirPattern::Wildcard,
         },
     });
     module
@@ -975,18 +975,18 @@ fn rust_text_convert_submission(source_type: NyarType, target_type: NyarType) ->
 }
 
 fn valkyrie_text_convert_module(
-    source_type: nyar_language::types::hir::ValkyrieType,
-    target_type: nyar_language::types::hir::ValkyrieType,
-) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::valkyrie::mir::{
+    source_type: rusty_valkyrie::types::hir::ValkyrieType,
+    target_type: rusty_valkyrie::types::hir::ValkyrieType,
+) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::mir::{
         MirBlockRef, MirInstruction, MirInstructionKind, MirOperand, MirTextConversionSemantics, MirTextEncoding, MirTextProjectionBoundary,
         MirValueRef,
     };
     let input = MirValueRef(0);
     let output = MirValueRef(1);
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = target_type.clone();
     function.param_types = vec![source_type.clone()];
@@ -1004,8 +1004,8 @@ fn valkyrie_text_convert_module(
             value: MirOperand::Value(input),
         },
     }];
-    function.blocks[0].terminator = nyar_language::valkyrie::mir::MirTerminator::Return { value: Some(MirOperand::Value(output)) };
-    let mut module = nyar_language::valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
+    function.blocks[0].terminator = rusty_valkyrie::mir::MirTerminator::Return { value: Some(MirOperand::Value(output)) };
+    let mut module = rusty_valkyrie::mir::ssa::test_support::lower_test_module(Vec::new(), Vec::new());
     module.functions.push(function);
     module
 }
@@ -1029,10 +1029,10 @@ fn rust_text_convert_missing_metadata(missing_boundary: bool) -> FragmentSubmiss
     submission
 }
 
-fn valkyrie_text_convert_missing_metadata(missing_boundary: bool) -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_text_convert_missing_metadata(missing_boundary: bool) -> rusty_valkyrie::mir::MirModule {
     let mut module =
-        valkyrie_text_convert_module(nyar_language::types::hir::ValkyrieType::Utf8, nyar_language::types::hir::ValkyrieType::Utf16);
-    let nyar_language::valkyrie::mir::MirInstructionKind::TextConvert { semantics, boundary, .. } =
+        valkyrie_text_convert_module(rusty_valkyrie::types::hir::ValkyrieType::Utf8, rusty_valkyrie::types::hir::ValkyrieType::Utf16);
+    let rusty_valkyrie::mir::MirInstructionKind::TextConvert { semantics, boundary, .. } =
         &mut module.functions[0].blocks[0].instructions[0].kind
     else {
         panic!("fixture requires text conversion")
@@ -1060,14 +1060,14 @@ fn rust_call_arity_mismatch_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_call_arity_mismatch_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_call_arity_mismatch_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    let nyar_language::valkyrie::mir::MirInstructionKind::Call { parameter_types, .. } =
+    let rusty_valkyrie::mir::MirInstructionKind::Call { parameter_types, .. } =
         &mut module.functions[0].blocks[0].instructions[1].kind
     else {
         panic!("fixture requires static call at instruction 1");
     };
-    *parameter_types = Some(vec![nyar_language::types::hir::ValkyrieType::Integer32 { signed: true }]);
+    *parameter_types = Some(vec![rusty_valkyrie::types::hir::ValkyrieType::Integer32 { signed: true }]);
     module
 }
 
@@ -1085,9 +1085,9 @@ fn rust_missing_formal_signature_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_missing_formal_signature_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_missing_formal_signature_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    let nyar_language::valkyrie::mir::MirInstructionKind::Call { parameter_types, .. } =
+    let rusty_valkyrie::mir::MirInstructionKind::Call { parameter_types, .. } =
         &mut module.functions[0].blocks[0].instructions[1].kind
     else {
         panic!("fixture requires static call at instruction 1");
@@ -1106,9 +1106,9 @@ fn rust_missing_output_type_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_missing_output_type_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_missing_output_type_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    module.functions[0].blocks[0].instructions[1].output = Some(nyar_language::valkyrie::mir::MirValueRef(99));
+    module.functions[0].blocks[0].instructions[1].output = Some(rusty_valkyrie::mir::MirValueRef(99));
     module
 }
 
@@ -1157,9 +1157,9 @@ fn rust_wide_scalar_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_missing_entry_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_missing_entry_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    module.functions[0].entry = nyar_language::valkyrie::mir::MirBlockRef(99);
+    module.functions[0].entry = rusty_valkyrie::mir::MirBlockRef(99);
     module
 }
 
@@ -1181,14 +1181,14 @@ fn rust_field_layout_missing_submission() -> FragmentSubmission {
     submission
 }
 
-fn valkyrie_field_layout_missing_module() -> nyar_language::valkyrie::mir::MirModule {
+fn valkyrie_field_layout_missing_module() -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
-    module.functions[0].blocks[0].instructions.push(nyar_language::valkyrie::mir::MirInstruction {
+    module.functions[0].blocks[0].instructions.push(rusty_valkyrie::mir::MirInstruction {
         output: None,
-        kind: nyar_language::valkyrie::mir::MirInstructionKind::FieldGet {
-            object: nyar_language::valkyrie::mir::MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Unit),
+        kind: rusty_valkyrie::mir::MirInstructionKind::FieldGet {
+            object: rusty_valkyrie::mir::MirOperand::Constant(rusty_valkyrie::mir::MirConstant::Unit),
             field: "member".to_string(),
-            storage: nyar_language::MirStorageKind::Reference,
+            storage: rusty_valkyrie::MirStorageKind::Reference,
             layout_id: None,
         },
     });
@@ -1227,21 +1227,21 @@ fn rust_aggregate_field_submission(storage: StorageKind, field: &str, output_typ
 }
 
 fn valkyrie_aggregate_field_module(
-    storage: nyar_language::MirStorageKind,
+    storage: rusty_valkyrie::MirStorageKind,
     field: &str,
     output_type: Option<NyarType>,
-) -> nyar_language::valkyrie::mir::MirModule {
+) -> rusty_valkyrie::mir::MirModule {
     let mut module = valkyrie_static_call_module(true);
     module.aggregate_layouts.layouts.push(record_layout());
     let output = output_type.map(|ty| {
-        let value = nyar_language::valkyrie::mir::MirValueRef(77);
+        let value = rusty_valkyrie::mir::MirValueRef(77);
         module.functions[0].value_types.insert(value, valkyrie_type(&ty));
         value
     });
-    module.functions[0].blocks[0].instructions.push(nyar_language::valkyrie::mir::MirInstruction {
+    module.functions[0].blocks[0].instructions.push(rusty_valkyrie::mir::MirInstruction {
         output,
-        kind: nyar_language::valkyrie::mir::MirInstructionKind::FieldGet {
-            object: nyar_language::valkyrie::mir::MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Unit),
+        kind: rusty_valkyrie::mir::MirInstructionKind::FieldGet {
+            object: rusty_valkyrie::mir::MirOperand::Constant(rusty_valkyrie::mir::MirConstant::Unit),
             field: field.to_string(),
             storage,
             layout_id: Some(7),
@@ -1301,8 +1301,8 @@ fn rust_text_compare_submission(left_type: NyarType, right_type: NyarType, outpu
     submission
 }
 
-fn valkyrie_text_compare_module(left_type: NyarType, right_type: NyarType, output_type: NyarType) -> nyar_language::valkyrie::mir::MirModule {
-    use nyar_language::valkyrie::mir::{MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
+fn valkyrie_text_compare_module(left_type: NyarType, right_type: NyarType, output_type: NyarType) -> rusty_valkyrie::mir::MirModule {
+    use rusty_valkyrie::mir::{MirInstruction, MirInstructionKind, MirOperand, MirTerminator, MirValueRef};
     let left = MirValueRef(0);
     let right = MirValueRef(1);
     let output = MirValueRef(2);
@@ -1310,8 +1310,8 @@ fn valkyrie_text_compare_module(left_type: NyarType, right_type: NyarType, outpu
     let right_type = valkyrie_type(&right_type);
     let output_type = valkyrie_type(&output_type);
     let mut function =
-        nyar_language::valkyrie::mir::ssa::test_support::lower_test_function(nyar_language::valkyrie::mir::ssa::test_support::expr(
-            nyar_language::types::hir::HirExprKind::Literal(nyar_language::types::hir::HirLiteral::Bool(true)),
+        rusty_valkyrie::mir::ssa::test_support::lower_test_function(rusty_valkyrie::mir::ssa::test_support::expr(
+            rusty_valkyrie::types::hir::HirExprKind::Literal(rusty_valkyrie::types::hir::HirLiteral::Bool(true)),
         ));
     function.return_type = output_type.clone();
     function.param_types = vec![left_type.clone(), right_type.clone()];
@@ -1321,7 +1321,7 @@ fn valkyrie_text_compare_module(left_type: NyarType, right_type: NyarType, outpu
     function.blocks[0].instructions = vec![MirInstruction {
         output: Some(output),
         kind: MirInstructionKind::Call {
-            dispatch: nyar_language::valkyrie::mir::MirDispatchKind::Static,
+            dispatch: rusty_valkyrie::mir::MirDispatchKind::Static,
             callee: MirOperand::Symbol(nyar_types::NamePath::new(vec![
                 nyar_types::Identifier::new("neutral"),
                 nyar_types::Identifier::new("operation"),
@@ -1500,7 +1500,7 @@ fn ambiguous_source_text_type_is_rejected_before_semantic_mir() {
         "string" | "str" | "String" => format!("{case_id}|reject|SMIR007|function"),
         _ => format!("{case_id}|accept||"),
     };
-    let valkyrie = match nyar_language::valkyrie::hir::type_lowering::validate_source_text_type_name("string") {
+    let valkyrie = match rusty_valkyrie::hir::type_lowering::validate_source_text_type_name("string") {
         Ok(()) => format!("{case_id}|accept||"),
         Err(_) => format!("{case_id}|reject|SMIR007|function"),
     };
@@ -1510,7 +1510,7 @@ fn ambiguous_source_text_type_is_rejected_before_semantic_mir() {
 
 #[test]
 fn explicit_text_conversion_paired_observations_match() {
-    use nyar_language::types::hir::ValkyrieType;
+    use rusty_valkyrie::types::hir::ValkyrieType;
     assert_same_observation(
         "intrinsic.text_conversion.valid",
         rust_text_convert_submission(NyarType::Utf8, NyarType::Utf16),
@@ -1579,9 +1579,9 @@ fn aggregate_field_layout_contract_paired_observation_matches() {
 #[test]
 fn aggregate_field_contract_paired_observations_match() {
     let cases = [
-        ("aggregate.storage_mismatch", StorageKind::Value, nyar_language::MirStorageKind::Value, "slot", None),
-        ("aggregate.field_missing", StorageKind::Reference, nyar_language::MirStorageKind::Reference, "absent", None),
-        ("aggregate.field_type_mismatch", StorageKind::Reference, nyar_language::MirStorageKind::Reference, "slot", Some(NyarType::Boolean)),
+        ("aggregate.storage_mismatch", StorageKind::Value, rusty_valkyrie::MirStorageKind::Value, "slot", None),
+        ("aggregate.field_missing", StorageKind::Reference, rusty_valkyrie::MirStorageKind::Reference, "absent", None),
+        ("aggregate.field_type_mismatch", StorageKind::Reference, rusty_valkyrie::MirStorageKind::Reference, "slot", Some(NyarType::Boolean)),
     ];
     for (case_id, rust_storage, valkyrie_storage, field, output_type) in cases {
         let observation = assert_same_observation(

@@ -24,6 +24,7 @@ nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
 nyar-types = { workspace = true }
+rusty-valkyrie = { workspace = true }
 ordered-float = { workspace = true }
 miette = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -7,7 +7,7 @@ use nyar_emitter::{
     nyar_backend_jvm::JvmInstruction,
     testing::{lower_fragment_to_wasm_mir_module, lower_mir_to_clr_method, lower_mir_to_jvm_method},
 };
-use nyar_language::{
+use rusty_valkyrie::{
     CanonicalTarget, MirFunction, MirInstructionKind, ValkyrieCompiler, assemble_fragment_submission, nyar::ClrSuspendStrategy,
     plan_artifacts_from_build_output, types::SourceID,
 };

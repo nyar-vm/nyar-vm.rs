@@ -9,7 +9,7 @@
 //!   [`nyar_emitter::PatternMatchingContractError::InvalidFallthroughTarget`]。
 
 use nyar_emitter::{PatternMatchingContractError, executable_provider::ExecutableFunction, validate_pattern_matching_invariants};
-use nyar_language::{
+use rusty_valkyrie::{
     MirBlock, MirBlockRef, MirConstant, MirFunction, MirInstruction, MirInstructionKind, MirTerminator,
     mir::ssa::{MirCaseArm, MirCaseChain},
     types::hir::ValkyrieType,

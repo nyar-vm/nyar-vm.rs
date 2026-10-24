@@ -1,4 +1,4 @@
-use nyar_language::{valkyrie::formatter::normalize_extensions, *};
+use nyar_language::formatter::normalize_extensions;
 
 #[test]
 fn normalize_extensions_strips_dot() {

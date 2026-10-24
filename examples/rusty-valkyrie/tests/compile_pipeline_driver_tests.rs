@@ -1,0 +1,69 @@
+use rusty_valkyrie::{
+    ValkyrieCompiler,
+    mir::{MirLowerer, MirOperation},
+    *,
+};
+use nyar_types::CompileStage;
+
+use rusty_valkyrie::compile_pipeline::compile_linked_semantic_mir;
+
+/// 数值原始类型名属于 `core/primitive` 的声明族；未声明时残留 `Named` 由 canonical 以 CAN003 拒绝。
+const PRIMITIVE_I32: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } ";
+
+#[test]
+fn source_without_instance_facts_cannot_mint_identity_from_function_names() {
+    let mut hir = ValkyrieCompiler::default().compile_source("micro identity(value: i32) -> i32 { return value }").expect("源码解析");
+    assert!(hir.functions[0].instance.take().is_some());
+    let mir = MirLowerer::lower_module_semantic(&hir);
+    assert!(
+        mir.callable_symbols.values().all(|symbol| symbol == "begin_phase" || symbol == "end_phase"),
+        "stripped user instances must not be reconstructed from function names: {:?}",
+        mir.callable_symbols
+    );
+    let error = compile_linked_semantic_mir(&mir).expect_err("不能按函数名称补造实例身份");
+    assert_eq!(error.records[0].code, "CAN034");
+}
+
+#[test]
+fn source_calls_and_branch_values_reach_the_success_contract() {
+    let output = ValkyrieCompiler::default()
+        .compile_source_to_program(&format!(
+            "{PRIMITIVE_I32}\
+                 micro identity(value: i32) -> i32 {{ return value }} \
+                 micro choose(flag: bool, value: i32) -> i32 {{ \
+                     if flag {{ return identity(value) }} else {{ return value }} }}"
+        ))
+        .expect("当前源码经过真实构建入口完成语义与表示合同");
+    let program = &output;
+    assert_eq!(program.canonical().mir.functions.len(), 2);
+    assert_eq!(program.representation().invoke_lowerings.len(), 1);
+    assert_eq!(
+        program.representation().value_reps.len(),
+        program.canonical().mir.functions.values().map(|function| function.value_types.len()).sum::<usize>(),
+    );
+}
+
+#[test]
+fn semantic_call_failure_stops_before_canonical_and_representation() {
+    let hir = ValkyrieCompiler::default()
+        .compile_source(
+            "micro identity(value: i32) -> i32 { return value } \
+             micro use_identity(value: i32) -> i32 { return identity(value) }",
+        )
+        .expect("当前源码解析调用");
+    let mut mir = MirLowerer::lower_module_semantic(&hir);
+    let arguments = mir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find_map(|instruction| match &mut instruction.kind {
+            MirOperation::Call { arguments, .. } => Some(arguments),
+            _ => None,
+        })
+        .expect("源码普通调用");
+    arguments.clear();
+    let error = compile_linked_semantic_mir(&mir).expect_err("不能绕过 Semantic MIR 实参合同");
+    assert_eq!(error.records[0].stage, CompileStage::ValidateMir);
+    assert_eq!(error.records[0].code, "PIPE004");
+}

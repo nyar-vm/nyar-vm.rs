@@ -8,7 +8,7 @@ use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorRecipe},
 };
-use nyar_language::{CompilerSourceGroup, ValkyrieCompiler};
+use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
 fn plan_from_source(source: &str) -> Result<TargetExecutionPlan, miette::Report> {
     let groups = [CompilerSourceGroup::single_source("demo", "demo", source).as_entry()];
