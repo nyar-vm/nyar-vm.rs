@@ -1,0 +1,20 @@
+Root span=0..111
+  Trivia span=0..1 text="\n"
+  Statement span=1..60 kind=Class
+    leading_trivia span=1..1 text=""
+    ClassDeclaration span=1..60 name="Button" class_kind=Widget
+      ObjectBody
+        ObjectField span=21..31 name="text"
+          TypePath span=27..31 name="utf8"
+        ObjectMethod span=36..58 name="render"
+          Parameter span=49..53 name="self" variadic=None
+          DeclarationBody span=56..57
+    trailing_trivia span=60..62 text="\n\n"
+  Statement span=62..109 kind=Class
+    leading_trivia span=62..62 text=""
+    ClassDeclaration span=62..109 name="AppConfig" class_kind=Singleton
+      ObjectBody
+        ObjectField span=88..107 name="debug"
+          TypePath span=95..99 name="bool"
+          TermLiteral span=102..107 kind=Bool
+    trailing_trivia span=109..111 text="\n\n"

@@ -1,0 +1,217 @@
+trait Display {
+    micro fmt(self) -> utf8
+}
+
+trait Debug {
+    micro debug_fmt(self) -> utf8 {
+        "{self.type_name()}@{self.address()}"
+    }
+}
+
+trait Clone {
+    micro clone(self) -> Self
+}
+
+trait Printable = Display + Debug + Clone
+
+class Point {
+    x: f64
+    y: f64
+}
+
+imply Point: Display {
+    micro fmt(self) -> utf8 {
+        "({self.x}, {self.y})"
+    }
+}
+
+imply Point: Debug {
+    micro debug_fmt(self) -> utf8 {
+        "Point(x={self.x}, y={self.y})"
+    }
+}
+
+imply Point: Clone {
+    micro clone(self) -> Self {
+        Point { x: self.x, y: self.y }
+    }
+}
+
+micro print_info<T: Printable>(item: T) {
+    print("Display: {item.fmt()}")
+    print("Debug: {item.debug_fmt()}")
+    let cloned = item.clone()
+    print("Cloned: {cloned.fmt()}")
+}
+
+trait MathConstants {
+    const PI: f64 = 3.14159265359
+    const E: f64 = 2.71828182846
+    
+    micro circle_area(radius: f64) -> f64 {
+        Self::PI * radius * radius
+    }
+    
+    micro exp(x: f64) -> f64 {
+        Self::E.pow(x)
+    }
+}
+
+class Calculator {}
+
+imply Calculator: MathConstants {}
+
+trait Iterator {
+    type Item
+    
+    micro next(mut self) -> Self::Item?
+    
+    micro collect<C>(self) -> C {
+        C::from_iter(self)
+    }
+}
+
+trait FromIterator<T> {
+    micro from_iter<I: Iterator<Item = T>>(iter: I) -> Self
+}
+
+class CounterIterator {
+    current: i32
+    end: i32
+    
+    initiate(mut self, start: i32, end: i32) {
+        self.current = start
+        self.end = end
+    }
+}
+
+imply CounterIterator: Iterator {
+    type Item = i32
+    
+    micro next(mut self) -> i32? {
+        if self.current < self.end {
+            let value = self.current
+            self.current += 1
+            return value
+        }
+        return none
+    }
+}
+
+trait Animal {
+    micro make_sound(self)
+    micro name(self) -> utf8
+}
+
+class Dog {
+    name: utf8
+}
+
+imply Dog: Animal {
+    micro make_sound(self) {
+        print("Woof!")
+    }
+    
+    micro name(self) -> utf8 {
+        self.name.clone()
+    }
+}
+
+class Cat {
+    name: utf8
+}
+
+imply Cat: Animal {
+    micro make_sound(self) {
+        print("Meow!")
+    }
+    
+    micro name(self) -> utf8 {
+        self.name.clone()
+    }
+}
+
+micro animal_sounds(animals: [Animal]) {
+    loop animal in animals {
+        print("{animal.name()} says:")
+        animal.make_sound()
+    }
+}
+
+trait Readable {
+    micro read(self) -> utf8
+}
+
+trait Writable {
+    micro write(mut self, data: utf8)
+}
+
+trait ReadWrite: Readable + Writable {}
+
+class FileHandle {
+    path: utf8
+    content: utf8 = ""
+}
+
+imply FileHandle: Readable {
+    micro read(self) -> utf8 {
+        self.content
+    }
+}
+
+imply FileHandle: Writable {
+    micro write(mut self, data: utf8) {
+        self.content = data
+    }
+}
+
+trait PartialEq<Rhs = Self> {
+    micro eq(self, other: Rhs) -> bool
+    
+    micro ne(self, other: Rhs) -> bool {
+        !self.eq(other)
+    }
+}
+
+trait Eq: PartialEq<Self> {}
+
+class Color {
+    r: u8
+    g: u8
+    b: u8
+}
+
+imply Color: PartialEq {
+    micro eq(self, other: Color) -> bool {
+        self.r == other.r && self.g == other.g && self.b == other.b
+    }
+}
+
+imply Color: Eq {}
+
+let point = Point { x: 1.0, y: 2.0 }
+print_info(point)
+
+let area = Calculator::circle_area(5.0)
+print("Circle area: {area}")
+
+let exp_result = Calculator::exp(1.0)
+print("e^1 = {exp_result}")
+
+let animals: [Animal] = [
+    Dog { name: "Buddy" },
+    Cat { name: "Whiskers" }
+]
+animal_sounds(animals)
+
+let file = FileHandle { path: "/tmp/test.txt" }
+file.write("Hello, World!")
+print("File content: {file.read()}")
+
+let red = Color { r: 255, g: 0, b: 0 }
+let blue = Color { r: 0, g: 0, b: 255 }
+let also_red = Color { r: 255, g: 0, b: 0 }
+
+print("red == blue: {red.eq(blue)}")
+print("red == also_red: {red.eq(also_red)}")
+print("red != blue: {red.ne(blue)}")

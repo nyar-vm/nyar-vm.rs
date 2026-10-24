@@ -1,0 +1,11 @@
+targets:
+- clr
+expect:
+  clr:
+    success: true
+    stdout:
+    - counter ready
+    stderr: []
+    errors: []
+    result: 0
+known_gap: false

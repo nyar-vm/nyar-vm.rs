@@ -1,0 +1,33 @@
+trait Future {
+    type Output
+
+    micro poll(mut self) -> bool
+}
+
+class ReadyFuture {
+    done: bool
+}
+
+imply ReadyFuture: Future {
+    type Output = i32
+
+    micro poll(mut self) -> bool {
+        if !self.done {
+            self.done = true
+            return true
+        }
+        return true
+    }
+}
+
+micro sync_block() {
+    let future: Future<i32> = ReadyFuture { done: false }
+    future.block
+    return
+}
+
+[main]
+micro main() {
+    sync_block()
+    return
+}

@@ -1,0 +1,5 @@
+Span { kind: Keyword, span: 1..5, text: "type", modifier: null }
+Span { kind: Identifier, span: 6..12, text: "UserId", modifier: null }
+Span { kind: Operator, span: 13..14, text: "=", modifier: null }
+Span { kind: Identifier, span: 15..18, text: "i64", modifier: null }
+Span { kind: Punctuation, span: 18..19, text: ";", modifier: null }

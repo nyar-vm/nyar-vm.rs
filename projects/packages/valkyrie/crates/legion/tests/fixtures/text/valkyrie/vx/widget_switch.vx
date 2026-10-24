@@ -1,0 +1,5 @@
+widget Switch {
+let checked: bool = false
+let mut isChecked: bool = false
+micro toggle() { }
+}

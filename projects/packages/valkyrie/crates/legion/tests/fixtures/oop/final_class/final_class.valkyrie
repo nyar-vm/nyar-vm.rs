@@ -1,0 +1,175 @@
+class ApiClient {
+    base_url: utf8
+    
+    initiate(mut self, base_url: utf8) {
+        self.base_url = base_url
+    }
+    
+    micro request(self, endpoint: utf8) -> utf8 {
+        "{self.base_url}/{endpoint}"
+    }
+    
+    micro static create(base_url: utf8) -> ApiClient {
+        ApiClient { base_url: base_url }
+    }
+}
+
+class Money {
+    readonly amount: i64
+    readonly currency: utf8
+    
+    initiate(mut self, amount: i64, currency: utf8) {
+        self.amount = amount
+        self.currency = currency
+    }
+    
+    micro add(self, other: Money) -> Money {
+        if self.currency != other.currency {
+            print("Error: Currency mismatch")
+            return self
+        }
+        Money { amount: self.amount + other.amount, currency: self.currency }
+    }
+    
+    micro multiply(self, factor: i64) -> Money {
+        Money { amount: self.amount * factor, currency: self.currency }
+    }
+}
+
+class FastMath {
+    micro static square(x: f64) -> f64 {
+        x * x
+    }
+    
+    micro static cube(x: f64) -> f64 {
+        x * x * x
+    }
+    
+    micro static distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
+        let dx = x2 - x1
+        let dy = y2 - y1
+        (dx * dx + dy * dy).sqrt()
+    }
+}
+
+open class BaseController {
+    final micro handle_request(self, request: utf8) -> utf8 {
+        let validated = self.validate(request)
+        let result = self.process(validated)
+        self.format_response(result)
+    }
+    
+    micro validate(self, request: utf8) -> utf8 {
+        request
+    }
+    
+    micro process(self, request: utf8) -> utf8 {
+        "processed: {request}"
+    }
+    
+    micro format_response(self, result: utf8) -> utf8 {
+        "{{\"data\": \"{result}\"}}"
+    }
+}
+
+class CustomController(BaseController) {
+    override micro process(self, request: utf8) -> utf8 {
+        "custom: {request}"
+    }
+}
+
+abstract class DataProcessor {
+    final micro process(self, data: utf8) -> utf8 {
+        let step1 = self.preprocess(data)
+        let step2 = self.transform(step1)
+        let step3 = self.postprocess(step2)
+        self.log(step3)
+        step3
+    }
+    
+    abstract micro preprocess(self, data: utf8) -> utf8
+    abstract micro transform(self, data: utf8) -> utf8
+    abstract micro postprocess(self, data: utf8) -> utf8
+    
+    micro log(self, result: utf8) {
+        print("Processing complete: {result}")
+    }
+}
+
+class TextProcessor(DataProcessor) {
+    override micro preprocess(self, data: utf8) -> utf8 {
+        data.trim()
+    }
+    
+    override micro transform(self, data: utf8) -> utf8 {
+        data.uppercase()
+    }
+    
+    override micro postprocess(self, data: utf8) -> utf8 {
+        "[{data}]"
+    }
+}
+
+class BankAccount {
+    balance: f64
+    
+    final micro transfer(mut self, to: BankAccount, amount: f64) -> bool {
+        if amount <= 0 {
+            print("Error: Invalid amount")
+            return false
+        }
+        if self.balance < amount {
+            print("Error: Insufficient funds")
+            return false
+        }
+        self.balance -= amount
+        to.balance += amount
+        print("Transferred {amount}")
+        return true
+    }
+    
+    micro deposit(mut self, amount: f64) {
+        self.balance += amount
+    }
+}
+
+open class Entity {
+    id: u64
+    
+    final get entity_id(self) -> u64 {
+        self.id
+    }
+    
+    get display_name(self) -> utf8 {
+        "Entity-{self.id}"
+    }
+}
+
+class User(Entity) {
+    name: utf8
+    
+    override get display_name(self) -> utf8 {
+        self.name
+    }
+}
+
+let client = ApiClient::create("https://api.example.com")
+let users_url = client.request("users")
+print("URL: {users_url}")
+
+let m1 = Money { amount: 100, currency: "USD" }
+let m2 = Money { amount: 50, currency: "USD" }
+let m3 = m1.add(m2)
+print("Total: {m3.amount} {m3.currency}")
+
+let squared = FastMath::square(5.0)
+let cubed = FastMath::cube(3.0)
+print("Square: {squared}, Cube: {cubed}")
+
+let controller = CustomController {}
+let result = controller.handle_request("test data")
+print("Result: {result}")
+
+let processor = TextProcessor {}
+let processed = processor.process("  hello world  ")
+print("Processed: {processed}")

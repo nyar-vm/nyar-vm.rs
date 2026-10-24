@@ -1,0 +1,21 @@
+open class BaseClass {
+    value: i32
+
+    initiate(mut self, value: i32) {
+        self.value = value
+    }
+
+    micro get_value(self) -> i32 {
+        self.value
+    }
+}
+
+class DerivedClass(BaseClass) {
+    micro double_value(self) -> i32 {
+        self.value * 2
+    }
+}
+
+let derived = DerivedClass { value: 42 }
+print(derived.get_value())
+print(derived.double_value())

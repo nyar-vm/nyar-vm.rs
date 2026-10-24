@@ -1,0 +1,86 @@
+widget Button {
+    text: utf8
+    enabled: bool = true
+    
+    on click {
+        print("Button '{self.text}' clicked!")
+    }
+    
+    micro render(self) {
+        print("<button disabled='{!self.enabled}'>{self.text}</button>")
+    }
+    
+    micro disable(mut self) {
+        self.enabled = false
+    }
+    
+    micro enable(mut self) {
+        self.enabled = true
+    }
+}
+
+widget TextInput {
+    value: utf8 = ""
+    placeholder: utf8 = ""
+    maximum_length: i32 = 100
+    
+    on change {
+        print("Input changed: {self.value}")
+    }
+    
+    micro render(self) {
+        print("<input type='text' value='{self.value}' placeholder='{self.placeholder}' maxlength='{self.maximum_length}' />")
+    }
+    
+    micro set_value(mut self, value: utf8) {
+        if value.length <= self.maximum_length {
+            self.value = value
+        }
+    }
+    
+    micro clear(mut self) {
+        self.value = ""
+    }
+}
+
+widget Container {
+    children: [Widget]
+    padding: f64 = 0.0
+    
+    micro add_child(mut self, child: Widget) {
+        self.children.push(child)
+    }
+    
+    micro render(self) {
+        print("<div style='padding: {self.padding}px'>")
+        loop child in self.children {
+            child.render()
+        }
+        print("</div>")
+    }
+}
+
+widget Counter {
+    count: i32 = 0
+    step: i32 = 1
+    
+    on increment {
+        self.count = self.count + self.step
+    }
+    
+    on decrement {
+        self.count = self.count - self.step
+    }
+    
+    micro render(self) {
+        print("<div class='counter'>")
+        print("  <button onclick='decrement'>-</button>")
+        print("  <span>{self.count}</span>")
+        print("  <button onclick='increment'>+</button>")
+        print("</div>")
+    }
+    
+    micro set_step(mut self, step: i32) {
+        self.step = step
+    }
+}

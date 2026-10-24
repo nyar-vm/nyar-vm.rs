@@ -1,0 +1,24 @@
+[clr("mscorlib", "System.Console", "WriteLine")]
+micro console_write_line(message: utf16): unit;
+
+singleton Counter {
+    public mut total: i64 = 0
+
+    micro increment(mut self) -> i64 {
+        self.total += 1
+        self.total
+    }
+
+    micro get(self) -> i64 {
+        self.total
+    }
+}
+
+[main]
+micro main() -> i64 {
+    Counter.increment()
+    Counter.increment()
+    Counter.increment()
+    console_write_line("counter ready")
+    return 0;
+}

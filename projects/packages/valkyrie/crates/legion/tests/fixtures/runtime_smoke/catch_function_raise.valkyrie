@@ -1,0 +1,12 @@
+micro effect_f() -> i32 {
+    raise 42
+}
+
+[main]
+micro main() -> ExitCode {
+    let result: i32 = catch effect_f() {
+        case msg:
+            resume msg
+    }
+    return ExitCode(result)
+}

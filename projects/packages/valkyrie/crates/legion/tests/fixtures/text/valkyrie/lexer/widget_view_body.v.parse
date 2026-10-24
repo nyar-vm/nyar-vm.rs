@@ -1,0 +1,12 @@
+Root span=0..42
+  Trivia span=0..1 text="\n"
+  Statement span=1..40 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..40 name="view" kind=Micro
+      DeclarationBody span=15..39
+        TailExpression span=20..39
+          TermXmlMarkup span=20..39
+            XgElement span=0..19 tag="div" self_closing=false
+              XgText span=5..12
+                XgTextExpression text="count"
+    trailing_trivia span=40..42 text="\n\n"

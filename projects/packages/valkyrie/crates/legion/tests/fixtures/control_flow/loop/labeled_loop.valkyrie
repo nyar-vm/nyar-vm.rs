@@ -1,0 +1,9 @@
+'outer: loop {
+    'inner: loop {
+        let should_break_outer = true
+        if should_break_outer {
+            break 'outer
+        }
+        break 'inner
+    }
+}

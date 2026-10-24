@@ -1,0 +1,16 @@
+# 零依赖 smoke：内联容器桩，只测偏移下标 `⁅⁆`（0-based 首元素）。
+class Buffer {}
+
+imply Buffer {
+    suffix `⁅⁆`(self, _index: usize): i64 {
+        return 0
+    }
+}
+
+[main]
+micro main(): i64 {
+    let args: Buffer = Buffer {}
+    let first: i64 = args⁅0⁆
+    let _ = first
+    return 0
+}

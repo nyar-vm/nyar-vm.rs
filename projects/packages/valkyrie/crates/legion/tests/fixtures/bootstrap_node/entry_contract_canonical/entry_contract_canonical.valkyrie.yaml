@@ -1,0 +1,18 @@
+targets:
+- wasm32-node-unknown-wasm
+expect:
+  wasm32-node-unknown-wasm:
+    build_success: true
+    run_contracts:
+    - logical_entry: legion
+      physical_entry: legion.mjs
+      invocation: node
+      validate: node legion.mjs
+    artifacts:
+    - legion.mjs
+    - legion.wasm
+    - run-contract.txt
+    - run-contracts.txt
+    forbidden_artifacts:
+    - legion_tools.mjs
+    - legion_tools.wasm

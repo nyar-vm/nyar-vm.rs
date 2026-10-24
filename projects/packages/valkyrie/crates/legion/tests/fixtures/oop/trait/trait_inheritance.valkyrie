@@ -1,0 +1,91 @@
+trait Comparable {
+    micro compare(self, other: Self) -> i32
+}
+
+trait Sorted: Comparable {
+    micro is_sorted(self) -> bool
+}
+
+class SortedList: Sorted {
+    items: [i32]
+    
+    micro compare(self, other: Self) -> i32 {
+        if self.items.length < other.items.length { -1 }
+        else if self.items.length > other.items.length { 1 }
+        else { 0 }
+    }
+    
+    micro is_sorted(self) -> bool {
+        loop i in 0..self.items.length - 1 {
+            if self.items[i] > self.items[i + 1] {
+                return false
+            }
+        }
+        true
+    }
+}
+
+trait PartialEq<Rhs = Self> {
+    micro eq(self, other: Rhs) -> bool
+    
+    micro ne(self, other: Rhs) -> bool {
+        !self.eq(other)
+    }
+}
+
+trait Eq: PartialEq<Self> {}
+
+trait PartialOrd<Rhs = Self>: PartialEq<Rhs> {
+    micro partial_cmp(self, other: Rhs) -> i32?
+}
+
+trait Ord: Eq + PartialOrd<Self> {
+    micro cmp(self, other: Self) -> i32
+}
+
+class Integer: Ord {
+    value: i32
+    
+    micro eq(self, other: Self) -> bool {
+        self.value == other.value
+    }
+    
+    micro cmp(self, other: Self) -> i32 {
+        self.value - other.value
+    }
+}
+
+trait Display {
+    micro fmt(self) -> utf8
+}
+
+trait Debug: Display {
+    micro debug_fmt(self) -> utf8 {
+        "{self.type_name()}@{self}"
+    }
+}
+
+trait Clone {
+    micro clone(self) -> Self
+}
+
+trait Printable = Display + Debug + Clone
+
+class Point: Printable {
+    x: f64
+    y: f64
+    
+    micro fmt(self) -> utf8 {
+        "({self.x}, {self.y})"
+    }
+    
+    micro clone(self) -> Self {
+        Point { x: self.x, y: self.y }
+    }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

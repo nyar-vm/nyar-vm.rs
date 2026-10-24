@@ -1,0 +1,272 @@
+:root {
+    --vp-c-bg: #ffffff;
+    --vp-c-bg-soft: #f6f6f7;
+    --vp-c-text: #2c3e50;
+    --vp-c-brand: #3873ad;
+    --vp-c-border: #e5e5e5;
+}
+
+.vp-page {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    min-height: calc(100vh - 120px);
+}
+
+.vp-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--vp-c-bg-soft);
+    border-right: 1px solid var(--vp-c-border);
+    padding: 1rem 0;
+    overflow-y: auto;
+}
+
+.vp-sidebar-header {
+    padding: 0 1rem 1rem;
+    border-bottom: 1px solid var(--vp-c-border);
+    margin-bottom: 0.5rem;
+}
+
+.vp-sidebar-logo {
+    font-weight: 700;
+    color: var(--vp-c-brand);
+    text-decoration: none;
+}
+
+.vp-sidebar-nav {
+    padding: 0 0.5rem;
+}
+
+.vp-nav-section-title {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #666;
+    padding: 0.5rem 0.75rem;
+}
+
+.vp-nav-link {
+    display: block;
+    padding: 0.35rem 0.75rem;
+    color: var(--vp-c-text);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.vp-nav-link:hover {
+    background: rgba(56, 115, 173, 0.08);
+}
+
+.vp-nav-link.active {
+    color: var(--vp-c-brand);
+    font-weight: 600;
+    background: rgba(56, 115, 173, 0.12);
+}
+
+.vp-nav-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0.5rem 0;
+}
+
+.vp-content {
+    flex: 1;
+    padding: 2rem 2.5rem;
+    overflow-y: auto;
+    max-width: 900px;
+}
+
+.vp-breadcrumb {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+.vp-breadcrumb a {
+    color: var(--vp-c-brand);
+    text-decoration: none;
+}
+
+.vp-article h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--vp-c-border);
+    padding-bottom: 0.5rem;
+}
+
+.vp-article h2 {
+    font-size: 1.5rem;
+    margin: 1.5rem 0 0.75rem;
+}
+
+.vp-article h3 {
+    font-size: 1.25rem;
+    margin: 1.25rem 0 0.5rem;
+}
+
+.vp-article p {
+    line-height: 1.7;
+    margin: 0.75rem 0;
+}
+
+.vp-article ul,
+.vp-article ol {
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+    line-height: 1.7;
+}
+
+.vp-article code {
+    background: #f4f4f5;
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.vp-article pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1rem 0;
+}
+
+.vp-article pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+}
+
+.vp-code-block {
+    margin: 1rem 0;
+}
+
+.vp-code-lang {
+    background: #21252b;
+    color: #9da5b4;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    border-radius: 6px 6px 0 0;
+}
+
+.vp-code-block pre {
+    margin-top: 0;
+    border-radius: 0 0 6px 6px;
+}
+
+.doc-index-list {
+    list-style: none;
+    padding: 0;
+}
+
+.doc-index-list li {
+    margin: 0.5rem 0;
+}
+
+.doc-index-list a {
+    color: var(--vp-c-brand);
+    text-decoration: none;
+}
+
+.doc-index-list a:hover {
+    text-decoration: underline;
+}
+
+/* ── 引用块 ── */
+.vp-article blockquote {
+    margin: 1rem 0;
+    padding: 0.75rem 1.25rem;
+    border-left: 4px solid var(--vp-c-brand);
+    background: var(--vp-c-bg-soft);
+    border-radius: 0 4px 4px 0;
+}
+
+.vp-article blockquote p {
+    margin: 0.25rem 0;
+}
+
+/* ── 表格 ── */
+.vp-table-wrapper {
+    overflow-x: auto;
+    margin: 1rem 0;
+}
+
+.vp-article table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.vp-article th,
+.vp-article td {
+    border: 1px solid var(--vp-c-border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.vp-article thead {
+    background: var(--vp-c-bg-soft);
+}
+
+/* ── 高亮标记 ── */
+.vp-article mark {
+    background: #fff3bf;
+    padding: 0.1rem 0.2rem;
+    border-radius: 2px;
+}
+
+/* ── 数学公式 ── */
+.vp-math-inline {
+    display: inline-block;
+    margin: 0 0.1em;
+}
+
+.vp-math-display {
+    display: block;
+    margin: 1rem 0;
+    overflow-x: auto;
+    text-align: center;
+}
+
+.vp-math-error {
+    color: #c0392b;
+    background: #fdecea;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* ── 语法高亮（Valkyrie hl-*） ── */
+.hl-keyword {
+    color: #c678dd;
+}
+.hl-type {
+    color: #e5c07b;
+}
+.hl-function {
+    color: #61afef;
+}
+.hl-string {
+    color: #98c379;
+}
+.hl-number {
+    color: #d19a66;
+}
+.hl-comment {
+    color: #5c6370;
+    font-style: italic;
+}
+.hl-operator {
+    color: #56b6c2;
+}
+.hl-punctuation {
+    color: #abb2bf;
+}
+.hl-identifier {
+    color: #e06c75;
+}

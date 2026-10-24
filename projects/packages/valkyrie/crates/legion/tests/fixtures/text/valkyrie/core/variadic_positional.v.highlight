@@ -1,0 +1,11 @@
+Span { kind: Keyword, span: 1..6, text: "micro", modifier: null }
+Span { kind: Identifier, span: 7..10, text: "sum", modifier: null }
+Span { kind: Punctuation, span: 10..11, text: "(", modifier: null }
+Span { kind: Operator, span: 11..13, text: "..", modifier: null }
+Span { kind: Identifier, span: 13..18, text: "items", modifier: null }
+Span { kind: Punctuation, span: 18..19, text: ":", modifier: null }
+Span { kind: Identifier, span: 20..23, text: "i64", modifier: null }
+Span { kind: Punctuation, span: 23..24, text: ")", modifier: null }
+Span { kind: Punctuation, span: 25..26, text: "{", modifier: null }
+Span { kind: Identifier, span: 31..36, text: "items", modifier: null }
+Span { kind: Punctuation, span: 37..38, text: "}", modifier: null }

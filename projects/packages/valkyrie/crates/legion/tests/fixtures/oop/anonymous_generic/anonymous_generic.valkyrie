@@ -1,0 +1,162 @@
+trait Container<T> {
+    micro get(self) -> T
+    micro set(mut self, value: T)
+    micro is_empty(self) -> bool
+}
+
+micro create_container<T>(initial: T) -> Container<T> {
+    class: Container<T> {
+        value: initial
+        has_value: true
+        
+        micro get(self) -> T {
+            self.value
+        }
+        
+        micro set(mut self, value: T) {
+            self.value = value
+            self.has_value = true
+        }
+        
+        micro is_empty(self) -> bool {
+            !self.has_value
+        }
+    }
+}
+
+micro create_optional<T>() -> Container<T?> {
+    class: Container<T?> {
+        value: none
+        
+        micro get(self) -> T? {
+            self.value
+        }
+        
+        micro set(mut self, value: T?) {
+            self.value = value
+        }
+        
+        micro is_empty(self) -> bool {
+            self.value.is_none()
+        }
+    }
+}
+
+trait ComparablePair<T> {
+    micro max(self) -> T
+    micro min(self) -> T
+    micro sum(self) -> T
+}
+
+micro create_pair<T>(a: T, b: T) -> ComparablePair<T> {
+    class: ComparablePair<T> {
+        first: a
+        second: b
+        
+        micro max(self) -> T {
+            if self.first > self.second { self.first } else { self.second }
+        }
+        
+        micro min(self) -> T {
+            if self.first < self.second { self.first } else { self.second }
+        }
+        
+        micro sum(self) -> T {
+            self.first + self.second
+        }
+    }
+}
+
+trait Accumulator<T> {
+    micro add(mut self, value: T)
+    micro total(self) -> T
+    micro reset(mut self)
+}
+
+micro create_accumulator<T>(initial: T) -> Accumulator<T> {
+    class: Accumulator<T> {
+        sum: initial
+        
+        micro add(mut self, value: T) {
+            self.sum = self.sum + value
+        }
+        
+        micro total(self) -> T {
+            self.sum
+        }
+        
+        micro reset(mut self) {
+            self.sum = initial
+        }
+    }
+}
+
+trait Factory<T> {
+    micro create(self) -> T
+    micro create_with(self, config: utf8) -> T
+}
+
+micro create_factory<T>(default_value: T) -> Factory<T> {
+    class: Factory<T> {
+        default: default_value
+        
+        micro create(self) -> T {
+            self.default
+        }
+        
+        micro create_with(self, config: utf8) -> T {
+            print("Creating with config: {config}")
+            self.default
+        }
+    }
+}
+
+let int_container = create_container(42)
+print("Int container: {int_container.get()}")
+print("Is empty: {int_container.is_empty()}")
+int_container.set(100)
+print("After set: {int_container.get()}")
+
+let str_container = create_container("hello")
+print("String container: {str_container.get()}")
+str_container.set("world")
+print("After set: {str_container.get()}")
+
+let optional = create_optional<i32>()
+print("Optional is empty: {optional.is_empty()}")
+optional.set(42)
+print("Optional is empty after set: {optional.is_empty()}")
+print("Optional value: {optional.get()}")
+
+let int_pair = create_pair(10, 20)
+print("Pair max: {int_pair.max()}")
+print("Pair min: {int_pair.min()}")
+print("Pair sum: {int_pair.sum()}")
+
+let float_pair = create_pair(3.14, 2.71)
+print("Float pair max: {float_pair.max()}")
+print("Float pair min: {float_pair.min()}")
+print("Float pair sum: {float_pair.sum()}")
+
+let int_accum = create_accumulator(0)
+int_accum.add(10)
+int_accum.add(20)
+int_accum.add(30)
+print("Accumulator total: {int_accum.total()}")
+int_accum.reset()
+print("After reset: {int_accum.total()}")
+
+let str_accum = create_accumulator("")
+str_accum.add("Hello")
+str_accum.add(" ")
+str_accum.add("World")
+print("String accumulator: {str_accum.total()}")
+
+let int_factory = create_factory(0)
+let value = int_factory.create()
+print("Factory created: {value}")
+int_factory.create_with("custom_config")
+
+let str_factory = create_factory("default")
+let str_value = str_factory.create()
+print("String factory created: {str_value}")

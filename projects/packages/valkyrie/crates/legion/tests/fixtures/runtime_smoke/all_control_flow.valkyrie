@@ -1,0 +1,84 @@
+micro with_continue(limit: i32): i32 {
+    let sum: i32 = 0
+    let i: i32 = 0
+    while i < limit {
+        i = i + 1
+        if i == 2 {
+            continue
+        }
+        sum = sum + i
+    }
+    return sum
+}
+
+micro with_break(limit: i32): i32 {
+    let sum: i32 = 0
+    let i: i32 = 0
+    loop {
+        i = i + 1
+        if i >= limit {
+            break
+        }
+        sum = sum + i
+    }
+    return sum
+}
+
+micro early_return(n: i32): i32 {
+    if n < 0 {
+        let sentinel: i32 = 0
+        sentinel = sentinel - 1
+        return sentinel
+    }
+    if n == 0 {
+        let zero: i32 = 0
+        return zero
+    }
+    return n
+}
+
+micro nested_break(limit: i32): i32 {
+    let sum: i32 = 0
+    let i: i32 = 0
+    'outer: while i < limit {
+        let j: i32 = 0
+        while j < limit {
+            j = j + 1
+            if j == 2 {
+                break 'outer
+            }
+            sum = sum + j
+        }
+        i = i + 1
+    }
+    return sum
+}
+
+[main]
+micro main() -> ExitCode {
+    let five: i32 = 5
+    let four: i32 = 4
+    let three: i32 = 3
+    let neg_one: i32 = 0
+    neg_one = neg_one - 1
+    let thirteen: i32 = 13
+    let six: i32 = 6
+    if with_continue(five) != thirteen {
+        return ExitCode(1)
+    }
+    if with_break(four) != six {
+        return ExitCode(2)
+    }
+    if early_return(three) != three {
+        return ExitCode(3)
+    }
+    if early_return(neg_one) != neg_one {
+        return ExitCode(4)
+    }
+    let three_limit: i32 = 3
+    let expected_nested: i32 = 1
+    if nested_break(three_limit) != expected_nested {
+        return ExitCode(5)
+    }
+    return ExitCode(0)
+}

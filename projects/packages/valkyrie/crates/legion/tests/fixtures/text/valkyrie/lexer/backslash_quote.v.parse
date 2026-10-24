@@ -1,0 +1,3 @@
+Root span=0..4
+  Error span=0..3 message="expected declaration near '\"\\\"'" text="\"\\\""
+  Trivia span=3..4 text="\n"

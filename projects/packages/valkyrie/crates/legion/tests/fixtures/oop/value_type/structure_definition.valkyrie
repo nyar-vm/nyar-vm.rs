@@ -1,0 +1,61 @@
+structure Point {
+    x: f64
+    y: f64
+    
+    micro translate(self, dx: f64, dy: f64) -> Point {
+        Point { x: self.x + dx, y: self.y + dy }
+    }
+    
+    micro distance(self) -> f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+}
+
+structure RGB {
+    r: u8
+    g: u8
+    b: u8
+    
+    micro equals(self, other: RGB) -> bool {
+        self.r == other.r && self.g == other.g && self.b == other.b
+    }
+    
+    micro to_hex(self) -> utf8 {
+        "#{self.r}{self.g}{self.b}"
+    }
+}
+
+structure Email {
+    address: utf8
+    
+    micro new(address: utf8) -> Email {
+        Email { address: address }
+    }
+    
+    micro is_valid(self) -> bool {
+        self.address.contains("@")
+    }
+}
+
+structure Money {
+    amount: i64
+    currency: utf8
+    
+    micro add(self, other: Money) -> Money {
+        Money { amount: self.amount + other.amount, currency: self.currency }
+    }
+    
+    micro multiply(self, factor: i64) -> Money {
+        Money { amount: self.amount * factor, currency: self.currency }
+    }
+}
+
+let p1 = Point { x: 1.0, y: 2.0 }
+let p2 = p1
+let p3 = p1.translate(3.0, 4.0)
+
+let red = RGB { r: 255, g: 0, b: 0 }
+let blue = RGB { r: 0, g: 0, b: 255 }
+
+let price = Money { amount: 1000, currency: "USD" }
+let doubled = price.multiply(2)

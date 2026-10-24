@@ -1,0 +1,25 @@
+Root span=0..103
+  Trivia span=0..1 text="\n"
+  Statement span=1..101 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..101 name="main" kind=Micro
+      DeclarationBody span=15..100
+        TermStatement span=20..61
+          UntilStatement span=20..61
+            TermBinary span=26..35
+              TermName span=26..31 name="count"
+              TermLiteral span=34..35 kind=Integer
+            DeclarationBody span=37..61
+              TailExpression span=46..56
+                TermAssign span=46..56
+                  TermName span=46..51 name="count"
+                  TermBinary span=46..56
+                    TermName span=46..51 name="count"
+                    TermLiteral span=55..56 kind=Integer
+        TailExpression span=67..98
+          TryStatement span=67..98
+            DeclarationBody span=72..98
+              TailExpression span=81..93
+                TermRaise span=81..93
+                  TermLiteral span=87..93 kind=String
+    trailing_trivia span=101..103 text="\n\n"

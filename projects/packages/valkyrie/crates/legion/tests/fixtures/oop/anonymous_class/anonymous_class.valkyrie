@@ -1,0 +1,170 @@
+trait Shape {
+    micro area(self) -> f64
+    micro draw(self)
+}
+
+trait Drawable {
+    micro draw(self)
+}
+
+trait Loggable {
+    micro log(self)
+}
+
+micro create_circle(radius: f64) -> Shape {
+    class: Shape {
+        radius: radius
+        
+        micro area(self) -> f64 {
+            3.14159 * self.radius * self.radius
+        }
+        
+        micro draw(self) {
+            print("Drawing circle with radius {self.radius}")
+        }
+    }
+}
+
+micro create_rectangle(width: f64, height: f64) -> Shape {
+    class: Shape {
+        width: width
+        height: height
+        
+        micro area(self) -> f64 {
+            self.width * self.height
+        }
+        
+        micro draw(self) {
+            print("Drawing rectangle {self.width}x{self.height}")
+        }
+    }
+}
+
+micro create_multi_trait() -> Drawable + Loggable {
+    class: Drawable + Loggable {
+        name: "MultiTraitObject"
+        
+        micro draw(self) {
+            print("Drawing: {self.name}")
+        }
+        
+        micro log(self) {
+            print("Logging: {self.name}")
+        }
+    }
+}
+
+trait Handler {
+    micro handle(self, request: utf8) -> utf8
+}
+
+micro create_handler(handler_type: utf8) -> Handler {
+    match handler_type {
+        case "json" => class: Handler {
+            micro handle(self, request: utf8) -> utf8 {
+                "{{\"response\": \"{request}\"}}"
+            }
+        },
+        case "xml" => class: Handler {
+            micro handle(self, request: utf8) -> utf8 {
+                "<response>{request}</response>"
+            }
+        },
+        case _ => class: Handler {
+            micro handle(self, request: utf8) -> utf8 {
+                "Plain: {request}"
+            }
+        }
+    }
+}
+
+trait Counter {
+    micro next(mut self) -> i32
+}
+
+micro create_counter(start: i32) -> Counter {
+    let mut count = start
+    
+    class: Counter {
+        micro next(mut self) -> i32 {
+            count += 1
+            count
+        }
+    }
+}
+
+trait SortStrategy {
+    micro sort(self, data: [i32]) -> [i32]
+}
+
+micro get_sort_strategy(strategy_name: utf8) -> SortStrategy {
+    match strategy_name {
+        case "identity" => class: SortStrategy {
+            micro sort(self, data: [i32]) -> [i32] {
+                data
+            }
+        },
+        case "reverse" => class: SortStrategy {
+            micro sort(self, data: [i32]) -> [i32] {
+                let mut result = data
+                result.reverse()
+                result
+            }
+        },
+        case _ => class: SortStrategy {
+            micro sort(self, data: [i32]) -> [i32] {
+                data
+            }
+        }
+    }
+}
+
+trait ConfigBuilder {
+    micro set_host(mut self, host: utf8) -> Self
+    micro set_port(mut self, port: u16) -> Self
+    micro build(self) -> Config
+}
+
+class Config {
+    host: utf8
+    port: u16
+}
+
+micro create_config_builder() -> ConfigBuilder {
+    class: ConfigBuilder {
+        host: "localhost"
+        port: 8080
+        
+        micro set_host(mut self, host: utf8) -> Self {
+            self.host = host
+            self
+        }
+        
+        micro set_port(mut self, port: u16) -> Self {
+            self.port = port
+            self
+        }
+        
+        micro build(self) -> Config {
+            Config { host: self.host, port: self.port }
+        }
+    }
+}
+
+let circle = create_circle(5.0)
+let rect = create_rectangle(3.0, 4.0)
+
+print("Circle area: {circle.area()}")
+print("Rectangle area: {rect.area()}")
+
+circle.draw()
+rect.draw()
+
+let handler = create_handler("json")
+let response = handler.handle("test")
+print("Response: {response}")
+
+let counter = create_counter(0)
+print("Count: {counter.next()}")
+print("Count: {counter.next()}")
+print("Count: {counter.next()}")

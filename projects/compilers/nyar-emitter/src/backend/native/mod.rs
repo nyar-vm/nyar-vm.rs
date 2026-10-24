@@ -98,7 +98,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions) -> 
         }],
         vec![CoffSymbol { name: input.entry_symbol.clone(), section_index: 1, value: 0, storage_class: 2 }],
     );
-    let object_bytes = CoffObjectWriter::write(&object)?;
+    let object_bytes = CoffObjectWriter::write(&object).map_err(|error| miette::miette!("`COFF` sidecar 编码失败：{error}"))?;
     std::fs::write(&object_path, object_bytes)
         .into_diagnostic()
         .wrap_err_with(|| format!("写入 `COFF` sidecar 失败：{}", object_path.display()))?;

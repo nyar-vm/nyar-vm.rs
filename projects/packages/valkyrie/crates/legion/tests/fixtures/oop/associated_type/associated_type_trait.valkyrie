@@ -1,0 +1,81 @@
+trait Container {
+    type Item
+    
+    micro get(self) -> Self::Item
+    micro set(mut self, value: Self::Item)
+}
+
+class Box<T>: Container {
+    type Item = T
+    
+    private _value: T
+    
+    micro get(self) -> Self::Item {
+        self._value
+    }
+    
+    micro set(mut self, value: Self::Item) {
+        self._value = value
+    }
+}
+
+trait Iterator {
+    type Item
+    
+    micro next(self) -> Self::Item?
+    
+    micro collect<C>(self) -> C {
+        C::from_iterator(self)
+    }
+}
+
+trait FromIterator<T> {
+    micro from_iterator<I: Iterator<Item = T>>(iter: I) -> Self
+}
+
+class Counter: Iterator {
+    type Item = i32
+    
+    current: i32 = 0
+    max: i32
+    
+    micro next(self) -> Self::Item? {
+        if self.current < self.max {
+            self.current = self.current + 1
+            self.current
+        } else {
+            none
+        }
+    }
+}
+
+trait Graph {
+    type Node
+    type Edge
+    
+    micro nodes(self) -> [Self::Node]
+    micro edges(self) -> [Self::Edge]
+    micro neighbors(self, node: Self::Node) -> [Self::Node]
+}
+
+class SimpleGraph: Graph {
+    type Node = utf8
+    type Edge = (utf8, utf8)
+    
+    micro nodes(self) -> [Self::Node] {
+        ["A", "B", "C"]
+    }
+    
+    micro edges(self) -> [Self::Edge] {
+        [("A", "B"), ("B", "C")]
+    }
+    
+    micro neighbors(self, node: Self::Node) -> [Self::Node] {
+        match node {
+            case "A": ["B"],
+            case "B": ["A", "C"],
+            case "C": ["B"],
+            else:     []
+        }
+    }
+}

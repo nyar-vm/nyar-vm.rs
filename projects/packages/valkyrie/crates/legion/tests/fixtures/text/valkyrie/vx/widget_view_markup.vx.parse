@@ -1,0 +1,15 @@
+Root span=0..101
+  Trivia span=0..1 text="\n"
+  Statement span=1..99 kind=Class
+    leading_trivia span=1..1 text=""
+    ClassDeclaration span=1..99 name="Counter" class_kind=Widget
+      ObjectBody
+        ObjectMethod span=22..97 name="view"
+          DeclarationBody span=36..96
+            TailExpression span=45..96
+              TermXmlMarkup span=45..96
+                XgElement span=0..51 tag="button" self_closing=false
+                  XgAttribute name="on_click" value_kind=Expression
+                  XgText span=30..37
+                    XgTextExpression text="count"
+    trailing_trivia span=99..101 text="\n\n"

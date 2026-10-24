@@ -1,0 +1,143 @@
+<widget test_report><div class="summary">
+<div class="summary-card pass">
+<div class="count">{passed}</div>
+<div class="label">通过</div>
+</div>
+<div class="summary-card fail">
+<div class="count">{failed}</div>
+<div class="label">失败</div>
+</div>
+<div class="summary-card skip">
+<div class="count">{skipped}</div>
+<div class="label">跳过</div>
+</div>
+</div>
+<if :condition="has_chart">
+<div class="chart-grid">
+<div class="chart-panel">
+    <p>LEGION_CHART_STATUS</p>
+</div>
+</div>
+</if>
+<if :condition="has_rows">
+<table class="report-table">
+<thead>
+    <tr>
+        <th>测试名称</th>
+        <th>状态</th>
+        <th>目标平台</th>
+        <th>错误信息</th>
+    </tr>
+</thead>
+<tbody>
+    <loop row in rows()>
+        <tr>
+            <td>{row.name}</td>
+            <td>
+                <span @class="row.badge_class">{row.status_label}</span>
+            </td>
+            <td>{row.target}</td>
+            <td class="error-cell">{row.error}</td>
+        </tr>
+    </loop>
+</tbody>
+</table>
+<else />
+<div class="empty">无测试结果</div>
+</if>
+</widget>
+<style>.summary {
+display: flex;
+gap: 16px;
+margin-bottom: 24px;
+}
+.summary-card {
+flex: 1;
+padding: 16px;
+border-radius: 8px;
+text-align: center;
+color: #fff;
+}
+.summary-card.pass { background: #22c55e; }
+.summary-card.fail { background: #ef4444; }
+.summary-card.skip { background: #f97316; }
+.summary-card .count {
+font-size: 32px;
+font-weight: 700;
+}
+.summary-card .label {
+font-size: 14px;
+opacity: 0.9;
+margin-top: 4px;
+}
+.chart-grid {
+display: grid;
+grid-template-columns: 1fr;
+gap: 16px;
+margin-bottom: 24px;
+}
+.chart-panel {
+background: #fff;
+border-radius: 8px;
+padding: 16px;
+box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+overflow-x: auto;
+}
+.chart-panel svg {
+display: block;
+max-width: 100%;
+height: auto;
+margin: 0 auto;
+}
+.report-table {
+width: 100%;
+border-collapse: collapse;
+background: #fff;
+border-radius: 8px;
+overflow: hidden;
+box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.report-table th {
+background: #f8f9fa;
+padding: 12px 16px;
+text-align: left;
+font-size: 13px;
+font-weight: 600;
+color: #666;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+border-bottom: 2px solid #e5e7eb;
+}
+.report-table td {
+padding: 10px 16px;
+font-size: 14px;
+border-bottom: 1px solid #f0f0f0;
+}
+.status-badge {
+display: inline-block;
+padding: 2px 10px;
+border-radius: 12px;
+font-size: 12px;
+font-weight: 600;
+color: #fff;
+}
+.status-badge.pass { background: #22c55e; }
+.status-badge.fail { background: #ef4444; }
+.status-badge.skip { background: #f97316; }
+.status-badge.compile_error { background: #f97316; }
+.error-cell {
+color: #ef4444;
+font-size: 13px;
+max-width: 300px;
+word-break: break-all;
+}
+.empty {
+text-align: center;
+padding: 32px;
+color: #999;
+font-size: 14px;
+background: #fff;
+border-radius: 8px;
+}
+</style>
+

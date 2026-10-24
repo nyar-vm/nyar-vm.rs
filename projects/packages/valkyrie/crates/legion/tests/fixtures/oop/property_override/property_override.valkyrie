@@ -1,0 +1,98 @@
+open class Shape {
+    x: f64
+    y: f64
+    
+    initiate(mut self, x: f64, y: f64) {
+        self.x = x
+        self.y = y
+    }
+    
+    virtual get area(self) -> f64 {
+        0.0
+    }
+    
+    virtual get description(self) -> utf8 {
+        "Shape at ({self.x}, {self.y})"
+    }
+}
+
+class Circle: Shape {
+    radius: f64
+    
+    initiate(mut self, x: f64, y: f64, radius: f64) {
+        super.initiate(x, y)
+        self.radius = radius
+    }
+    
+    override get area(self) -> f64 {
+        3.14159 * self.radius * self.radius
+    }
+    
+    override get description(self) -> utf8 {
+        "Circle at ({self.x}, {self.y}) with radius {self.radius}"
+    }
+}
+
+class Rectangle: Shape {
+    width: f64
+    height: f64
+    
+    initiate(mut self, x: f64, y: f64, width: f64, height: f64) {
+        super.initiate(x, y)
+        self.width = width
+        self.height = height
+    }
+    
+    override get area(self) -> f64 {
+        self.width * self.height
+    }
+    
+    override get description(self) -> utf8 {
+        "Rectangle {self.width}x{self.height} at ({self.x}, {self.y})"
+    }
+}
+
+open class Container {
+    private _items: i32
+    
+    get items(self) -> i32 {
+        self._items
+    }
+    
+    set items(mut self, value: i32) {
+        if value >= 0 {
+            self._items = value
+        }
+    }
+}
+
+class BoundedContainer: Container {
+    max_items: i32
+    
+    initiate(mut self, max_items: i32) {
+        self.max_items = max_items
+        self.items = 0
+    }
+    
+    override set items(mut self, value: i32) {
+        if value >= 0 && value <= self.max_items {
+            self._items = value
+        }
+    }
+}
+
+micro main() {
+    let circle = Circle { x: 0.0, y: 0.0, radius: 5.0 }
+    let rect = Rectangle { x: 10.0, y: 20.0, width: 4.0, height: 6.0 }
+    
+    print("{circle.description}")
+    print("Area: {circle.area}")
+    print("{rect.description}")
+    print("Area: {rect.area}")
+    
+    let container = BoundedContainer { max_items: 10 }
+    container.items = 5
+    print("Items: {container.items}")
+    container.items = 15
+    print("Items after overflow attempt: {container.items}")
+}

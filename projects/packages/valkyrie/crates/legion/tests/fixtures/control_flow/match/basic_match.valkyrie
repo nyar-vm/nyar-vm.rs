@@ -1,0 +1,8 @@
+micro main() {
+    let value = 1
+    match value {
+        case 1: print("one")
+        case 2: print("two")
+        else: print("other")
+    }
+}

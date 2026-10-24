@@ -1,0 +1,13 @@
+targets:
+- clr-microsoft-unknown-managed
+expect:
+  clr-microsoft-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for clr-microsoft-unknown-managed: `Clr` lane is frozen for 0.0.x Node/Wasm delivery; enable Cargo feature `legacy-lanes` to compile CLR/JVM/native/nyar_vm lowering'
+    errors: []

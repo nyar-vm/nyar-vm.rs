@@ -1,0 +1,24 @@
+targets:
+- clr
+- jvm
+- native
+expect:
+  clr:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  jvm:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  native:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+known_gap: true

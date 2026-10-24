@@ -1,0 +1,8 @@
+[main]
+micro main() {
+    let one: i32 = 1
+    let two: i32 = 2
+    yield one
+    yield two
+    return
+}

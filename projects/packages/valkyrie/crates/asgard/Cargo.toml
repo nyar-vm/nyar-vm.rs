@@ -1,0 +1,36 @@
+[package]
+name = "asgard"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Asgard compiler — AWSL frontend, packaging, and WASM delivery"
+
+
+[dependencies]
+# 各二进制格式由 Acorn 拥有；这里只消费对应格式 crate，不再走 vcc-data 副本。
+acorn-jvm = { workspace = true }
+acorn-dex = { workspace = true }
+acorn-mach-o = { workspace = true }
+acorn-host = { workspace = true }
+oak-awsl = { workspace = true }
+oak-von = { workspace = true }
+nyar-language = { workspace = true, features = ["serde"] }
+legion-workspace = { workspace = true }
+nyar-analyzer = { workspace = true }
+nyar-emitter = { workspace = true }
+nyar = { workspace = true }
+nyar-types = { workspace = true }
+rusty-valkyrie = { workspace = true, features = ["serde"] }
+miette = { workspace = true, features = ["fancy"] }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+zip = { workspace = true }
+# 平台合同测试消费 `ELF` 共享库写出与 AArch64 JNI 胶水。
+acorn-pe = { workspace = true }
+acorn-aarch64 = { workspace = true }

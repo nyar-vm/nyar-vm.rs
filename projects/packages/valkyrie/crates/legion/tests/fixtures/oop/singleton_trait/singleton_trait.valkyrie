@@ -1,0 +1,197 @@
+trait Serializable {
+    micro serialize(self) -> utf8
+    micro deserialize(mut self, data: utf8)
+}
+
+trait ConfigProvider {
+    micro get(self, key: utf8) -> utf8?
+    micro set(mut self, key: utf8, value: utf8)
+    micro all_keys(self) -> [utf8]
+}
+
+singleton AppConfig: Serializable + ConfigProvider {
+    public mut debug_mode: bool = false
+    public mut api_key: utf8 = ""
+    private settings: [utf8] = []
+    
+    micro load_from_env(mut self) {
+        print("Loading configuration from environment...")
+        self.debug_mode = true
+        self.api_key = "env_api_key_12345"
+    }
+    
+    micro static reset(mut self) {
+        self.debug_mode = false
+        self.api_key = ""
+        self.settings = []
+    }
+}
+
+imply AppConfig: Serializable {
+    micro serialize(self) -> utf8 {
+        "{{\"debug_mode\": {self.debug_mode}, \"api_key\": \"{self.api_key}\", \"settings\": {self.settings.length}}}"
+    }
+    
+    micro deserialize(mut self, data: utf8) {
+        print("Deserializing config from: {data}")
+        self.debug_mode = true
+    }
+}
+
+imply AppConfig: ConfigProvider {
+    micro get(self, key: utf8) -> utf8? {
+        match key {
+            case "debug_mode": if self.debug_mode { "true" } else { "false" },
+            case "api_key": self.api_key,
+            case _: none
+        }
+    }
+    
+    micro set(mut self, key: utf8, value: utf8) {
+        match key {
+            case "debug_mode": self.debug_mode = (value == "true"),
+            case "api_key": self.api_key = value,
+            case _: self.settings.push("{key}={value}")
+        }
+    }
+    
+    micro all_keys(self) -> [utf8] {
+        let keys: [utf8] = ["debug_mode", "api_key"]
+        loop setting in self.settings {
+            let parts = setting.split("=")
+            keys.push(parts[0])
+        }
+        keys
+    }
+}
+
+trait Logger {
+    micro log(self, level: utf8, message: utf8)
+    micro info(self, message: utf8)
+    micro error(self, message: utf8)
+}
+
+singleton GlobalLogger: Logger {
+    level: utf8 = "INFO"
+    private logs: [utf8] = []
+    
+    micro get_logs(self) -> [utf8] {
+        self.logs
+    }
+    
+    micro clear(mut self) {
+        self.logs = []
+    }
+}
+
+imply GlobalLogger: Logger {
+    micro log(self, level: utf8, message: utf8) {
+        let entry = "[{level}] {message}"
+        self.logs.push(entry)
+        print(entry)
+    }
+    
+    micro info(self, message: utf8) {
+        self.log("INFO", message)
+    }
+    
+    micro error(self, message: utf8) {
+        self.log("ERROR", message)
+    }
+}
+
+trait Counter {
+    micro increment(mut self) -> i64
+    micro decrement(mut self) -> i64
+    micro get(self) -> i64
+}
+
+singleton GlobalCounter: Counter {
+    private value: i64 = 0
+    
+    micro reset(mut self) {
+        self.value = 0
+    }
+}
+
+imply GlobalCounter: Counter {
+    micro increment(mut self) -> i64 {
+        self.value += 1
+        self.value
+    }
+    
+    micro decrement(mut self) -> i64 {
+        self.value -= 1
+        self.value
+    }
+    
+    micro get(self) -> i64 {
+        self.value
+    }
+}
+
+micro use_as_serializable(obj: Serializable) -> utf8 {
+    obj.serialize()
+}
+
+micro use_as_config_provider(obj: ConfigProvider) -> [utf8] {
+    obj.all_keys()
+}
+
+micro use_as_logger(obj: Logger) {
+    obj.info("Testing singleton as trait")
+}
+
+micro use_as_counter(obj: Counter) -> i64 {
+    obj.increment()
+    obj.increment()
+    obj.get()
+}
+
+print("=== Testing AppConfig Singleton ===")
+
+AppConfig.load_from_env()
+print("Debug mode: {AppConfig.debug_mode}")
+print("API key: {AppConfig.api_key}")
+
+AppConfig.set("custom_key", "custom_value")
+let custom_key = AppConfig.get("custom_key")
+print("Custom key: {custom_key}")
+
+let keys = AppConfig.all_keys()
+print("All keys: {keys.length}")
+
+let serialized = AppConfig.serialize()
+print("Serialized: {serialized}")
+
+print("=== Testing GlobalLogger Singleton ===")
+
+GlobalLogger.info("Application started")
+GlobalLogger.error("Something went wrong")
+GlobalLogger.log("DEBUG", "Debug information")
+
+print("Log count: {GlobalLogger.get_logs().length}")
+
+print("=== Testing GlobalCounter Singleton ===")
+
+print("Initial value: {GlobalCounter.get()}")
+print("After increment: {GlobalCounter.increment()}")
+print("After increment: {GlobalCounter.increment()}")
+print("After decrement: {GlobalCounter.decrement()}")
+print("Final value: {GlobalCounter.get()}")
+
+GlobalCounter.reset()
+print("After reset: {GlobalCounter.get()}")
+
+print("=== Testing Singleton as Trait ===")
+
+let config_serialized = use_as_serializable(AppConfig)
+print("Via trait: {config_serialized}")
+
+let config_keys = use_as_config_provider(AppConfig)
+print("Keys via trait: {config_keys.length}")
+
+use_as_logger(GlobalLogger)
+
+let counter_value = use_as_counter(GlobalCounter)
+print("Counter via trait: {counter_value}")

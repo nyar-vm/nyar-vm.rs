@@ -1,0 +1,8 @@
+micro main() {
+    let value = 10
+    match value {
+        case x if x > 0: print("positive")
+        case x if x < 0: print("negative")
+        else: print("zero")
+    }
+}

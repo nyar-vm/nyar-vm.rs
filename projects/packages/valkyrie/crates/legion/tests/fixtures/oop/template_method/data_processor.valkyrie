@@ -1,0 +1,60 @@
+abstract class DataProcessor {
+    final micro process(self, data: utf8) -> utf8 {
+        let step1 = self.preprocess(data)
+        let step2 = self.transform(step1)
+        let step3 = self.postprocess(step2)
+        self.log(step3)
+        step3
+    }
+    
+    abstract micro preprocess(self, data: utf8) -> utf8
+    abstract micro transform(self, data: utf8) -> utf8
+    abstract micro postprocess(self, data: utf8) -> utf8
+    
+    micro log(self, result: utf8) {
+        print("Processing complete: {result}")
+    }
+}
+
+class JsonProcessor: DataProcessor {
+    override micro preprocess(self, data: utf8) -> utf8 {
+        data.trim()
+    }
+    
+    override micro transform(self, data: utf8) -> utf8 {
+        data.to_uppercase()
+    }
+    
+    override micro postprocess(self, data: utf8) -> utf8 {
+        "[{data}]"
+    }
+}
+
+class XmlProcessor: DataProcessor {
+    override micro preprocess(self, data: utf8) -> utf8 {
+        data.trim()
+    }
+    
+    override micro transform(self, data: utf8) -> utf8 {
+        "<data>{data}</data>"
+    }
+    
+    override micro postprocess(self, data: utf8) -> utf8 {
+        "<?xml version=\"1.0\"?>{data}"
+    }
+    
+    override micro log(self, result: utf8) {
+        print("XML generated: {result.length} chars")
+    }
+}
+
+micro main() {
+    let json_proc = JsonProcessor {}
+    let xml_proc = XmlProcessor {}
+    
+    let json_result = json_proc.process("  hello world  ")
+    print("JSON: {json_result}")
+    
+    let xml_result = xml_proc.process("content")
+    print("XML: {xml_result}")
+}

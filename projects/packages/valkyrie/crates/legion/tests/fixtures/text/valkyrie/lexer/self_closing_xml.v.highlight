@@ -1,0 +1,4 @@
+Span { kind: Punctuation, span: 0..1, text: "<", modifier: null }
+Span { kind: Identifier, span: 1..3, text: "br", modifier: null }
+Span { kind: Operator, span: 3..4, text: "/", modifier: null }
+Span { kind: Punctuation, span: 4..5, text: ">", modifier: null }

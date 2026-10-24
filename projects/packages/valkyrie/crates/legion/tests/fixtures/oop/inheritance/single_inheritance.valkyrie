@@ -1,0 +1,21 @@
+open class Animal {
+    name: utf8
+    
+    micro speak(self) {
+        print("...")
+    }
+}
+
+class Dog: Animal {
+    breed: utf8
+    
+    micro speak(self) {
+        print("Woof!")
+    }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

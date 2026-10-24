@@ -1,0 +1,13 @@
+let x = 10
+let y = 20
+if x > 0 {
+    if y > 0 {
+        print("both positive")
+    }
+    else {
+        print("x positive, y non-positive")
+    }
+}
+else {
+    print("x non-positive")
+}

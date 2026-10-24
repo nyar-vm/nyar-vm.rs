@@ -1,0 +1,11 @@
+[main]
+micro main(): ExitCode {
+    let i: i32 = 0
+    while i < 3 {
+        i = i + 1
+    }
+    if i != 3 {
+        return ExitCode(1)
+    }
+    return ExitCode(0)
+}

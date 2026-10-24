@@ -1,0 +1,18 @@
+Root span=0..95
+  Trivia span=0..1 text="\n"
+  Statement span=1..93 kind=Class
+    leading_trivia span=1..1 text=""
+    ClassDeclaration span=1..93 name="Counter" class_kind=Widget
+      ObjectBody
+        ObjectMethod span=22..91 name="view"
+          DeclarationBody span=36..90
+            TailExpression span=36..90
+              TermXmlMarkup span=36..90
+                XgMeta span=0..40
+                  TgIf span=0..40
+                    TgIfArm span=0..13
+                      TgText span=13..31
+                        TgTextStatic text="<div>"
+                        TgTextExpression text="count"
+                        TgTextStatic text="</div>"
+    trailing_trivia span=93..95 text="\n\n"

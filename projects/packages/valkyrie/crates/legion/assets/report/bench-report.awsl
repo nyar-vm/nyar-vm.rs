@@ -1,0 +1,102 @@
+<widget bench_report><div class="bench-card">
+<h2 class="bench-heading">Benchmark Report</h2>
+<p class="bench-summary">{summary_text}</p>
+<if :condition="has_charts">
+<div class="chart-grid">
+    <div class="chart-panel">
+        <p>LEGION_CHART_BENCH_RUNTIME</p>
+    </div>
+    <div class="chart-panel">
+        <p>LEGION_CHART_BENCH_COMPILE</p>
+    </div>
+</div>
+</if>
+<table class="bench-table">
+<thead>
+    <tr>
+        <th>Project</th>
+        <th>Test</th>
+        <th>Target</th>
+        <th class="num">Compile Time (ms)</th>
+        <th class="num">Runtime (ms)</th>
+    </tr>
+</thead>
+<tbody>
+    <loop row in rows()>
+        <tr>
+            <td>{row.project}</td>
+            <td>{row.test}</td>
+            <td>{row.target}</td>
+            <td class="num">{row.compile_ms}</td>
+            <td class="num">{row.runtime_ms}</td>
+        </tr>
+    </loop>
+</tbody>
+</table>
+</div>
+</widget>
+<style>.bench-card {
+background: #fff;
+border-radius: 8px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+padding: 32px;
+}
+.bench-heading {
+font-size: 24px;
+margin: 0 0 8px;
+}
+.bench-summary {
+color: #666;
+margin-bottom: 24px;
+font-size: 14px;
+}
+.chart-grid {
+display: grid;
+grid-template-columns: 1fr;
+gap: 16px;
+margin-bottom: 24px;
+}
+@media (min-width: 960px) {
+.chart-grid {
+    grid-template-columns: 1fr 1fr;
+}
+}
+.chart-panel {
+background: #f9fafb;
+border: 1px solid #eee;
+border-radius: 8px;
+padding: 12px;
+overflow-x: auto;
+}
+.chart-panel svg {
+display: block;
+max-width: 100%;
+height: auto;
+margin: 0 auto;
+}
+.bench-table {
+width: 100%;
+border-collapse: collapse;
+font-size: 14px;
+}
+.bench-table thead {
+background: #2c3e50;
+color: #fff;
+}
+.bench-table th {
+padding: 12px 16px;
+text-align: left;
+font-weight: 600;
+}
+.bench-table td {
+padding: 10px 16px;
+border-bottom: 1px solid #eee;
+}
+.bench-table tbody tr:nth-child(even) { background: #f9f9f9; }
+.bench-table tbody tr:nth-child(odd) { background: #fff; }
+.num {
+text-align: right;
+font-variant-numeric: tabular-nums;
+}
+</style>
+

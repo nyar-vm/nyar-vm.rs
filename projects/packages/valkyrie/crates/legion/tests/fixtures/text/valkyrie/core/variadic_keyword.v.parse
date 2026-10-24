@@ -1,0 +1,11 @@
+Root span=0..47
+  Trivia span=0..1 text="\n"
+  Statement span=1..45 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..45 name="merge" kind=Micro
+      Parameter span=13..14 name="a" variadic=None
+      Parameter span=22..30 name="pairs" variadic=KeywordRest
+      DeclarationBody span=33..44
+        TailExpression span=38..43
+          TermName span=38..43 name="pairs"
+    trailing_trivia span=45..47 text="\n\n"

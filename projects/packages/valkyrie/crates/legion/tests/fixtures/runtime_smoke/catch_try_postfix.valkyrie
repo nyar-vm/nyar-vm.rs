@@ -1,0 +1,11 @@
+[main]
+micro main() -> ExitCode {
+    let result: i32 = try {
+        raise 42
+    }
+    .catch {
+        case msg:
+            resume msg
+    }
+    return ExitCode(result)
+}

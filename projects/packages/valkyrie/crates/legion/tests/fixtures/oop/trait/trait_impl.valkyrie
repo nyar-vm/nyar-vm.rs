@@ -1,0 +1,20 @@
+trait Printable {
+    micro to_string(self) -> utf8
+}
+
+class Point {
+    x: f64
+    y: f64
+}
+
+imply Point: Printable {
+    micro to_string(self) -> utf8 {
+        "({self.x}, {self.y})"
+    }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

@@ -1,0 +1,16 @@
+structure ValidationError {
+    message: utf8
+}
+
+micro validate_age(age: i32) {
+    if age < 0 {
+        raise ValidationError { message: "Age cannot be negative" }
+    }
+    if age > 150 {
+        raise ValidationError { message: "Age cannot exceed 150" }
+    }
+}
+
+micro main() {
+    validate_age(-1)
+}

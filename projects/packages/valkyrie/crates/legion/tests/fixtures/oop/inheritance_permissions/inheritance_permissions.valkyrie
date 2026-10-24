@@ -1,0 +1,66 @@
+# Test closed class (default) - cannot be inherited
+# This should fail at compile time
+# class ClosedClass {
+#     value: i32
+# }
+# class InheritClosed(ClosedClass) { }
+
+# Test open class - can be inherited anywhere
+open class OpenClass {
+    value: i32
+
+    initiate(mut self, value: i32) {
+        self.value = value
+    }
+
+    micro get_value(self) -> i32 {
+        self.value
+    }
+}
+
+class InheritOpen(OpenClass) {
+    micro double_value(self) -> i32 {
+        self.value * 2
+    }
+}
+
+# Test sealed class - can only be inherited in same module
+sealed class SealedClass {
+    value: i32
+
+    initiate(mut self, value: i32) {
+        self.value = value
+    }
+}
+
+class InheritSealed(SealedClass) {
+    micro triple_value(self) -> i32 {
+        self.value * 3
+    }
+}
+
+# Test abstract class - can be inherited by default
+abstract class AbstractBase {
+    value: i32
+
+    initiate(mut self, value: i32) {
+        self.value = value
+    }
+
+    abstract micro compute(self) -> i32
+}
+
+class ConcreteImpl(AbstractBase) {
+    override micro compute(self) -> i32 {
+        self.value * 4
+    }
+}
+
+let open_instance = InheritOpen { value: 10 }
+let sealed_instance = InheritSealed { value: 20 }
+let abstract_instance = ConcreteImpl { value: 30 }
+
+print(open_instance.get_value())
+print(open_instance.double_value())
+print(sealed_instance.triple_value())
+print(abstract_instance.compute())

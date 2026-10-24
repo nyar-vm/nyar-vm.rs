@@ -1,0 +1,12 @@
+Span { kind: Keyword, span: 1..6, text: "micro", modifier: null }
+Span { kind: Identifier, span: 7..12, text: "greet", modifier: null }
+Span { kind: Punctuation, span: 12..13, text: "(", modifier: null }
+Span { kind: Identifier, span: 13..17, text: "name", modifier: null }
+Span { kind: Punctuation, span: 17..18, text: ":", modifier: null }
+Span { kind: Identifier, span: 19..23, text: "utf8", modifier: null }
+Span { kind: Operator, span: 24..25, text: "=", modifier: null }
+Span { kind: String, span: 26..33, text: "\"world\"", modifier: null }
+Span { kind: Punctuation, span: 33..34, text: ")", modifier: null }
+Span { kind: Punctuation, span: 35..36, text: "{", modifier: null }
+Span { kind: Identifier, span: 41..45, text: "name", modifier: null }
+Span { kind: Punctuation, span: 46..47, text: "}", modifier: null }

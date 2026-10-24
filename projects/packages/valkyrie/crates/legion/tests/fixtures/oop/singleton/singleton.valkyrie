@@ -1,0 +1,147 @@
+singleton AppConfig {
+    public mut debug_mode: bool = false
+    public mut api_key: utf8 = ""
+    public mut max_retries: i32 = 3
+    
+    micro load_defaults(mut self) {
+        self.debug_mode = false
+        self.api_key = "default_key"
+        self.max_retries = 3
+    }
+    
+    micro get_api_url(self) -> utf8 {
+        if self.debug_mode {
+            "https://dev.api.example.com"
+        } else {
+            "https://api.example.com"
+        }
+    }
+}
+
+singleton Counter {
+    public mut total_requests: i64 = 0
+    
+    micro increment(mut self) -> i64 {
+        self.total_requests += 1
+        self.total_requests
+    }
+    
+    micro reset(mut self) {
+        self.total_requests = 0
+    }
+    
+    micro get(self) -> i64 {
+        self.total_requests
+    }
+}
+
+singleton Logger {
+    level: utf8 = "INFO"
+    
+    micro info(self, message: utf8) {
+        print("[INFO] {message}")
+    }
+    
+    micro error(self, message: utf8) {
+        print("[ERROR] {message}")
+    }
+    
+    micro debug(self, message: utf8) {
+        if self.level == "DEBUG" {
+            print("[DEBUG] {message}")
+        }
+    }
+    
+    micro set_level(mut self, level: utf8) {
+        self.level = level
+    }
+}
+
+trait Serializable {
+    micro serialize(self) -> utf8
+    micro deserialize(mut self, data: utf8)
+}
+
+singleton Settings: Serializable {
+    theme: utf8 = "dark"
+    language: utf8 = "zh-CN"
+    font_size: i32 = 14
+    
+    micro serialize(self) -> utf8 {
+        "{{\"theme\": \"{self.theme}\", \"language\": \"{self.language}\", \"font_size\": {self.font_size}}}"
+    }
+    
+    micro deserialize(mut self, data: utf8) {
+        print("Deserializing settings from: {data}")
+    }
+    
+    micro reset(mut self) {
+        self.theme = "dark"
+        self.language = "zh-CN"
+        self.font_size = 14
+    }
+}
+
+singleton ServiceLocator {
+    services: [utf8] = []
+    
+    micro register(mut self, name: utf8) {
+        self.services.push(name)
+        print("Registered service: {name}")
+    }
+    
+    micro get(self, name: utf8) -> bool {
+        self.services.contains(name)
+    }
+    
+    micro list(self) -> [utf8] {
+        self.services
+    }
+}
+
+singleton ApiEndpoints {
+    base_url: utf8 = "https://api.example.com"
+    version: utf8 = "v1"
+    
+    micro get_url(self, endpoint: utf8) -> utf8 {
+        "{self.base_url}/{self.version}/{endpoint}"
+    }
+    
+    micro users(self) -> utf8 {
+        self.get_url("users")
+    }
+    
+    micro posts(self) -> utf8 {
+        self.get_url("posts")
+    }
+}
+
+if AppConfig.debug_mode {
+    print("Debug mode is ON")
+} else {
+    print("Debug mode is OFF")
+}
+
+AppConfig.api_key = "secret_key_123"
+AppConfig.debug_mode = true
+print("API URL: {AppConfig.get_api_url()}")
+
+let count1 = Counter.increment()
+let count2 = Counter.increment()
+let count3 = Counter.increment()
+print("Counter: {Counter.get()}")
+
+Logger.info("Application started")
+Logger.error("Test error message")
+Logger.set_level("DEBUG")
+Logger.debug("Debug message visible now")
+
+print("Settings: {Settings.serialize()}")
+
+ServiceLocator.register("cache")
+ServiceLocator.register("database")
+let has_cache = ServiceLocator.get("cache")
+print("Has cache: {has_cache}")
+
+print("Users endpoint: {ApiEndpoints.users()}")
+print("Posts endpoint: {ApiEndpoints.posts()}")

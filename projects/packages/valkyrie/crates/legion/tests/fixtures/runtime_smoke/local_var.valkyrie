@@ -1,0 +1,8 @@
+[main]
+micro main(): ExitCode {
+    let x: i32 = 42
+    if x != 42 {
+        return ExitCode(1)
+    }
+    return ExitCode(0)
+}

@@ -1,0 +1,30 @@
+[package]
+name = "vcc-napi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Valkyrie Compiler Collect — Node-API native bindings for Legion / Asgard hosts"
+
+[lib]
+name = "vcc_napi"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+legion = { workspace = true }
+asgard = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+napi = { workspace = true }
+napi-derive = { workspace = true }
+clap = { workspace = true }
+windows-sys = { workspace = true }
+
+[build-dependencies]
+napi-build = { workspace = true }
+
+[dev-dependencies]
+oak-valkyrie = { workspace = true }
+
+[target.'cfg(not(windows))'.dependencies]
+gag = { workspace = true }

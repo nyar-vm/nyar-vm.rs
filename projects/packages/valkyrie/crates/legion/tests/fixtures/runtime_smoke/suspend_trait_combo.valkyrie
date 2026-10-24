@@ -1,0 +1,72 @@
+trait Iterator {
+    type Item
+
+    micro next(mut self) -> Self::Item?
+}
+
+class CounterIterator {
+    current: i32
+    end: i32
+}
+
+imply CounterIterator: Iterator {
+    type Item = i32
+
+    micro next(mut self) -> i32? {
+        if self.current < self.end {
+            let value = self.current
+            self.current += 1
+            return value
+        }
+        return none
+    }
+}
+
+trait Future {
+    type Output
+
+    micro poll(mut self) -> bool
+}
+
+class ReadyFuture {
+    done: bool
+}
+
+imply ReadyFuture: Future {
+    type Output = i32
+
+    micro poll(mut self) -> bool {
+        if !self.done {
+            self.done = true
+            return false
+        }
+        return true
+    }
+}
+
+micro gen() {
+    let one: i32 = 1
+    yield one
+    return
+}
+
+micro delegate_gen() {
+    let values: Iterator<i32> = CounterIterator { current: 0, end: 2 }
+    yield from values
+    return
+}
+
+micro async_fn() {
+    let future: Future<i32> = ReadyFuture { done: false }
+    future.await
+    return
+}
+
+[main]
+micro main() {
+    gen()
+    delegate_gen()
+    async_fn()
+    print("suspend_ok")
+    return
+}

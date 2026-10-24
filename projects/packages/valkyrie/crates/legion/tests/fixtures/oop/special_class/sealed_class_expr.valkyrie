@@ -1,0 +1,28 @@
+sealed class Expr {
+    abstract micro evaluate(self) -> f64
+}
+
+class Number: Expr {
+    value: f64
+    
+    override micro evaluate(self) -> f64 {
+        self.value
+    }
+}
+
+class Add: Expr {
+    left: Expr
+    right: Expr
+    
+    override micro evaluate(self) -> f64 {
+        self.left.evaluate() + self.right.evaluate()
+    }
+}
+
+micro main() {
+    let expr: Expr = Add { 
+        left: Number { value: 1.0 }, 
+        right: Number { value: 2.0 } 
+    }
+    print(expr.evaluate())
+}

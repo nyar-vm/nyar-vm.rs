@@ -1,0 +1,7 @@
+Root span=0..7
+  Error span=0..1 message="expected declaration near 'a'" text="a"
+  Trivia span=1..2 text=" "
+  Error span=2..4 message="expected declaration near 'a'" text="<<"
+  Trivia span=4..5 text=" "
+  Error span=5..6 message="expected declaration near 'a'" text="1"
+  Trivia span=6..7 text="\n"

@@ -3,6 +3,11 @@ resolver = "2"
 members = [
     "examples/rusty-valkyrie",
     "projects/formats/odin-bytecode",
+    "projects/packages/valkyrie/crates/asgard",
+    "projects/packages/valkyrie/crates/legion",
+    "projects/packages/valkyrie/crates/legion-workspace",
+    "projects/packages/valkyrie/crates/vcc-napi",
+    "projects/packages/valkyrie/crates/vcc-wasm",
     "projects/runtimes/legend-vm",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
@@ -34,10 +39,16 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 
 [workspace.dependencies]
 # Oak / Acorn：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。
-acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
-acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
-acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
+acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-x64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-aarch64 = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-dex = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-mach-o = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
+acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "fbed2df1626ec3800cb2e54b7b9c730bf8a2f996" }
 oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
+oak-testing = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684", features = ["serde"] }
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
 oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
@@ -56,6 +67,10 @@ nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
 # Valkyrie frontend（语言语义与 frontend-owned Semantic MIR）
 rusty-valkyrie = { path = "examples/rusty-valkyrie" }
+# Valkyrie 产品装配（Legion / Asgard CLI 与发行入口）
+legion = { path = "projects/packages/valkyrie/crates/legion" }
+legion-workspace = { path = "projects/packages/valkyrie/crates/legion-workspace" }
+asgard = { path = "projects/packages/valkyrie/crates/asgard" }
 # Nyar Runtime（Nyar 平台的私有运行时）
 legend-vm = { path = "projects/runtimes/legend-vm" }
 odin-vm = { path = "projects/runtimes/odin-vm" }
@@ -86,6 +101,9 @@ ed25519-dalek = "3.0.0"
 thiserror = "2.0.21"
 napi = { version = "3.14.2", default-features = true, features = ["napi4"] }
 napi-derive = "3.6.12"
+napi-build = "2"
+gag = "1.0.0"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [profile.release]
 lto = false

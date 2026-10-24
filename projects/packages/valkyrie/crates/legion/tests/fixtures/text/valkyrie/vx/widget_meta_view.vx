@@ -1,0 +1,7 @@
+
+widget Counter {
+    micro view() {
+        <% if show %><div>{count}</div><% end %>
+    }
+}
+

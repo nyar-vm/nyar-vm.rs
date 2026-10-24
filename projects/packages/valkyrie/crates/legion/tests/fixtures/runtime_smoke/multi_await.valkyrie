@@ -1,0 +1,36 @@
+trait Future {
+    type Output
+
+    micro poll(mut self) -> bool
+}
+
+class ReadyFuture {
+    done: bool
+}
+
+imply ReadyFuture: Future {
+    type Output = i32
+
+    micro poll(mut self) -> bool {
+        if !self.done {
+            self.done = true
+            return false
+        }
+        return true
+    }
+}
+
+micro async_twice() {
+    let a: Future<i32> = ReadyFuture { done: false }
+    a.await
+    let b: Future<i32> = ReadyFuture { done: false }
+    b.await
+    return
+}
+
+[main]
+micro main() {
+    async_twice()
+    print("suspend_ok")
+    return
+}

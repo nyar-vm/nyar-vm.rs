@@ -1,0 +1,96 @@
+class Rectangle {
+    width: f64
+    height: f64
+    
+    get area(self) -> f64 {
+        self.width * self.height
+    }
+    
+    get perimeter(self) -> f64 {
+        2.0 * (self.width + self.height)
+    }
+}
+
+class Temperature {
+    celsius: f64
+    
+    get fahrenheit(self) -> f64 {
+        self.celsius * 9.0 / 5.0 + 32.0
+    }
+    
+    set fahrenheit(mut self, value: f64) {
+        self.celsius = (value - 32.0) * 5.0 / 9.0
+    }
+    
+    get kelvin(self) -> f64 {
+        self.celsius + 273.15
+    }
+    
+    set kelvin(mut self, value: f64) {
+        self.celsius = value - 273.15
+    }
+}
+
+class Person {
+    private _name: utf8
+    private _age: i32
+    
+    get name(self) -> utf8 {
+        self._name
+    }
+    
+    set name(mut self, value: utf8) {
+        self._name = value
+    }
+    
+    get age(self) -> i32 {
+        self._age
+    }
+    
+    get full_name(self) -> utf8 {
+        "Person: {self._name}"
+    }
+}
+
+class BankAccount {
+    balance: f64
+    min_balance: f64
+    
+    set balance(mut self, value: f64) {
+        if value < self.min_balance {
+            print("Error: Balance below minimum")
+            return
+        }
+        self.balance = value
+    }
+    
+    get balance(self) -> f64 {
+        self.balance
+    }
+}
+
+class Counter {
+    private _count: u32 = 0
+    
+    get count(self) -> u32 {
+        self._count
+    }
+    
+    set count(mut self, new_value: u32) {
+        if new_value > 1000 {
+            print("Error: Counter exceeds maximum")
+            return
+        }
+        self._count = new_value
+    }
+    
+    micro increment(mut self) {
+        self.count = self.count + 1
+    }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

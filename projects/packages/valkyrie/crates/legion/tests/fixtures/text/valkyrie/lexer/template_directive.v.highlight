@@ -1,0 +1,4 @@
+Span { kind: Punctuation, span: 14..15, text: "<", modifier: null }
+Span { kind: Identifier, span: 15..18, text: "div", modifier: null }
+Span { kind: Operator, span: 18..19, text: "/", modifier: null }
+Span { kind: Punctuation, span: 19..20, text: ">", modifier: null }

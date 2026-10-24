@@ -1,0 +1,16 @@
+micro inner() -> i32 {
+    raise 10
+}
+
+[main]
+micro main() -> ExitCode {
+    let inner_val: i32 = catch inner() {
+        case msg:
+            resume msg
+    }
+    let outer_val: i32 = catch raise inner_val + 32 {
+        else:
+            resume inner_val + 32
+    }
+    return ExitCode(outer_val)
+}

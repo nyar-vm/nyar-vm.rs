@@ -1,0 +1,122 @@
+class Logger {
+    private messages: [utf8]
+    
+    initiate(mut self) {
+        self.messages = []
+    }
+    
+    set message(mut self, msg: utf8) {
+        let timestamp = "2024-01-01T00:00:00"
+        self.messages.push("[{timestamp}] {msg}")
+    }
+    
+    micro get_messages(self) -> [utf8] {
+        self.messages
+    }
+    
+    micro get_count(self) -> u32 {
+        self.messages.length
+    }
+}
+
+class SecureUser {
+    private username: utf8
+    private password_hash: utf8 = ""
+    
+    initiate(mut self, username: utf8) {
+        self.username = username
+    }
+    
+    get username(self) -> utf8 {
+        self.username
+    }
+    
+    set password(mut self, plain_password: utf8) {
+        self.password_hash = "hashed_{plain_password}"
+        print("Password updated for user: {self.username}")
+    }
+    
+    micro verify_password(self, plain_password: utf8) -> bool {
+        self.password_hash == "hashed_{plain_password}"
+    }
+}
+
+class EventEmitter {
+    private listeners: [utf8]
+    
+    initiate(mut self) {
+        self.listeners = []
+    }
+    
+    set on_event(mut self, handler: utf8) {
+        self.listeners.push(handler)
+        print("Event handler registered: {handler}")
+    }
+    
+    micro trigger(self, event: utf8) {
+        print("Triggering event: {event}")
+        loop listener in self.listeners {
+            print("  -> {listener} handling {event}")
+        }
+    }
+    
+    micro listener_count(self) -> u32 {
+        self.listeners.length
+    }
+}
+
+class Configuration {
+    private settings: [utf8]
+    
+    initiate(mut self) {
+        self.settings = []
+    }
+    
+    set setting(mut self, config_line: utf8) {
+        self.settings.push(config_line)
+    }
+    
+    micro apply(self) {
+        print("Applying {self.settings.length} settings:")
+        loop setting in self.settings {
+            print("  - {setting}")
+        }
+    }
+}
+
+let logger = Logger {}
+
+logger.message = "System starting"
+logger.message = "Loading modules"
+logger.message = "Ready"
+
+print("Logger has {logger.get_count()} messages")
+loop msg in logger.get_messages() {
+    print(msg)
+}
+
+let user = SecureUser { username: "admin" }
+print("User: {user.username}")
+
+user.password = "secret123"
+let verified_ok = user.verify_password("secret123")
+print("Password verified: {verified_ok}")
+let verified_wrong = user.verify_password("wrong")
+print("Password verified wrong: {verified_wrong}")
+
+let emitter = EventEmitter {}
+
+emitter.on_event = "handler1"
+emitter.on_event = "handler2"
+emitter.on_event = "handler3"
+
+print("Total listeners: {emitter.listener_count()}")
+emitter.trigger("click")
+
+let config = Configuration {}
+
+config.setting = "theme=dark"
+config.setting = "language=zh-CN"
+config.setting = "debug=true"
+
+config.apply()

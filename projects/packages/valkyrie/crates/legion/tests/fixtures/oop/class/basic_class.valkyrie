@@ -1,0 +1,19 @@
+class Person {
+    public name: utf8
+    private age: i32
+    
+    initiate(mut self, name: utf8, age: i32) {
+        self.name = name
+        self.age = age
+    }
+    
+    micro greet(self) {
+        print("Hello, I'm {self.name}")
+    }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

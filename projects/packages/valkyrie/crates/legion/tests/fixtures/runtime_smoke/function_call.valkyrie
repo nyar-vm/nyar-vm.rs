@@ -1,0 +1,21 @@
+[main]
+micro main(): ExitCode {
+    let input: i64 = 10
+    let expected: i64 = 55
+    let res: i64 = compute(input)
+    if res != expected {
+        return ExitCode(1)
+    }
+    return ExitCode(0)
+}
+
+micro compute(n: i64): i64 {
+    let sum: i64 = 0
+    let i: i64 = 1
+    let step: i64 = 1
+    while i <= n {
+        sum = sum + i
+        i = i + step
+    }
+    return sum
+}

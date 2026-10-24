@@ -1,0 +1,171 @@
+sealed class ConnectionState {
+    abstract get is_connected(self) -> bool
+    abstract get state_name(self) -> utf8
+}
+
+class Disconnected: ConnectionState {
+    override get is_connected(self) -> bool { false }
+    override get state_name(self) -> utf8 { "Disconnected" }
+    
+    micro connect(self, address: utf8) -> Connecting {
+        print("Connecting to {address}...")
+        Connecting { address: address, attempts: 0 }
+    }
+}
+
+class Connecting: ConnectionState {
+    address: utf8
+    attempts: u32
+    
+    override get is_connected(self) -> bool { false }
+    override get state_name(self) -> utf8 { "Connecting" }
+    
+    micro timeout(mut self) -> Connecting {
+        print("Connection timeout, attempt {self.attempts + 1}")
+        Connecting { address: self.address, attempts: self.attempts + 1 }
+    }
+    
+    micro success(self) -> Connected {
+        print("Connected to {self.address}")
+        Connected { address: self.address }
+    }
+    
+    micro fail(self) -> Disconnected {
+        print("Connection failed after {self.attempts} attempts")
+        Disconnected {}
+    }
+}
+
+class Connected: ConnectionState {
+    address: utf8
+    
+    override get is_connected(self) -> bool { true }
+    override get state_name(self) -> utf8 { "Connected" }
+    
+    micro disconnect(self) -> Disconnected {
+        print("Disconnecting from {self.address}")
+        Disconnected {}
+    }
+    
+    micro reconnect(self) -> Connecting {
+        print("Reconnecting to {self.address}")
+        Connecting { address: self.address, attempts: 0 }
+    }
+}
+
+micro handle_state(state: ConnectionState) -> ConnectionState {
+    match state {
+        case Disconnected {}: 
+            print("State: Disconnected - waiting for connect command")
+            state
+        case Connecting { address, attempts }:
+            print("State: Connecting to {address}, attempt {attempts}")
+            if attempts < 3 {
+                state.timeout()
+            } else {
+                state.fail()
+            }
+        case Connected { address }:
+            print("State: Connected to {address}")
+            state
+    }
+}
+
+micro state_transition(state: ConnectionState, event: utf8) -> ConnectionState {
+    match state {
+        case Disconnected {}: 
+            match event {
+                case "connect": state.connect("localhost:8080"),
+                case _: state
+            }
+        case Connecting { address, attempts }:
+            match event {
+                case "timeout": state.timeout(),
+                case "success": state.success(),
+                case "fail": state.fail(),
+                case _: state
+            }
+        case Connected {}:
+            match event {
+                case "disconnect": state.disconnect(),
+                case "reconnect": state.reconnect(),
+                case _: state
+            }
+    }
+}
+
+let state: ConnectionState = Disconnected {}
+print("Initial state: {state.state_name}")
+
+state = handle_state(state)
+
+state = state_transition(state, "connect")
+print("After connect: {state.state_name}")
+
+state = handle_state(state)
+print("After handle: {state.state_name}")
+
+state = state_transition(state, "timeout")
+print("After timeout: {state.state_name}")
+
+state = state_transition(state, "success")
+print("After success: {state.state_name}")
+
+state = handle_state(state)
+
+state = state_transition(state, "disconnect")
+print("After disconnect: {state.state_name}")
+
+state = handle_state(state)
+
+sealed class TrafficLight {
+    abstract get color(self) -> utf8
+    abstract get duration(self) -> u32
+}
+
+class Red: TrafficLight {
+    override get color(self) -> utf8 { "Red" }
+    override get duration(self) -> u32 { 30 }
+    
+    micro next(self) -> Green {
+        Green {}
+    }
+}
+
+class Yellow: TrafficLight {
+    override get color(self) -> utf8 { "Yellow" }
+    override get duration(self) -> u32 { 5 }
+    
+    micro next(self) -> Red {
+        Red {}
+    }
+}
+
+class Green: TrafficLight {
+    override get color(self) -> utf8 { "Green" }
+    override get duration(self) -> u32 { 25 }
+    
+    micro next(self) -> Yellow {
+        Yellow {}
+    }
+}
+
+micro cycle_light(light: TrafficLight) -> TrafficLight {
+    match light {
+        case Red {}: light.next(),
+        case Yellow {}: light.next(),
+        case Green {}: light.next(),
+    }
+}
+
+let traffic: TrafficLight = Red {}
+print("Traffic light: {traffic.color}, duration: {traffic.duration}s")
+
+traffic = cycle_light(traffic)
+print("Traffic light: {traffic.color}, duration: {traffic.duration}s")
+
+traffic = cycle_light(traffic)
+print("Traffic light: {traffic.color}, duration: {traffic.duration}s")
+
+traffic = cycle_light(traffic)
+print("Traffic light: {traffic.color}, duration: {traffic.duration}s")

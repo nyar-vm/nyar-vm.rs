@@ -1,0 +1,18 @@
+[main]
+micro main(): ExitCode {
+    let i: i32 = 0
+    let sum: i32 = 0
+    while i < 5 {
+        if i == 3 {
+            sum = sum + 10
+        }
+        else {
+            sum = sum + i
+        }
+        i = i + 1
+    }
+    if sum != 17 {
+        return ExitCode(1)
+    }
+    return ExitCode(0)
+}

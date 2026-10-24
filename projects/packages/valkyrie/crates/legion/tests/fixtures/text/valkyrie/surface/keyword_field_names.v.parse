@@ -1,0 +1,40 @@
+Root span=0..333
+  Trivia span=0..1 text="\n"
+  Statement span=1..87 kind=Class
+    leading_trivia span=1..1 text=""
+    ClassDeclaration span=1..87 name="LegionPublishTarget" class_kind=Structure
+      ObjectBody
+        ObjectField span=37..49 name="target"
+          TypePath span=45..49 name="utf8"
+        ObjectField span=54..64 name="type"
+          TypePath span=60..64 name="utf8"
+        ObjectField span=69..85 name="package_id"
+          TypePath span=81..85 name="utf8"
+    trailing_trivia span=87..89 text="\n\n"
+  Statement span=89..244 kind=Function
+    leading_trivia span=89..89 text=""
+    FunctionDeclaration span=89..244 name="empty_publish_target" kind=Micro
+      ReturnType span=121..140
+        TypePath span=121..140 name="LegionPublishTarget"
+      DeclarationBody span=142..243
+        ReturnStatement span=147..242
+          TermConstruct span=154..242 name="LegionPublishTarget"
+            ConstructField name="target"
+              TermLiteral span=192..194 kind=String
+            ConstructField name="type"
+              TermLiteral span=210..212 kind=String
+            ConstructField name="package_id"
+              TermLiteral span=234..236 kind=String
+    trailing_trivia span=244..246 text="\n\n"
+  Statement span=246..331 kind=Function
+    leading_trivia span=246..246 text=""
+    FunctionDeclaration span=246..331 name="publish_type_of" kind=Micro
+      Parameter span=268..295 name="target" variadic=None
+        TypePath span=276..295 name="LegionPublishTarget"
+      ReturnType span=300..304
+        TypePath span=300..304 name="utf8"
+      DeclarationBody span=306..330
+        ReturnStatement span=311..329
+          TermDotCall span=318..329 name="type"
+            TermName span=318..324 name="target"
+    trailing_trivia span=331..333 text="\n\n"

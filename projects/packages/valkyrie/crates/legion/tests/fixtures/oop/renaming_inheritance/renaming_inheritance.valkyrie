@@ -1,0 +1,83 @@
+open class Display {
+    micro show(self) {
+        print("Display show")
+    }
+}
+
+open class Printer {
+    micro show(self) {
+        print("Printer show")
+    }
+    
+    micro print(self) {
+        print("Printing...")
+    }
+}
+
+class Document(display: Display, printer: Printer) {
+    micro display_document(self) {
+        self.display.show()
+        self.printer.print()
+    }
+}
+
+open class FileReader {
+    micro read(self) -> utf8 {
+        "Reading from file"
+    }
+    
+    micro close(self) {
+        print("Closing file")
+    }
+}
+
+open class NetworkReader {
+    micro read(self) -> utf8 {
+        "Reading from network"
+    }
+    
+    micro close(self) {
+        print("Closing network")
+    }
+}
+
+open class Logger {
+    micro log(self, message: utf8) {
+        print("Log: {message}")
+    }
+}
+
+class HybridReader(file_reader: FileReader, net_reader: NetworkReader, Logger) {
+    micro read_from_file(self) -> utf8 {
+        let content = self.file_reader.read()
+        self.log("Read from file: {content}")
+        content
+    }
+    
+    micro read_from_network(self) -> utf8 {
+        let content = self.net_reader.read()
+        self.log("Read from network: {content}")
+        content
+    }
+    
+    micro cleanup(self) {
+        self.file_reader.close()
+        self.net_reader.close()
+    }
+}
+
+open class Base {
+    value: i32
+    
+    micro get_value(self) -> i32 {
+        self.value
+    }
+}
+
+class Derived(primary: Base) {
+    extra: utf8
+    
+    micro get_primary_value(self) -> i32 {
+        self.primary.get_value()
+    }
+}

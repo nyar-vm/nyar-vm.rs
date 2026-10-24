@@ -1,0 +1,53 @@
+targets:
+- clr
+- jvm
+- node
+- wasi
+- native
+expect:
+  clr:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  jvm:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  native:
+    success: false
+    stdout: []
+    stderr: []
+    errors:
+    - process exited with code -1073741819
+    result: -1073741819
+  node:
+    success: false
+    stdout: []
+    stderr:
+    - node:internal/modules/run_main:107
+    - '    triggerUncaughtException('
+    - '    ^'
+    - ''
+    - '[CompileError: WebAssembly.instantiate(): Compiling function #0 failed: invalid value type 0x1 @+352]'
+    - ''
+    - Node.js v24.14.0
+    errors:
+    - process exited with code 1
+    result: 1
+  wasi:
+    success: false
+    stdout: []
+    stderr:
+    - 'Error: failed to compile: wasm[0]::function[0]'
+    - ''
+    - 'Caused by:'
+    - '    0: WebAssembly translation error'
+    - '    1: Invalid input WebAssembly code at offset 352: function references required for index reference types'
+    - ''
+    errors:
+    - process exited with code 1
+    result: 1

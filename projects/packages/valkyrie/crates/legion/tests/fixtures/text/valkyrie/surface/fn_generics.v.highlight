@@ -1,0 +1,15 @@
+Span { kind: Keyword, span: 1..3, text: "fn", modifier: null }
+Span { kind: Identifier, span: 4..12, text: "identity", modifier: null }
+Span { kind: Punctuation, span: 12..13, text: "<", modifier: null }
+Span { kind: Identifier, span: 13..14, text: "T", modifier: null }
+Span { kind: Punctuation, span: 14..15, text: ">", modifier: null }
+Span { kind: Punctuation, span: 15..16, text: "(", modifier: null }
+Span { kind: Identifier, span: 16..21, text: "value", modifier: null }
+Span { kind: Punctuation, span: 21..22, text: ":", modifier: null }
+Span { kind: Identifier, span: 23..24, text: "T", modifier: null }
+Span { kind: Punctuation, span: 24..25, text: ")", modifier: null }
+Span { kind: Operator, span: 26..28, text: "->", modifier: null }
+Span { kind: Identifier, span: 29..30, text: "T", modifier: null }
+Span { kind: Punctuation, span: 31..32, text: "{", modifier: null }
+Span { kind: Identifier, span: 37..42, text: "value", modifier: null }
+Span { kind: Punctuation, span: 43..44, text: "}", modifier: null }

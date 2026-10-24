@@ -1,0 +1,12 @@
+class AccessExample {
+    public public_field: i32
+    private private_field: i32
+    protected protected_field: i32
+    internal internal_field: i32
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

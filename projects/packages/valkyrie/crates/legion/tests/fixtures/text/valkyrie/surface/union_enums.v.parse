@@ -1,0 +1,15 @@
+Root span=0..101
+  Trivia span=0..1 text="\n"
+  Statement span=1..55 kind=Unite
+    leading_trivia span=1..1 text=""
+    UniteDeclaration span=1..55 name="JsonValue" sum_kind=Union
+      UniteVariant span=23..27 name="Null"
+      UniteVariant span=32..53 name="Number"
+    trailing_trivia span=55..57 text="\n\n"
+  Statement span=57..99 kind=Unite
+    leading_trivia span=57..57 text=""
+    UniteDeclaration span=57..99 name="Color" sum_kind=Enum
+      UniteVariant span=75..78 name="Red"
+      UniteVariant span=83..88 name="Green"
+      UniteVariant span=93..97 name="Blue"
+    trailing_trivia span=99..101 text="\n\n"

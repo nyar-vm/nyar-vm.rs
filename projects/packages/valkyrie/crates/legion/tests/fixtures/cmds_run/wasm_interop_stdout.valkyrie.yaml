@@ -1,0 +1,13 @@
+targets:
+- wasm32-node-unknown-wasm
+expect:
+  wasm32-node-unknown-wasm:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for wasm32-node-unknown-wasm: physical contract failed [BPHYS001] main::main at value 1: void/unit cannot occupy a physical value slot'
+    errors: []

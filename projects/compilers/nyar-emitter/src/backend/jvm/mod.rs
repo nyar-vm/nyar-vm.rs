@@ -1,16 +1,12 @@
 //! `JVM` 后端容器入口。
 //!
-//! 这里按 `class / jar` 两个输出边界收口：`class` 格式模型经 [`crate::transitional`] 过渡，
-//! `jar` 的写出委托 `acorn-jvm`，成员名解码由本模块的 [`JvmJarPackage`] 做平台无关归一化。
+//! 这里按 `class / jar` 两个输出边界收口：`class` 与 `jar` 格式模型统一由
+//! `acorn-jvm` 提供，本模块只负责后端编排。
 
 #![deny(missing_docs)]
 
-use std::{
-    io::{Cursor, Read},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
-use acorn_jvm::jar as acorn_jar;
 use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
@@ -23,98 +19,8 @@ pub use crate::transitional::binary::{
         ConstantPoolBuilder, JvmClassError, JvmClassFile, JvmCodeBody, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef,
         JvmMethodSignature, JvmTypeDescriptor, decode_instructions, encode_instructions,
     },
-    jar::{JvmJarEntry, JvmJarError},
+    jar::{JvmJarEntry, JvmJarError, JvmJarPackage},
 };
-
-const MANIFEST_PATH: &str = "META-INF/MANIFEST.MF";
-
-/// `JAR` 产物模型。
-///
-/// 形状与 `acorn-jvm` 的同名模型一致；写出仍委托 `acorn-jvm`，
-/// 但**解码**由本模块负责：`acorn-jvm` 用 `ZipFile::enclosed_name()`（`PathBuf`）
-/// 还原成员名，在 Windows 上会把 `META-INF/MANIFEST.MF` 渲染成
-/// `META-INF\MANIFEST.MF`，于是清单匹配失败（`main_class` 丢失，`read_class` 也查不到类）。
-/// 这里改用 `ZipFile::name()` 的原始 `ZIP` 成员名，保证跨平台一致。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct JvmJarPackage {
-    /// 归档文件名。
-    pub file_name: String,
-    /// `MANIFEST.MF` 主类。
-    pub main_class: Option<String>,
-    /// 归档入口列表。
-    pub entries: Vec<JvmJarEntry>,
-}
-
-impl JvmJarPackage {
-    /// 创建一个新的 `JAR` 产物模型。
-    pub fn new(file_name: impl Into<String>) -> Self {
-        Self { file_name: file_name.into(), main_class: None, entries: Vec::new() }
-    }
-
-    /// 追加一个归档入口。
-    pub fn push_entry(&mut self, path: impl Into<String>, bytes: Vec<u8>) {
-        self.entries.push(JvmJarEntry { path: path.into(), bytes });
-    }
-
-    /// 将 `ClassFile` 编码后放入 `JAR`。
-    pub fn push_class(&mut self, class_file: &JvmClassFile) -> Result<(), JvmJarError> {
-        let path = format!("{}.class", class_file.internal_name.trim_end_matches(".class"));
-        self.push_entry(path, class_file.to_bytes().map_err(JvmJarError::Class)?);
-        Ok(())
-    }
-
-    /// 从归档中读取指定类。
-    pub fn read_class(&self, internal_name: &str) -> Result<Option<JvmClassFile>, JvmJarError> {
-        let target_path = format!("{}.class", internal_name.trim_end_matches(".class"));
-        let Some(entry) = self.entries.iter().find(|entry| entry.path == target_path)
-        else {
-            return Ok(None);
-        };
-        Ok(Some(JvmClassFile::from_bytes(&entry.bytes).map_err(JvmJarError::Class)?))
-    }
-
-    /// 遍历归档中所有 `.class` 入口，返回 `(路径, 字节切片)` 迭代器。
-    pub fn iter_classes(&self) -> impl Iterator<Item = (&str, &[u8])> {
-        self.entries.iter().filter_map(|entry| entry.path.ends_with(".class").then(|| (entry.path.as_str(), entry.bytes.as_slice())))
-    }
-
-    /// 将 `JAR` 模型编码为二进制归档。写出委托 `acorn-jvm`，保持既有产物语义不变。
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JvmJarError> {
-        let mut package = acorn_jar::JvmJarPackage::new(self.file_name.clone());
-        package.main_class = self.main_class.clone();
-        for entry in &self.entries {
-            package.push_entry(entry.path.clone(), entry.bytes.clone());
-        }
-        package.to_bytes()
-    }
-
-    /// 从二进制归档解码出 `JAR` 模型。
-    pub fn from_bytes(file_name: impl Into<String>, bytes: &[u8]) -> Result<Self, JvmJarError> {
-        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(JvmJarError::Zip)?;
-        let mut package = Self::new(file_name);
-        for index in 0..archive.len() {
-            let mut member = archive.by_index(index).map_err(JvmJarError::Zip)?;
-            if member.is_dir() {
-                continue;
-            }
-            let path = member.name().map_err(JvmJarError::Zip)?.to_string();
-            let mut entry_bytes = Vec::new();
-            member.read_to_end(&mut entry_bytes).map_err(JvmJarError::Io)?;
-            if path.eq_ignore_ascii_case(MANIFEST_PATH) {
-                package.main_class = parse_manifest_main_class(&entry_bytes);
-            }
-            else {
-                package.push_entry(path, entry_bytes);
-            }
-        }
-        Ok(package)
-    }
-}
-
-fn parse_manifest_main_class(bytes: &[u8]) -> Option<String> {
-    let manifest = String::from_utf8_lossy(bytes);
-    manifest.lines().find_map(|line| line.strip_prefix("Main-Class:").map(|value| value.trim().to_string()))
-}
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;

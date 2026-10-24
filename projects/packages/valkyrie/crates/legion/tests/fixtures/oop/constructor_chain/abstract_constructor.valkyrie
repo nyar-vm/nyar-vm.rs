@@ -1,0 +1,37 @@
+abstract class Base {
+    value: i32
+    
+    initiate(mut self, value: i32) {
+        self.value = value
+    }
+    
+    abstract micro process(self)
+}
+
+abstract class Middle: Base {
+    extra: utf8
+    
+    initiate(mut self, value: i32, extra: utf8) {
+        super.initiate(value)
+        self.extra = extra
+    }
+}
+
+class Derived: Middle {
+    factor: f64
+    
+    initiate(mut self, value: i32, extra: utf8, factor: f64) {
+        super.initiate(value, extra)
+        self.factor = factor
+    }
+    
+    override micro process(self) {
+        let result = (self.value as f64) * self.factor
+        print("{self.extra}: {result}")
+    }
+}
+
+micro main() {
+    let derived = Derived { value: 10, extra: "Result", factor: 2.5 }
+    derived.process()
+}

@@ -1,0 +1,38 @@
+unite Option<T> {
+    Some { value: T },
+    None
+}
+
+unite Result<T, E> {
+    Fine { value: T },
+    Fail { error: E }
+}
+
+micro test_option_subtyping() {
+    let opt1: Option<i32> = Some { value: 42 }
+    let opt2: Option<i32> = None
+    
+    micro process(opt: Option<i32>) -> i32 {
+        match opt {
+            case Some { value }: value,
+            case None: 0,
+        }
+    }
+    
+    let r1 = process(Some { value: 100 })
+    let r2 = process(None)
+    
+    print("Result 1: {r1}")
+    print("Result 2: {r2}")
+}
+
+micro test_result_subtyping() {
+    let res1: Result<i32, utf8> = Fine { value: 42 }
+    let res2: Result<i32, utf8> = Fail { error: "error message" }
+    
+    print("Fine: {res1.is_fine()}")
+    print("Fail: {res2.is_fail()}")
+}
+
+test_option_subtyping()
+test_result_subtyping()

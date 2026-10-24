@@ -1,0 +1,34 @@
+<widget doc_page><div class="vp-page">
+<aside class="vp-sidebar">
+<div class="vp-sidebar-header">
+    <a :href="home_href" class="vp-sidebar-logo">{sidebar_title}</a>
+</div>
+<nav class="vp-sidebar-nav">
+    <loop section in sections>
+        <div class="vp-nav-section">
+            <if section.title != ''>
+                <span class="vp-nav-section-title">{section.title}</span>
+            </if>
+            <ul class="vp-nav-list">
+                <loop page in section.pages>
+                    <li>
+                        <a :href="page.href" @class="page.link_class">{page.title}</a>
+                    </li>
+                </loop>
+            </ul>
+        </div>
+    </loop>
+</nav>
+</aside>
+<main class="vp-content">
+<div class="vp-breadcrumb">
+    <a :href="home_href">文档首页</a>
+    <span>/</span>
+    <span>{section_name}</span>
+</div>
+<article class="vp-article">
+    <p>LEGION_DOC_SLOT</p>
+</article>
+</main>
+</div>
+</widget>

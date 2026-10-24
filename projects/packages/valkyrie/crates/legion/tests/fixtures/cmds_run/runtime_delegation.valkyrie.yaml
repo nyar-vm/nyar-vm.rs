@@ -1,0 +1,66 @@
+targets:
+- clr-microsoft-unknown-managed
+- jvm-openjdk-unknown-managed
+- wasm32-node-unknown-wasm
+- wasm32-unknown-wasi-wasi
+expect:
+  clr-microsoft-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for clr-microsoft-unknown-managed: Compiler representation planning failed: MissingBackendInterpreter { fragment: Identifier { text: "functions" }, projection_family: Clr, host_boundary: Clr }'
+    errors: []
+  jvm-openjdk-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for jvm-openjdk-unknown-managed: Compiler representation planning failed: MissingBackendInterpreter { fragment: Identifier { text: "functions" }, projection_family: Jvm, host_boundary: Jvm }'
+    errors: []
+  wasm32-node-unknown-wasm:
+    build_success: true
+    dry_run_success: true
+    run_success: true
+    run_contracts:
+    - logical_entry: main
+      physical_entry: main.mjs
+      invocation: node
+      validate: node main.mjs
+    per_artifact:
+      main.mjs:
+        run_success: true
+        exit_code: 0
+        stdout: []
+        stderr: []
+    artifacts:
+    - compile-evidence.txt
+    - main.mjs
+    - main.wasm
+    - run-contracts.txt
+    compile_errors: []
+    errors: []
+  wasm32-unknown-wasi-wasi:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts:
+    - compile-evidence.txt
+    - main.component-wit/
+    - main.component-wit/component.wit
+    - main.component-wit/deps/
+    - main.component-wit/deps/wasi-cli-0.2.12.wit
+    - main.core.wasm
+    - main.wasi
+    - run-contracts.txt
+    compile_errors:
+    - 'build failed for wasm32-unknown-wasi-wasi: 产物集合不完整：编译器报告声明的产物不存在：main.component.wit'
+    errors: []

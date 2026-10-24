@@ -1,0 +1,155 @@
+sealed class Expr {
+    abstract micro evaluate(self) -> f64
+}
+
+class Number: Expr {
+    value: f64
+    
+    override micro evaluate(self) -> f64 {
+        self.value
+    }
+}
+
+class Add: Expr {
+    left: Expr
+    right: Expr
+    
+    override micro evaluate(self) -> f64 {
+        self.left.evaluate() + self.right.evaluate()
+    }
+}
+
+class Subtract: Expr {
+    left: Expr
+    right: Expr
+    
+    override micro evaluate(self) -> f64 {
+        self.left.evaluate() - self.right.evaluate()
+    }
+}
+
+class Multiply: Expr {
+    left: Expr
+    right: Expr
+    
+    override micro evaluate(self) -> f64 {
+        self.left.evaluate() * self.right.evaluate()
+    }
+}
+
+class Divide: Expr {
+    left: Expr
+    right: Expr
+    
+    override micro evaluate(self) -> f64 {
+        let divisor = self.right.evaluate()
+        if divisor == 0.0 {
+            panic("Division by zero")
+        }
+        self.left.evaluate() / divisor
+    }
+}
+
+class Negate: Expr {
+    operand: Expr
+    
+    override micro evaluate(self) -> f64 {
+        -self.operand.evaluate()
+    }
+}
+
+class Power: Expr {
+    base: Expr
+    exponent: Expr
+    
+    override micro evaluate(self) -> f64 {
+        let b = self.base.evaluate()
+        let e = self.exponent.evaluate()
+        b.pow(e)
+    }
+}
+
+micro expr_to_string(expr: Expr) -> utf8 {
+    match expr {
+        case Number { value }: "{value}",
+        case Add { left, right }: "({expr_to_string(left)} + {expr_to_string(right)})",
+        case Subtract { left, right }: "({expr_to_string(left)} - {expr_to_string(right)})",
+        case Multiply { left, right }: "({expr_to_string(left)} * {expr_to_string(right)})",
+        case Divide { left, right }: "({expr_to_string(left)} / {expr_to_string(right)})",
+        case Negate { operand }: "-{expr_to_string(operand)}",
+        case Power { base, exponent }: "({expr_to_string(base)} ^ {expr_to_string(exponent)})",
+    }
+}
+
+micro expr_depth(expr: Expr) -> u32 {
+    match expr {
+        case Number {}: 1,
+        case Add { left, right }: 1 + expr_depth(left).max(expr_depth(right)),
+        case Subtract { left, right }: 1 + expr_depth(left).max(expr_depth(right)),
+        case Multiply { left, right }: 1 + expr_depth(left).max(expr_depth(right)),
+        case Divide { left, right }: 1 + expr_depth(left).max(expr_depth(right)),
+        case Negate { operand }: 1 + expr_depth(operand),
+        case Power { base, exponent }: 1 + expr_depth(base).max(expr_depth(exponent)),
+    }
+}
+
+micro count_operations(expr: Expr) -> u32 {
+    match expr {
+        case Number {}: 0,
+        case Add {}: 1 + count_operations(expr.left) + count_operations(expr.right),
+        case Subtract {}: 1 + count_operations(expr.left) + count_operations(expr.right),
+        case Multiply {}: 1 + count_operations(expr.left) + count_operations(expr.right),
+        case Divide {}: 1 + count_operations(expr.left) + count_operations(expr.right),
+        case Negate {}: 1 + count_operations(expr.operand),
+        case Power {}: 1 + count_operations(expr.base) + count_operations(expr.exponent),
+    }
+}
+
+let num1 = Number { value: 5.0 }
+let num2 = Number { value: 3.0 }
+let num3 = Number { value: 2.0 }
+let num4 = Number { value: 4.0 }
+
+let add_expr = Add { left: num1, right: num2 }
+print("Expression: {expr_to_string(add_expr)}")
+print("Result: {add_expr.evaluate()}")
+
+let mul_expr = Multiply { left: num1, right: num2 }
+print("Expression: {expr_to_string(mul_expr)}")
+print("Result: {mul_expr.evaluate()}")
+
+let complex_expr = Add {
+    left: Multiply { left: num1, right: num2 },
+    right: Subtract { left: num3, right: num4 }
+}
+print("Expression: {expr_to_string(complex_expr)}")
+print("Result: {complex_expr.evaluate()}")
+print("Depth: {expr_depth(complex_expr)}")
+print("Operations: {count_operations(complex_expr)}")
+
+let neg_expr = Negate { operand: num1 }
+print("Expression: {expr_to_string(neg_expr)}")
+print("Result: {neg_expr.evaluate()}")
+
+let nested = Multiply {
+    left: Add { left: num1, right: num2 },
+    right: Negate { operand: num3 }
+}
+print("Expression: {expr_to_string(nested)}")
+print("Result: {nested.evaluate()}")
+
+let power_expr = Power { base: num1, right: Number { value: 2.0 } }
+print("Expression: {expr_to_string(power_expr)}")
+print("Result: {power_expr.evaluate()}")
+
+let deep_expr = Add {
+    left: Multiply {
+        left: Add { left: num1, right: num2 },
+        right: Subtract { left: num3, right: num4 }
+    },
+    right: Negate { operand: Multiply { left: num1, right: num1 } }
+}
+print("Expression: {expr_to_string(deep_expr)}")
+print("Result: {deep_expr.evaluate()}")
+print("Depth: {expr_depth(deep_expr)}")
+print("Operations: {count_operations(deep_expr)}")

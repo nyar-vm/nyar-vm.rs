@@ -1,0 +1,142 @@
+class DataProcessor {
+    raw_data: [i32]
+    private _processed_data: [i32]?
+    private _computed_sum: i32?
+    
+    initiate(mut self, data: [i32]) {
+        self.raw_data = data
+        self._processed_data = none
+        self._computed_sum = none
+    }
+    
+    get processed(mut self) -> [i32] {
+        if self._processed_data.is_none() {
+            print("Computing processed data...")
+            let mut result: [i32] = []
+            loop item in self.raw_data {
+                result.push(item * 2)
+            }
+            self._processed_data = result
+        }
+        self._processed_data.unwrap()
+    }
+    
+    get sum(mut self) -> i32 {
+        if self._computed_sum.is_none() {
+            print("Computing sum...")
+            let mut total = 0
+            loop item in self.raw_data {
+                total += item
+            }
+            self._computed_sum = total
+        }
+        self._computed_sum.unwrap()
+    }
+    
+    get has_cached_data(self) -> bool {
+        self._processed_data.is_some()
+    }
+    
+    get has_cached_sum(self) -> bool {
+        self._computed_sum.is_some()
+    }
+    
+    micro invalidate_cache(mut self) {
+        self._processed_data = none
+        self._computed_sum = none
+    }
+}
+
+class ConfigLoader {
+    config_path: utf8
+    private _config: utf8?
+    private _load_count: u32 = 0
+    
+    initiate(mut self, path: utf8) {
+        self.config_path = path
+    }
+    
+    get config(mut self) -> utf8 {
+        if self._config.is_none() {
+            self._load_count += 1
+            print("Loading config from {self.config_path}...")
+            self._config = "config_content_from_{self.config_path}"
+        }
+        self._config.unwrap()
+    }
+    
+    get load_count(self) -> u32 {
+        self._load_count
+    }
+    
+    micro reload(mut self) {
+        self._config = none
+    }
+}
+
+class ExpensiveResource {
+    private _resource_id: u64?
+    private _initialized: bool = false
+    
+    get resource_id(mut self) -> u64 {
+        if self._resource_id.is_none() {
+            print("Initializing expensive resource...")
+            self._resource_id = 12345u64
+            self._initialized = true
+        }
+        self._resource_id.unwrap()
+    }
+    
+    get is_initialized(self) -> bool {
+        self._initialized
+    }
+}
+
+let processor = DataProcessor { data: [1, 2, 3, 4, 5] }
+
+print("Before first access - has_cached_data: {processor.has_cached_data}")
+print("Before first access - has_cached_sum: {processor.has_cached_sum}")
+
+let processed = processor.processed
+print("Processed: {processed}")
+print("After first access - has_cached_data: {processor.has_cached_data}")
+
+let processed2 = processor.processed
+print("Processed again (cached): {processed2}")
+
+let sum1 = processor.sum
+print("Sum: {sum1}")
+print("After first sum access - has_cached_sum: {processor.has_cached_sum}")
+
+let sum2 = processor.sum
+print("Sum again (cached): {sum2}")
+
+processor.invalidate_cache()
+print("After invalidation - has_cached_data: {processor.has_cached_data}")
+print("After invalidation - has_cached_sum: {processor.has_cached_sum}")
+
+let config_loader = ConfigLoader { path: "/etc/app/config.json" }
+print("Load count before: {config_loader.load_count}")
+
+let cfg1 = config_loader.config
+print("Config: {cfg1}")
+print("Load count after first: {config_loader.load_count}")
+
+let cfg2 = config_loader.config
+print("Config again: {cfg2}")
+print("Load count after second: {config_loader.load_count}")
+
+config_loader.reload()
+let cfg3 = config_loader.config
+print("Config after reload: {cfg3}")
+print("Load count after reload: {config_loader.load_count}")
+
+let resource = ExpensiveResource {}
+print("Resource initialized: {resource.is_initialized}")
+
+let id1 = resource.resource_id
+print("Resource ID: {id1}")
+print("Resource initialized after access: {resource.is_initialized}")
+
+let id2 = resource.resource_id
+print("Resource ID again: {id2}")

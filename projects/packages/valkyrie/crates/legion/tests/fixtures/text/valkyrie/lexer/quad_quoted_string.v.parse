@@ -1,0 +1,3 @@
+Root span=0..18
+  Error span=0..17 message="expected declaration near '\"\"\"\"\"\"hello\"\"\"\"\"\"'" text="\"\"\"\"\"\"hello\"\"\"\"\"\""
+  Trivia span=17..18 text="\n"

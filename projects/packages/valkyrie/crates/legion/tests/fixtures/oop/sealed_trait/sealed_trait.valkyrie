@@ -1,0 +1,128 @@
+sealed trait Message {
+    micro process(self) -> utf8
+}
+
+class TextMessage: Message {
+    content: utf8
+    
+    override micro process(self) -> utf8 {
+        "Text: {self.content}"
+    }
+}
+
+class ImageMessage: Message {
+    url: utf8
+    width: u32
+    height: u32
+    
+    override micro process(self) -> utf8 {
+        "Image: {self.url} ({self.width}x{self.height})"
+    }
+}
+
+class VideoMessage: Message {
+    url: utf8
+    duration: u32
+    
+    override micro process(self) -> utf8 {
+        "Video: {self.url} ({self.duration}s)"
+    }
+}
+
+micro handle_message(msg: Message) -> utf8 {
+    match msg {
+        case TextMessage { content }: "Processing text: {content}",
+        case ImageMessage { url, width, height }: "Processing image from {url}",
+        case VideoMessage { url, duration }: "Processing video from {url}",
+    }
+}
+
+sealed trait Shape {
+    micro area(self) -> f64
+    micro perimeter(self) -> f64
+}
+
+class Circle: Shape {
+    radius: f64
+    
+    override micro area(self) -> f64 {
+        3.14159 * self.radius * self.radius
+    }
+    
+    override micro perimeter(self) -> f64 {
+        2.0 * 3.14159 * self.radius
+    }
+}
+
+class Rectangle: Shape {
+    width: f64
+    height: f64
+    
+    override micro area(self) -> f64 {
+        self.width * self.height
+    }
+    
+    override micro perimeter(self) -> f64 {
+        2.0 * (self.width + self.height)
+    }
+}
+
+micro describe_shape(shape: Shape) -> utf8 {
+    match shape {
+        case Circle { radius }: "Circle(r={radius}, area={shape.area()})",
+        case Rectangle { width, height }: "Rectangle({width}x{height}, area={shape.area()})",
+    }
+}
+
+sealed trait Result<T, E> {
+    micro is_ok(self) -> bool
+    micro is_err(self) -> bool
+}
+
+class Ok<T, E>: Result<T, E> {
+    value: T
+    
+    override micro is_ok(self) -> bool { true }
+    override micro is_err(self) -> bool { false }
+}
+
+class Err<T, E>: Result<T, E> {
+    error: E
+    
+    override micro is_ok(self) -> bool { false }
+    override micro is_err(self) -> bool { true }
+}
+
+micro check_result<T, E>(result: Result<T, E>) -> utf8 {
+    match result {
+        case Ok { value }: "Success with value",
+        case Err { error }: "Error occurred",
+    }
+}
+
+let text_msg = TextMessage { content: "Hello, World!" }
+let image_msg = ImageMessage { url: "https://example.com/img.png", width: 800, height: 600 }
+let video_msg = VideoMessage { url: "https://example.com/video.mp4", duration: 120 }
+
+print(handle_message(text_msg))
+print(handle_message(image_msg))
+print(handle_message(video_msg))
+
+print(text_msg.process())
+print(image_msg.process())
+print(video_msg.process())
+
+let circle = Circle { radius: 5.0 }
+let rect = Rectangle { width: 4.0, height: 3.0 }
+
+print(describe_shape(circle))
+print(describe_shape(rect))
+
+let ok_result: Result<i32, utf8> = Ok { value: 42 }
+let err_result: Result<i32, utf8> = Err { error: "Something went wrong" }
+
+print("Ok result: is_ok={ok_result.is_ok()}, is_err={ok_result.is_err()}")
+print("Err result: is_ok={err_result.is_ok()}, is_err={err_result.is_err()}")
+
+print(check_result(ok_result))
+print(check_result(err_result))

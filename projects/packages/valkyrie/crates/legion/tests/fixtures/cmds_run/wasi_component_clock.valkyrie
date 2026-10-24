@@ -1,0 +1,20 @@
+[wasi("wasi:clocks/monotonic-clock", "now")]
+private micro monotonic_now(): i64
+
+[wasi("wasi:clocks/monotonic-clock", "resolution")]
+private micro monotonic_resolution(): i64
+
+[main]
+micro main(): i64 {
+    let resolution: i64 = monotonic_resolution()
+    if resolution <= 0 {
+        return 2
+    }
+
+    let current: i64 = monotonic_now()
+    if current < 0 {
+        return 3
+    }
+
+    return 0
+}

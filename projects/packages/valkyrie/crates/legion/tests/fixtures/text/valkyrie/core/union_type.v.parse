@@ -1,0 +1,9 @@
+Root span=0..25
+  Trivia span=0..1 text="\n"
+  Statement span=1..23 kind=TypeAlias
+    leading_trivia span=1..1 text=""
+    TypeAliasDeclaration span=1..23 name="Mix"
+      TypeUnion span=12..22
+        TypePath span=12..15 name="i64"
+        TypePath span=18..22 name="utf8"
+    trailing_trivia span=23..25 text="\n\n"

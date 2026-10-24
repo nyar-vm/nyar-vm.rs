@@ -1,0 +1,44 @@
+trait Future {
+    type Output
+
+    micro poll(mut self) -> bool
+
+    micro output(self) -> Output
+}
+
+class ReadyFuture {
+    done: bool
+    value: i32
+}
+
+imply ReadyFuture: Future {
+    type Output = i32
+
+    micro poll(mut self) -> bool {
+        if !self.done {
+            self.value = 42
+            self.done = true
+            return false
+        }
+        return true
+    }
+
+    micro output(self) -> i32 {
+        return self.value
+    }
+}
+
+micro await_value() -> i32 {
+    let future: Future<i32> = ReadyFuture { done: false, value: 0 }
+    let result: i32 = future.await
+    return result
+}
+
+[main]
+micro main() -> ExitCode {
+    let value: i32 = await_value()
+    if value == 42 {
+        return ExitCode(0)
+    }
+    return ExitCode(1)
+}

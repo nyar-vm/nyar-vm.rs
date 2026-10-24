@@ -1,0 +1,28 @@
+sealed class Expr {
+    Number { value: f64 },
+    Add { left: Expr, right: Expr },
+    Mul { left: Expr, right: Expr }
+}
+
+micro eval(e: Expr) -> f64 {
+    match e {
+        case Number(n): n,
+        case Add(a, b): eval(a) + eval(b),
+        case Mul(a, b): eval(a) * eval(b),
+    }
+}
+
+micro test_eval() {
+    let expr = Add {
+        left: Number { value: 1.0 },
+        right: Mul {
+            left: Number { value: 2.0 },
+            right: Number { value: 3.0 }
+        }
+    }
+    
+    let result = eval(expr)
+    print("Result: {result}")
+}
+
+test_eval()

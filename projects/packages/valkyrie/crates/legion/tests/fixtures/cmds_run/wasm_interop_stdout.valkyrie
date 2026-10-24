@@ -1,0 +1,8 @@
+[wasm("env", "emit_byte")]
+micro console_write_line(message: utf16): unit;
+
+[main]
+micro main() -> i64 {
+    console_write_line("hello from node")
+    return 0;
+}

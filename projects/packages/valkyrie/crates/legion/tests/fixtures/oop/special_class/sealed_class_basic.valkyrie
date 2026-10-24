@@ -1,0 +1,24 @@
+sealed class Result<T, E> {
+    abstract get is_fine(self) -> bool
+    abstract get is_fail(self) -> bool
+}
+
+class Fine<T, E>: Result<T, E> {
+    value: T
+    
+    override get is_fine(self) -> bool { true }
+    override get is_fail(self) -> bool { false }
+}
+
+class Fail<T, E>: Result<T, E> {
+    error: E
+    
+    override get is_fine(self) -> bool { false }
+    override get is_fail(self) -> bool { true }
+}
+
+[main]
+micro main() {
+    print("oop_ok")
+    return
+}

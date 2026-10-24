@@ -1,0 +1,14 @@
+[wasm("env", "emit_byte")]
+micro console_write_line(message: utf16): unit;
+
+[main]
+micro alpha_entry() -> i64 {
+    console_write_line("hello from alpha")
+    return 0;
+}
+
+[main]
+micro beta_entry() -> i64 {
+    console_write_line("hello from beta")
+    return 0;
+}

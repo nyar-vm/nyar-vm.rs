@@ -1,0 +1,13 @@
+Root span=0..46
+  Trivia span=0..1 text="\n"
+  Statement span=1..44 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..44 name="identity" kind=Micro
+      Parameter span=16..24 name="value" variadic=None
+        TypePath span=23..24 name="T"
+      ReturnType span=29..30
+        TypePath span=29..30 name="T"
+      DeclarationBody span=32..43
+        TailExpression span=37..42
+          TermName span=37..42 name="value"
+    trailing_trivia span=44..46 text="\n\n"

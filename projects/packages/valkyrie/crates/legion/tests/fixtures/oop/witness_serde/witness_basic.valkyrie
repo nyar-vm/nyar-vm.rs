@@ -1,0 +1,73 @@
+trait Printable {
+    micro print(self) -> utf8
+}
+
+trait Serializable {
+    micro serialize(self) -> utf8
+    micro deserialize(data: utf8) -> Self
+}
+
+class Point {
+    x: f64
+    y: f64
+}
+
+imply Point: Printable {
+    micro print(self) -> utf8 {
+        "({self.x}, {self.y})"
+    }
+}
+
+imply Point: Serializable {
+    micro serialize(self) -> utf8 {
+        "{self.x},{self.y}"
+    }
+    
+    micro deserialize(data: utf8) -> Self {
+        let parts = data.split(",")
+        Point { x: parts[0].parse(), y: parts[1].parse() }
+    }
+}
+
+trait Animal {
+    micro make_sound(self)
+    micro name(self) -> utf8
+}
+
+class Dog {
+    name: utf8
+}
+
+imply Dog: Animal {
+    micro make_sound(self) {
+        print("Woof!")
+    }
+    
+    micro name(self) -> utf8 {
+        self.name.clone()
+    }
+}
+
+class Cat {
+    name: utf8
+}
+
+imply Cat: Animal {
+    micro make_sound(self) {
+        print("Meow!")
+    }
+    
+    micro name(self) -> utf8 {
+        self.name.clone()
+    }
+}
+
+let animals: [Animal] = [
+    Dog { name: "Buddy" },
+    Cat { name: "Whiskers" }
+]
+
+loop animal in animals {
+    print("{animal.name()} says:")
+    animal.make_sound()
+}

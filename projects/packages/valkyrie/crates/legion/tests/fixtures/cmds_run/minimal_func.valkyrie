@@ -1,0 +1,13 @@
+[main]
+micro main(): i64 {
+    let value: i64 = answer()
+    if value != 42 {
+        return 1
+    }
+
+    return 0
+}
+
+micro answer(): i64 {
+    return 42
+}

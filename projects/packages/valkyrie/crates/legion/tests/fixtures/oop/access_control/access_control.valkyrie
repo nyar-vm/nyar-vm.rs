@@ -1,0 +1,150 @@
+open class User {
+    public username: utf8
+    private password_hash: utf8
+    protected created_at: i64
+    internal cache_id: i32
+    
+    initiate(mut self, username: utf8, password: utf8) {
+        self.username = username
+        self.password_hash = self.hash_password(password)
+        self.created_at = 0
+        self.cache_id = 0
+    }
+    
+    private micro hash_password(self, password: utf8) -> utf8 {
+        "hashed_{password}"
+    }
+    
+    public micro get_username(self) -> utf8 {
+        self.username
+    }
+    
+    public micro verify_password(self, password: utf8) -> bool {
+        self.password_hash == self.hash_password(password)
+    }
+    
+    protected micro set_created_at(mut self, timestamp: i64) {
+        self.created_at = timestamp
+    }
+    
+    internal micro set_cache_id(mut self, id: i32) {
+        self.cache_id = id
+    }
+}
+
+class AdminUser: User {
+    permissions: [utf8]
+    
+    initiate(mut self, username: utf8, password: utf8) {
+        super.initiate(username, password)
+        self.permissions = []
+    }
+    
+    micro test_access(self) {
+        self.username = "admin"
+        self.created_at = 1234567890
+        self.cache_id = 1
+    }
+    
+    micro add_permission(mut self, permission: utf8) {
+        self.permissions.push(permission)
+    }
+}
+
+class Database {
+    private connection: utf8
+    
+    public micro query(self, sql: utf8) -> [utf8] {
+        self.validate_query(sql)
+        self.execute(sql)
+    }
+    
+    protected micro validate_query(self, sql: utf8) {
+        if sql.contains("DROP") {
+            print("Warning: DROP statement detected")
+        }
+    }
+    
+    private micro execute(self, sql: utf8) -> [utf8] {
+        ["result1", "result2"]
+    }
+    
+    internal micro reset_connection(mut self) {
+        self.connection = "new_connection"
+    }
+}
+
+open class BankAccount {
+    private balance: f64
+    
+    public get balance(self) -> f64 {
+        self.balance
+    }
+    
+    private set balance(mut self, value: f64) {
+        self.balance = value
+    }
+    
+    protected get account_type(self) -> utf8 {
+        "standard"
+    }
+    
+    internal get internal_id(self) -> i32 {
+        0
+    }
+    
+    public micro deposit(mut self, amount: f64) {
+        if amount <= 0 {
+            print("Error: Invalid amount")
+            return
+        }
+        self.balance = self.balance + amount
+    }
+    
+    public micro withdraw(mut self, amount: f64) -> bool {
+        if amount <= 0 || amount > self.balance {
+            return false
+        }
+        self.balance = self.balance - amount
+        return true
+    }
+}
+
+class PremiumAccount: BankAccount {
+    overdraft_limit: f64 = 1000.0
+    
+    override protected get account_type(self) -> utf8 {
+        "premium"
+    }
+    
+    micro test_protected_access(self) {
+        let type = self.account_type
+        print("Account type: {type}")
+    }
+}
+
+open class Counter {
+    private mut count: u32 = 0
+    
+    public micro increment(mut self) -> u32 {
+        self.count += 1
+        self.count
+    }
+    
+    public micro get(self) -> u32 {
+        self.count
+    }
+    
+    protected micro reset(mut self) {
+        self.count = 0
+    }
+}
+
+class NamedCounter: Counter {
+    name: utf8
+    
+    micro reset_with_log(mut self) {
+        print("Resetting counter: {self.name}")
+        self.reset()
+    }
+}

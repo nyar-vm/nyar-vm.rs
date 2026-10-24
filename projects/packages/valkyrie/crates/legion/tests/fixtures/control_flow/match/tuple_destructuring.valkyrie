@@ -1,0 +1,7 @@
+micro main() {
+    let tuple = (1, 2, 3)
+    let (x, y, z) = tuple
+    print(x)
+    print(y)
+    print(z)
+}

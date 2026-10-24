@@ -1,0 +1,23 @@
+Root span=0..101
+  Trivia span=0..1 text="\n"
+  Statement span=1..52 kind=Flags
+    leading_trivia span=1..1 text=""
+    FlagsDeclaration span=1..52 name="FilePermission"
+      FlagsMember span=28..36 name="READ"
+        TermLiteral span=35..36 kind=Integer
+      FlagsMember span=41..50 name="WRITE"
+        TermLiteral span=49..50 kind=Integer
+    trailing_trivia span=52..54 text="\n\n"
+  Statement span=54..99 kind=Function
+    leading_trivia span=54..54 text=""
+    FunctionDeclaration span=54..99 name="Add" kind=Mezzo
+      Parameter span=70..74 name="a" variadic=None
+        TypePath span=73..74 name="A"
+      Parameter span=76..80 name="b" variadic=None
+        TypePath span=79..80 name="B"
+      ReturnType span=85..89
+        TypePath span=85..89 name="Type"
+      DeclarationBody span=91..98
+        TailExpression span=96..97
+          TermName span=96..97 name="B"
+    trailing_trivia span=99..101 text="\n\n"

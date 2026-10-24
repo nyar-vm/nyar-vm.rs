@@ -1,0 +1,13 @@
+Root span=0..44
+  Trivia span=0..1 text="\n"
+  Statement span=1..42 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..42 name="main" kind=Micro
+      DeclarationBody span=15..41
+        TailExpression span=20..40
+          TermConstruct span=20..40 name="Point"
+            ConstructField name="y"
+              TermLiteral span=31..32 kind=Integer
+            ConstructField name="x"
+              TermLiteral span=37..38 kind=Integer
+    trailing_trivia span=42..44 text="\n\n"

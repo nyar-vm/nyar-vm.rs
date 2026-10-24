@@ -1,0 +1,17 @@
+Span { kind: Punctuation, span: 0..1, text: "<", modifier: null }
+Span { kind: Identifier, span: 1..4, text: "div", modifier: null }
+Span { kind: Punctuation, span: 4..5, text: ">", modifier: null }
+Span { kind: Punctuation, span: 5..6, text: "<", modifier: null }
+Span { kind: Identifier, span: 6..12, text: "button", modifier: null }
+Span { kind: Punctuation, span: 12..13, text: ">", modifier: null }
+Span { kind: Punctuation, span: 13..14, text: "{", modifier: null }
+Span { kind: Identifier, span: 14..19, text: "count", modifier: null }
+Span { kind: Punctuation, span: 19..20, text: "}", modifier: null }
+Span { kind: Punctuation, span: 20..21, text: "<", modifier: null }
+Span { kind: Operator, span: 21..22, text: "/", modifier: null }
+Span { kind: Identifier, span: 22..28, text: "button", modifier: null }
+Span { kind: Punctuation, span: 28..29, text: ">", modifier: null }
+Span { kind: Punctuation, span: 29..30, text: "<", modifier: null }
+Span { kind: Operator, span: 30..31, text: "/", modifier: null }
+Span { kind: Identifier, span: 31..34, text: "div", modifier: null }
+Span { kind: Punctuation, span: 34..35, text: ">", modifier: null }

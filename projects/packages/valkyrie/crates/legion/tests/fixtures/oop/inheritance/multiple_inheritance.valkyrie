@@ -1,0 +1,76 @@
+open class A {
+    micro method_a(self) {
+        print("Method from A")
+    }
+    
+    micro common_method(self) {
+        print("A's common method")
+    }
+}
+
+open class B {
+    micro method_b(self) {
+        print("Method from B")
+    }
+    
+    micro common_method(self) {
+        print("B's common method")
+    }
+}
+
+open class C {
+    micro method_c(self) {
+        print("Method from C")
+    }
+}
+
+class MultiChild(A, B, C) {
+    micro own_method(self) {
+        print("MultiChild's own method")
+    }
+    
+    micro test_all(self) {
+        self.method_a()
+        self.method_b()
+        self.method_c()
+        self.common_method()
+    }
+}
+
+trait Printable {
+    micro print(self) -> utf8
+}
+
+trait Serializable {
+    micro serialize(self) -> utf8
+}
+
+class Document: Printable, Serializable {
+    content: utf8
+    
+    micro print(self) -> utf8 {
+        self.content
+    }
+    
+    micro serialize(self) -> utf8 {
+        "Document: " + self.content
+    }
+}
+
+open class GrandParent {
+    micro method(self) { print("GrandParent") }
+}
+
+open class Parent1(GrandParent) {
+    micro method(self) { print("Parent1") }
+}
+
+open class Parent2(GrandParent) {
+    micro method(self) { print("Parent2") }
+}
+
+class Child(Parent1, Parent2) {
+    micro test_diamond(self) {
+        self.method()
+    }
+}

@@ -1,0 +1,9 @@
+Root span=0..36
+  Trivia span=0..1 text="\n"
+  Statement span=1..34 kind=TypeAlias
+    leading_trivia span=1..1 text=""
+    TypeAliasDeclaration span=1..34 name="Composite"
+      TypeIntersection span=18..33
+        TypePath span=18..25 name="Display"
+        TypePath span=28..33 name="Clone"
+    trailing_trivia span=34..36 text="\n\n"

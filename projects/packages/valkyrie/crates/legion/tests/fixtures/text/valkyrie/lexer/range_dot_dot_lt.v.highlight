@@ -1,0 +1,3 @@
+Span { kind: Number, span: 0..1, text: "0", modifier: null }
+Span { kind: Operator, span: 1..4, text: "..<", modifier: null }
+Span { kind: Number, span: 4..6, text: "10", modifier: null }

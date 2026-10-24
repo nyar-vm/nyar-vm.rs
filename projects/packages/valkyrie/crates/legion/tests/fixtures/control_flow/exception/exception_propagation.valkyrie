@@ -1,0 +1,9 @@
+micro process_file(path: utf8) -> Result⟨string, IOError⟩ {
+    let content = read_file(path)?
+    let processed = transform(content)?
+    Fine { value: processed }
+}
+
+micro main() {
+    let result = process_file("test.txt")
+}

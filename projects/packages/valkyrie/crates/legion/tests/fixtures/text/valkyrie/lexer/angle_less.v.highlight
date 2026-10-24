@@ -1,0 +1,3 @@
+Span { kind: Identifier, span: 0..1, text: "a", modifier: null }
+Span { kind: Punctuation, span: 2..3, text: "<", modifier: null }
+Span { kind: Identifier, span: 4..5, text: "b", modifier: null }

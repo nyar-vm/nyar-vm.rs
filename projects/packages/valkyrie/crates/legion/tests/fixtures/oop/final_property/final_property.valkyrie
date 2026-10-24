@@ -1,0 +1,53 @@
+open class Entity {
+    id: u64
+    
+    initiate(mut self, id: u64) {
+        self.id = id
+    }
+    
+    final get entity_id(self) -> u64 {
+        self.id
+    }
+    
+    get display_name(self) -> utf8 {
+        "Entity-{self.id}"
+    }
+}
+
+class User: Entity {
+    name: utf8
+    
+    initiate(mut self, id: u64, name: utf8) {
+        super.initiate(id)
+        self.name = name
+    }
+    
+    override get display_name(self) -> utf8 {
+        self.name
+    }
+}
+
+class Product: Entity {
+    title: utf8
+    price: f64
+    
+    initiate(mut self, id: u64, title: utf8, price: f64) {
+        super.initiate(id)
+        self.title = title
+        self.price = price
+    }
+    
+    override get display_name(self) -> utf8 {
+        "{self.title} (${self.price})"
+    }
+}
+
+micro main() {
+    let user = User { id: 1, name: "Alice" }
+    let product = Product { id: 2, title: "Widget", price: 9.99 }
+    
+    print("User ID: {user.entity_id}")
+    print("User Name: {user.display_name}")
+    print("Product ID: {product.entity_id}")
+    print("Product: {product.display_name}")
+}

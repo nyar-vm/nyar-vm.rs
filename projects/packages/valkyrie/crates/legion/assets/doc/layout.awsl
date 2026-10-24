@@ -1,0 +1,52 @@
+<widget layout><div class="doc-layout">
+<header class="doc-header">
+<a class="doc-logo" :href="home_href">{site_title}</a>
+</header>
+<div class="doc-body">
+<p>LEGION_DOC_SLOT</p>
+</div>
+<footer class="doc-footer">
+<p>
+    由
+    <strong>legion doc</strong>
+    生成
+</p>
+</footer>
+</div>
+</widget>
+<style>.doc-layout {
+display: flex;
+flex-direction: column;
+min-height: 100vh;
+background: #ffffff;
+color: #1a1a1a;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.doc-header {
+background: #fafafa;
+border-bottom: 1px solid #e5e5e5;
+padding: 12px 24px;
+position: sticky;
+top: 0;
+z-index: 10;
+}
+.doc-logo {
+font-size: 18px;
+font-weight: 700;
+color: #3873ad;
+text-decoration: none;
+}
+.doc-body {
+flex: 1;
+display: flex;
+min-height: 0;
+}
+.doc-footer {
+border-top: 1px solid #e5e5e5;
+padding: 16px 24px;
+text-align: center;
+color: #666;
+font-size: 14px;
+}
+</style>
+

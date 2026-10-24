@@ -1,0 +1,99 @@
+open class GrandParent {
+    micro method(self) {
+        print("GrandParent.method")
+    }
+    
+    micro common(self) {
+        print("GrandParent.common")
+    }
+}
+
+open class Parent1: GrandParent {
+    override micro method(self) {
+        print("Parent1.method")
+    }
+    
+    override micro common(self) {
+        print("Parent1.common")
+    }
+    
+    micro parent1_only(self) {
+        print("Parent1.parent1_only")
+    }
+}
+
+open class Parent2: GrandParent {
+    override micro method(self) {
+        print("Parent2.method")
+    }
+    
+    override micro common(self) {
+        print("Parent2.common")
+    }
+    
+    micro parent2_only(self) {
+        print("Parent2.parent2_only")
+    }
+}
+
+class Child(Parent1, Parent2) {
+    micro test_resolution(self) {
+        print("Testing C3 linearization:")
+        self.method()
+        self.common()
+        self.parent1_only()
+        self.parent2_only()
+    }
+}
+
+class ResolvedChild(p1: Parent1, p2: Parent2) {
+    micro test_renamed_access(self) {
+        print("Testing renamed access:")
+        self.p1.method()
+        self.p2.method()
+        self.p1.common()
+        self.p2.common()
+    }
+}
+
+open class A {
+    micro greet(self) {
+        print("Hello from A")
+    }
+}
+
+open class B {
+    micro greet(self) {
+        print("Hello from B")
+    }
+}
+
+class C(A, B) {
+    micro test(self) {
+        self.greet()
+    }
+}
+
+class D(B, A) {
+    micro test(self) {
+        self.greet()
+    }
+}
+
+micro main() {
+    let child = Child {}
+    child.test_resolution()
+    
+    print("---")
+    
+    let resolved = ResolvedChild {}
+    resolved.test_renamed_access()
+    
+    print("---")
+    
+    let c = C {}
+    c.test()
+    
+    let d = D {}
+    d.test()
+}

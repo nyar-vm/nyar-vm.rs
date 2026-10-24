@@ -1,0 +1,29 @@
+class ClosedClass {
+    value: i32
+}
+
+sealed class SealedBase {
+    value: i32
+}
+
+class InheritSealed(SealedBase) {
+    micro double(self) -> i32 {
+        self.value * 2
+    }
+}
+
+open class OpenBase {
+    value: i32
+}
+
+class InheritOpen(OpenBase) {
+    micro triple(self) -> i32 {
+        self.value * 3
+    }
+}
+
+let sealed_child = InheritSealed { value: 10 }
+let open_child = InheritOpen { value: 20 }
+
+print("Sealed child: {sealed_child.double()}")
+print("Open child: {open_child.triple()}")

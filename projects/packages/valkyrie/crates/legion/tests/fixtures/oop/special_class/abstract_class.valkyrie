@@ -1,0 +1,76 @@
+abstract class Shape {
+    abstract get area(self) -> f64
+    abstract get perimeter(self) -> f64
+    
+    abstract micro draw(self)
+    
+    micro describe(self) {
+        print("Area: {self.area}, Perimeter: {self.perimeter}")
+    }
+}
+
+class Circle(Shape) {
+    radius: f64
+    
+    override get area(self) -> f64 {
+        3.14159 * self.radius * self.radius
+    }
+    
+    override get perimeter(self) -> f64 {
+        2.0 * 3.14159 * self.radius
+    }
+    
+    override micro draw(self) {
+        print("Drawing circle with radius {self.radius}")
+    }
+}
+
+class Rectangle(Shape) {
+    width: f64
+    height: f64
+    
+    override get area(self) -> f64 {
+        self.width * self.height
+    }
+    
+    override get perimeter(self) -> f64 {
+        2.0 * (self.width + self.height)
+    }
+    
+    override micro draw(self) {
+        print("Drawing rectangle {self.width}x{self.height}")
+    }
+}
+
+abstract class Vehicle {
+    speed: f64 = 0.0
+    max_speed: f64
+    
+    initiate(mut self, max_speed: f64) {
+        self.max_speed = max_speed
+    }
+    
+    micro accelerate(mut self, delta: f64) {
+        self.speed = (self.speed + delta).min(self.max_speed)
+    }
+    
+    abstract micro start(self)
+    abstract micro stop(self)
+}
+
+class Car(Vehicle) {
+    brand: utf8
+    
+    initiate(mut self, brand: utf8, max_speed: f64) {
+        self.max_speed = max_speed
+        self.brand = brand
+    }
+    
+    override micro start(self) {
+        print("{self.brand} car starting...")
+    }
+    
+    override micro stop(self) {
+        print("{self.brand} car stopping...")
+    }
+}

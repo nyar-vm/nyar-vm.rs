@@ -1,0 +1,177 @@
+class Configuration {
+    host: utf8 = "localhost"
+    port: u16 = 8080
+    timeout: u32 = 30
+    retries: u32 = 3
+    debug: bool = false
+    
+    set host(mut self, value: utf8) -> Self {
+        self.host = value
+        self
+    }
+    
+    set port(mut self, value: u16) -> Self {
+        self.port = value
+        self
+    }
+    
+    set timeout(mut self, value: u32) -> Self {
+        self.timeout = value
+        self
+    }
+    
+    set retries(mut self, value: u32) -> Self {
+        self.retries = value
+        self
+    }
+    
+    set debug(mut self, value: bool) -> Self {
+        self.debug = value
+        self
+    }
+    
+    micro describe(self) -> utf8 {
+        "{self.host}:{self.port} (timeout={self.timeout}s, retries={self.retries}, debug={self.debug})"
+    }
+}
+
+class QueryBuilder {
+    table: utf8 = ""
+    columns: utf8 = "*"
+    where_clause: utf8 = ""
+    order_by: utf8 = ""
+    limit_val: i32 = 0
+    
+    set table(mut self, name: utf8) -> Self {
+        self.table = name
+        self
+    }
+    
+    set columns(mut self, cols: utf8) -> Self {
+        self.columns = cols
+        self
+    }
+    
+    set where(mut self, condition: utf8) -> Self {
+        self.where_clause = condition
+        self
+    }
+    
+    set order(mut self, column: utf8) -> Self {
+        self.order_by = column
+        self
+    }
+    
+    set limit(mut self, count: i32) -> Self {
+        self.limit_val = count
+        self
+    }
+    
+    micro build(self) -> utf8 {
+        let mut sql = "SELECT {self.columns} FROM {self.table}"
+        
+        if !self.where_clause.is_empty() {
+            sql = "{sql} WHERE {self.where_clause}"
+        }
+        
+        if !self.order_by.is_empty() {
+            sql = "{sql} ORDER BY {self.order_by}"
+        }
+        
+        if self.limit_val > 0 {
+            sql = "{sql} LIMIT {self.limit_val}"
+        }
+        
+        sql
+    }
+}
+
+class HttpRequest {
+    method: utf8 = "GET"
+    url: utf8 = ""
+    headers: utf8 = ""
+    body: utf8 = ""
+    timeout_ms: u32 = 5000
+    
+    set method(mut self, m: utf8) -> Self {
+        self.method = m
+        self
+    }
+    
+    set url(mut self, u: utf8) -> Self {
+        self.url = u
+        self
+    }
+    
+    set header(mut self, h: utf8) -> Self {
+        if self.headers.is_empty() {
+            self.headers = h
+        } else {
+            self.headers = "{self.headers}; {h}"
+        }
+        self
+    }
+    
+    set body(mut self, b: utf8) -> Self {
+        self.body = b
+        self
+    }
+    
+    set timeout(mut self, ms: u32) -> Self {
+        self.timeout_ms = ms
+        self
+    }
+    
+    micro execute(self) {
+        print("{self.method} {self.url}")
+        if !self.headers.is_empty() {
+            print("Headers: {self.headers}")
+        }
+        if !self.body.is_empty() {
+            print("Body: {self.body}")
+        }
+        print("Timeout: {self.timeout_ms}ms")
+    }
+}
+
+micro main() {
+    print("=== Configuration Builder ===")
+    
+    let config = Configuration {}
+        .host = "api.example.com"
+        .port = 443
+        .timeout = 60
+        .retries = 5
+        .debug = true
+    
+    print("{config.describe()}")
+    
+    print("")
+    print("=== Query Builder ===")
+    
+    let simple_query = QueryBuilder {}
+        .table = "users"
+        .build()
+    print("Simple: {simple_query}")
+    
+    let complex_query = QueryBuilder {}
+        .table = "orders"
+        .columns = "id, customer_id, total"
+        .where = "status = 'pending'"
+        .order = "created_at DESC"
+        .limit = 10
+        .build()
+    print("Complex: {complex_query}")
+    
+    print("")
+    print("=== HTTP Request Builder ===")
+    
+    HttpRequest {}
+        .method = "POST"
+        .url = "https://api.example.com/users"
+        .header = "Content-Type: application/json"
+        .header = "Authorization: Bearer token123"
+        .body = "{\"name\": \"Alice\"}"
+        .timeout = 10000
+        .execute()
+}

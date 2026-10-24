@@ -1,0 +1,42 @@
+class Person {
+    name: utf8
+    age: i32
+    city: utf8
+}
+
+let p = Person { name: "Alice", age: 30, city: "Beijing" }
+
+let p2 = p with { age: 31 }
+
+let p3 = p with { name: "Bob", city: "Shanghai" }
+
+class Config {
+    debug: bool = false
+    timeout: i32 = 30
+    retries: i32 = 3
+    endpoint: utf8 = "localhost"
+}
+
+let default_config = Config {}
+
+let prod_config = default_config with {
+    debug: false,
+    timeout: 60,
+    endpoint: "api.example.com"
+}
+
+let dev_config = default_config with {
+    debug: true
+}
+
+class Rectangle {
+    width: f64
+    height: f64
+    color: utf8 = "white"
+}
+
+let rect1 = Rectangle { width: 10.0, height: 5.0 }
+
+let rect2 = rect1 with { color: "blue" }
+
+let rect3 = rect1 with { width: 20.0, height: 10.0, color: "red" }

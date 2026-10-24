@@ -1,0 +1,8 @@
+[clr("mscorlib", "System.Console", "WriteLine")]
+micro console_write_line(message: utf16): unit;
+
+[main]
+micro clr_interop_stdout() -> i64 {
+    console_write_line("hello from clr")
+    return 0;
+}

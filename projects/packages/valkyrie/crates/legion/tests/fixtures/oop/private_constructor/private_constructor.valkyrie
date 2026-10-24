@@ -1,0 +1,101 @@
+class Singleton {
+    private static instance: Singleton?
+    
+    private initiate(mut self) {
+        print("Singleton created")
+    }
+    
+    public micro static get_instance() -> Singleton {
+        match Self::instance {
+            case Some(existing): return existing
+            case None: {
+                Self::instance = Some(Singleton {})
+                return Self::instance.unwrap()
+            }
+        }
+    }
+    
+    micro do_something(self) {
+        print("Singleton doing something")
+    }
+}
+
+class Database {
+    private connection_string: utf8
+    private connected: bool = false
+    
+    private initiate(mut self, connection_string: utf8) {
+        self.connection_string = connection_string
+    }
+    
+    public micro static create(connection_string: utf8) -> Database {
+        let db = Database { connection_string }
+        db.connected = true
+        db
+    }
+    
+    public micro static create_default() -> Database {
+        Database::create("localhost:5432/default")
+    }
+    
+    micro query(self, sql: utf8) {
+        if self.connected {
+            print("Executing: {sql}")
+        } else {
+            print("Not connected")
+        }
+    }
+}
+
+class Point {
+    x: f64
+    y: f64
+    
+    private initiate(mut self, x: f64, y: f64) {
+        self.x = x
+        self.y = y
+    }
+    
+    public micro static from_cartesian(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+    
+    public micro static from_polar(r: f64, theta: f64) -> Point {
+        let x = r * theta.cos()
+        let y = r * theta.sin()
+        Point { x, y }
+    }
+    
+    public micro static origin() -> Point {
+        Point { x: 0.0, y: 0.0 }
+    }
+    
+    micro describe(self) -> utf8 {
+        "Point({self.x}, {self.y})"
+    }
+}
+
+micro main() {
+    let s1 = Singleton::get_instance()
+    let s2 = Singleton::get_instance()
+    s1.do_something()
+    
+    print("---")
+    
+    let db1 = Database::create_default()
+    db1.query("SELECT * FROM users")
+    
+    let db2 = Database::create("remote:3306/production")
+    db2.query("SELECT * FROM orders")
+    
+    print("---")
+    
+    let origin = Point::origin()
+    print("{origin.describe()}")
+    
+    let cartesian = Point::from_cartesian(3.0, 4.0)
+    print("{cartesian.describe()}")
+    
+    let polar = Point::from_polar(5.0, 0.9273)
+    print("{polar.describe()}")
+}

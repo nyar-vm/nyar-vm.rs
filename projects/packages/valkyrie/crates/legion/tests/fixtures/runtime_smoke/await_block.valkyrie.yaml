@@ -1,0 +1,37 @@
+targets:
+- clr
+- jvm
+- node
+- wasi
+- native
+expect:
+  clr:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  jvm:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  native:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  node:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0
+  wasi:
+    success: true
+    stdout: []
+    stderr: []
+    errors: []
+    result: 0

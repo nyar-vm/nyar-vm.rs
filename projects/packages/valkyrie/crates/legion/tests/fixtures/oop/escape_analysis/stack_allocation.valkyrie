@@ -1,0 +1,53 @@
+structure Point {
+    x: f64
+    y: f64
+}
+
+micro create_point(x: f64, y: f64) -> Point {
+    Point { x: x, y: y }
+}
+
+micro process_point() {
+    let local_point = create_point(1.0, 2.0)
+    print("Point: ({local_point.x}, {local_point.y})")
+}
+
+micro return_point() -> Point {
+    let p = Point { x: 3.0, y: 4.0 }
+    p
+}
+
+micro escape_example() -> Point {
+    let local = Point { x: 5.0, y: 6.0 }
+    local
+}
+
+micro no_escape_example() {
+    let local = Point { x: 7.0, y: 8.0 }
+    print("Local point: ({local.x}, {local.y})")
+}
+
+class Container {
+    data: Point
+    
+    micro get_data(self) -> Point {
+        self.data
+    }
+    
+    micro set_data(mut self, p: Point) {
+        self.data = p
+    }
+}
+
+micro store_in_container() {
+    let local_point = Point { x: 9.0, y: 10.0 }
+    let container = Container { data: local_point }
+    print("Container data: ({container.data.x}, {container.data.y})")
+}
+
+micro nested_scope() {
+    let outer = Point { x: 11.0, y: 12.0 }
+    let inner = Point { x: 13.0, y: 14.0 }
+    print("Inner: ({inner.x}, {inner.y})")
+    print("Outer: ({outer.x}, {outer.y})")
+}

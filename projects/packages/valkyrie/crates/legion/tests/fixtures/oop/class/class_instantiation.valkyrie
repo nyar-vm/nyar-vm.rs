@@ -1,0 +1,6 @@
+class User {
+    name: utf8
+    age: i32
+}
+
+let user = User { name: "Alice", age: 30 }

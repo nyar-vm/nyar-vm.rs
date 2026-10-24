@@ -1,0 +1,46 @@
+targets:
+- clr-microsoft-unknown-managed
+- jvm-openjdk-unknown-managed
+- wasm32-node-unknown-wasm
+- wasm32-unknown-wasi-wasi
+expect:
+  clr-microsoft-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for clr-microsoft-unknown-managed: Compiler semantic snapshot failed: SMIR003 unresolved call contract `operator` in `main` at SourceSpan { source: SourceID { version_id: 0 }, span: 64..76 }'
+    errors: []
+  jvm-openjdk-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for jvm-openjdk-unknown-managed: Compiler semantic snapshot failed: SMIR003 unresolved call contract `operator` in `main` at SourceSpan { source: SourceID { version_id: 0 }, span: 64..76 }'
+    errors: []
+  wasm32-node-unknown-wasm:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for wasm32-node-unknown-wasm: Compiler semantic snapshot failed: SMIR003 unresolved call contract `operator` in `main` at SourceSpan { source: SourceID { version_id: 0 }, span: 64..76 }'
+    errors: []
+  wasm32-unknown-wasi-wasi:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for wasm32-unknown-wasi-wasi: Compiler semantic snapshot failed: SMIR003 unresolved call contract `operator` in `main` at SourceSpan { source: SourceID { version_id: 0 }, span: 64..76 }'
+    errors: []

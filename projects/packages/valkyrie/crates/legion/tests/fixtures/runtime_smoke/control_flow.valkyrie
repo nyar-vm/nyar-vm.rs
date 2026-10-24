@@ -1,0 +1,50 @@
+micro counted(limit: i32): i32 {
+    let total: i32 = 0
+    let i: i32 = 0
+    while i < limit {
+        total = total + 1
+        i = i + 1
+    }
+    return total
+}
+
+micro branching(limit: i32): i32 {
+    let sum: i32 = 0
+    let i: i32 = 0
+    while i < limit {
+        if i == 2 {
+            sum = sum + 10
+        }
+        else {
+            sum = sum + i
+        }
+        i = i + 1
+    }
+    return sum
+}
+
+micro infinite(limit: i32): i32 {
+    let current: i32 = 0
+    loop {
+        if current >= limit {
+            break
+        }
+        current = current + 1
+    }
+    return current
+}
+
+[main]
+micro main(): ExitCode {
+    let limit: i32 = 4
+    if counted(limit) != 4 {
+        return ExitCode(1)
+    }
+    if branching(limit) != 14 {
+        return ExitCode(2)
+    }
+    if infinite(limit) != 4 {
+        return ExitCode(3)
+    }
+    return ExitCode(0)
+}

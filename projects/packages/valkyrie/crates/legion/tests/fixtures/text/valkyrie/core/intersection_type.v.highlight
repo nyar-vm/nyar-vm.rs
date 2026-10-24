@@ -1,0 +1,7 @@
+Span { kind: Keyword, span: 1..5, text: "type", modifier: null }
+Span { kind: Identifier, span: 6..15, text: "Composite", modifier: null }
+Span { kind: Operator, span: 16..17, text: "=", modifier: null }
+Span { kind: Identifier, span: 18..25, text: "Display", modifier: null }
+Span { kind: Operator, span: 26..27, text: "&", modifier: null }
+Span { kind: Identifier, span: 28..33, text: "Clone", modifier: null }
+Span { kind: Punctuation, span: 33..34, text: ";", modifier: null }

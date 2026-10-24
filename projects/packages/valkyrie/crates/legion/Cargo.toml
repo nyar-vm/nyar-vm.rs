@@ -1,0 +1,67 @@
+[package]
+name = "legion"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+# LeetCode / 正式编译链默认只启用 Nyar + Node/Wasm seed；诊断链与自举旁路不默认开启。
+default = ["ovm-lane"]
+ovm-lane = ["nyar-emitter/ovm-lane"]
+legacy-lanes = ["ovm-lane"]
+# `legion spy *` 诊断（Wasm/JVM/CLR/Native 格式解码），不属于 build/run 生产链。
+format-spy = []
+# `legion bootstrap` 自举验收，不属于 LeetCode 双 target 正式链。
+bootstrap-lane = []
+
+[dependencies]
+legion-workspace = { workspace = true }
+clap = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+nyar-emitter = { workspace = true }
+nyar-package-manager = { workspace = true }
+nyar-workspace = { workspace = true }
+
+oak-core = { workspace = true }
+oak-von = { workspace = true }
+oak-valkyrie = { workspace = true }
+
+# WASM 段/指令解码的唯一所有者（`legion spy wasm` 直接消费，不再走 vcc-data 副本）。
+acorn-wasm = { workspace = true }
+# JVM class/JAR 编解码的唯一所有者（`legion spy jvm` 直接消费，不再走 vcc-data 副本）。
+acorn-jvm = { workspace = true }
+# PE/COFF 与 MSIL 文本编解码的唯一所有者（`legion spy clr` / `pe_dump` 直接消费，不再走 vcc-data 副本）。
+acorn-pe = { workspace = true }
+# x86-64 指令编码的唯一所有者（`legion spy native` 直接消费，不再走 vcc-data 副本）。
+acorn-x64 = { workspace = true, features = ["serde"] }
+
+nyar-language = { workspace = true, features = ["serde"] }
+nyar-analyzer = { workspace = true }
+nyar-runner = { workspace = true }
+nyar-types = { workspace = true }
+nyar = { workspace = true }
+rusty-valkyrie = { workspace = true, features = ["serde"] }
+odin-bytecode = { workspace = true }
+zip = { workspace = true }
+sha2 = { workspace = true }
+pulldown-cmark = { workspace = true }
+asgard = { workspace = true }
+gag = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+nyar = { workspace = true }
+zip = { workspace = true }
+
+[[example]]
+name = "dump_sources"
+path = "examples/dump_sources/main.rs"
+
+[[example]]
+name = "dump_group_offset"
+path = "examples/dump_group_offset.rs"
+

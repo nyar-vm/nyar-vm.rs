@@ -1,0 +1,7 @@
+let count = 0
+loop {
+    count = count + 1
+    if count >= 10 {
+        break
+    }
+}

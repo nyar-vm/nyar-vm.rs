@@ -1,0 +1,80 @@
+class MathConstants {
+    static get pi() -> f64 {
+        3.14159265359
+    }
+    
+    static get e() -> f64 {
+        2.71828182846
+    }
+    
+    static get phi() -> f64 {
+        1.61803398875
+    }
+    
+    micro circle_area(radius: f64) -> f64 {
+        Self::pi * radius * radius
+    }
+    
+    micro circle_circumference(radius: f64) -> f64 {
+        2.0 * Self::pi * radius
+    }
+}
+
+class Counter {
+    static mut instance_count: u32 = 0
+    
+    value: i32
+    
+    initiate(mut self, value: i32) {
+        self.value = value
+        Self::instance_count += 1
+    }
+    
+    static get total_instances() -> u32 {
+        Self::instance_count
+    }
+}
+
+class IdGenerator {
+    static mut next_id: u64 = 1
+    
+    static get current_id() -> u64 {
+        let id = Self::next_id
+        Self::next_id += 1
+        id
+    }
+    
+    micro reset() {
+        Self::next_id = 1
+    }
+}
+
+micro main() {
+    print("PI: {MathConstants::pi}")
+    print("E: {MathConstants::e}")
+    print("PHI: {MathConstants::phi}")
+    
+    let area = MathConstants::circle_area(5.0)
+    print("Circle area (r=5): {area}")
+    
+    let circumference = MathConstants::circle_circumference(5.0)
+    print("Circle circumference (r=5): {circumference}")
+    
+    print("Initial Counter instances: {Counter::total_instances}")
+    
+    let c1 = Counter { value: 10 }
+    let c2 = Counter { value: 20 }
+    let c3 = Counter { value: 30 }
+    
+    print("After creating 3 counters: {Counter::total_instances}")
+    
+    let id1 = IdGenerator::current_id
+    let id2 = IdGenerator::current_id
+    let id3 = IdGenerator::current_id
+    
+    print("Generated IDs: {id1}, {id2}, {id3}")
+    
+    IdGenerator::reset()
+    let id4 = IdGenerator::current_id
+    print("After reset, new ID: {id4}")
+}

@@ -1,0 +1,14 @@
+class Container<T> {
+    value: T
+    
+    initiate(mut self, value: T) {
+        self.value = value
+    }
+    
+    micro get(self) -> T {
+        self.value
+    }
+}
+
+let int_container = Container::<i32> { value: 42 }
+let str_container = Container::<utf8> { value: "hello" }

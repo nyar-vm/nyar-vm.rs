@@ -1,0 +1,7 @@
+Root span=0..21
+  Trivia span=0..14 text="<% if debug %>"
+  Error span=14..15 message="expected declaration near '<'" text="<"
+  Error span=15..18 message="expected declaration near '<'" text="div"
+  Error span=18..19 message="expected declaration near '<'" text="/"
+  Error span=19..20 message="expected declaration near '<'" text=">"
+  Trivia span=20..21 text="\n"

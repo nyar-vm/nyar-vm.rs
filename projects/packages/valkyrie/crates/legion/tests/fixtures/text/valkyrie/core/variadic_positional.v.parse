@@ -1,0 +1,11 @@
+Root span=0..40
+  Trivia span=0..1 text="\n"
+  Statement span=1..38 kind=Function
+    leading_trivia span=1..1 text=""
+    FunctionDeclaration span=1..38 name="sum" kind=Micro
+      Parameter span=11..23 name="items" variadic=PositionalRest
+        TypePath span=20..23 name="i64"
+      DeclarationBody span=26..37
+        TailExpression span=31..36
+          TermName span=31..36 name="items"
+    trailing_trivia span=38..40 text="\n\n"

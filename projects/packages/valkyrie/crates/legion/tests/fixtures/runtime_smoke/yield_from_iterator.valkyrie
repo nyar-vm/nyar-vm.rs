@@ -1,0 +1,35 @@
+trait Iterator {
+    type Item
+
+    micro next(mut self) -> Self::Item?
+}
+
+class CounterIterator {
+    current: i32
+    end: i32
+}
+
+imply CounterIterator: Iterator {
+    type Item = i32
+
+    micro next(mut self) -> i32? {
+        if self.current < self.end {
+            let value = self.current
+            self.current += 1
+            return value
+        }
+        return none
+    }
+}
+
+micro delegate_gen() {
+    let values: Iterator<i32> = CounterIterator { current: 0, end: 2 }
+    yield from values
+    return
+}
+
+[main]
+micro main() {
+    delegate_gen()
+    return
+}

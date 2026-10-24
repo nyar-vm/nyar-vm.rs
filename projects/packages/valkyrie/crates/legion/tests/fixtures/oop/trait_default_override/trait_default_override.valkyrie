@@ -1,0 +1,143 @@
+trait Display {
+    micro fmt(self) -> utf8
+    
+    micro debug_fmt(self) -> utf8 {
+        "{self.type_name()}@{self.address()}"
+    }
+    
+    micro print(self) {
+        print("{self.fmt()}")
+    }
+}
+
+trait Comparable<T> {
+    micro compare(self, other: T) -> i32
+    
+    micro eq(self, other: T) -> bool {
+        self.compare(other) == 0
+    }
+    
+    micro ne(self, other: T) -> bool {
+        self.compare(other) != 0
+    }
+    
+    micro lt(self, other: T) -> bool {
+        self.compare(other) < 0
+    }
+    
+    micro le(self, other: T) -> bool {
+        self.compare(other) <= 0
+    }
+    
+    micro gt(self, other: T) -> bool {
+        self.compare(other) > 0
+    }
+    
+    micro ge(self, other: T) -> bool {
+        self.compare(other) >= 0
+    }
+}
+
+class SimplePoint {
+    x: i32
+    y: i32
+}
+
+imply SimplePoint: Display {
+    micro fmt(self) -> utf8 {
+        "({self.x}, {self.y})"
+    }
+}
+
+class DetailedPoint {
+    x: i32
+    y: i32
+    label: utf8
+}
+
+imply DetailedPoint: Display {
+    micro fmt(self) -> utf8 {
+        "{self.label}: ({self.x}, {self.y})"
+    }
+    
+    override micro debug_fmt(self) -> utf8 {
+        "DetailedPoint[label={self.label}, x={self.x}, y={self.y}]"
+    }
+    
+    override micro print(self) {
+        print("[CUSTOM] {self.fmt()}")
+    }
+}
+
+open class Version {
+    major: i32
+    minor: i32
+    patch: i32
+}
+
+imply Version: Comparable<Version> {
+    micro compare(self, other: Version) -> i32 {
+        if self.major != other.major {
+            return self.major - other.major
+        }
+        if self.minor != other.minor {
+            return self.minor - other.minor
+        }
+        self.patch - other.patch
+    }
+}
+
+imply Version: Display {
+    micro fmt(self) -> utf8 {
+        "{self.major}.{self.minor}.{self.patch}"
+    }
+}
+
+class StrictVersion: Version {
+    prerelease: utf8
+}
+
+imply StrictVersion: Comparable<StrictVersion> {
+    micro compare(self, other: StrictVersion) -> i32 {
+        let base_cmp = (self as Version).compare(other as Version)
+        if base_cmp != 0 {
+            return base_cmp
+        }
+        self.prerelease.compare_to(other.prerelease)
+    }
+    
+    override micro eq(self, other: StrictVersion) -> bool {
+        self.major == other.major && 
+        self.minor == other.minor && 
+        self.patch == other.patch &&
+        self.prerelease == other.prerelease
+    }
+}
+
+micro main() {
+    print("=== Testing Default Method Usage ===")
+    
+    let simple = SimplePoint { x: 10, y: 20 }
+    simple.print()
+    print("Debug: {simple.debug_fmt()}")
+    
+    print("")
+    print("=== Testing Default Method Override ===")
+    
+    let detailed = DetailedPoint { x: 5, y: 15, label: "Origin" }
+    detailed.print()
+    print("Debug: {detailed.debug_fmt()}")
+    
+    print("")
+    print("=== Testing Comparable with Defaults ===")
+    
+    let v1 = Version { major: 1, minor: 2, patch: 3 }
+    let v2 = Version { major: 1, minor: 2, patch: 4 }
+    let v3 = Version { major: 1, minor: 2, patch: 3 }
+    
+    print("v1: {v1.fmt()}, v2: {v2.fmt()}, v3: {v3.fmt()}")
+    print("v1 == v3: {v1.eq(v3)}")
+    print("v1 < v2: {v1.lt(v2)}")
+    print("v2 > v1: {v2.gt(v1)}")
+    print("v1 != v2: {v1.ne(v2)}")
+}

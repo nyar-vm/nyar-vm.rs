@@ -1,0 +1,7 @@
+Root span=0..21
+  Trivia span=0..1 text="\n"
+  Statement span=1..19 kind=TypeAlias
+    leading_trivia span=1..1 text=""
+    TypeAliasDeclaration span=1..19 name="UserId"
+      TypePath span=15..18 name="i64"
+    trailing_trivia span=19..21 text="\n\n"

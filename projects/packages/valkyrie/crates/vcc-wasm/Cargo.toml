@@ -1,0 +1,16 @@
+[package]
+name = "vcc-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Valkyrie Compiler Collect — Wasm GC bindings for Legion / Asgard hosts"
+
+[lib]
+name = "vcc_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+legion = { workspace = true }
+asgard = { workspace = true }

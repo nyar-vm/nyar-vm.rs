@@ -1,0 +1,46 @@
+targets:
+- clr-microsoft-unknown-managed
+- jvm-openjdk-unknown-managed
+- wasm32-node-unknown-wasm
+- wasm32-unknown-wasi-wasi
+expect:
+  clr-microsoft-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for clr-microsoft-unknown-managed: Compiler representation planning failed: MissingBackendInterpreter { fragment: Identifier { text: "functions" }, projection_family: Clr, host_boundary: Clr }'
+    errors: []
+  jvm-openjdk-unknown-managed:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for jvm-openjdk-unknown-managed: Compiler representation planning failed: MissingBackendInterpreter { fragment: Identifier { text: "functions" }, projection_family: Jvm, host_boundary: Jvm }'
+    errors: []
+  wasm32-node-unknown-wasm:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for wasm32-node-unknown-wasm: 后端私有计划生产失败: 值 `ValueIdentity { function: ItemInstanceId(2), value: MirValueId(0) }` 的表示 `Reified` 尚无目标私有载体合同，拒绝按语义类型重新选择表示'
+    errors: []
+  wasm32-unknown-wasi-wasi:
+    build_success: false
+    dry_run_success: false
+    run_success: false
+    run_contracts: []
+    per_artifact: {}
+    artifacts: []
+    compile_errors:
+    - 'build failed for wasm32-unknown-wasi-wasi: 后端私有计划生产失败: 值 `ValueIdentity { function: ItemInstanceId(2), value: MirValueId(0) }` 的表示 `Reified` 尚无目标私有载体合同，拒绝按语义类型重新选择表示'
+    errors: []

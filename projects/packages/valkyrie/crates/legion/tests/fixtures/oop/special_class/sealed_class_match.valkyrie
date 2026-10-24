@@ -1,0 +1,15 @@
+sealed class Option<T>
+
+class Some<T>: Option<T> {
+    value: T
+}
+
+class None<T>: Option<T> {}
+
+micro main() {
+    let opt: Option<i32> = Some { value: 42 }
+    match opt {
+        case Some { value }: print(value)
+        case None {}: print("none")
+    }
+}

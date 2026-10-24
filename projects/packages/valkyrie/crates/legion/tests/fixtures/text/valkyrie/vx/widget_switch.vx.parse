@@ -1,0 +1,16 @@
+Root span=0..95
+  Statement span=0..94 kind=Class
+    leading_trivia span=0..0 text=""
+    ClassDeclaration span=0..94 name="Switch" class_kind=Widget
+      ObjectBody
+        ObjectMethod span=74..92 name="toggle"
+          DeclarationBody span=90..91
+        LetStatement span=16..41 mutable=false
+          PatternVariable span=20..27 name="checked"
+          TypePath span=29..33 name="bool"
+          TermLiteral span=36..41 kind=Bool
+        LetStatement span=42..73 mutable=true
+          PatternVariable span=50..59 name="isChecked"
+          TypePath span=61..65 name="bool"
+          TermLiteral span=68..73 kind=Bool
+    trailing_trivia span=94..95 text="\n"

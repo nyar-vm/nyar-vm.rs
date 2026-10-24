@@ -46,5 +46,6 @@ impl PeCompiler {
         }
 
         NativePeWriter::write_executable(&NativePeImage { text, rdata: Vec::new(), idata: Vec::new(), imports: Vec::new(), entry_point: 0 })
+            .map_err(|error| miette::miette!("PE 可执行映像编码失败：{error}"))
     }
 }

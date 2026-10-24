@@ -1,0 +1,16 @@
+Span { kind: Keyword, span: 1..6, text: "micro", modifier: null }
+Span { kind: Identifier, span: 7..11, text: "view", modifier: null }
+Span { kind: Punctuation, span: 11..12, text: "(", modifier: null }
+Span { kind: Punctuation, span: 12..13, text: ")", modifier: null }
+Span { kind: Punctuation, span: 14..15, text: "{", modifier: null }
+Span { kind: Punctuation, span: 20..21, text: "<", modifier: null }
+Span { kind: Identifier, span: 21..24, text: "div", modifier: null }
+Span { kind: Punctuation, span: 24..25, text: ">", modifier: null }
+Span { kind: Punctuation, span: 25..26, text: "{", modifier: null }
+Span { kind: Identifier, span: 26..31, text: "count", modifier: null }
+Span { kind: Punctuation, span: 31..32, text: "}", modifier: null }
+Span { kind: Punctuation, span: 32..33, text: "<", modifier: null }
+Span { kind: Operator, span: 33..34, text: "/", modifier: null }
+Span { kind: Identifier, span: 34..37, text: "div", modifier: null }
+Span { kind: Punctuation, span: 37..38, text: ">", modifier: null }
+Span { kind: Punctuation, span: 39..40, text: "}", modifier: null }

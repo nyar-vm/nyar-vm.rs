@@ -1,0 +1,16 @@
+Span { kind: Keyword, span: 1..6, text: "micro", modifier: null }
+Span { kind: Identifier, span: 7..11, text: "main", modifier: null }
+Span { kind: Punctuation, span: 11..12, text: "(", modifier: null }
+Span { kind: Punctuation, span: 12..13, text: ")", modifier: null }
+Span { kind: Punctuation, span: 14..15, text: "{", modifier: null }
+Span { kind: Identifier, span: 20..25, text: "Point", modifier: null }
+Span { kind: Punctuation, span: 26..27, text: "{", modifier: null }
+Span { kind: Identifier, span: 28..29, text: "y", modifier: null }
+Span { kind: Punctuation, span: 29..30, text: ":", modifier: null }
+Span { kind: Number, span: 31..32, text: "2", modifier: null }
+Span { kind: Punctuation, span: 32..33, text: ",", modifier: null }
+Span { kind: Identifier, span: 34..35, text: "x", modifier: null }
+Span { kind: Punctuation, span: 35..36, text: ":", modifier: null }
+Span { kind: Number, span: 37..38, text: "1", modifier: null }
+Span { kind: Punctuation, span: 39..40, text: "}", modifier: null }
+Span { kind: Punctuation, span: 41..42, text: "}", modifier: null }

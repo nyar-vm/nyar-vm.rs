@@ -1,0 +1,124 @@
+<widget coverage_report><div class="cov-summary">
+覆盖率：
+<span class="pct">{summary_text}</span>
+</div>
+<div class="progress-container">
+<div @class="bar_class">{pct_label}</div>
+</div>
+<if :condition="has_charts">
+<div class="chart-grid">
+<div class="chart-panel">
+    <p>LEGION_CHART_COVERAGE_BALANCE</p>
+</div>
+<div class="chart-panel">
+    <p>LEGION_CHART_COVERAGE_FEATURES</p>
+</div>
+</div>
+</if>
+<table class="cov-table">
+<thead>
+<tr>
+    <th>特性</th>
+    <th>状态</th>
+    <th>测试项目</th>
+</tr>
+</thead>
+<tbody>
+<loop feature in features()>
+    <tr @class="feature.row_class">
+        <td>{feature.display}</td>
+        <td @class="feature.status_class">{feature.status}</td>
+        <td>{feature.projects_text}</td>
+    </tr>
+</loop>
+</tbody>
+</table>
+</widget>
+<style>.cov-summary {
+text-align: center;
+font-size: 1.4rem;
+margin: 1.5rem 0;
+color: #555;
+}
+.cov-summary .pct {
+font-weight: 700;
+color: #1a1a2e;
+}
+.progress-container {
+background: #e0e0e0;
+border-radius: 12px;
+height: 28px;
+margin: 1.5rem 0;
+overflow: hidden;
+box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+.progress-fill {
+height: 100%;
+border-radius: 12px;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #fff;
+font-size: 0.85rem;
+font-weight: 600;
+min-width: 2rem;
+}
+.progress-fill.low {
+background: linear-gradient(90deg, #e53935, #ef5350, #ef9a9a);
+}
+.progress-fill.medium {
+background: linear-gradient(90deg, #fb8c00, #ffa726, #ffcc80);
+}
+.progress-fill.high {
+background: linear-gradient(90deg, #43a047, #66bb6a, #aed581);
+}
+.chart-grid {
+display: grid;
+grid-template-columns: 1fr;
+gap: 16px;
+margin: 1.5rem 0;
+}
+@media (min-width: 960px) {
+.chart-grid {
+    grid-template-columns: 1fr 1fr;
+}
+}
+.chart-panel {
+background: #fff;
+border-radius: 10px;
+padding: 16px;
+box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+overflow-x: auto;
+}
+.chart-panel svg {
+display: block;
+max-width: 100%;
+height: auto;
+margin: 0 auto;
+}
+.cov-table {
+width: 100%;
+border-collapse: collapse;
+background: #fff;
+border-radius: 10px;
+overflow: hidden;
+box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+.cov-table th {
+background: #1a1a2e;
+color: #fff;
+padding: 14px 18px;
+text-align: left;
+font-weight: 600;
+font-size: 0.95rem;
+}
+.cov-table td {
+padding: 12px 18px;
+border-bottom: 1px solid #eee;
+}
+.cov-table tr.covered { background: #e8f5e9; }
+.cov-table tr.uncovered { background: #ffebee; }
+.status-covered { color: #2e7d32; font-weight: 700; }
+.status-uncovered { color: #c62828; font-weight: 700; }
+</style>
+

@@ -1,0 +1,9 @@
+'outer: loop i in 0..<3 {
+    'inner: loop j in 0..<3 {
+        if j == 2 {
+            continue 'outer
+        }
+        print(i)
+        print(j)
+    }
+}
