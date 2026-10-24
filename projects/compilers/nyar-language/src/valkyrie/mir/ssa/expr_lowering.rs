@@ -355,29 +355,23 @@ impl MirBuilder {
     }
 
     fn emit_array_length_operand(&mut self, array: MirOperand, expected_type: Option<&ValkyrieType>) -> MirOperand {
+        // 结果类型只消费调用点/声明注解提供的整数事实（`resolved.return_type` 已由
+        // `try_lower_array_len_intrinsic` 合入）。事实缺失时结构化失败；禁止按名字
+        // 造 `Named("usize")` 再与 `Nominal{ItemId}` 形成双 TypeId（CAN015 StoreVar）。
+        let Some(length_ty) = expected_type
+            .filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
+            .cloned()
+        else {
+            self.diagnostics.push(super::MirDiagnostic::UnresolvedValueType {
+                context: format!("array length result missing integer type fact: {array:?}"),
+            });
+            return MirOperand::Constant(MirConstant::Unit);
+        };
         let value = self.next_value(MirValueOrigin::CallResult);
         // results 必须挂在指令上，否则 wasm `array.len` 结果槽为空。
         self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        // 语言合同是 `usize`：优先消费调用点/绑定注解的 Nominal，其次声明表中的 usize ItemId，
-        // 禁止默认写出 `Named("usize")` 再与 `Nominal{ItemId}` 形成双 TypeId（CAN015 StoreVar）。
-        let length_ty = expected_type
-            .filter(|ty| super::expr_helpers::is_integer_literal_formal_type(ty, &self.field_declarations))
-            .cloned()
-            .or_else(|| self.resolved_usize_nominal_type())
-            .unwrap_or_else(|| ValkyrieType::Named(Identifier::new("usize")));
         self.value_types.insert(value, length_ty);
         MirOperand::Value(value)
-    }
-
-    /// 从已收集的聚合声明取 `usize` 的 `Nominal{ItemId}`；跨包导入后应可命中。
-    fn resolved_usize_nominal_type(&self) -> Option<ValkyrieType> {
-        self.field_declarations.iter().find_map(|item| {
-            let declaration = item.declaration?;
-            if item.name.as_str() != "usize" {
-                return None;
-            }
-            Some(ValkyrieType::Nominal { declaration, arguments: Vec::new() })
-        })
     }
 
     fn try_lower_array_len_intrinsic(
