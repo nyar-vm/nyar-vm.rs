@@ -1,4 +1,4 @@
-use nyar_language::{transitional::guest_scripts::c::CScript, *};
+use rusty_c::{CScript, *};
 
 #[test]
 fn parse_main_printf() {

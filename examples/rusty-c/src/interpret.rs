@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::transitional::guest_scripts::c::{CError, CExpr, CFunction, CItem, CScript, CStmt, CVarDecl};
+use crate::script::{CError, CExpr, CFunction, CItem, CScript, CStmt, CVarDecl};
 
 /// Runtime value for the C tree interpreter.
 #[derive(Debug, Clone, PartialEq)]

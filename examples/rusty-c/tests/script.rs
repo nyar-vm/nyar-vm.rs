@@ -1,4 +1,4 @@
-use nyar_language::c::{CError, CScript};
+use rusty_c::{CError, CScript};
 
 #[test]
 fn parse_minimal_main() {

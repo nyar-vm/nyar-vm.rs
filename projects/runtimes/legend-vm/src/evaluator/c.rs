@@ -1,8 +1,8 @@
-//! C evaluator thin adapter — delegates to `nyar-language::c::interpret`.
+//! C evaluator thin adapter — delegates to `rusty-c::interpret`.
 
 use std::collections::HashMap;
 
-use nyar_language::{CValue, evaluate_c_source};
+use rusty_c::{CValue, evaluate_c_source};
 
 use crate::value::LegacyValue;
 

@@ -1,4 +1,4 @@
-use nyar_language::*;
+use rusty_c::*;
 use std::collections::HashMap;
 
 #[test]

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "examples/rusty-bash",
+    "examples/rusty-c",
     "examples/rusty-lua",
     "examples/rusty-powershell",
     "examples/rusty-tcl",
@@ -75,6 +76,7 @@ nyar-emitter = { path = "projects/compilers/nyar-emitter" }
 rusty-valkyrie = { path = "examples/rusty-valkyrie" }
 # Guest 语言前端（各自独立 crate）
 rusty-bash = { path = "examples/rusty-bash" }
+rusty-c = { path = "examples/rusty-c" }
 rusty-lua = { path = "examples/rusty-lua" }
 rusty-powershell = { path = "examples/rusty-powershell" }
 rusty-tcl = { path = "examples/rusty-tcl" }

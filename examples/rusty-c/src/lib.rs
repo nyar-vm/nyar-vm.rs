@@ -1,9 +1,14 @@
+#![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
-#![feature(new_range_api)]
-//! Rusty C 解释器
 
-pub mod frontend;
-pub mod optimizer;
-pub mod runtime;
+/// C 脚本模型与 parser。
+pub mod script;
 
-pub use crate::{frontend::RustyCFrontend, runtime::RustyCRuntime};
+pub mod interpret;
+pub mod module;
+pub mod semantic_bridge;
+
+pub use interpret::{CValue, evaluate_c_script, evaluate_c_source};
+pub use module::CModule;
+pub use script::{CError, CScript};
+pub use semantic_bridge::CSemanticBridge;

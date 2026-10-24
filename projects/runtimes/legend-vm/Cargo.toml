@@ -17,6 +17,7 @@ nyar-analyzer = { workspace = true }
 nyar-language = { workspace = true }
 odin-bytecode = { workspace = true }
 rusty-bash = { workspace = true }
+rusty-c = { workspace = true }
 rusty-lua = { workspace = true }
 rusty-powershell = { workspace = true }
 rusty-tcl = { workspace = true }

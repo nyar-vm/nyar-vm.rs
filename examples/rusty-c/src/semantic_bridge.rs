@@ -1,6 +1,6 @@
 //! C host script semantic bridge skeleton.
 
-use crate::transitional::guest_scripts::c::{CItem, CScript};
+use crate::script::{CItem, CScript};
 
 /// C module semantic bridge result.
 #[derive(Debug, Clone, PartialEq)]

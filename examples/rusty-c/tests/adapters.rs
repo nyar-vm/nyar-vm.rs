@@ -1,6 +1,6 @@
 //! C adapter 合同：module / semantic bridge / interpreter 不依赖 Valkyrie IR。
 
-use nyar_language::{CModule, CSemanticBridge, evaluate_c_source, transitional::guest_scripts::c::CScript};
+use rusty_c::{CModule, CScript, CSemanticBridge, evaluate_c_source};
 use std::collections::HashMap;
 
 #[test]

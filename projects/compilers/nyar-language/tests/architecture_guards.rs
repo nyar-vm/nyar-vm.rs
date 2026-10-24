@@ -11,7 +11,10 @@ use std::{
 };
 
 /// Concrete frontend dirs that must stay free of Valkyrie MIR / driver imports.
-const CONCRETE_FRONTEND_DIRS: &[&str] = &["bash", "lua", "tcl", "powershell", "c", "javascript", "python"];
+///
+/// Guest 语言前端（bash / c / lua / powershell / tcl）已迁至 `examples/rusty-<lang>`；
+/// 本 crate 仅保留无生产消费者的轻量 lint 前端。
+const CONCRETE_FRONTEND_DIRS: &[&str] = &["javascript", "python"];
 const FORBIDDEN_TOKENS: &[&str] =
     &["valkyrie::mir", "MirFunction", "MirInstruction", "nyar_emitter", "use nyar_emitter", "MirModule", "MirLowerer"];
 
