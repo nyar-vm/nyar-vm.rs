@@ -160,9 +160,9 @@ impl Drop for NominalTypeScope {
     }
 }
 
-/// 当前作用域内是否声明了该短名的名义类型。
+/// 当前词法作用域（含外层声明域）是否声明了该短名的名义类型。
 fn is_declared_nominal_type(name: &str) -> bool {
-    DECLARED_NOMINAL_TYPES.with(|stack| stack.borrow().last().is_some_and(|names| names.contains(name)))
+    DECLARED_NOMINAL_TYPES.with(|stack| stack.borrow().iter().rev().any(|names| names.contains(name)))
 }
 
 /// 该短名是否已被别名、名义声明、内建或数值声明事实占据。
