@@ -85,7 +85,7 @@ finally:
     let vfs = oak_vfs::MemoryVfs::new();
     let ikun = frontend.lower(&ast, &vfs).expect("Failed to lower to IKunTree");
 
-    use nyar_vm::bytecode::compiler::NyarBackend;
+    use odin_vm::bytecode::compiler::NyarBackend;
     let mut backend = NyarBackend::new();
     let _code = backend.lower_tree(&ikun).expect("Failed to lower to bytecode");
     let module = backend.finish();

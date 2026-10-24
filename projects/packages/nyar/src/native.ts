@@ -28,10 +28,25 @@ export type PreparedRuntimeCommand = {
     args: string[];
 };
 
+export type HostScriptOptions = {
+    /** 语言 id（`bash` / `lua` / `tcl` …）。 */
+    language: string;
+    /** 脚本源码。 */
+    source: string;
+    /** 脚本路径，仅用于诊断。 */
+    file?: string;
+};
+
+export type HostScriptResult = {
+    /** 脚本最终值的字符串表示。 */
+    value: string;
+};
+
 type NyarNativeAddon = {
     getHostInfo(): HostInfo;
     listRuntimeFamilies(): string[];
     parseRuntimeFamily(value: string): string;
+    runHostScript(options: {language: string; source: string; file?: string}): HostScriptResult;
     prepareRuntimeCommand(options: {
         family: string;
         artifact: string;
@@ -112,4 +127,9 @@ export function prepareRuntimeCommand(options: PrepareRuntimeOptions): PreparedR
 
 export function runPreparedCommand(prepared: PreparedRuntimeCommand, cwd?: string): number {
     return loadNative().runPreparedCommand(prepared, cwd);
+}
+
+/** 通过 nyar-napi 的 legend-vm 基板执行宿主脚本。 */
+export function runHostScript(options: HostScriptOptions): HostScriptResult {
+    return loadNative().runHostScript({language: options.language, source: options.source, file: options.file});
 }

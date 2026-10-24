@@ -1,10 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "projects/formats/nyar-bytecode",
+    "projects/formats/odin-bytecode",
+    "projects/runtimes/legend-vm",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
-    "projects/runtimes/nyar-vm",
+    "projects/runtimes/odin-vm",
     "projects/hosts/nyar-napi",
     "projects/hosts/nyar-wasm",
     "projects/compilers/nyar",
@@ -19,7 +20,7 @@ members = [
     "projects/compilers/nyar-workspace",
 ]
 default-members = [
-    "projects/runtimes/nyar-vm",
+    "projects/runtimes/odin-vm",
     "projects/compilers/nyar-language",
 ]
 
@@ -35,10 +36,10 @@ repository = "https://github.com/nyar-vm/nyar-vm.rs"
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "e7ed84a91cb5b5e1771010a1a73e52c2fa807c1d" }
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "8907696cd6929bdda632209e57705ee7b521bdc9" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "8907696cd6929bdda632209e57705ee7b521bdc9", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "8907696cd6929bdda632209e57705ee7b521bdc9" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "8907696cd6929bdda632209e57705ee7b521bdc9" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a6ababa09448b33bce1618e4dffbc8ef19c9b684" }
 # Nyar Compiler
 nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
@@ -52,12 +53,13 @@ nyar-workspace = { path = "projects/compilers/nyar-workspace" }
 nyar-napi = { path = "projects/hosts/nyar-napi" }
 nyar-wasm = { path = "projects/hosts/nyar-wasm" }
 nyar-emitter = { path = "projects/compilers/nyar-emitter" }
-# Nyar Runtime
-nyar-bytecode = { path = "projects/formats/nyar-bytecode" }
+# Nyar Runtime（Nyar 平台的私有运行时）
+legend-vm = { path = "projects/runtimes/legend-vm" }
+odin-vm = { path = "projects/runtimes/odin-vm" }
+odin-bytecode = { path = "projects/formats/odin-bytecode" }
 nyar-gc = { path = "projects/runtimes/nyar-gc" }
 nyar-jit = { path = "projects/runtimes/nyar-jit" }
-nyar-vm = { path = "projects/runtimes/nyar-vm" }
-
+# 外部依赖
 miette = "7.6.0"
 ordered-float = "5.5.0"
 clap = { version = "4.6.7", features = ["derive"] }

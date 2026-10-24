@@ -1,0 +1,28 @@
+fixtures:
+  - language: bash
+    path: bash/hello.sh
+    targets: [legacy-vm]
+  - language: bash
+    path: bash/control.sh
+    targets: [legacy-vm]
+  - language: lua
+    path: lua/hello.lua
+    targets: [legacy-vm]
+  - language: lua
+    path: lua/control.lua
+    targets: [legacy-vm]
+  - language: tcl
+    path: tcl/hello.tcl
+    targets: [legacy-vm]
+  - language: tcl
+    path: tcl/control.tcl
+    targets: [legacy-vm]
+  - language: powershell
+    path: powershell/hello.ps1
+    targets: [legacy-vm]
+  - language: powershell
+    path: powershell/control.ps1
+    targets: [legacy-vm]
+  - language: c
+    path: c/hello.c
+    targets: [legacy-vm]

@@ -1,5 +1,5 @@
 use crate::RustyTypescriptFrontend;
-use nyar_vm::bytecode::format::NyarcModule;
+use odin_vm::bytecode::format::NyarcModule;
 use oak_core::Source;
 use oak_vfs::Vfs;
 use serde::Deserialize;

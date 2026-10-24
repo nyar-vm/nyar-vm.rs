@@ -8,7 +8,7 @@ authors.workspace = true
 [dependencies]
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 oak-java = { workspace = true }

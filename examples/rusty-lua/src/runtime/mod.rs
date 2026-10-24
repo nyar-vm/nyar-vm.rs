@@ -2,7 +2,7 @@ use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{EGraph, IKun, Id};
 use nyar_types::NyarError;
-use nyar_vm::vm::{traits::RuntimeProvider, NyarVM};
+use odin_vm::vm::{traits::RuntimeProvider, NyarVM};
 
 #[derive(Debug)]
 pub struct RustyLuaRuntime {
@@ -23,7 +23,7 @@ impl RustyLuaRuntime {
         let tree = extractor.extract(root_id);
 
         // 2. Translate IKunTree to Nyar Module
-        use nyar_vm::NyarBackend;
+        use odin_vm::NyarBackend;
         let mut backend = NyarBackend::new();
         let module = backend.compile(&tree)?;
 
@@ -64,11 +64,11 @@ impl RustyLuaRuntime {
 }
 
 impl RuntimeProvider for RustyLuaRuntime {
-    fn resolve(&self, _name: &str) -> Option<nyar_vm::vm::traits::ExternFunc> {
+    fn resolve(&self, _name: &str) -> Option<odin_vm::vm::traits::ExternFunc> {
         None
     }
 
-    fn get_intrinsic(&self, _id: u32) -> Option<nyar_vm::vm::traits::ExternFunc> {
+    fn get_intrinsic(&self, _id: u32) -> Option<odin_vm::vm::traits::ExternFunc> {
         None
     }
 }

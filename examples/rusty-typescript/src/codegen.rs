@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id};
 use nyar_types::NyarError;
-use nyar_vm::bytecode::{
+use odin_vm::bytecode::{
     format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule},
     opcode::{I32Ext, Opcode},
 };

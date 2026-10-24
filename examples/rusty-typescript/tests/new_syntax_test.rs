@@ -1,5 +1,5 @@
 use nyar_types::NyarFrontend;
-use nyar_vm::vm::interpreter::NyarVM;
+use odin_vm::vm::interpreter::NyarVM;
 use rusty_typescript::RustyTypescriptFrontend;
 
 #[test]

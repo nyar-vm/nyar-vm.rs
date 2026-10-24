@@ -15,7 +15,7 @@ oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 oak-python = { workspace = true }
 nyar-types = { workspace = true }
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 nyar-aot = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }

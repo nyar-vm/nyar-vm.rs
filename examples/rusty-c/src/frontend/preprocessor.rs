@@ -47,7 +47,7 @@ impl Preprocessor {
         #[cfg(unix)]
         macros.insert("__unix".to_string(), MacroDef::Simple("1".to_string()));
 
-        // Size of types (assuming 64-bit for now as it's common for nyar-vm)
+        // Size of types (assuming 64-bit for now as it's common for odin-vm)
         macros.insert("__SIZEOF_INT__".to_string(), MacroDef::Simple("4".to_string()));
         macros.insert("__SIZEOF_LONG__".to_string(), MacroDef::Simple("8".to_string()));
         macros.insert("__SIZEOF_LONG_LONG__".to_string(), MacroDef::Simple("8".to_string()));

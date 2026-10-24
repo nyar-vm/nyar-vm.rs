@@ -22,6 +22,6 @@ oak-csharp = { workspace = true }
 oak-vfs = { workspace = true }
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true }

@@ -1,0 +1,1 @@
+print("legend lua fixture")

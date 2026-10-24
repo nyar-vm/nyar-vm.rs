@@ -10,7 +10,7 @@ a high-performance runtime with JIT optimization, advanced GC, and concurrency s
 ## Features
 
 - **Standard COBOL**: oriented toward COBOL-85/2002 and other common dialects and standards.
-- **Modern execution environment**: runs on `nyar-vm` with `nyar-gc` and multi-tier JIT.
+- **Modern execution environment**: runs on `odin-vm` with `nyar-gc` and multi-tier JIT.
 - **Data Division mapping**: complex data structures such as PICTURE mapped to Nyar types and objects.
 - **Nyar ecosystem integration**:
     - **`nyar-jit`**: optimization of hot business logic and numeric processing.

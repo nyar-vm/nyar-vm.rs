@@ -1,6 +1,6 @@
 use chomsky_extract::Backend;
 use nyar_types::{NyarFrontend, QualifiedName};
-use nyar_vm::{
+use odin_vm::{
     bytecode::compiler::NyarBackend,
     vm::{value::Value, NyarVM},
 };
@@ -31,7 +31,7 @@ res = p.say()
         _ => panic!("Expected binary artifact"),
     };
 
-    let module = nyar_vm::bytecode::format::NyarcModule::parse(&binary).expect("Failed to decode module");
+    let module = odin_vm::bytecode::format::NyarcModule::parse(&binary).expect("Failed to decode module");
 
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);

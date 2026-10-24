@@ -1,0 +1,11 @@
+targets:
+- legacy-vm
+expect:
+  legacy-vm:
+    success: true
+    stdout:
+    - legend bash fixture
+    stderr: []
+    allow_stderr: false
+    errors: []
+    result: 0

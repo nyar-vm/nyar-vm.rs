@@ -21,7 +21,7 @@ oak-core = { workspace = true }
 oak-typescript = { workspace = true, default-features = false }
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
-nyar-vm = { workspace = true }
+odin-vm = { workspace = true }
 oak-vfs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -31,7 +31,7 @@ wit-bindgen = { workspace = true }
 
 [features]
 default = ["native"]
-native = ["nyar-vm/native"]
+native = ["odin-vm/native"]
 
 [package.metadata.component]
 package = "nyar:rusty0-typescript"

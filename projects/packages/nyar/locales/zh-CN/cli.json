@@ -1,0 +1,24 @@
+{
+    "cli.intro": "Nyar VM 主机 CLI — 运行时分发与 collect 诊断",
+    "cli.cmd.version": "打印包版本与主机协议",
+    "cli.cmd.host-info": "打印解析后的平台 collect 与原生主机元数据",
+    "cli.cmd.runtime": "运行时家族工具",
+    "cli.cmd.runtime.list": "列出支持的运行时家族",
+    "cli.cmd.runtime.prepare": "展开运行时模板（不执行）",
+    "cli.cmd.runtime.run": "准备并执行运行时命令",
+    "cli.opt.family": "运行时家族标识（clr, jvm, node, wasi, nyar-vm, …）",
+    "cli.opt.artifact": "产物路径（二进制、jar、wasm 模块、…）",
+    "cli.opt.classpath": "JVM 家族的类路径",
+    "cli.opt.entry": "逻辑入口符号",
+    "cli.opt.wasi-p3": "为 WASI 家族启用 wasmtime -S p3",
+    "cli.opt.cwd": "运行 runtime run 的工作目录",
+
+    "commander.ui.usage": "用法：{name} <命令> [选项]",
+    "commander.ui.commands": "命令：",
+    "commander.ui.options": "选项：",
+    "commander.opt.locale": "语言标识",
+    "commander.err.unknown_command": "未知命令 `{cmd}`",
+    "commander.err.unknown_option": "未知选项 `{option}`",
+    "commander.err.missing_option_value": "`{option}` 缺少值",
+    "commander.err.localize_required": "parse() 之前须调用 .use(LocalizePlugin) 或 .locales(root)"
+}
