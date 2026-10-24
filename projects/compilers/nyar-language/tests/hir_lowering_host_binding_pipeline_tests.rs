@@ -79,7 +79,7 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
         CompilerSourceGroup::single_source(
             "adaptor",
             "adaptor",
-            "[host_provider(demo::add)] [wasm_opcode(\"i32.add\")] micro i32_add(a: i32, b: i32): i32",
+            "[host_provider(demo::add)] [wasm_operator(\"i32.add\")] micro i32_add(a: i32, b: i32): i32",
         )
         .with_direct_dependencies(vec!["core".into()]),
         CompilerSourceGroup::single_source(
@@ -108,7 +108,7 @@ fn bodyless_target_bound_provider_carries_its_own_import_contract() {
         })
         .collect::<Vec<_>>();
     assert_eq!(imports.len(), 1, "provider 的目标绑定必须取代原合同导入");
-    assert!(imports[0].link.matches_platform_tag("wasm-opcode"), "link={:?}", imports[0].link);
+    assert!(imports[0].link.matches_platform_tag("wasm-operator"), "link={:?}", imports[0].link);
     assert_eq!(imports[0].link.locator_segments(), &["i32.add"]);
     let main_instance = *canonical.linked.entries.keys().next().expect("main entry");
     let call = invoke_callee(canonical, main_instance).expect("main must call add");

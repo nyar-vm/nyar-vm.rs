@@ -1,6 +1,6 @@
 //! `TargetExecutionPlan` 冻结目标指令配方后，backend 只消费计划事实。
 //!
-//! 正向：计划里的 `[wasm_opcode]` 配方（arity、载体、opcode）与 backend 编码一致。
+//! 正向：计划里的 `[wasm_operator]` 配方（arity、载体、opcode）与 backend 编码一致。
 //! 反向：声明与冻结配方在结果槽/arity 上不一致，或助记符没有配方时，必须结构化
 //! 失败，不得由 backend 补默认值或静默改槽。
 
@@ -30,7 +30,7 @@ imply i32 {{
     }}
 }}
 
-[wasm_opcode("{mnemonic}")]
+[wasm_operator("{mnemonic}")]
 abstract micro i32_add(a: i32, b: i32): {result}
 
 micro add(a: i32, b: i32) -> {result} {{
@@ -54,7 +54,7 @@ structure i32 {{ }}
 [primitive("core::primitive::i64")]
 structure i64 {{ }}
 
-[wasm_opcode("i32.add")]
+[wasm_operator("i32.add")]
 abstract micro i32_add(a: i32, b: i32): {return_type}
 
 [main]
@@ -101,7 +101,7 @@ fn frozen_wasm_i32_neg_recipe_is_zero_const_then_sub() {
 [primitive("core::primitive::i32")]
 structure i32 { }
 
-[wasm_opcode("i32.neg")]
+[wasm_operator("i32.neg")]
 abstract micro i32_neg(a: i32): i32
 
 [main]
@@ -146,7 +146,7 @@ fn frozen_wasm_i64_neg_recipe_is_zero_const_then_sub() {
 [primitive("core::primitive::i64")]
 structure i64 { }
 
-[wasm_opcode("i64.neg")]
+[wasm_operator("i64.neg")]
 abstract micro i64_neg(a: i64): i64
 
 [main]
@@ -192,7 +192,7 @@ structure i32 { }
 [primitive("core::primitive::i64")]
 structure i64 { }
 
-[wasm_opcode("i32.neg")]
+[wasm_operator("i32.neg")]
 abstract micro i32_neg(a: i64): i64
 
 [main]
@@ -227,7 +227,7 @@ fn declared_arity_mismatch_fails_plan_construction() {
 [primitive("core::primitive::i32")]
 structure i32 { }
 
-[wasm_opcode("i32.neg")]
+[wasm_operator("i32.neg")]
 abstract micro i32_neg(a: i32, b: i32): i32
 
 [main]
@@ -244,7 +244,7 @@ micro main() -> i32 {
 
 /// 助记符没有可用配方时计划保留 `Unfrozen`，backend 必须结构化失败而不是默认成功。
 #[test]
-fn unfrozen_wasm_opcode_recipe_fails_structurally() {
+fn unfrozen_wasm_operator_recipe_fails_structurally() {
     let plan = plan_from_source(&numeric_source("i32.unbound_add", "i32")).expect("缺配方只应在编码阶段失败");
     let binding = plan.imports().values().next().and_then(|import| import.target_operator);
     assert_eq!(binding, Some(TargetOperatorBinding::Unfrozen), "未知助记符不得被冻结为任何指令");

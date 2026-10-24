@@ -104,7 +104,7 @@ imply i32 {
 }
 
 [host_contract]
-[vm_opcode("i32.add")]
+[ovm_operator("i32.add")]
 micro i32_add(a: i32, b: i32): i32
 
 [main]
@@ -123,9 +123,9 @@ micro main() -> i32 {
     );
 }
 
-/// 未知 `vm_opcode` 助记符不得回落为宿主导入或默认指令，必须返回结构化 backend error。
+/// 未知 `ovm_operator` 助记符不得回落为宿主导入或默认指令，必须返回结构化 backend error。
 #[test]
-fn unknown_vm_opcode_mnemonic_fails_structurally() {
+fn unknown_ovm_operator_mnemonic_fails_structurally() {
     let groups = numeric_groups(
         r#"[primitive("core::primitive::i32")]
 structure i32 { }"#,
@@ -137,7 +137,7 @@ imply i32 {
 }
 
 [host_contract]
-[vm_opcode("i32.unknown")]
+[ovm_operator("i32.unknown")]
 micro i32_add(a: i32, b: i32): i32
 
 [main]
@@ -146,21 +146,21 @@ micro main() -> i32 {
 }
 "#,
     );
-    let message = try_lower_source_groups(&groups).expect_err("未知 `vm_opcode` 助记符必须结构化失败");
-    assert!(message.contains("vm_opcode"), "{message}");
+    let message = try_lower_source_groups(&groups).expect_err("未知 `ovm_operator` 助记符必须结构化失败");
+    assert!(message.contains("ovm_operator"), "{message}");
     assert!(message.contains("i32.unknown"), "{message}");
     assert!(message.contains("function="), "错误必须带函数符号: {message}");
 }
 
 /// 助记符 arity 与实参数量不符时不得发射指令，必须返回结构化 backend error。
 #[test]
-fn vm_opcode_arity_mismatch_fails_structurally() {
+fn ovm_operator_arity_mismatch_fails_structurally() {
     let groups = numeric_groups(
         r#"[primitive("core::primitive::i32")]
 structure i32 { }"#,
         r#"
 [host_contract]
-[vm_opcode("i32.neg")]
+[ovm_operator("i32.neg")]
 micro i32_neg(a: i32, b: i32): i32
 
 [main]
@@ -224,7 +224,7 @@ fn vm_i32_neg_recipe_emits_zero_constant_before_sub() {
 structure i32 { }"#,
         r#"
 [host_contract]
-[vm_opcode("i32.neg")]
+[ovm_operator("i32.neg")]
 micro i32_neg(a: i32): i32
 
 [main]

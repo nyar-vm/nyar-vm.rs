@@ -42,9 +42,9 @@ impl<'a> WasmMirLowerer<'a> {
         let callee_return;
         match dispatch {
             MirDispatchKind::Static => {
-                // `[wasm_opcode]` 绑定的 provider 直接在调用点编码为目标指令；
+                // `[wasm_operator]` 绑定的 provider 直接在调用点编码为目标指令；
                 // 不是 host import，也没有函数体，必须先于 import 解析处理。
-                if self.try_emit_wasm_opcode_call(callee, arguments, output)? {
+                if self.try_emit_wasm_operator_call(callee, arguments, output)? {
                     return Ok(());
                 }
                 if let Some(import_index) = self.resolve_callee_import_index(callee, arguments) {
@@ -195,13 +195,13 @@ impl<'a> WasmMirLowerer<'a> {
         );
     }
 
-    /// `[wasm_opcode("...")]` 绑定：把契约调用直接编码为目标数值指令。
+    /// `[wasm_operator("...")]` 绑定：把契约调用直接编码为目标数值指令。
     ///
     /// 只有 callee 携带已绑定 host contract 的实例身份时才命中；未绑定 provider
     /// 的 host contract 与普通函数调用都返回 `false`，走既有 import / local call
     /// 路径。arity、操作数配方、结果载体与 opcode 全部来自计划冻结的
     /// `TargetOperatorPlan`；未冻结的绑定必须返回结构化错误，禁止从助记符猜语义。
-    pub(super) fn try_emit_wasm_opcode_call(
+    pub(super) fn try_emit_wasm_operator_call(
         &mut self,
         callee: &MirOperand,
         arguments: &[MirOperand],
@@ -211,24 +211,24 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let Some((mnemonic, binding)) = self.callee_wasm_opcode.get(instance)
+        let Some((mnemonic, binding)) = self.callee_wasm_operator.get(instance)
         else {
             return Ok(false);
         };
         let TargetOperatorBinding::Frozen(plan) = binding
         else {
-            return Err(miette!("WASM `wasm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
+            return Err(miette!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
         let TargetOperatorEncoding::Wasm(opcode) = plan.encoding
         else {
             return Err(miette!(
-                "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
+                "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
                 self.mir_fn.symbol
             ));
         };
         if arguments.len() != plan.arity {
             return Err(miette!(
-                "WASM `wasm_opcode` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
+                "WASM `wasm_operator` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",
                 self.mir_fn.symbol,
                 plan.arity,
                 arguments.len()
@@ -236,8 +236,8 @@ impl<'a> WasmMirLowerer<'a> {
         }
         let operand_type = wasm_stack_type(plan.operand_type);
         match plan.recipe {
-            TargetOperatorRecipe::Operands => self.emit_wasm_opcode_operands(mnemonic, operand_type, arguments),
-            TargetOperatorRecipe::Steps(steps) => self.emit_wasm_opcode_recipe(mnemonic, operand_type, steps, arguments)?,
+            TargetOperatorRecipe::Operands => self.emit_wasm_operator_operands(mnemonic, operand_type, arguments),
+            TargetOperatorRecipe::Steps(steps) => self.emit_wasm_operator_recipe(mnemonic, operand_type, steps, arguments)?,
         }
         numeric::emit_opcode(opcode, &mut self.code);
         let result_type = wasm_stack_type(plan.result_type);
@@ -255,7 +255,7 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// `i32.neg` 的 `0 - x` 配方已在此前的计划构造期展开为常量步骤 + 实参步骤；
     /// backend 不再按助记符判断取负，也不自行决定零常量。
-    fn emit_wasm_opcode_recipe(
+    fn emit_wasm_operator_recipe(
         &mut self,
         mnemonic: &str,
         expected: u8,
@@ -264,12 +264,12 @@ impl<'a> WasmMirLowerer<'a> {
     ) -> miette::Result<()> {
         for step in steps {
             match step {
-                TargetOperandStep::Arguments => self.emit_wasm_opcode_operands(mnemonic, expected, arguments),
+                TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
                     if carrier != expected {
                         return Err(miette!(
-                            "WASM `wasm_opcode` 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={} expected={expected:#x} actual={carrier:#x}",
+                            "WASM `wasm_operator` 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={} expected={expected:#x} actual={carrier:#x}",
                             self.mir_fn.symbol
                         ));
                     }
@@ -278,7 +278,7 @@ impl<'a> WasmMirLowerer<'a> {
                         TargetOperandType::I64 => self.emit_i64_const(i64::from(*value)),
                         TargetOperandType::F64 => {
                             return Err(miette!(
-                                "WASM `wasm_opcode` 绑定 `{mnemonic}` 冻结了浮点常量配方，但配方只支持整数常量: function={}",
+                                "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了浮点常量配方，但配方只支持整数常量: function={}",
                                 self.mir_fn.symbol
                             ));
                         }
@@ -290,12 +290,12 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 按自然栈类型发射绑定实参，并断言与计划冻结的实参载体一致。
-    fn emit_wasm_opcode_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) {
+    fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) {
         for argument in arguments {
             let actual = self.operand_wasm_stack_type(argument);
             assert_eq!(
                 actual, expected,
-                "WASM `wasm_opcode` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
+                "WASM `wasm_operator` 实参栈类型与目标绑定不一致: `{mnemonic}` expects {expected:#x} actual {actual:#x} in {}",
                 self.mir_fn.symbol
             );
             self.emit_operand(argument);

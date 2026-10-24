@@ -200,73 +200,93 @@ micro helper(message: utf16) {{
 }
 
 #[test]
-fn maps_wasm_opcode_binding_to_wasm_opcode_host_link() {
+fn maps_wasm_operator_binding_to_wasm_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 912 });
     let module = compiler
         .compile_source(
             r#"
-[wasm_opcode("i32.add")]
+[wasm_operator("i32.add")]
 micro i32_add(a: i32, b: i32): i32;
 "#,
         )
         .unwrap();
     let contract = function_interop_contract(&module.functions[0]).expect("expected wasm opcode contract");
     assert!(contract.matches_boundary("host"));
-    assert!(contract.matches_platform_tag("wasm-opcode"));
+    assert!(contract.matches_platform_tag("wasm-operator"));
     assert_eq!(contract.locator_segments(), &["i32.add"]);
 }
 
 #[test]
-fn rejects_wasm_opcode_binding_with_non_single_segment_locator() {
+fn rejects_wasm_operator_binding_with_non_single_segment_locator() {
     for (version_id, argument) in [(913, r#""i32", "add""#), (914, "32")] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
             .compile_source(&format!(
                 r#"
-[wasm_opcode({argument})]
+[wasm_operator({argument})]
 micro i32_add(a: i32, b: i32): i32;
 "#
             ))
             .unwrap();
         assert!(
             function_interop_contract(&module.functions[0]).is_none(),
-            "wasm_opcode must require exactly one string mnemonic, got {argument}"
+            "wasm_operator must require exactly one string mnemonic, got {argument}"
         );
     }
 }
 
 #[test]
-fn maps_vm_opcode_binding_to_vm_opcode_host_link() {
+fn maps_ovm_operator_binding_to_ovm_operator_host_link() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 915 });
     let module = compiler
         .compile_source(
             r#"
-[vm_opcode("i32.add")]
+[ovm_operator("i32.add")]
 micro i32_add(a: i32, b: i32): i32;
 "#,
         )
         .unwrap();
     let contract = function_interop_contract(&module.functions[0]).expect("expected vm opcode contract");
     assert!(contract.matches_boundary("host"));
-    assert!(contract.matches_platform_tag("vm-opcode"));
+    assert!(contract.matches_platform_tag("ovm-operator"));
     assert_eq!(contract.locator_segments(), &["i32.add"]);
 }
 
 #[test]
-fn rejects_vm_opcode_binding_with_non_single_segment_locator() {
+fn rejects_ovm_operator_binding_with_non_single_segment_locator() {
     for (version_id, argument) in [(916, r#""i32", "add""#), (917, "32")] {
         let compiler = ValkyrieCompiler::new(SourceID { version_id });
         let module = compiler
             .compile_source(&format!(
                 r#"
-[vm_opcode({argument})]
+[ovm_operator({argument})]
 micro i32_add(a: i32, b: i32): i32;
 "#
             ))
             .unwrap();
         assert!(
             function_interop_contract(&module.functions[0]).is_none(),
-            "vm_opcode must require exactly one string mnemonic, got {argument}"
+            "ovm_operator must require exactly one string mnemonic, got {argument}"
+        );
+    }
+}
+
+/// 旧 `opcode` 属性不得再产生任何目标绑定：迁移后不保留兼容别名。
+#[test]
+fn legacy_opcode_attributes_do_not_bind_target_contracts() {
+    for (version_id, attribute) in [(918, "wasm_opcode"), (919, "vm_opcode")] {
+        let compiler = ValkyrieCompiler::new(SourceID { version_id });
+        let module = compiler
+            .compile_source(&format!(
+                r#"
+[{attribute}("i32.add")]
+micro i32_add(a: i32, b: i32): i32;
+"#
+            ))
+            .unwrap();
+        assert!(
+            function_interop_contract(&module.functions[0]).is_none(),
+            "`[{attribute}]` 必须不再产生目标绑定"
         );
     }
 }

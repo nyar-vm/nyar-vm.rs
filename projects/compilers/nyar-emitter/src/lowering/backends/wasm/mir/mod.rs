@@ -31,7 +31,7 @@ use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
 use super::{
     super::{
         executable::{ExecutableLoweringContext, collect_reachable_blocks},
-        interop::{wasi_host_import_target, wasm_host_import_target, wasm_opcode_target},
+        interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target},
         pattern_matching_contract::validate_pattern_matching_invariants,
     },
     cabi::{
@@ -385,22 +385,22 @@ fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String
     callee_import_index
 }
 
-/// `[wasm_opcode]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
+/// `[wasm_operator]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
 ///
 /// 助记符只用于诊断；arity、操作数配方、结果载体与 opcode 全部来自
 /// `TargetExecutionPlan`。未冻结的绑定保留为 `TargetOperatorBinding::Unfrozen`，
 /// 由 emit 结构化失败。
-fn build_callee_wasm_opcode_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)> {
-    let mut callee_wasm_opcode = BTreeMap::new();
+fn build_callee_wasm_operator_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)> {
+    let mut callee_wasm_operator = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
-        let Some(mnemonic) = wasm_opcode_target(&import.link)
+        let Some(mnemonic) = wasm_operator_target(&import.link)
         else {
             continue;
         };
         let binding = import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen);
-        callee_wasm_opcode.insert(*callee, (mnemonic.to_string(), binding));
+        callee_wasm_operator.insert(*callee, (mnemonic.to_string(), binding));
     }
-    callee_wasm_opcode
+    callee_wasm_operator
 }
 
 /// WASI 模式下的 callee import 索引构建?
@@ -590,7 +590,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     else {
         build_callee_import_index(submission, &host_imports)
     };
-    let callee_wasm_opcode = build_callee_wasm_opcode_index(submission);
+    let callee_wasm_operator = build_callee_wasm_operator_index(submission);
     // Node JS-glue：宿主导入与 `.mjs` 启动壳统一使用 i32 句柄（`hostIntern` / `const_utf8`），
     // ?`wasm_import_type_for_field` ?i32 签名对齐。若?utf8 标成 anyref，call 实参?
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
@@ -726,7 +726,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             &callee_import_index,
-            &callee_wasm_opcode,
+            &callee_wasm_operator,
             &host_imports,
             &string_literal_index,
             &string_literal_offset,
@@ -1180,7 +1180,7 @@ fn lower_mir_function_to_wasm_bytes(
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
-    callee_wasm_opcode: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
@@ -1209,7 +1209,7 @@ fn lower_mir_function_to_wasm_bytes(
         gc_i32_box_type_index,
         gc_i64_box_type_index,
         callee_import_index,
-        callee_wasm_opcode,
+        callee_wasm_operator,
         host_imports,
         string_literal_index,
         string_literal_offset,
@@ -1264,8 +1264,8 @@ struct WasmMirLowerer<'a> {
     /// heap array element_type 字符串键 -> wasm-gc arraytype ?type_index?
     gc_array_type_indices: &'a BTreeMap<String, u32>,
     callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-    /// `[wasm_opcode]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
-    callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    /// `[wasm_operator]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
+    callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     host_imports: &'a [(String, String)],
     string_literal_index: &'a BTreeMap<String, u32>,
@@ -1297,7 +1297,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-        callee_wasm_opcode: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+        callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
@@ -1340,7 +1340,7 @@ impl<'a> WasmMirLowerer<'a> {
             gc_i32_box_type_index,
             gc_i64_box_type_index,
             callee_import_index,
-            callee_wasm_opcode,
+            callee_wasm_operator,
             host_imports,
             string_literal_index,
             string_literal_offset,

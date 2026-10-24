@@ -271,7 +271,7 @@ fn install_provider_definition(
 
 /// 把无体 provider 的外部导入合同迁入消费模块。
 ///
-/// provider 没有函数体时，其目标绑定（`[vm]` / `[wasm_opcode]` 等）只以外部导入
+/// provider 没有函数体时，其目标绑定（`[wasm_operator]` / `[ovm_operator]` 等）只以外部导入
 /// 合同存在；重映射移除原合同后，消费模块必须持有 provider 自己的合同身份，
 /// 后端才能按已绑定的目标编码调用。
 fn install_provider_import(module: &mut MirModule, contract: &MirExternalCallContract) -> Result<(), ParseError> {

@@ -34,14 +34,14 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] = &[
     TargetOperandStep::Arguments,
 ];
 
-/// `[vm_opcode("...")]` 目标助记符到**冻结配方**的唯一映射表。
+/// `[ovm_operator("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
 /// 只覆盖 `NyarHeadCode` 已有的 i32 算术/比较变体；位运算、i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
 /// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
-pub(crate) fn freeze_nyar_vm_opcode_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
     let (arity, recipe, code) = match mnemonic {
         "i32.add" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Add),
         "i32.sub" => (2, TargetOperatorRecipe::Operands, NyarHeadCode::I32Sub),
@@ -198,14 +198,14 @@ pub(crate) fn lower_fragment_mir_to_nyar_module(submission: &FragmentSubmission)
         .iter()
         .map(|(instance, import)| (*instance, import.link.clone()))
         .collect::<BTreeMap<ItemInstanceId, ExternalImportLink>>();
-    // `[vm_opcode]` 绑定的冻结配方只从计划读取：助记符仅用于诊断，arity、操作数
+    // `[ovm_operator]` 绑定的冻结配方只从计划读取：助记符仅用于诊断，arity、操作数
     // 改写与头码全部来自 `TargetExecutionPlan`。
     let external_opcode_by_instance = submission
         .backend_plan
         .imports()
         .iter()
         .filter_map(|(instance, import)| {
-            let mnemonic = crate::lowering::shared::interop::vm_opcode_target(&import.link)?;
+            let mnemonic = crate::lowering::shared::interop::ovm_operator_target(&import.link)?;
             Some((*instance, (mnemonic.to_string(), import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen))))
         })
         .collect::<BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>>();
@@ -689,7 +689,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     /// 发射 `backend_plan.imports()` 中的外部 provider 调用。
     ///
-    /// 先按计划冻结的 `[vm_opcode("...")]` 配方内联为指令：未冻结的绑定与 arity
+    /// 先按计划冻结的 `[ovm_operator("...")]` 配方内联为指令：未冻结的绑定与 arity
     /// 不符必须结构化失败，不得回落为宿主导入或默认成功。其余已绑定目标 provider
     /// （`host` 边界 + `vm` 目标标签 + 恰好一段符号）保持 `CallImport`，由 runtime
     /// `parse_host_op` 判定。未绑定 `[host_contract]` 或其它目标标签必须失败，
@@ -713,14 +713,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             let TargetOperatorBinding::Frozen(plan) = binding
             else {
                 return Err(miette::miette!(
-                    "Nyar 目标 `vm_opcode` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
+                    "Nyar 目标 `ovm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
             let TargetOperatorEncoding::NyarVm(code) = plan.encoding
             else {
                 return Err(miette::miette!(
-                    "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了非 NyarVM 编码: callee=`{callee_name}` function=`{}`",
+                    "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了非 NyarVM 编码: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
@@ -747,7 +747,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                             }
                             TargetOperandStep::IntegerConstant { operand_type, .. } => {
                                 return Err(miette::miette!(
-                                    "Nyar 目标 `vm_opcode` 绑定 `{mnemonic}` 冻结了非 i32 常量配方 {operand_type:?}，NyarVM 没有该常量载体: callee=`{callee_name}` function=`{}`",
+                                    "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了非 i32 常量配方 {operand_type:?}，NyarVM 没有该常量载体: callee=`{callee_name}` function=`{}`",
                                     self.mir_fn.symbol
                                 ));
                             }
@@ -767,7 +767,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             else {
                 panic!(
                     "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
-                     需要 host 边界 + 目标标签 `vm` 或 `vm-opcode` + 恰好一段符号，未绑定目标 provider 不得回落"
+                     需要 host 边界 + 目标标签 `ovm-operator` + 恰好一段符号，未绑定目标 provider 不得回落"
                 );
             };
             self.emit_external_arguments(&callee_name, arguments);

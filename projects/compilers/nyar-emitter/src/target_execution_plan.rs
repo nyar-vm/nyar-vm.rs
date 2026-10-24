@@ -342,20 +342,20 @@ impl TargetExecutionPlan {
     }
 }
 
-/// 计划构造时冻结 `[wasm_opcode]` / `[vm_opcode]` 的完整 operator 计划。
+/// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` 的完整 operator 计划。
 ///
 /// 助记符只在此处解析一次；backend 之后只消费 [`TargetOperatorBinding`]，不得再从
 /// 助记符字符串推断 arity、操作数改写或结果类型。未解析的绑定保留为
 /// [`TargetOperatorBinding::Unfrozen`]，由 emit 侧结构化失败。
 fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBinding> {
-    if let Some(mnemonic) = crate::lowering::shared::interop::wasm_opcode_target(link) {
+    if let Some(mnemonic) = crate::lowering::shared::interop::wasm_operator_target(link) {
         let resolved = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic);
         return Some(frozen_operator_binding(resolved));
     }
-    let vm_mnemonic = crate::lowering::shared::interop::vm_opcode_target(link);
+    let vm_mnemonic = crate::lowering::shared::interop::ovm_operator_target(link);
     #[cfg(feature = "nyar-vm-lane")]
     if let Some(mnemonic) = vm_mnemonic {
-        let resolved = crate::lowering::backends::nyar_vm_mir::freeze_nyar_vm_opcode_binding(mnemonic);
+        let resolved = crate::lowering::backends::nyar_vm_mir::freeze_ovm_operator_binding(mnemonic);
         return Some(frozen_operator_binding(resolved));
     }
     #[cfg(not(feature = "nyar-vm-lane"))]
@@ -384,8 +384,8 @@ fn validate_frozen_operator(
     return_type: &NyarType,
     plan: &TargetOperatorPlan,
 ) -> Result<()> {
-    let mnemonic = crate::lowering::shared::interop::wasm_opcode_target(link)
-        .or_else(|| crate::lowering::shared::interop::vm_opcode_target(link))
+    let mnemonic = crate::lowering::shared::interop::wasm_operator_target(link)
+        .or_else(|| crate::lowering::shared::interop::ovm_operator_target(link))
         .unwrap_or("<unknown>");
     let function = symbol.unwrap_or("<unknown>");
     if parameter_types.len() != plan.arity {

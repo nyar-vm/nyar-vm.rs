@@ -25,7 +25,7 @@ imply i32 {{
     }}
 }}
 
-[wasm_opcode("{mnemonic}")]
+[wasm_operator("{mnemonic}")]
 abstract micro i32_add(a: i32, b: i32): i32
 
 micro add(a: i32, b: i32) -> i32 {{
@@ -49,22 +49,22 @@ fn numeric_submission(mnemonic: &str) -> FragmentSubmission {
     let fragment = program.canonical().linked.fragments.keys().next().cloned().expect("目标程序必须保留片段身份");
     let roots = program.canonical().mir.functions.keys().copied().collect::<Vec<_>>();
     let plan = TargetExecutionPlan::from_compiled_program(&program, &fragment, nyar::TheoryBundle::default(), &roots)
-        .expect("`[wasm_opcode]` 声明必须进入目标计划导入表");
+        .expect("`[wasm_operator]` 声明必须进入目标计划导入表");
     nyar_emitter::testing::fragment_submission_from_plan(plan)
 }
 
 /// 源码 i32 `+` 经 provider 绑定后直接编码为 `i32.add`（0x6A）。
 #[test]
-fn source_i32_add_lowers_to_wasm_opcode_binding() {
+fn source_i32_add_lowers_to_wasm_operator_binding() {
     let submission = numeric_submission("i32.add");
     let module = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main").expect("数值绑定产物必须完成 lowering");
     let bytes = module.to_bytes().expect("数值绑定产物必须可编码");
-    assert!(bytes.contains(&0x6A), "i32 `+` 的 `[wasm_opcode(\"i32.add\")]` 绑定必须编码为 0x6A");
+    assert!(bytes.contains(&0x6A), "i32 `+` 的 `[wasm_operator(\"i32.add\")]` 绑定必须编码为 0x6A");
 }
 
 /// 无符号助记符必须由 backend 表编码，不得退化为有符号指令。
 #[test]
-fn unsigned_wasm_opcode_mnemonic_lowers_to_unsigned_instruction() {
+fn unsigned_wasm_operator_mnemonic_lowers_to_unsigned_instruction() {
     let submission = numeric_submission("i32.div_u");
     let module = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main").expect("无符号数值绑定产物必须完成 lowering");
     let bytes = module.to_bytes().expect("无符号数值绑定产物必须可编码");
@@ -73,24 +73,24 @@ fn unsigned_wasm_opcode_mnemonic_lowers_to_unsigned_instruction() {
 
 /// 未知助记符不得回落到默认指令或宿主导入，必须返回结构化 backend error。
 #[test]
-fn unknown_wasm_opcode_mnemonic_fails_structurally() {
+fn unknown_wasm_operator_mnemonic_fails_structurally() {
     let submission = numeric_submission("i32.unbound_add");
     let error = nyar_emitter::testing::lower_fragment_to_wasm_mir_module(&submission, "main")
-        .expect_err("未知 `wasm_opcode` 助记符必须结构化失败");
+        .expect_err("未知 `wasm_operator` 助记符必须结构化失败");
     let message = error.to_string();
-    assert!(message.contains("wasm_opcode"), "{message}");
+    assert!(message.contains("wasm_operator"), "{message}");
     assert!(message.contains("i32.unbound_add"), "{message}");
     assert!(message.contains("function="), "错误必须带函数符号: {message}");
 }
 
 /// 助记符 arity 与实参数量不符时不得发射指令，必须返回结构化 backend error。
 #[test]
-fn wasm_opcode_arity_mismatch_fails_structurally() {
+fn wasm_operator_arity_mismatch_fails_structurally() {
     let source = r#"
 [primitive("core::primitive::i32")]
 structure i32 { }
 
-[wasm_opcode("i32.neg")]
+[wasm_operator("i32.neg")]
 abstract micro i32_neg(a: i32, b: i32): i32
 
 micro subtract(a: i32, b: i32) -> i32 {

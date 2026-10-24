@@ -46,15 +46,15 @@ impl std::fmt::Display for BackendContractError {
 const C_BINDING_ATTRIBUTE: &str = "c";
 /// 内核系统调用绑定属性坝。
 const SYSCALL_BINDING_ATTRIBUTE: &str = "syscall";
-/// WebAssembly 指令绑定属性坝（`[wasm_opcode("i32.add")]`）。
+/// WASM 目标 operator 绑定属性（`[wasm_operator("i32.add")]`）。
 ///
-/// 该属性只声明目标指令助记符；助记符到编码的映射归 wasm backend 所有。
-const WASM_OPCODE_BINDING_ATTRIBUTE: &str = "wasm_opcode";
-/// NyarVM 指令绑定属性（`[vm_opcode("i32.add")]`）。
+/// 该属性只声明目标 operator 助记符；助记符到目标计划的映射归 wasm backend 所有。
+const WASM_OPERATOR_BINDING_ATTRIBUTE: &str = "wasm_operator";
+/// OVM 目标 operator 绑定属性（`[ovm_operator("i32.add")]`）。
 ///
-/// 与 `[wasm_opcode]` 对称：该属性只声明目标指令助记符；助记符到 VM opcode
-/// 的映射归 NyarVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
-const VM_OPCODE_BINDING_ATTRIBUTE: &str = "vm_opcode";
+/// 与 `[wasm_operator]` 对称：该属性只声明目标 operator 助记符；助记符到目标
+/// 计划的映射归 OVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
+const OVM_OPERATOR_BINDING_ATTRIBUTE: &str = "ovm_operator";
 
 /// 当剝外部导入链接覝求的能力标签。
 pub(crate) fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
@@ -201,20 +201,20 @@ fn attribute_to_interop_contract(attribute: &HirAttribute) -> Option<ExternalImp
         return None;
     }
 
-    if name == WASM_OPCODE_BINDING_ATTRIBUTE {
-        // 目标指令助记符必须恰好一段；空段或多段不产链接，交由声明侧修正。
+    if name == WASM_OPERATOR_BINDING_ATTRIBUTE {
+        // 目标 operator 助记符必须恰好一段；空段或多段不产链接，交由声明侧修正。
         if locator_segments.len() != 1 {
             return None;
         }
-        return Some(ExternalImportLink::host(Some(Identifier::new("wasm-opcode")), locator_segments));
+        return Some(ExternalImportLink::host(Some(Identifier::new("wasm-operator")), locator_segments));
     }
 
-    if name == VM_OPCODE_BINDING_ATTRIBUTE {
-        // 与 `[wasm_opcode]` 同形：目标指令助记符必须恰好一段。
+    if name == OVM_OPERATOR_BINDING_ATTRIBUTE {
+        // 与 `[wasm_operator]` 同形：目标 operator 助记符必须恰好一段。
         if locator_segments.len() != 1 {
             return None;
         }
-        return Some(ExternalImportLink::host(Some(Identifier::new("vm-opcode")), locator_segments));
+        return Some(ExternalImportLink::host(Some(Identifier::new("ovm-operator")), locator_segments));
     }
 
     if name == C_BINDING_ATTRIBUTE {

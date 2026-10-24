@@ -1,6 +1,6 @@
 //! WASM 数值指令绑定的唯一助记符表。
 //!
-//! `[wasm_opcode("i32.add")]` 只声明目标指令助记符；助记符到**冻结配方**的映射归
+//! `[wasm_operator("i32.add")]` 只声明目标指令助记符；助记符到**冻结配方**的映射归
 //! wasm backend 所有，并在 `TargetExecutionPlan` 构造时一次性写入计划（arity、
 //! 操作数发射配方、操作数/结果载体与 opcode）。emit 侧只编码计划里的配方，不再
 //! 从助记符字符串推断 arity 或操作数改写。

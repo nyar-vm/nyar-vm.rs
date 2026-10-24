@@ -81,12 +81,12 @@ pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmH
     }
 }
 
-/// 源码 `[wasm_opcode("i32.add")]` 声明的目标指令助记符。
+/// 源码 `[wasm_operator("i32.add")]` 声明的 wasm 目标 operator 助记符。
 ///
-/// 只接受 platform tag `wasm-opcode` 且 locator 恰好一段；其余形态返回 `None`，
+/// 只接受 platform tag `wasm-operator` 且 locator 恰好一段；其余形态返回 `None`，
 /// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn wasm_opcode_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("wasm-opcode") {
+pub(crate) fn wasm_operator_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("wasm-operator") {
         return None;
     }
 
@@ -96,12 +96,12 @@ pub(crate) fn wasm_opcode_target(link: &ExternalImportLink) -> Option<&str> {
     }
 }
 
-/// 源码 `[vm_opcode("i32.add")]` 声明的 NyarVM 指令助记符。
+/// 源码 `[ovm_operator("i32.add")]` 声明的 OVM 目标 operator 助记符。
 ///
-/// 只接受 platform tag `vm-opcode` 且 locator 恰好一段；其余形态返回 `None`，
+/// 只接受 platform tag `ovm-operator` 且 locator 恰好一段；其余形态返回 `None`，
 /// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn vm_opcode_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("vm-opcode") {
+pub(crate) fn ovm_operator_target(link: &ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm-operator") {
         return None;
     }
 
