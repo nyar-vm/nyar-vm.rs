@@ -2,7 +2,7 @@
 
 //! Managed object heap and collector for Nyar VM.
 //!
-//! 语言无关：不依赖 `nyar-language` 或外码前端。外码布局由加载器转换为
+//! 语言无关：不依赖 `rusty-<lang>` 或外码前端。外码布局由加载器转换为
 //! [`LayoutDescriptor`]；策略提示见 [`GcPolicy`] / [`WorkloadHints`]。
 //! 宿主持久根见 [`HostRoots`] / [`RootHandle`]；分代标签见 [`Generation`]。
 //! 工作负载意图见 [`WorkloadIntent`] / [`StrategyController`]。

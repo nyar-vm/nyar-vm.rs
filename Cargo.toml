@@ -23,7 +23,6 @@ members = [
     "projects/compilers/nyar-analyzer",
     "projects/compilers/nyar-emitter",
     "projects/compilers/nyar-format",
-    "projects/compilers/nyar-language",
     "projects/compilers/nyar-optimizer",
     "projects/compilers/nyar-package-manager",
     "projects/compilers/nyar-package-registry",
@@ -33,7 +32,7 @@ members = [
 ]
 default-members = [
     "projects/runtimes/odin-vm",
-    "projects/compilers/nyar-language",
+    "examples/rusty-valkyrie",
 ]
 
 [workspace.package]
@@ -63,7 +62,6 @@ nyar = { path = "projects/compilers/nyar" }
 nyar-analyzer = { path = "projects/compilers/nyar-analyzer" }
 nyar-optimizer = { path = "projects/compilers/nyar-optimizer" }
 nyar-types = { path = "projects/compilers/nyar-types" }
-nyar-language = { path = "projects/compilers/nyar-language" }
 nyar-format = { path = "projects/compilers/nyar-format" }
 nyar-runner = { path = "projects/compilers/nyar-runner" }
 nyar-package-manager = { path = "projects/compilers/nyar-package-manager" }

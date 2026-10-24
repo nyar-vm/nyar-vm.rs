@@ -25,8 +25,8 @@ Core job: frames / nodes / specialization / partial evaluation — **not** concr
 
 | Concern | How |
 | --- | --- |
-| Weird / heterogeneous languages | **Plug-in guests**, not one shared AST. Each language keeps its own shape in `std-data` + `nyar-language`. |
-| Daily execution | `LegacyVmRunner::run` → `GuestInterpretFn` → thin `evaluator/<lang>.rs` → `nyar-language` interpret |
+| Weird / heterogeneous languages | **Plug-in guests**, not one shared AST. Each language keeps its own shape in `examples/rusty-<lang>`. |
+| Daily execution | `LegacyVmRunner::run` → `GuestInterpretFn` → thin `evaluator/<lang>.rs` → `rusty-<lang>` interpret |
 | Compilation | Specialize the **interpreter** w.r.t. a program → **native-bound residual** → PE — **not** `nyar-vm` |
 | Contrast with Valkyrie | Valkyrie folds languages into a shared IR then hand-emits many backends. legend-vm unifies **registration / dispatch / specialize exit**, not syntax. |
 
@@ -37,9 +37,9 @@ Core job: frames / nodes / specialization / partial evaluation — **not** concr
 | `algebra` / `compiler` / `value` / `guest` | Language-neutral PE substrate + guest registration seam |
 | `runner` | Registration, detection, dispatch to guest evaluators |
 | `evaluator/<lang>.rs` | **Thin** guest/runtime adapters only (`LegacyValue` ↔ guest values + delegate) |
-| `nyar-language::src/<lang>/` | Concrete guest languages (`*Module` / `*SemanticBridge` / **interpret** / specialize) |
+| `examples/rusty-<lang>/` | Concrete guest languages (`*Module` / `*SemanticBridge` / **interpret** / specialize) |
 
-Analogy: Truffle = this crate; Truffle languages = `nyar-language` guests.
+Analogy: Truffle = this crate; Truffle languages = the `rusty-<lang>` guest crates.
 
 Guest languages plug in via a thin, language-neutral runtime ABI (`guest::GuestInterpretFn` / `GuestInterpret` + value bridge). Do **not** bake Lua / PowerShell / bash / … semantics into the PE core.
 
@@ -48,7 +48,7 @@ Guest languages plug in via a thin, language-neutral runtime ABI (`guest::GuestI
 ```text
 source
   → std-data              parse into that language’s AST
-  → nyar-language         that language’s interpret (semantic source of truth)
+  → rusty-<lang>          that language’s interpret (semantic source of truth)
   → legend-vm thin adapter  LegacyValue ↔ guest-local values, then delegate
   → guest seam            GuestInterpretFn registered on the Runner
   → legend                pick language, call run
@@ -74,8 +74,8 @@ interpret subject ──specialize──► NativeResidualModule ──emit─�
 
 ## Forbidden
 
-- New shared `HostScript*` / `host_script` abstraction (guests stay concrete in `nyar-language`).
-- New full language tree-walks in this crate — add interpret in `nyar-language`, register a thin adapter here.
+- New shared `HostScript*` / `host_script` abstraction (guests stay concrete in their `rusty-<lang>` crates).
+- New full language tree-walks in this crate — add interpret in the `rusty-<lang>` crate, register a thin adapter here.
 - Lexer/parser copies (parsers live in `std-data`).
 - Treating `.nyar` / `nyar-vm` as the host-script PE product path.
 - Equating this path with Valkyrie’s hand-written multi-backend (`CLR` / `JVM` / `WASM` / …) story — entering `.nyar` does **not** unlock that emitter chain.

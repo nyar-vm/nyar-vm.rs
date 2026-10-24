@@ -5,7 +5,7 @@ Managed object heap and garbage collector for the Nyar bytecode runtime.
 ## Overview
 
 `nyar-gc` provides allocation, tracing, collection, and tuning hooks used by `odin-vm::Executor`. It is
-**language-agnostic**: it never imports `nyar-language` or guest frontends. Object shapes arrive as `LayoutDescriptor`
+**language-agnostic**: it never imports `rusty-<lang>` or guest frontends. Object shapes arrive as `LayoutDescriptor`
 values registered by the loader; the heap stores dense slot vectors keyed by `layout_id`.
 
 ## Features

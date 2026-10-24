@@ -48,7 +48,7 @@ plan type as wired **does not** mean the single-owner contract is finished.
 
 ## Usage
 
-Product CLIs call `compile_with_bundled_backends` (and related driver APIs) after `nyar-language` produces partitioned
+Product CLIs call `compile_with_bundled_backends` (and related driver APIs) after the frontend crate produces partitioned
 plans. See the `testing` module for integration-test wrappers.
 
 ## Boundaries

@@ -29,7 +29,7 @@ use crate::{
 const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v1";
 
 // ---------------------------------------------------------------------------
-// Declaration 索引中立数据结构（生产权在 nyar-language frontend inventory）
+// Declaration 索引中立数据结构（生产权在本 crate 的 frontend inventory）
 // 定义在 nyar_types::compiler_input，本模块 re-export 供内部使用。
 // ---------------------------------------------------------------------------
 pub use nyar_types::compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};

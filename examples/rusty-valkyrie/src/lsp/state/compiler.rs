@@ -3,7 +3,7 @@ use crate::handlers;
 use oak_lsp::types::SymbolKind;
 use oak_valkyrie::ast::ValkyrieRoot as ProgramRoot;
 use tracing::{debug, error, info};
-use nyar_language::ValkyrieCompiler;
+use crate::hir::ValkyrieCompiler;
 use crate::types::{SourceID, ValkyrieError};
 
 impl ServerState {

@@ -2,7 +2,7 @@
 
 use super::{document::script_offset_at, vx::parse_awsl_script_vx};
 use crate::{state::DocumentState, types::Position};
-use nyar_language::ValkyrieCompiler;
+use crate::hir::ValkyrieCompiler;
 use oak_valkyrie::ast::ValkyrieRoot;
 
 /// `<script>` 块解析后的 vx 视图（光标已映射到 script 内坐标）

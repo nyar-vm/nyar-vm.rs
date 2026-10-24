@@ -163,7 +163,7 @@ graph LR
 | **垃圾回收**   | [`nyar-gc`](./projects/runtimes/nyar-gc)                                       | 高性能分块式垃圾回收器                  |
 | **加速引擎**   | [`nyar-jit`](./projects/runtimes/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链                |
 | **示例前端**   | [`examples/`](./examples)                                                      | C, Java, Go, TS 等多种语言的 Nyar 实现  |
-| **语言主链**   | [`nyar-language`](./projects/compilers/nyar-language)                          | Valkyrie `HIR` / `MIR` 与多宿主脚本前端 |
+| **语言主链**   | [`rusty-valkyrie`](./examples/rusty-valkyrie)                                    | Valkyrie 前端：`HIR` / `MIR` 与语义闭包 |
 
 Per-crate docs live in each directory's `readme.md` (for example [
 `odin-vm/readme.md`](./projects/runtimes/odin-vm/readme.md)).

@@ -1,6 +1,6 @@
 //! Architecture guards: bytecode VM must stay language-agnostic.
 //!
-//! Concrete language product logic belongs in `nyar-language`. This crate only
+//! Concrete language product logic belongs in the `rusty-<lang>` frontend crates. This crate only
 //! loads/executes Nyar IR (`.nyar`). Docs may discuss boundaries; imports must not.
 
 use std::{
@@ -10,9 +10,7 @@ use std::{
 
 /// Import / API tokens that must not appear in `src/`.
 const FORBIDDEN_TOKENS: &[&str] = &[
-    "nyar_language::",
-    "nyar_language::{",
-    "use nyar_language",
+    "rusty_",
     "vcc_data::text::",
     "vcc_data::",
     "ValkyrieCompiler",
@@ -55,7 +53,7 @@ fn odin_vm_src_must_not_import_concrete_languages() {
         for token in FORBIDDEN_TOKENS {
             assert!(
                 !source.contains(token),
-                "{} must not contain '{token}' — language concepts stay in nyar-language / guests",
+                "{} must not contain '{token}' — language concepts stay in rusty-<lang> frontend crates",
                 file.display()
             );
         }
@@ -63,11 +61,11 @@ fn odin_vm_src_must_not_import_concrete_languages() {
 }
 
 #[test]
-fn odin_vm_must_not_depend_on_nyar_language() {
+fn odin_vm_must_not_depend_on_frontend_crates() {
     let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read odin-vm Cargo.toml");
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
-        !trimmed.starts_with('#') && (trimmed.starts_with("nyar-language") || trimmed.contains("nyar_language"))
+        !trimmed.starts_with('#') && (trimmed.starts_with("rusty-") || trimmed.contains("rusty_"))
     });
-    assert!(!has_dep, "odin-vm Cargo.toml must not depend on nyar-language");
+    assert!(!has_dep, "odin-vm Cargo.toml must not depend on a rusty-<lang> frontend crate");
 }

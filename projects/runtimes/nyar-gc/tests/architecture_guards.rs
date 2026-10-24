@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORBIDDEN_TOKENS: &[&str] = &["nyar_language::", "use nyar_language", "vcc_data::text::", "ValkyrieCompiler"];
+const FORBIDDEN_TOKENS: &[&str] = &["rusty_", "vcc_data::text::", "ValkyrieCompiler"];
 
 fn crate_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -41,11 +41,11 @@ fn nyar_gc_src_must_not_import_concrete_languages() {
 }
 
 #[test]
-fn nyar_gc_must_not_depend_on_nyar_language() {
+fn nyar_gc_must_not_depend_on_frontend_crates() {
     let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read nyar-gc Cargo.toml");
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
-        !trimmed.starts_with('#') && (trimmed.starts_with("nyar-language") || trimmed.contains("nyar_language"))
+        !trimmed.starts_with('#') && (trimmed.starts_with("rusty-") || trimmed.contains("rusty_"))
     });
-    assert!(!has_dep, "nyar-gc Cargo.toml must not depend on nyar-language");
+    assert!(!has_dep, "nyar-gc Cargo.toml must not depend on a rusty-<lang> frontend crate");
 }

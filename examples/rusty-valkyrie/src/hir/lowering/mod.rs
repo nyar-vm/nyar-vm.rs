@@ -316,7 +316,7 @@ pub struct ValkyrieCompiler {
 /// Resolver 交给 Compiler 的有序源码语义组。
 // ---------------------------------------------------------------------------
 // Compiler 输入数据结构（生产权在 Legion/Resolver，定义在 nyar_types::compiler_input）
-// 本模块 re-export 数据结构，并补充只属于 nyar-language 的验证自由函数。
+// 本模块 re-export 数据结构，并补充只属于本 frontend 的验证自由函数。
 // ---------------------------------------------------------------------------
 pub use nyar_types::compiler_input::{CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup};
 

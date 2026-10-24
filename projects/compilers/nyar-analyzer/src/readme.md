@@ -14,5 +14,5 @@ Frontend-neutral analysis contracts for the Nyar platform (rustdoc source for th
 
 - No dependency on concrete guest-language parser crates.
 - No language-specific `AST / HIR / MIR / LIR` owned here.
-- No concrete language highlighters (implemented as language plugins in `nyar-language`).
+- No concrete language highlighters (implemented as language plugins in the frontend crates).
 - No target container encoding or artifact packaging.

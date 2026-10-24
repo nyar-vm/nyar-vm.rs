@@ -1,6 +1,6 @@
 # @nyar/lua
 
-Lua 模拟包。提供与原版 Lua 解释器同名、同调用形式的 `lua` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `nyar-language` 的 lua guest 中实现，本包不重复实现。
+Lua 模拟包。提供与原版 Lua 解释器同名、同调用形式的 `lua` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `examples/rusty-lua` 中实现，本包不重复实现。
 
 ## 依赖顺序
 

@@ -4,7 +4,7 @@
 //!
 //! - **本模块（nyar-analyzer）**：`HighlightKind` / `HighlightSpan` / `Highlighter` trait、
 //!   `HighlighterKind`（Lexical / Semantic）、`HighlighterRegistry`、kind 映射工具、HTML `hl-*`。
-//! - **语言插件（nyar-language）**：同一语言可实现多个 `Highlighter`（词法快速、语义高质量）。
+//! - **语言插件（前端 crate，如 `rusty-valkyrie`）**：同一语言可实现多个 `Highlighter`（词法快速、语义高质量）。
 
 mod highlighter;
 mod html;

@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORBIDDEN_TOKENS: &[&str] = &["nyar_language::", "use nyar_language", "vcc_data::text::", "ValkyrieCompiler", "LoadedModule"];
+const FORBIDDEN_TOKENS: &[&str] = &["rusty_", "vcc_data::text::", "ValkyrieCompiler", "LoadedModule"];
 
 fn crate_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -41,15 +41,15 @@ fn nyar_jit_src_must_not_import_concrete_languages() {
 }
 
 #[test]
-fn nyar_jit_must_not_depend_on_nyar_language_or_odin_vm() {
+fn nyar_jit_must_not_depend_on_frontend_crates_or_odin_vm() {
     let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read nyar-jit Cargo.toml");
     let has_dep = manifest.lines().any(|line| {
         let trimmed = line.trim_start();
         !trimmed.starts_with('#')
-            && (trimmed.starts_with("nyar-language")
+            && (trimmed.starts_with("rusty-")
                 || trimmed.starts_with("odin-vm")
-                || trimmed.contains("nyar_language")
+                || trimmed.contains("rusty_")
                 || trimmed.contains("odin_vm"))
     });
-    assert!(!has_dep, "nyar-jit Cargo.toml must not depend on nyar-language or odin-vm");
+    assert!(!has_dep, "nyar-jit Cargo.toml must not depend on a rusty-<lang> frontend crate or odin-vm");
 }

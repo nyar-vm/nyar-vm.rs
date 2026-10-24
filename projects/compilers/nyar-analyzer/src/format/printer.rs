@@ -15,7 +15,7 @@ pub enum PrintStyle {
 
 /// 语言无关的 printer。
 ///
-/// 具体语言在 `nyar-language` 中实现；`document` 由插件约定具体类型（经 `Any` 下转）。
+/// 具体语言在前端 crate（如 `rusty-valkyrie`）中实现；`document` 由插件约定具体类型（经 `Any` 下转）。
 pub trait Printer: Send + Sync {
     /// 不透明文档格式标识（由插件约定，本仓不解释语义）。
     fn language_id(&self) -> &str;

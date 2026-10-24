@@ -1,6 +1,6 @@
 # @nyar/bash
 
-Bash 模拟包。提供与原版 bash 同名、同调用形式的 `bash` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `nyar-language` 的 bash guest 中实现，本包不重复实现。
+Bash 模拟包。提供与原版 bash 同名、同调用形式的 `bash` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `examples/rusty-bash` 中实现，本包不重复实现。
 
 ## 依赖顺序
 

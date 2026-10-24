@@ -14,7 +14,6 @@ path = "src/lib.rs"
 acorn-pe = { workspace = true }
 miette = { workspace = true }
 nyar-analyzer = { workspace = true }
-nyar-language = { workspace = true }
 odin-bytecode = { workspace = true }
 rusty-bash = { workspace = true }
 rusty-c = { workspace = true }

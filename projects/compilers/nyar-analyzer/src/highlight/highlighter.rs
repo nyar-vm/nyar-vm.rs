@@ -43,7 +43,7 @@ impl<'a> HighlightRequest<'a> {
 
 /// 语言无关的着色器入口。
 ///
-/// 具体语言在 `nyar-language`（或其它前端包）中为每个 pass 实现此 trait，
+/// 具体语言在前端 crate（如 `rusty-valkyrie`）中为每个 pass 实现此 trait，
 /// 同一 `language_id` 可注册多个 kind。
 pub trait Highlighter: Send + Sync {
     /// 不透明语言标识（由插件约定，本仓不解释语义）。

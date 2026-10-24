@@ -23,4 +23,4 @@ bytes are produced by the Nyar compile pipeline, not hand-written in this crate.
 ## Boundaries
 
 - Not a public import target for application code—install the main `nyar` npm package instead.
-- Does not implement the Valkyrie compiler (see `nyar-language`).
+- Does not implement the Valkyrie compiler (see `examples/rusty-valkyrie`).

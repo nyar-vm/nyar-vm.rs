@@ -12,7 +12,7 @@ use crate::{
     state::{DocumentState, ServerState},
     types::{SourceID, ValkyrieError},
 };
-use nyar_language::ValkyrieCompiler;
+use crate::hir::ValkyrieCompiler;
 
 /// 编译 AWSL 文档：解析模板 + 将 script 作为 **vx** widget 体编译并索引
 pub fn compile_awsl_document(uri: &str, text: &str, doc_state: &mut DocumentState, server: Option<&ServerState>) -> Vec<ValkyrieError> {

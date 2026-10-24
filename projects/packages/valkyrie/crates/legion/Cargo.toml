@@ -39,7 +39,6 @@ acorn-pe = { workspace = true }
 # x86-64 指令编码的唯一所有者（`legion spy native` 直接消费，不再走 vcc-data 副本）。
 acorn-x64 = { workspace = true, features = ["serde"] }
 
-nyar-language = { workspace = true, features = ["serde"] }
 nyar-format = { workspace = true, features = ["serde"] }
 nyar-analyzer = { workspace = true }
 nyar-runner = { workspace = true }

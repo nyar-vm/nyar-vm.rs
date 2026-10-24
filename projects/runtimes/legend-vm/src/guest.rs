@@ -1,6 +1,6 @@
 //! Language-neutral guest interpret seam for the PE / Futamura substrate.
 //!
-//! Concrete language product logic lives in `nyar-language` guests. This module
+//! Concrete language product logic lives in the `rusty-<lang>` guest crates. This module
 //! only defines how the runner invokes them — no language ASTs, no product
 //! semantics. Adapters under [`crate::evaluator`] convert `LegacyValue` env maps
 //! to/from guest-local value types.
@@ -11,13 +11,13 @@ use crate::value::LegacyValue;
 
 /// Function-pointer shape registered on [`crate::LegacyVmRunner`].
 ///
-/// Guests typically expose `evaluate_<lang>_source` in `nyar-language`; VM
+/// Guests typically expose `evaluate_<lang>_source` in their `rusty-<lang>` crate; VM
 /// adapters wrap those into this signature.
 pub type GuestInterpretFn = fn(&str, &mut HashMap<String, LegacyValue>) -> LegacyValue;
 
 /// Thin, language-agnostic entry for “run this guest program”.
 ///
-/// Prefer inherent APIs on concrete guests in `nyar-language`. This trait is the
+/// Prefer inherent APIs on concrete guests in their `rusty-<lang>` crate. This trait is the
 /// substrate-side registration / dispatch surface only.
 pub trait GuestInterpret {
     /// Canonical ids and aliases this guest answers to (e.g. `powershell`, `ps1`).

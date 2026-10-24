@@ -7,7 +7,7 @@ Frontend-neutral syntax highlighting contracts (aligned with JetBrains IDE platf
 | Layer           | Location                           | Role                                                                                              |
 |:----------------|:-----------------------------------|:--------------------------------------------------------------------------------------------------|
 | Platform        | `nyar-analyzer::highlight`         | `HighlightKind`, `HighlightSpan`, `Highlighter` trait, `HighlighterKind`, `Registry`, `hl-*` HTML |
-| Language plugin | `nyar-language::{lang}::highlight` | Multiple passes per language: `Lexical` + `Semantic`                                              |
+| Language plugin | frontend crate (e.g. `rusty-valkyrie`) | Multiple passes per language: `Lexical` + `Semantic`                                          |
 
 ## Multi-pass highlighting
 

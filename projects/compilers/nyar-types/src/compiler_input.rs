@@ -5,8 +5,8 @@
 //!
 //! **生产权声明**：
 //! - `CompilerSourceGroup` 的分配（dependency_key）、依赖拓扑排序、入口组身份由 Legion/Resolver 生产；
-//! - `DeclarationKey` / `DeclarationKind` / `DeclarationIndexEntry` 由 nyar-language frontend 的 inventory 索引阶段生产；
-//! - 结构化验证与错误返回（例如依赖拓扑校验、入口组存在校验、generated 组 producer 非空校验）由 nyar-language 的
+//! - `DeclarationKey` / `DeclarationKind` / `DeclarationIndexEntry` 由前端 crate（`examples/rusty-valkyrie`）的 inventory 索引阶段生产；
+//! - 结构化验证与错误返回（例如依赖拓扑校验、入口组存在校验、generated 组 producer 非空校验）由前端 crate 的
 //!   frontend lowering 阶段负责，本模块不返回任何语言特化错误类型。
 
 use std::collections::BTreeSet;
@@ -116,7 +116,7 @@ impl CompilerSourceInput {
 }
 
 // ---------------------------------------------------------------------------
-// Declaration 索引结构（Legion / nyar-language 之间的中立数据传输合同）
+// Declaration 索引结构（Legion / Valkyrie frontend 之间的中立数据传输合同）
 // ---------------------------------------------------------------------------
 
 /// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。

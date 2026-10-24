@@ -7,7 +7,7 @@ repository**.
 
 | Path         | Role                                                                     |
 |--------------|--------------------------------------------------------------------------|
-| `compilers/` | Nyar compiler stack: `nyar-language`, `nyar-emitter`, `nyar-analyzer`, … |
+| `compilers/` | Nyar compiler stack: `nyar-emitter`, `nyar-analyzer`, `nyar-types`, … |
 | `formats/`   | On-disk bytecode contract (`odin-bytecode`)                              |
 | `runtimes/`  | VM, GC, JIT (`odin-vm`, `nyar-gc`, `nyar-jit`)                           |
 | `hosts/`     | Node-API / Wasm host bindings (`nyar-napi`, `nyar-wasm`)                 |
@@ -16,12 +16,13 @@ repository**.
 ## Dependency boundaries (summary)
 
 - **Text and binary formats** — Oak owns text parsing and recovery; Acorn owns external binary format models and codecs.
-- **Frontend host** — `nyar-language` provides language frontend adapters and their frontend contracts; it may use Oak
-  parsers and hand closed semantic facts to the Nyar platform.
+- **Frontend host** — each language frontend lives in its own `examples/rusty-<lang>` crate; `rusty-valkyrie` owns
+  Valkyrie semantic facts and hands closed contracts to the Nyar platform. Frontends may use Oak parsers.
 - **Platform lowering** — `nyar` / `nyar-emitter` own language-independent planning, target lowering, and artifact
   preparation after the frontend contract. Nyar runtime packages consume verified artifacts.
-- **Host-script frontends** (bash / lua / tcl / powershell / c): the corresponding Oak parser owns text syntax; the
-  language adapter owns script semantics. No `std-data` mixed parser/codec package is a required compile stage.
+- **Host-script frontends** (bash / lua / tcl / powershell / c): each lives in `examples/rusty-<lang>`; the corresponding
+  Oak parser owns text syntax and the adapter crate owns script semantics. No `std-data` mixed parser/codec package is a
+  required compile stage.
 
 ## Optional integration tests
 
@@ -29,7 +30,7 @@ Some tests can point at an external Valkyrie language checkout via environment v
 
 ```bash
 export VALKYRIE_V_ROOT=/path/to/valkyrie-language-checkout
-cargo test -p nyar-language
+cargo test -p asgard
 ```
 
 When unset, related cases are skipped and default CI is unaffected.

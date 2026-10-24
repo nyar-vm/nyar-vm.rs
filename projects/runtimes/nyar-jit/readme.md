@@ -6,7 +6,7 @@ Optional just-in-time compiler for Nyar bytecode.
 
 `nyar-jit` accelerates hot functions by compiling verified bytecode views into machine code while preserving
 deoptimization back to the interpreter. It consumes **only** bytecode-level facts (function specs, stack maps, scalar
-programs) and must not depend on `nyar-language`, `odin-vm`, or guest language crates—avoiding circular dependencies.
+programs) and must not depend on `rusty-<lang>`, `odin-vm`, or guest language crates—avoiding circular dependencies.
 The VM injects a `JitCompiler` implementation via `Executor::with_jit`.
 
 ## Features

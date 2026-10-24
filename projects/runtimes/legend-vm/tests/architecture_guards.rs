@@ -1,8 +1,8 @@
 //! Architecture guards for the PE / Futamura substrate boundary.
 //!
 //! `legend-vm` core must stay language-agnostic. Concrete language product
-//! logic belongs in `nyar-language` guests. Evaluator modules must be thin
-//! adapters that delegate to `nyar_language` (bash exemplar).
+//! logic belongs in the `rusty-<lang>` guest crates. Evaluator modules must be
+//! thin adapters that delegate to `rusty_<lang>` (bash exemplar).
 
 use std::{
     fs,
@@ -13,9 +13,9 @@ use std::{
 const CORE_RELATIVE_PATHS: &[&str] = &["algebra", "compiler", "value.rs", "lib.rs", "guest.rs"];
 
 /// Tokens that must not appear in substrate core.
-const FORBIDDEN_IN_CORE: &[&str] = &["nyar_language::transitional::", "valkyrie::", "ValkyrieCompiler", "HostScript", "host_script"];
+const FORBIDDEN_IN_CORE: &[&str] = &["rusty_::script", "valkyrie::", "ValkyrieCompiler", "HostScript", "host_script"];
 
-/// Guest evaluator adapters that must stay thin (delegate to `nyar_language`).
+/// Guest evaluator adapters that must stay thin (delegate to `rusty_<lang>`).
 const THIN_GUEST_ADAPTERS: &[(&str, &str)] = &[
     ("bash.rs", "evaluate_bash_source"),
     ("lua.rs", "evaluate_lua_source"),
@@ -98,12 +98,11 @@ fn evaluators_must_not_own_full_in_vm_interpret() {
             continue;
         }
         let source = read(&file);
-        let parses_language_ast = source.contains("nyar_language::transitional::");
-        let delegates_to_language = source.contains("nyar_language::") || source.contains("nyar_language::{");
+        let delegates_to_language = source.contains("rusty_");
         assert!(
-            !(parses_language_ast && !delegates_to_language),
-            "{} parses a concrete language AST inside legend-vm without delegating to nyar-language. \
-             Guests must implement interpret in nyar-language and keep only a thin adapter here.",
+            delegates_to_language,
+            "{} must delegate to its `rusty-<lang>` guest crate. \
+             Guests must implement interpret in `examples/rusty-<lang>` and keep only a thin adapter here.",
             file.display()
         );
     }
@@ -114,12 +113,8 @@ fn guest_adapters_remain_thin_language_delegates() {
     for (file_name, source_fn) in THIN_GUEST_ADAPTERS {
         let source = read(&crate_src().join("evaluator").join(file_name));
         assert!(
-            source.contains("nyar_language") && source.contains(source_fn),
-            "{file_name} must stay a thin adapter over nyar-language::{source_fn}"
-        );
-        assert!(
-            !source.contains("nyar_language::transitional::"),
-            "{file_name} must not re-own language AST walking; parse/interpret live in language package"
+            source.contains("rusty_") && source.contains(source_fn),
+            "{file_name} must stay a thin adapter over its `rusty-<lang>` crate::{source_fn}"
         );
     }
 }

@@ -23,4 +23,4 @@ Rust host modules shared with other targets.
 ## Boundaries
 
 - Platform sidecar—not imported directly from app code; use the umbrella `nyar` package.
-- Compilation pipelines remain in `nyar-language` / `nyar-emitter`.
+- Compilation pipelines remain in the frontend crates (`examples/rusty-<lang>`) / `nyar-emitter`.

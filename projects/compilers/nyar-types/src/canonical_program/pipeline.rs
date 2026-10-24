@@ -1,6 +1,6 @@
 //! 单向编译流的阶段 trait 合同。
 //!
-//! 实现位于 `nyar-language` / `nyar-emitter`；本模块只定义阶段合同与阶段顺序。
+//! 实现位于前端 crate（`examples/rusty-valkyrie`）/ `nyar-emitter`；本模块只定义阶段合同与阶段顺序。
 
 use super::{CanonicalProgram, CompileStage, LinkedSemanticProgram, StageResult};
 use crate::semantic_ids::layout_choice::RepresentationPlan;

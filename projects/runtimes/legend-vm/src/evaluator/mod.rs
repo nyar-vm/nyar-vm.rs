@@ -1,7 +1,7 @@
 //! Guest language adapters for the legacy VM runner.
 //!
-//! **Target shape:** thin bridges that delegate interpret to `nyar-language` guests
-//! (see `bash.rs` / `lua.rs` / `powershell.rs`). Registration uses the language-neutral
+//! **Target shape:** thin bridges that delegate interpret to `rusty-<lang>` guest
+//! crates (see `bash.rs` / `lua.rs` / `powershell.rs`). Registration uses the language-neutral
 //! [`crate::guest::GuestInterpretFn`] seam — no concrete language ASTs here.
 
 mod bash;

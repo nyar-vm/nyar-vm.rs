@@ -9,7 +9,7 @@ use std::{
 };
 
 /// 必须收缩字符串身份分派的 crate 的 `src/` 根（相对本测试文件）。
-const SEMANTIC_SRC_ROOTS: &[&str] = &["../nyar-language/src", "../nyar-emitter/src", "../../runtimes/odin-vm/src"];
+const SEMANTIC_SRC_ROOTS: &[&str] = &["../../../examples/rusty-valkyrie/src", "../nyar-emitter/src", "../../runtimes/odin-vm/src"];
 
 /// `as_str() == "` 出现次数的冻结上限（仅生产 `src/`）。
 /// 删除违规用法后重新计数并下调这些常量（严禁上调）。

@@ -36,6 +36,6 @@ For tests, inject `MockRegistry` from `nyar_package_registry` via `open_with_reg
 
 ## Boundaries
 
-- Does not compile source languages (delegates to `nyar-language` and product pipelines).
+- Does not compile source languages (delegates to the frontend crates and product pipelines).
 - Does not implement HTTP for individual registries (uses the `Registry` trait).
 - `ProjectLayout::neutral()` is a generic default; Legion/Valkyrie products should pass their own layout.

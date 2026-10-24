@@ -2,8 +2,7 @@
 
 use std::path::Path;
 
-use nyar_language::transitional::notedown::markdown;
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
 
 /// 文档页面渲染上下文。
 #[derive(Debug, Clone, Default)]
@@ -45,7 +44,19 @@ pub fn render_markdown_to_html_simple(source: &str) -> String {
 
 /// 从 Markdown 提取第一个 `#` 标题。
 pub fn extract_title(source: &str) -> Option<String> {
-    markdown::parse(source).first_heading_text()
+    let mut in_title = false;
+    let mut title = String::new();
+    for event in Parser::new_ext(source, Options::all()) {
+        match event {
+            Event::Start(Tag::Heading { level: HeadingLevel::H1, .. }) => in_title = true,
+            Event::End(TagEnd::Heading(HeadingLevel::H1)) if in_title => return Some(title),
+            Event::Text(text) if in_title => title.push_str(&text),
+            Event::Code(code) if in_title => title.push_str(&code),
+            Event::SoftBreak | Event::HardBreak if in_title => title.push(' '),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn render_markdown_fragment(source: &str) -> String {

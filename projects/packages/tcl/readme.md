@@ -1,6 +1,6 @@
 # @nyar/tcl
 
-Tcl 模拟包。提供与原版 Tcl 解释器同名、同调用形式的 `tclsh` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `nyar-language` 的 tcl guest 中实现，本包不重复实现。
+Tcl 模拟包。提供与原版 Tcl 解释器同名、同调用形式的 `tclsh` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `examples/rusty-tcl` 中实现，本包不重复实现。
 
 ## 依赖顺序
 

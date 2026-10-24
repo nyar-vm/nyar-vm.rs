@@ -8,12 +8,12 @@ fn read(relative: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
-/// 收集 `src/valkyrie/mir/validation/` 子树（门面文件 + 全部子模块）的生产代码。
+/// 收集 `mir/validation/` 子树（门面文件 + 全部子模块）的生产代码。
 ///
 /// 校验器重构后拆为子模块，门面 `validation.rs` 只声明 `mod` 与 `pub use`，
 /// 因此守卫必须扫描整棵子树，而不是单个文件的前缀。
 fn semantic_validator_sources() -> Vec<(String, String)> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../nyar-language/src/valkyrie/mir");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../examples/rusty-valkyrie/src/mir");
     let mut paths = vec![root.join("validation.rs")];
     collect_rust_files(&root.join("validation"), &mut paths);
     paths.sort();
@@ -22,7 +22,7 @@ fn semantic_validator_sources() -> Vec<(String, String)> {
         .map(|path| {
             let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
             let relative = path.strip_prefix(&root).expect("path must live under the mir root").display().to_string().replace('\\', "/");
-            (format!("src/valkyrie/mir/{relative}"), production_source(source))
+            (format!("mir/{relative}"), production_source(source))
         })
         .collect()
 }
@@ -51,7 +51,7 @@ fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
         (
             "SMIR-G002",
             "descriptor semantic fallback".to_string(),
-            production_source(read("../nyar-language/src/valkyrie/compile_pipeline/canonical.rs")),
+            production_source(read("../../../examples/rusty-valkyrie/src/compile_pipeline/canonical.rs")),
         ),
     ];
     for (path, source) in semantic_validator_sources() {

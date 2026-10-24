@@ -1,5 +1,5 @@
 //! JVM MIR contract tests. Included bodies construct [`ExecutableFunction`] directly
-//! (no `nyar-language` MIR), so this crate root re-exports driver modules as `crate::*`.
+//! (no frontend MIR), so this crate root re-exports driver modules as `crate::*`.
 
 pub use nyar::{Identifier, QualifiedName};
 pub use nyar_emitter::{

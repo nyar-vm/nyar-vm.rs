@@ -29,4 +29,4 @@ target descriptors—not the Valkyrie language main chain.
 
 - No HIR / MIR / type checking.
 - No bypass of CLR bootstrap requirements via ad-hoc host bridges.
-- Compilation stays in `nyar-language` + `nyar-emitter`; this crate executes results.
+- Compilation stays in the frontend crates + `nyar-emitter`; this crate executes results.

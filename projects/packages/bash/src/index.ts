@@ -2,7 +2,7 @@
  * `@nyar/bash` —— Bash 语言包。
  *
  * 只声明语言身份，宿主能力全部委托给 `@nyar/nyar`；lexer / parser / interpret
- * 属于 `nyar-language` 的 bash guest，本包不重复实现。
+ * 属于 `examples/rusty-bash`，本包不重复实现。
  */
 
 import path from 'node:path';

@@ -6,7 +6,7 @@ use super::{FormatError, FormatOptions, source_map::FormattedOutput, syntax::Byt
 
 /// 语言无关的源码格式化器（lossless CST 路径）。
 ///
-/// 具体语言在 `nyar-language` 中实现此 trait。
+/// 具体语言在前端 crate（如 `rusty-valkyrie`）中实现此 trait。
 pub trait SourceFormatter: Send + Sync {
     /// 不透明语言标识（由语言插件约定并注册，本层不解释语义）。
     fn language_id(&self) -> &str;

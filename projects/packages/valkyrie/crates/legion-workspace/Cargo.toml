@@ -11,7 +11,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 oak-core = { workspace = true }
 oak-von = { workspace = true, features = ["serde"] }
-nyar-language = { workspace = true, features = ["serde"] }
+nyar-format = { workspace = true, features = ["serde"] }
 nyar-package-manager = { workspace = true }
 nyar = { workspace = true }
 nyar-types = { workspace = true }
