@@ -447,7 +447,7 @@ impl PackageManager {
             }
 
             let artifact = if !job.build_target.is_empty() && is_registry_publish_type(&job.registry) {
-                Some(resolve_publish_artifact(job.package_path.as_path(), &job.build_target, &job.registry)?)
+                Some(resolve_publish_artifact(job.package_path.as_path(), &job.build_target)?)
             }
             else {
                 None

@@ -17,24 +17,13 @@ pub struct ResolvedPublishArtifact {
 
 /// Resolve `publish[].target` to a canonical triple and `dist/` subdirectory.
 ///
-/// For npm/jsr, `wasm` is remapped to `node` because registry packages run on Node hosts.
-pub fn resolve_publish_artifact(package_path: &Path, build_target: &str, registry: &str) -> Result<ResolvedPublishArtifact> {
-    let mut target_input = build_target.trim();
-    if target_input.is_empty() {
-        target_input = "node";
-    }
+/// 运输渠道只决定 envelope 如何托管，不决定编译目标：`wasm` 产物发布到 npm/jsr
+/// 仍是 `wasm` 目标，不得被渠道改写成 `node`。目标选择由构建方与发布声明决定。
+pub fn resolve_publish_artifact(package_path: &Path, build_target: &str) -> Result<ResolvedPublishArtifact> {
+    let target_input = if build_target.trim().is_empty() { "node" } else { build_target.trim() };
 
-    let registry = registry.trim().to_ascii_lowercase();
-    let mut remapped = false;
-    if matches!(registry.as_str(), "npm" | "jsr") && target_input.eq_ignore_ascii_case("wasm") {
-        println!("注意：npm/jsr 发布将 `wasm` 映射为 `node`（wasm32-node-unknown-wasm）");
-        target_input = "node";
-        remapped = true;
-    }
-
-    let canonical_target = CanonicalTarget::parse(target_input).map_err(|error| {
-        PackageManagerError::message(format!("无法解析 publish target `{target_input}`：{error}{}", if remapped { "" } else { "" }))
-    })?;
+    let canonical_target = CanonicalTarget::parse(target_input)
+        .map_err(|error| PackageManagerError::message(format!("无法解析 publish target `{target_input}`：{error}")))?;
     let canonical_label = canonical_target.as_canonical_str();
     let artifact_dir = package_path.join("dist").join(&canonical_label);
     if !artifact_dir.is_dir() {
