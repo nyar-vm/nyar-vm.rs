@@ -1,6 +1,6 @@
 {
     "name": "@nyar/valkyrie-darwin-arm64",
-    "version": "0.0.21",
+    "version": "0.0.22",
     "description": "Valkyrie product native binding  - darwin arm64 (Node-API host)",
     "type": "module",
     "license": "MIT",
