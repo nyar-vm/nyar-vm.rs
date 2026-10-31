@@ -278,12 +278,9 @@ function marshalLibraryArg(schema, value) {{
     if (kind === "Bool") return value ? 1 : 0;
     if (kind === "Char") return Number(value ?? 0);
     if (kind === "Utf8" || kind === "Utf16") {{
-        // Utf8 在 JS glue 轨是 i32 host-intern 句柄；调用方应已提供句柄值。
-        // 如果传入的是 JS 字符串而非句柄，宿主 glue 层需要一个 Utf8-to-handle 桥（阶段 C 实现）。
-        if (typeof value === "string") {{
-            throw new Error("Utf8 参数需要预转换为 host-intern 句柄；JS 字符串到句柄的桥尚未建立");
-        }}
-        return Number(value ?? 0);
+        // Utf8/Utf16 在 JS glue 轨是 i32 host-intern 句柄：JS 字符串入参在此登记为句柄，
+        // 已是句柄的数值原样透传，避免把字符串当成裸 i32。
+        return typeof value === "string" ? hostIntern(value) : Number(value ?? 0);
     }}
     if (kind === "Unit") return undefined;
 
@@ -372,8 +369,7 @@ function demarshalLibraryReturn(schema, raw) {{
     if (kind === "I32" || kind === "F32" || kind === "F64") return Number(raw);
     if (kind === "Bool") return raw !== 0 && raw !== null;
     if (kind === "Char") return Number(raw);
-    if (kind === "Utf8") return raw == null ? "" : Number(raw);
-    if (kind === "Utf16") return raw == null ? "" : Number(raw);
+    if (kind === "Utf8" || kind === "Utf16") return raw == null ? "" : hostResolve(raw);
 
     // ── NamedAggregate：从 glue_entries registry 查找 demarshal 规则 ────
     if (kind === "NamedAggregate") {{

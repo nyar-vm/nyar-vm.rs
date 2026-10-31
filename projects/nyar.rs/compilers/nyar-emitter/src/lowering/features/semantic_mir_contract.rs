@@ -356,7 +356,9 @@ pub fn validate_function(function: &ExecutableFunction) -> Result<(), SemanticMi
                             code: "SMIR007",
                             function: function.symbol.clone(),
                             location,
-                            detail: "text constant encoding/type contract is absent or disagrees with the literal".to_string(),
+                            detail: format!(
+                                "text constant encoding/type contract is absent or disagrees with the literal: literal={literal_type:?} declared={ty:?}"
+                            ),
                         });
                     }
                     if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
@@ -365,7 +367,10 @@ pub fn validate_function(function: &ExecutableFunction) -> Result<(), SemanticMi
                                 code: "SMIR007",
                                 function: function.symbol.clone(),
                                 location: format!("block {} instruction {index}", block.id.0),
-                                detail: "text constant result SSA type disagrees with the literal encoding".to_string(),
+                                detail: format!(
+                                    "text constant result SSA type disagrees with the literal encoding: literal={literal_type:?} result={:?}",
+                                    function.value_types.get(&output)
+                                ),
                             });
                         }
                     }

@@ -1093,7 +1093,11 @@ fn lower_operation(
                 dest: value(*destination),
             }
         }
-        CanonicalOperation::LoadConstant { constant } => InstructionKind::LoadConstant { constant: lower_constant(constant), ty: None },
+        // 文本常量的编码身份由常量变体自身决定（`Utf8` / `Utf16`），不靠名字或源码回推；
+        // canonical 层不保存可被字符串重建的类型，因此在这里从编码恢复。
+        CanonicalOperation::LoadConstant { constant } => {
+            InstructionKind::LoadConstant { constant: lower_constant(constant), ty: constant_encoding_type(constant) }
+        }
         // 结构操作已由 frontend 依据自身内建结构操作身份判定完毕，事实所有权在此结束；
         // backend-private 计划只做载体映射，wasm backend 负责编码成 wasm GC 指令。
         // 在此重新拒绝会把已确认的结构语义降级成字符串错误，属禁止的向上推断。
@@ -1165,6 +1169,15 @@ fn lower_operation(
         CanonicalOperation::Cast { source, ty } => InstructionKind::Cast { source: value(*source), ty: lower_type(program, *ty)? },
         unsupported => return Err(format!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
+}
+
+/// 文本常量的编码身份由常量变体自身决定；整数/空值没有在这里声称的编码身份。
+fn constant_encoding_type(constant: &CanonicalConstant) -> Option<NyarType> {
+    match constant {
+        CanonicalConstant::Utf8(_) => Some(NyarType::Utf8),
+        CanonicalConstant::Utf16(_) => Some(NyarType::Utf16),
+        _ => None,
+    }
 }
 
 fn lower_constant(constant: &CanonicalConstant) -> Constant {
@@ -1391,6 +1404,16 @@ mod tests {
         let error = lower_type(&program, type_id(2)).expect_err("Intersection 不得被降成 Union");
         assert!(error.contains("Intersection"), "诊断必须指明未擦除的 Intersection，实际：{error}");
         assert!(error.contains("frontend"), "诊断必须指向 frontend 擦除责任，实际：{error}");
+    }
+
+    /// 文本常量进入 executable 计划时必须携带由编码变体决定的类型身份；
+    /// canonical 层不保存名称，不能在这里回落 `None` 让后端再猜。
+    #[test]
+    fn text_constants_carry_their_encoding_identity() {
+        assert_eq!(constant_encoding_type(&CanonicalConstant::Utf8("文本".to_string())), Some(NyarType::Utf8));
+        assert_eq!(constant_encoding_type(&CanonicalConstant::Utf16("文本".to_string())), Some(NyarType::Utf16));
+        assert_eq!(constant_encoding_type(&CanonicalConstant::Int(1)), None, "整数宽度不由常量变体单独声称");
+        assert_eq!(constant_encoding_type(&CanonicalConstant::Unit), None, "Unit 不声称文本编码");
     }
 }
 

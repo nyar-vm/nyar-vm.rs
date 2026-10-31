@@ -20,30 +20,31 @@ fn library_glue(spec: &str) -> String {
     build_node_launcher("contract_demo", &[], &[], true, Some(spec))
 }
 
-// ── Utf8：当前按 host-intern 句柄传递，不解码 ─────────────────────────────
+// ── Utf8：host-intern 句柄与 JS 字符串双向桥 ───────────────────────────────
 
 #[test]
-fn glue_demarshals_utf8_return_as_raw_handle_number() {
-    // 现状锁定：`Utf8` 返回在 JS glue 轨是 `Number(raw)`——携带的是宿主句柄，
-    // 不是解码文本（账本「后端 glue/ABI」缺口）。
-    // 转红触发器：文本常量合同（SMIR007）与 Utf8 codec 落地后，本形态必须
-    // 升级为「glue 读回解码字符串」的端到端断言，而不是继续锁句柄。
+fn glue_demarshals_utf8_return_through_host_intern_table() {
+    // `Utf8` 返回在 JS glue 轨是宿主 host-intern 句柄；demarshal 必须经
+    // `hostResolve` 解码回 JS 字符串，而不是把句柄当数字交给调用方。
     let glue = library_glue(&spec(r#"{"title":{"params":[],"returns":{"kind":"Utf8"}}}"#, NO_ENTRIES));
     assert!(
-        glue.contains(r#"if (kind === "Utf8") return raw == null ? "" : Number(raw);"#),
-        "Utf8 返回当前必须按 Number(raw) 携带句柄:\n{glue}"
+        glue.contains(r#"if (kind === "Utf8" || kind === "Utf16") return raw == null ? "" : hostResolve(raw);"#),
+        "Utf8 返回必须经 host-intern 表解码为字符串:\n{glue}"
     );
 }
 
 #[test]
-fn glue_marshal_rejects_js_string_for_utf8_parameter() {
-    // Utf8 参数位只接受预转换的 host-intern 句柄；JS 字符串入参必须显式抛错，
-    // 不得静默把字符串当句柄或当索引。
+fn glue_marshals_js_string_utf8_parameter_to_host_handle() {
+    // Utf8/Utf16 参数位接受 JS 字符串并在宿主表登记句柄；数值句柄原样透传，
+    // 不把字符串当裸 i32。
     let glue = library_glue(&spec(
         r#"{"echo":{"params":[{"index":0,"name":"s","type":{"kind":"Utf8"},"carrier":"i32"}],"returns":{"kind":"Utf8"}}}"#,
         NO_ENTRIES,
     ));
-    assert!(glue.contains("Utf8 参数需要预转换为 host-intern 句柄"), "JS 字符串入参必须失败闭合:\n{glue}");
+    assert!(
+        glue.contains(r#"return typeof value === "string" ? hostIntern(value) : Number(value ?? 0);"#),
+        "JS 字符串入参必须登记为 host-intern 句柄:\n{glue}"
+    );
 }
 
 // ── 序列族聚合：length/at demarshal、construct/push marshal ────────────────

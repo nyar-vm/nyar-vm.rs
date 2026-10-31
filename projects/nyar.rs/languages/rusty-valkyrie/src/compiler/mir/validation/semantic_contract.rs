@@ -382,7 +382,9 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                         return Err(error(
                             "SMIR007",
                             location.clone(),
-                            "text constant encoding/type contract is absent or disagrees with the literal".to_string(),
+                            format!(
+                                "text constant encoding/type contract is absent or disagrees with the literal: literal={literal_type:?} declared={ty:?}"
+                            ),
                         ));
                     }
                     if let Some(output) = instruction.results.first() {
@@ -390,7 +392,10 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                             return Err(error(
                                 "SMIR007",
                                 location.clone(),
-                                "text constant result SSA type disagrees with the literal encoding".to_string(),
+                                format!(
+                                    "text constant result SSA type disagrees with the literal encoding: literal={literal_type:?} result={:?}",
+                                    function.value_types.get(output)
+                                ),
                             ));
                         }
                     }

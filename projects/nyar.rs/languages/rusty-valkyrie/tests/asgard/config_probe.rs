@@ -155,17 +155,13 @@ micro configure() -> u32 {
     assert_eq!(value, "7", "glue 读回的标量配置值必须是导出函数的返回值");
 }
 
-/// 第二层（文本）：`utf8` 返回值当前断在 Semantic MIR 文本常量合同。
+/// 第二层（文本）：`utf8` 返回值经正式构建 + Node + JS glue 读回字符串。
 ///
-/// 探针实测（2026-10-31）：最小配置模块返回字符串字面量时，正式构建链在
-/// `SMIR007`（text constant encoding/type contract absent）失败闭合，不产出产物、
-/// 不静默降级。缺口归前端文本常量合同生产者与配置 SDK 的 `std.text` 事实
-/// （设计 16 §5：`AsgardConfig` 文本字段须由 V 端正式类型提供）。
-/// 本用例固化该失败形态：若合同补全后构建转好，此测试转红，探针须升级为
-/// 读回断言（glue 侧 `Utf8` 返回目前仍按 `Number(raw)` 携带 handle 而非解码文本，
-/// 转绿时须一并验收字符串 codec）。
+/// 本轮闭合的两处事实：文本常量的编码身份在 canonical→executable 边界由常量变体恢复，
+/// 非入口（库导出）模块同样消费 plan 导入并合成 `const_utf8`；glue 侧 `Utf8` 句柄
+/// 经 host-intern 表解码回 JS 字符串，入参字符串同样登记为句柄。
 #[test]
-fn c0_text_layer_fails_closed_on_missing_text_constant_contract() {
+fn c0_text_layer_roundtrips_through_node_glue() {
     let artifact = build_probe_project(
         "asgard-c0-text",
         r#"[export(name: "title")]
@@ -173,13 +169,12 @@ micro title() -> utf8 {
     return "asgard"
 }
 "#,
-    );
-    let failure = match artifact {
-        Err(failure) => failure,
-        Ok(_) => panic!("C0 文本层当前必须失败闭合于文本常量合同；若已转通，请把本探针升级为 glue 读回字符串断言"),
-    };
-    assert!(failure.message.contains("SMIR007"), "文本层缺口必须是结构化 SMIR007 诊断，实际：{}", failure.message);
-    assert!(failure.message.contains("text constant"), "SMIR007 诊断必须指明文本常量合同缺失，实际：{}", failure.message);
+    )
+    .unwrap_or_else(|failure| panic!("C0 文本层必须走通正式构建链，实际失败：{}", failure.message));
+
+    let value = call_export_through_glue(&artifact, "title", "[]")
+        .unwrap_or_else(|diagnostic| panic!("C0 文本层必须经 glue 读回字符串，实际失败：{diagnostic}"));
+    assert_eq!(value, "\"asgard\"", "glue 读回的文本配置值必须是导出函数返回的字符串");
 }
 
 /// 第三层（聚合）：结构体返回值当前断在 wasm 预发射名义身份门禁。

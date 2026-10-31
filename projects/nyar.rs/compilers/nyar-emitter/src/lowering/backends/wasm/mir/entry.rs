@@ -111,16 +111,20 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     })?;
     let wasi_mode = export_name == "_start";
     let operations = submission.backend_plan.instances();
-    let string_literals = if export_name == "main" || wasi_mode { collect_mir_string_literals(submission, &operations) } else { Vec::new() };
+    // 字符串字面量属于被发射模块本身，与导出名是 `main` 还是库导出无关；
+    // 只有常量载体（`const_utf8` / WASI 偏移）在两种宿主形态下不同。
+    let string_literals = collect_mir_string_literals(submission, &operations);
     let host_imports = if wasi_mode {
         collect_wasi_host_imports(submission, wasi_preview)
     }
     else if export_name == "main" {
-        // 仅在确有字符串字面量时合?`const_utf8`；CLI 导入一律走源码声明?
+        // 入口模块消费 plan 导入；确有字符串字面量时再合成 `const_utf8`。
         collect_wasm_host_imports(submission, !string_literals.is_empty())
     }
     else {
-        Vec::new()
+        // 库导出只补字符串字面量所需的宿主载体，保持既有导入表形状；
+        // 文本编码身份不能因为导出名不是 `main` 就丢失。
+        if string_literals.is_empty() { Vec::new() } else { vec![("env".to_string(), "const_utf8".to_string())] }
     };
     let import_count = u32::try_from(host_imports.len()).expect("import count overflow");
     let callee_import_index = if wasi_mode {
