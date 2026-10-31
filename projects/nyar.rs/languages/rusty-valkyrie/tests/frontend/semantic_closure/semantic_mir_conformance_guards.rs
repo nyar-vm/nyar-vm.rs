@@ -2,10 +2,23 @@
 
 use std::{fs, path::PathBuf};
 
-fn read(relative: &str) -> String {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join(relative);
-    fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+/// 收集 `emitter/pipeline/canonical/` 子树（门面文件 + 全部子模块）的生产代码。
+///
+/// canonical lowering 拆为子模块后，守卫必须扫描整棵子树；SMIR-G002 针对
+/// descriptor 语义回退面。
+fn canonical_semantic_sources() -> Vec<(String, String)> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compiler/emitter/pipeline/canonical");
+    let mut paths = Vec::new();
+    collect_rust_files(&root, &mut paths);
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+            let relative = path.strip_prefix(&root).expect("path must live under the canonical root").display().to_string().replace('\\', "/");
+            (format!("canonical/{relative}"), production_source(source))
+        })
+        .collect()
 }
 
 /// 收集 `mir/validation/` 子树（门面文件 + 全部子模块）的生产代码。
@@ -13,7 +26,7 @@ fn read(relative: &str) -> String {
 /// 校验器重构后拆为子模块，门面 `validation.rs` 只声明 `mod` 与 `pub use`，
 /// 因此守卫必须扫描整棵子树，而不是单个文件的前缀。
 fn semantic_validator_sources() -> Vec<(String, String)> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compiler/mir");
     let mut paths = vec![root.join("validation.rs")];
     collect_rust_files(&root.join("validation"), &mut paths);
     paths.sort();
@@ -46,8 +59,10 @@ fn production_source(source: String) -> String {
 
 #[test]
 fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
-    let mut sources =
-        vec![("SMIR-G002", "descriptor semantic fallback".to_string(), production_source(read("src/compile_pipeline/canonical.rs")))];
+    let mut sources = Vec::new();
+    for (path, source) in canonical_semantic_sources() {
+        sources.push(("SMIR-G002", format!("descriptor semantic fallback in `{path}`"), source));
+    }
     for (path, source) in semantic_validator_sources() {
         sources.push(("SMIR-G001", format!("name-based semantic dispatch in `{path}`"), source));
     }
