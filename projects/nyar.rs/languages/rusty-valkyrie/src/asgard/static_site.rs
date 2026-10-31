@@ -51,13 +51,26 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         )));
     }
 
-    // 词法规范化后校验包含关系，拒绝越出项目根的入口路径。
+    // 入口合同正式前置校验：项目根包含性以文件系统规范化（`canonicalize` 解析 `..` 段与
+    // 符号链接）判定，先于读取入口内容失败闭合。词法 `starts_with` 在 Unix 上不折叠 `..`，
+    // 不能充当包含性证据。
     let project_root = std::path::absolute(&options.project_dir)
         .map_err(|error| AsgardError::msg(report!("规范化项目根失败 {}: {error}", options.project_dir.display())))?;
     let entry_path = std::path::absolute(project_root.join(&options.entry))
         .map_err(|error| AsgardError::msg(report!("规范化入口路径失败 {}: {error}", options.entry.display())))?;
-    if !entry_path.starts_with(&project_root) {
-        return Err(AsgardError::msg(report!("入口越出项目根: {} 不在 {} 内", entry_path.display(), project_root.display())));
+    let root_canonical =
+        std::fs::canonicalize(&project_root).map_err(|error| AsgardError::msg(report!("项目根不可用 {}: {error}", project_root.display())))?;
+    // 入口可能尚不存在（缺失文件应报读取失败并带路径证据）：以父目录规范化结果重建
+    // 判定基准；父目录也不存在时无从判定包含性，同样由后续读取失败闭合。
+    let entry_canonical = std::fs::canonicalize(&entry_path).ok().or_else(|| {
+        let parent = entry_path.parent()?;
+        let name = entry_path.file_name()?;
+        Some(std::fs::canonicalize(parent).ok()?.join(name))
+    });
+    if let Some(resolved) = &entry_canonical {
+        if !resolved.starts_with(&root_canonical) {
+            return Err(AsgardError::msg(report!("入口越出项目根: {} 不在 {} 内", resolved.display(), project_root.display())));
+        }
     }
 
     let file_stem = entry_path
