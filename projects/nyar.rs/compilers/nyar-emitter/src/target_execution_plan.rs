@@ -1268,8 +1268,11 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         CanonicalTypeKind::Union(items) => {
             Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
         }
+        // `Intersection` 必须在进入平台表示计划前由 frontend 擦除（见
+        // `frontend_contract::nyar_type` 的 `ConcretizeError`）。把它静默降成 `Union`
+        // 会改变语义（`A & B` 不等于 `A | B`），属于错误成功路径，因此失败闭合。
         CanonicalTypeKind::Intersection(items) => {
-            Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
+            Err(format!("canonical 类型 Intersection 尚未在 frontend 擦除，不能进入平台表示计划: {items:?}"))
         }
         unsupported => {
             // Generic 类型只能出现在泛型函数的签名里——如果某个泛型函数被错误地留在了
@@ -1374,6 +1377,20 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("u8"), NyarType::Integer8 { signed: false });
         assert_eq!(lower_type(&program, type_id(1)).expect("i16"), NyarType::Integer16 { signed: true });
         assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
+    }
+
+    /// `Intersection` 必须在 frontend 擦除；平台 lowering 静默降成 `Union` 会改变语义，
+    /// 属错误成功路径，因此必须结构化失败闭合。
+    #[test]
+    fn intersection_type_fails_closed_instead_of_widening_to_union() {
+        let program = program_with_types(vec![
+            (type_id(0), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 32, signed: true })),
+            (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Bool)),
+            (type_id(2), CanonicalTypeKind::Intersection(vec![type_id(0), type_id(1)])),
+        ]);
+        let error = lower_type(&program, type_id(2)).expect_err("Intersection 不得被降成 Union");
+        assert!(error.contains("Intersection"), "诊断必须指明未擦除的 Intersection，实际：{error}");
+        assert!(error.contains("frontend"), "诊断必须指向 frontend 擦除责任，实际：{error}");
     }
 }
 
