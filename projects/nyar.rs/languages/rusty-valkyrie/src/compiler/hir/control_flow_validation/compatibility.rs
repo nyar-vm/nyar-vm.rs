@@ -50,10 +50,11 @@ pub fn control_flow_value_type_compatible_with_primitives(
 /// `Named("i32")` ↔ `Integer32 { .. }`、`Named("f64")` ↔ `Float64` 等。
 ///
 /// 身份键带上有符号性：`i32` 与 `u32` 是同一宽度的不同名义类型，不得因表示形式合并。
+/// `bool` 不在表内：布尔的名义等价只承认 `boolean_declarations` 证据
+/// （见 `primitive_boolean_compatible`），未绑定声明的 `Named("bool")` 不得顶替 builtin Boolean。
 fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
     fn identity_of(ty: &ValkyrieType) -> Option<(u32, Option<bool>)> {
         Some(match ty {
-            ValkyrieType::Boolean => (0, None),
             ValkyrieType::Integer8 { signed } => (1, Some(*signed)),
             ValkyrieType::Integer16 { signed } => (2, Some(*signed)),
             ValkyrieType::Integer32 { signed } => (3, Some(*signed)),
@@ -62,7 +63,6 @@ fn primitive_named_equivalent(a: &ValkyrieType, b: &ValkyrieType) -> bool {
             ValkyrieType::Float32 => (6, None),
             ValkyrieType::Float64 => (7, None),
             ValkyrieType::Named(name) => match name.as_str() {
-                "boolean" | "Bool" | "bool" => (0, None),
                 "i8" => (1, Some(true)),
                 "i16" => (2, Some(true)),
                 "i32" | "int" | "Int" => (3, Some(true)),
