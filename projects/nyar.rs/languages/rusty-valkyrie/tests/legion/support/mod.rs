@@ -114,7 +114,7 @@ micro random_next_i32(seed: i32): i32
     fs::create_dir_all(wasm_adaptor_dir.join("source").join("math").join("random")).unwrap();
     fs::write(
         wasm_adaptor_dir.join("source").join("math").join("random").join("Random.browser.v"),
-        r#"[when(target.vendor == "browser")]
+        r#"[when(target.specification == "browser")]
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]

@@ -2131,7 +2131,7 @@ micro main() {
     .unwrap();
     fs::write(
         wasm_dir.join("source").join("fetch.browser.v"),
-        r#"[when(target.vendor == "browser")]
+        r#"[when(target.specification == "browser")]
 namespace std.adaptor.wasm.fetch;
 
 [host_provider(std::net::fetch)]
@@ -2261,7 +2261,7 @@ micro main() {
         wasm_dir.join("source").join("http.v"),
         r#"namespace std.adaptor.wasm.net;
 
-[when(target.vendor == "browser")]
+[when(target.specification == "browser")]
 [host_provider(std::net::get)]
 [js("fetch")]
 micro browser_get(url: utf8): utf8 {
@@ -2384,7 +2384,7 @@ micro main() -> i32 {
     fs::create_dir_all(wasm_dir.join("source").join("math").join("random")).unwrap();
     fs::write(
         wasm_dir.join("source").join("math").join("random").join("Random.browser.v"),
-        r#"[when(target.vendor == "browser")]
+        r#"[when(target.specification == "browser")]
 namespace std.adaptor.wasm;
 
 [host_provider(std::math::random_next_i32)]
@@ -2956,7 +2956,7 @@ micro main() {
 [js("fetch")]
 micro fetch_uncfg(url: utf8): utf8 { return "" }
 
-[when(target.vendor == "browser")]
+[when(target.specification == "browser")]
 [host_provider(std::net::fetch)]
 [js("fetch")]
 micro fetch_browser(url: utf8): utf8 { return "" }
