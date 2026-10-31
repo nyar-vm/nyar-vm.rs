@@ -2,7 +2,7 @@
 //!
 //! 验收面：`CollectionInit` 两槽冻结声明身份与调用合同、实例由单态化固定点铸造；
 //! 嵌套字面量按元素类型递归构造；空字面量零项；`Array` 声明保持 `ArrayLiteral`；
-//! 无合同事实的 nominal 声明 + 字面量在构造点结构化拒绝。
+//! `let` 与 `return`/尾表达式同一期望类型口径；无合同事实的 nominal 声明 + 字面量在构造点结构化拒绝。
 
 use rusty_valkyrie::{
     HirError, ValkyrieCompiler,
@@ -71,6 +71,14 @@ micro build_plain_array() -> [u32] {
     let d: [u32] = [7, 8]
     return d
 }
+
+micro return_literal() -> ArrayList<u32> {
+    return [9, 10]
+}
+
+micro return_plain_array() -> [u32] {
+    return [11]
+}
 "#;
 
 fn compile(source: &str) -> Result<HirModule, HirError> {
@@ -89,6 +97,26 @@ fn first_let_initializer<'a>(function: &'a HirFunction) -> &'a HirExpr {
         }
     }
     panic!("函数体必须含 let 绑定");
+}
+
+/// 取函数体第一条 `return` 的表达式；`return` 作为无分号尾表达式时位于 `block.expr`。
+fn first_return_expr<'a>(function: &'a HirFunction) -> &'a HirExpr {
+    fn return_value<'a>(expr: &'a HirExpr) -> Option<&'a HirExpr> {
+        if let HirExprKind::Return(Some(inner)) = &expr.kind { Some(inner.as_ref()) } else { None }
+    }
+    for statement in &function.body.statements {
+        if let HirStatementKind::Expr(expr) = &statement.kind {
+            if let Some(value) = return_value(expr) {
+                return value;
+            }
+        }
+    }
+    if let Some(tail) = &function.body.expr {
+        if let Some(value) = return_value(tail) {
+            return value;
+        }
+    }
+    panic!("函数体必须含 return 表达式");
 }
 
 /// 断言初始值是 `CollectionInit`，返回两槽与项列表。
@@ -174,6 +202,24 @@ fn array_declared_literal_stays_array_literal() {
     let module = compile(CONTRACT_SOURCE).expect("合同源码必须完成 HIR");
     let initializer = first_let_initializer(function(&module, "build_plain_array"));
     assert!(matches!(&initializer.kind, HirExprKind::ArrayLiteral { items } if items.len() == 2), "非名义声明保持 ArrayLiteral");
+}
+
+/// `return [...]` 与 `let` 初始化同一口径：按声明返回类型驱动 `CollectionInit` 构造。
+#[test]
+fn return_literal_uses_declared_return_type() {
+    let module = compile(CONTRACT_SOURCE).expect("合同源码必须完成 HIR");
+    let (container_type, _, with_length, append, items) = expect_collection_init(first_return_expr(function(&module, "return_literal")));
+    assert!(container_type.nominal_declaration().is_some(), "返回类型驱动的容器必须是名义类型");
+    assert_eq!(items.len(), 2, "返回位置字面量项必须逐项保留");
+    assert!(with_length.instance.is_some() && append.instance.is_some(), "返回位置两槽实例同样由固定点铸造");
+}
+
+/// 返回 `[T]` 时不套用名义合同：字面量保持 `ArrayLiteral`。
+#[test]
+fn return_plain_array_literal_stays_array_literal() {
+    let module = compile(CONTRACT_SOURCE).expect("合同源码必须完成 HIR");
+    let expr = first_return_expr(function(&module, "return_plain_array"));
+    assert!(matches!(&expr.kind, HirExprKind::ArrayLiteral { items } if items.len() == 1), "数组返回类型保持 ArrayLiteral");
 }
 
 /// 无合同事实的 nominal 声明 + 字面量：在构造点结构化拒绝，禁止退化为 Array 隐式转换。

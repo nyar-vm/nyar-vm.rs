@@ -223,12 +223,16 @@ fn boolean_element_accepts(element_type: &ValkyrieType, boolean: &BTreeSet<ItemI
     }
 }
 
-/// 遍历上下文：合同事实、字面量口径集与诊断源码身份。
+/// 遍历上下文：合同事实、字面量口径集、诊断源码身份，以及当前函数的声明返回类型。
+///
+/// `return_type` 用于在 `return [...]` 与函数体尾表达式处按声明期望类型驱动构造；
+/// 嵌套 lambda 不继承外层返回类型，其 `return` 不使用该期望。
 struct TransformContext<'a> {
     facts: &'a [LiteralSequenceFacts],
     numeric: &'a BTreeSet<ItemId>,
     boolean: &'a BTreeSet<ItemId>,
     source: DiagnosticSource,
+    return_type: Option<ValkyrieType>,
 }
 
 /// 把一个 `ArrayLiteral` 的项按期望容器类型构造为 `CollectionInit`。
@@ -324,6 +328,39 @@ fn build_collection_init(
     })
 }
 
+/// 把「期望名义容器类型 + 数组字面量」在构造点按 `LiteralSequence` 合同冻结为 `CollectionInit`。
+///
+/// 无合同事实时结构化拒绝，禁止退化为 `Array` 隐式转换。调用方负责确认期望类型是名义类型。
+fn transform_nominal_literal(expr: &mut HirExpr, expected: &ValkyrieType, context: &TransformContext<'_>) -> Result<(), HirError> {
+    let span = expr.span.clone();
+    let items = match std::mem::replace(&mut expr.kind, HirExprKind::ArrayLiteral { items: Vec::new() }) {
+        HirExprKind::ArrayLiteral { items } => items,
+        other => {
+            expr.kind = other;
+            return transform_expr(expr, context);
+        }
+    };
+    let Some((fact, substitution)) = match_container(context.facts, expected)
+    else {
+        // 无合同事实的 nominal 声明 + 字面量：在构造点结构化拒绝，禁止退化为 Array 隐式转换。
+        return Err(contract_missing(expected, &span, &context.source));
+    };
+    expr.kind = build_collection_init(expected, items, fact, &substitution, &span, context)?.kind;
+    Ok(())
+}
+
+/// 按上下文期望类型处理表达式：期望名义容器 + 数组字面量走合同构造，其余原样下钻。
+fn transform_expected(expr: &mut HirExpr, expected: Option<&ValkyrieType>, context: &TransformContext<'_>) -> Result<(), HirError> {
+    let Some(expected) = expected
+    else {
+        return transform_expr(expr, context);
+    };
+    if !matches!(expr.kind, HirExprKind::ArrayLiteral { .. }) || expected.nominal_declaration().is_none() {
+        return transform_expr(expr, context);
+    }
+    transform_nominal_literal(expr, expected, context)
+}
+
 /// 转换一个 `let` 初始值：nominal 声明 + `ArrayLiteral` 即合同驱动构造点。
 fn transform_initializer(initializer: &mut Box<HirExpr>, declared: &ValkyrieType, context: &TransformContext<'_>) -> Result<(), HirError> {
     let HirExprKind::ArrayLiteral { .. } = initializer.kind
@@ -333,24 +370,10 @@ fn transform_initializer(initializer: &mut Box<HirExpr>, declared: &ValkyrieType
     if declared.nominal_declaration().is_none() {
         return transform_expr(initializer, context);
     }
-    let span = initializer.span.clone();
-    let items = match std::mem::replace(&mut initializer.kind, HirExprKind::ArrayLiteral { items: Vec::new() }) {
-        HirExprKind::ArrayLiteral { items } => items,
-        other => {
-            initializer.kind = other;
-            return transform_expr(initializer, context);
-        }
-    };
-    let Some((fact, substitution)) = match_container(context.facts, declared)
-    else {
-        // 无合同事实的 nominal 声明 + 字面量：在构造点结构化拒绝，禁止退化为 Array 隐式转换。
-        return Err(contract_missing(declared, &span, &context.source));
-    };
-    initializer.kind = build_collection_init(declared, items, fact, &substitution, &span, context)?.kind;
-    Ok(())
+    transform_nominal_literal(initializer, declared, context)
 }
 
-fn transform_block(block: &mut HirBlock, context: &TransformContext<'_>) -> Result<(), HirError> {
+fn transform_block(block: &mut HirBlock, tail_expected: Option<&ValkyrieType>, context: &TransformContext<'_>) -> Result<(), HirError> {
     for statement in &mut block.statements {
         match &mut statement.kind {
             HirStatementKind::Let { ty, initializer, .. } => {
@@ -365,13 +388,21 @@ fn transform_block(block: &mut HirBlock, context: &TransformContext<'_>) -> Resu
         }
     }
     if let Some(expr) = &mut block.expr {
-        transform_expr(expr, context)?;
+        transform_expected(expr, tail_expected, context)?;
     }
     Ok(())
 }
 
 fn transform_function(function: &mut HirFunction, context: &TransformContext<'_>) -> Result<(), HirError> {
-    transform_block(&mut function.body, context)
+    // 函数体尾表达式与 `return` 共享同一声明返回类型；嵌套 lambda 另行清空期望。
+    let context = TransformContext {
+        facts: context.facts,
+        numeric: context.numeric,
+        boolean: context.boolean,
+        source: context.source.clone(),
+        return_type: Some(function.return_type.clone()),
+    };
+    transform_block(&mut function.body, context.return_type.as_ref(), &context)
 }
 
 /// 表达式复合结构下钻；分支面与单态化固定点的 `visit_expr` 镜像。
@@ -398,9 +429,10 @@ fn transform_expr(expr: &mut HirExpr, context: &TransformContext<'_>) -> Result<
         | HirExprKind::Raise(inner)
         | HirExprKind::Resume(inner)
         | HirExprKind::Assign { value: inner, .. }
-        | HirExprKind::Return(Some(inner))
         | HirExprKind::Yield(Some(inner))
         | HirExprKind::Break { expr: Some(inner), .. } => transform_expr(inner, context)?,
+        // `return [...]` 按声明返回类型驱动构造；与函数体尾表达式同一口径。
+        HirExprKind::Return(Some(inner)) => transform_expected(inner, context.return_type.as_ref(), context)?,
         HirExprKind::TryPropagate { inner, .. } => transform_expr(inner, context)?,
         HirExprKind::StoreField { object, value, .. } => {
             transform_expr(object, context)?;
@@ -415,20 +447,30 @@ fn transform_expr(expr: &mut HirExpr, context: &TransformContext<'_>) -> Result<
         }
         // 本 pass 产物：两槽声明身份已冻结，实例待固定点铸造；项已在构造时下钻。
         HirExprKind::CollectionInit { .. } => {}
-        HirExprKind::Block(block) | HirExprKind::TryScope { body: block, .. } => transform_block(block, context)?,
-        HirExprKind::Lambda { body, .. } => transform_block(body, context)?,
+        HirExprKind::Block(block) | HirExprKind::TryScope { body: block, .. } => transform_block(block, None, context)?,
+        // lambda 的 `return` 不属于外层函数返回类型：清空期望，避免把外层容器类型套进闭包。
+        HirExprKind::Lambda { body, .. } => {
+            let inner = TransformContext {
+                facts: context.facts,
+                numeric: context.numeric,
+                boolean: context.boolean,
+                source: context.source.clone(),
+                return_type: None,
+            };
+            transform_block(body, None, &inner)?;
+        }
         HirExprKind::If { condition, then_branch, else_branch, .. } => {
             transform_expr(condition, context)?;
-            transform_block(then_branch, context)?;
+            transform_block(then_branch, None, context)?;
             if let Some(branch) = else_branch {
-                transform_block(branch, context)?;
+                transform_block(branch, None, context)?;
             }
         }
         HirExprKind::IfLet { scrutinee, then_branch, else_branch, .. } => {
             transform_expr(scrutinee, context)?;
-            transform_block(then_branch, context)?;
+            transform_block(then_branch, None, context)?;
             if let Some(branch) = else_branch {
-                transform_block(branch, context)?;
+                transform_block(branch, None, context)?;
             }
         }
         HirExprKind::Match { scrutinee, arms, .. } | HirExprKind::Case { scrutinee, arms, .. } => {
@@ -447,7 +489,7 @@ fn transform_expr(expr: &mut HirExpr, context: &TransformContext<'_>) -> Result<
             if let Some(condition) = condition {
                 transform_expr(condition, context)?;
             }
-            transform_block(body, context)?;
+            transform_block(body, None, context)?;
         }
         HirExprKind::Catch { expr: inner, arms } => {
             transform_expr(inner, context)?;
@@ -547,6 +589,6 @@ pub(crate) fn transform_collection_literals(module: &mut HirModule) -> Result<()
     else {
         DiagnosticSource { id: module.source_path.clone(), revision: None }
     };
-    let context = TransformContext { facts: &facts, numeric: &numeric, boolean: &boolean, source };
+    let context = TransformContext { facts: &facts, numeric: &numeric, boolean: &boolean, source, return_type: None };
     transform_module(module, &context)
 }
