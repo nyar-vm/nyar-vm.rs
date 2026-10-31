@@ -24,7 +24,7 @@ fn unindexable_entry_source_does_not_become_a_silent_empty_program() {
     let output = directory.path().join("output");
     fs::create_dir_all(&output).expect("创建产物目录");
     let error = compile_snapshot(&groups, &output).expect_err("入口组缺少显式入口必须结构化失败");
-    assert!(error.to_string().contains("declares no `[export]` or `[main]` entry"), "{error}");
+    assert!(error.to_string().contains("declares no `[export]`, `[main]` or `[test]` entry"), "{error}");
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn entry_source_with_slash_comment_reports_unindexed_source_reason() {
     fs::create_dir_all(&output).expect("创建产物目录");
     let error = compile_snapshot(&groups, &output).expect_err("无法索引的入口文件必须结构化失败");
     let message = error.to_string();
-    assert!(message.contains("declares no `[export]` or `[main]` entry"), "{message}");
+    assert!(message.contains("declares no `[export]`, `[main]` or `[test]` entry"), "{message}");
     assert!(message.contains("unindexed sources"), "{message}");
     assert!(message.contains("SyntaxError"), "{message}");
 }
