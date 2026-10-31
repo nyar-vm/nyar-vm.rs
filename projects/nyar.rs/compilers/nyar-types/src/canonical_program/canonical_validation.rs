@@ -195,7 +195,14 @@ impl CanonicalSemanticMir {
                                     if let Some(result) = instruction.results.first() {
                                         let Some(actual) = function.value_types.get(result)
                                         else {
-                                            return Err(CanonicalMirError::UseBeforeDefinition { function: *key, value: *result });
+                                            // 结果 SSA 值由本指令自身定义，缺类型记录不是「定义前使用」：
+                                            // canonical 无法证明结果类型与 callee 实例化返回类型一致，
+                                            // 按调用结果合同失败关闭。
+                                            return Err(CanonicalMirError::CallResultTypeMismatch {
+                                                function: *key,
+                                                callee: *callee,
+                                                value: *result,
+                                            });
                                         };
                                         // callee 的返回类型可能只由自身 binder 参数化（参数里不出现，如
                                         // `SwissTable.new(capacity) -> SwissTable<K, V>`），因此结果类型也必须
@@ -379,11 +386,9 @@ impl CanonicalSemanticMir {
                                 return Err(CanonicalMirError::UnknownCallee { function: *key, callee: *instance });
                             }
                             if instruction.results.len() != 1
-                                || !instruction
-                                    .results
-                                    .first()
-                                    .and_then(|value| function.value_types.get(value))
-                                    .is_some_and(|ty| matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Function { .. })))
+                                || !instruction.results.first().and_then(|value| function.value_types.get(value)).is_some_and(|ty| {
+                                    matches!(linked.types.get(ty).map(|row| &row.kind), Some(CanonicalTypeKind::Function { .. }))
+                                })
                             {
                                 return Err(if instruction.results.len() == 1 {
                                     CanonicalMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }

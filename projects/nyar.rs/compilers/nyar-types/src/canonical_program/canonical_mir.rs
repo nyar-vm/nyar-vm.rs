@@ -510,7 +510,7 @@ pub enum CanonicalMirError {
         /// 类型不匹配的实参 SSA 值。
         value: MirValueId,
     },
-    /// 调用结果的 SSA 类型与实例化返回类型不一致。
+    /// 调用结果的 SSA 类型缺失或与实例化返回类型不一致。
     CallResultTypeMismatch {
         /// 调用方函数实例。
         function: ItemInstanceId,
