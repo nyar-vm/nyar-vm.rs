@@ -49,6 +49,7 @@ pub fn asgard_build_static(options: AsgardStaticBuildOptions) -> AsgardStaticBui
                 entry: PathBuf::from(&options.entry),
                 output_dir: options.output_dir.map(PathBuf::from),
                 title: options.title,
+                base: "/".to_string(),
             })
         })
         .expect("failed to spawn asgard static build thread");

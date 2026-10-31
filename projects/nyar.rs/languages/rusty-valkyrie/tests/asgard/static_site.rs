@@ -26,6 +26,7 @@ fn build_page(temp: &TempDir, entry_name: &str) -> String {
         project_dir: project.to_path_buf(),
         entry: PathBuf::from(format!("source/{entry_name}")),
         output_dir: None,
+        base: "/".into(),
         title: Some("静态站点测试".into()),
     })
     .expect("静态站点构建失败");
@@ -68,11 +69,47 @@ fn default_title_falls_back_to_component_name() {
         project_dir: temp.path().to_path_buf(),
         entry: PathBuf::from("source/index.w"),
         output_dir: None,
+        base: "/".into(),
         title: None,
     })
     .expect("静态站点构建失败");
     let html = fs::read_to_string(&report.page_path).expect("读取 index.html 失败");
     assert!(html.contains("<title>index</title>"), "缺省标题应为根组件名:\n{html}");
+}
+
+#[test]
+fn base_prefix_is_consumed_into_base_href() {
+    // `artifact.base` 由配置所有者规范化后，静态构建必须消费它：非根基址写入
+    // `<base href>`，末尾目录分隔符由消费层补齐，供子目录部署使用。
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    let report = build_static_site(&StaticSiteOptions {
+        project_dir: temp.path().to_path_buf(),
+        entry: PathBuf::from("source/index.w"),
+        output_dir: None,
+        title: Some("子目录部署".into()),
+        base: "/app".into(),
+    })
+    .expect("带非根基址的静态构建应成功");
+    let html = fs::read_to_string(&report.page_path).expect("读取 index.html 失败");
+    assert!(html.contains("<base href=\"/app/\">"), "非根基址必须写入 `<base href>` 且补齐目录分隔符:\n{html}");
+}
+
+#[test]
+fn invalid_base_prefix_is_rejected() {
+    let temp = TempDir::new().expect("创建临时目录失败");
+    fs::create_dir_all(temp.path().join("source")).expect("创建 source/ 目录失败");
+    fs::write(temp.path().join("source/index.w"), FIXTURE).expect("写入入口文件失败");
+    let error = build_static_site(&StaticSiteOptions {
+        project_dir: temp.path().to_path_buf(),
+        entry: PathBuf::from("source/index.w"),
+        output_dir: None,
+        title: None,
+        base: "app".into(),
+    })
+    .expect_err("基址必须以 `/` 开头");
+    assert!(error.to_string().contains("目录 URL"), "诊断应说明基址目录 URL 合同: {error}");
 }
 
 #[test]
@@ -84,6 +121,7 @@ fn rejects_unknown_entry_extension() {
         project_dir: temp.path().to_path_buf(),
         entry: PathBuf::from("source/index.v"),
         output_dir: None,
+        base: "/".into(),
         title: Some("静态站点测试".into()),
     })
     .expect_err(".v 不是静态站点入口后缀，应失败");
@@ -99,6 +137,7 @@ fn rejects_missing_entry_file() {
         project_dir: temp.path().to_path_buf(),
         entry: PathBuf::from("source/missing.awsl"),
         output_dir: None,
+        base: "/".into(),
         title: Some("静态站点测试".into()),
     })
     .expect_err("入口文件不存在应失败");
@@ -116,6 +155,7 @@ fn rejects_entry_escaping_project_dir() {
         project_dir: project,
         entry: PathBuf::from("../outside.awsl"),
         output_dir: None,
+        base: "/".into(),
         title: Some("静态站点测试".into()),
     })
     .expect_err("越出项目根的入口应失败");

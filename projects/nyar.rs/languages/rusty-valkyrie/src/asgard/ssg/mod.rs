@@ -24,6 +24,15 @@ pub fn render_awsl_static(source: &str, component_name: &str, source_path: &str,
 
 /// 生成完整静态 HTML 页面（无 `asgard-runtime.js`）。
 pub fn generate_static_page(title: &str, results: &[StaticRenderResult], extra_css: &str) -> String {
+    generate_static_page_with_base(title, results, extra_css, "/")
+}
+
+/// 生成完整静态 HTML 页面，并把 `base`（配置拥有的目录 URL）写入 `<base href>`。
+///
+/// 缺省基址 `/` 不输出 `<base>`，保持根部署页面与既有产物一致；非根基址用于子目录部署，
+/// 让页面内相对引用按配置基址解析。`base` 的规范化与合法性由配置所有者负责，
+/// 本函数只消费已解析的目录 URL。
+pub fn generate_static_page_with_base(title: &str, results: &[StaticRenderResult], extra_css: &str, base: &str) -> String {
     let mut css = String::new();
     if !extra_css.trim().is_empty() {
         css.push_str(extra_css.trim());
@@ -50,6 +59,10 @@ pub fn generate_static_page(title: &str, results: &[StaticRenderResult], extra_c
     writeln!(page, "  <meta charset=\"utf-8\">").unwrap();
     writeln!(page, "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">").unwrap();
     writeln!(page, "  <title>{}</title>", escape_html(title)).unwrap();
+    let base = base.trim();
+    if base != "/" {
+        writeln!(page, "  <base href=\"{}\">", escape_html(base)).unwrap();
+    }
     if !css.trim().is_empty() {
         writeln!(page, "  <style>").unwrap();
         for line in css.lines() {

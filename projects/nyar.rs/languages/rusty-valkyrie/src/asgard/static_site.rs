@@ -13,7 +13,7 @@ use crate::asgard::{
     awsl::{LoweringOptions, compile_awsl_source},
     codegen::html_render::render_static_ir,
     error::{AsgardError, AsgardResult},
-    ssg::generate_static_page,
+    ssg::generate_static_page_with_base,
 };
 
 /// 静态站点构建选项。
@@ -28,6 +28,11 @@ pub struct StaticSiteOptions {
     pub output_dir: Option<PathBuf>,
     /// 页面 `<title>` 文本；`None` 时使用根组件名（入口文件 stem）。
     pub title: Option<String>,
+    /// 产物基址（目录 URL，由配置所有者规范化）；缺省 `/` 表示根部署。
+    ///
+    /// 非根基址写入页面 `<base href>`，支持子目录部署；本层只消费已解析基址，
+    /// 不重新解释 `artifact.base` 配置字段。
+    pub base: String,
 }
 
 /// 静态站点构建成功报告。
@@ -87,7 +92,8 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     // 静态页面以组件初始状态渲染，外部数据为 Null；标题缺省沿用根组件名这一唯一来源。
     let rendered = render_static_ir(&component, &serde_json::Value::Null);
     let title = options.title.as_deref().unwrap_or(file_stem);
-    let page = generate_static_page(title, std::slice::from_ref(&rendered), "");
+    let base = page_base(&options.base)?;
+    let page = generate_static_page_with_base(title, std::slice::from_ref(&rendered), "", &base);
 
     let output_dir = options.output_dir.clone().unwrap_or_else(|| project_root.join("dist"));
     std::fs::create_dir_all(&output_dir).map_err(|error| AsgardError::msg(report!("创建输出目录失败 {}: {error}", output_dir.display())))?;
@@ -95,4 +101,28 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
     std::fs::write(&page_path, page).map_err(|error| AsgardError::msg(report!("写入页面失败 {}: {error}", page_path.display())))?;
 
     Ok(StaticSiteReport { output_dir, page_path, component_name: file_stem.to_string() })
+}
+
+/// 校验并规范化为可写入 `<base href>` 的目录 URL。
+///
+/// 只检查消费侧合同（非空、以 `/` 开头、不含 `..` 段），末尾补 `/`；根 `/` 保持不变。
+/// `artifact.base` 的默认值与用户拼写规范化由配置所有者负责，本层不重复实现。
+fn page_base(base: &str) -> AsgardResult<String> {
+    let trimmed = base.trim();
+    if trimmed.is_empty() {
+        return Err(AsgardError::msg(report!("静态站点基址不能为空；缺省根部署请使用 `/`")));
+    }
+    if !trimmed.starts_with('/') {
+        return Err(AsgardError::msg(report!("静态站点基址必须是目录 URL（以 `/` 开头）: {trimmed}")));
+    }
+    if trimmed.split('/').any(|segment| segment == "..") {
+        return Err(AsgardError::msg(report!("静态站点基址不得包含 `..` 段: {trimmed}")));
+    }
+    if trimmed == "/" {
+        return Ok("/".to_string());
+    }
+    if trimmed.ends_with('/') {
+        return Ok(trimmed.to_string());
+    }
+    Ok(format!("{trimmed}/"))
 }

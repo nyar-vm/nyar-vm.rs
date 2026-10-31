@@ -192,6 +192,7 @@ pub fn run_build(args: &AsgardBuildArgs) -> AsgardResult<ExitCode> {
                 entry: entry.clone(),
                 output_dir: args.output_dir.clone(),
                 title: title.clone(),
+                base: "/".to_string(),
             })?;
             println!("asgard build (static) complete");
             println!("output: {}", report.output_dir.display());
