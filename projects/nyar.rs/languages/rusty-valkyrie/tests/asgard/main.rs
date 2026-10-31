@@ -6,6 +6,7 @@ mod asgard_platform_contract;
 mod asgard_render_ir_canonical;
 mod asgard_style_collector;
 mod chunk_config_matrix;
+mod chunk_planning;
 mod cli_static;
 mod config_discovery;
 mod config_model;

@@ -2,6 +2,7 @@
 #![deny(missing_docs)]
 
 pub mod awsl;
+pub mod chunk_planning;
 pub mod cli;
 pub mod codegen;
 pub mod compile;

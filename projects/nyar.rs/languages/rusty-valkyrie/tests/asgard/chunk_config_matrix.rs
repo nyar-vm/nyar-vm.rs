@@ -2,8 +2,9 @@
 //!
 //! 与 `config_model.rs` 的既有 14 条互补：那里锁定了总体白名单与少量 chunks 拒绝，
 //! 本文件把 `boundaries` / `preload` / `prefetch` / `budgets` 每个字段的接受与拒绝
-//! 形态逐格覆盖。注意：模型接受 ≠ 构建消费——产物侧的「配置接受但构建忽略」锁定
-//! 见 `static_artifact_tree::resolved_base_and_chunks_are_not_consumed_by_static_build`。
+//! 形态逐格覆盖。注意：模型接受 ≠ 产物消费——目标策略侧的消费（浏览器保留分割计划、
+//! 桌面 WebView 跳过分割）见 `chunk_planning.rs`；静态构建当前仍只产出 `index.html`，
+//! 该形态由 `static_artifact_tree.rs` 锁定。
 
 use std::{fs, path::Path};
 
