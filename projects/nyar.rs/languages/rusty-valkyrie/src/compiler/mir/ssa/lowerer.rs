@@ -14,26 +14,8 @@ use super::{
     type_analysis::type_identity_table,
     value_semantics,
 };
-use crate::compiler::types::hir::{HirModule, ValkyrieType};
+use crate::compiler::types::hir::HirModule;
 use std::collections::BTreeMap;
-
-/// 检查类型里是否还有未闭合的泛型 binder（`ValkyrieType::Generic(generic)` 且 `generic.binder.is_some()`）。
-/// 原始函数声明里的 open generic 进不了 MIR，让 instantiated_callables 成为唯一来源。
-fn contains_open_generic(ty: &ValkyrieType) -> bool {
-    match ty {
-        ValkyrieType::Generic(generic) => generic.binder.is_some(),
-        ValkyrieType::Nominal { arguments, .. } => arguments.iter().any(contains_open_generic),
-        ValkyrieType::Apply(base, arguments) => contains_open_generic(base) || arguments.iter().any(contains_open_generic),
-        ValkyrieType::Array(element) | ValkyrieType::Nullable(element) => contains_open_generic(element),
-        ValkyrieType::Tuple(items) | ValkyrieType::Union(items) | ValkyrieType::Intersection(items) => items.iter().any(contains_open_generic),
-        ValkyrieType::Function(function) => {
-            function.params.iter().any(|p| contains_open_generic(p)) || contains_open_generic(&function.return_type)
-        }
-        ValkyrieType::FixedArray { element, .. } => contains_open_generic(element),
-        ValkyrieType::Associated(assoc) => contains_open_generic(&assoc.base) || assoc.type_arguments.iter().any(contains_open_generic),
-        _ => false,
-    }
-}
 
 /// Semantic MIR lowering 阶段入口：把 `HirModule` 编排为 `MirModule`。
 pub struct MirLowerer;
@@ -86,11 +68,7 @@ impl MirLowerer {
         let (exports, entries) = collect_surface_contracts(module);
         let callable_returns = collect_callable_return_types(module);
         let mut functions = Vec::new();
-        for function in module.functions.iter().filter(|function| {
-            !function.is_abstract
-                && !function.params.iter().any(|p| contains_open_generic(&p.ty))
-                && !contains_open_generic(&function.return_type)
-        }) {
+        for function in module.functions.iter().filter(|function| !function.is_abstract) {
             functions.push(lower_function_semantic(
                 module,
                 function,
