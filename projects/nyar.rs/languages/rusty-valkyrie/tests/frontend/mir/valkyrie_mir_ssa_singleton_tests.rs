@@ -86,7 +86,7 @@ fn has_call_with_suffix(function: &MirFunction, mir: &MirModule, suffix: &str) -
 
 #[test]
 fn lower_singleton_static_method_call() {
-    let mir = compile_mir(
+    let mir = compile_mir_with_operators(
         r#"
 singleton Counter {
     mut total: i64 = 0

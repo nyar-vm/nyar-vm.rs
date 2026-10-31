@@ -119,25 +119,25 @@ impl MirLowerer {
         // TypeId 只消费已冻结的 Nominal{ItemId} / 其他结构化形状；禁止短名 Named 别名收束。
         let type_identities = type_identity_table(&functions, &external_calls, &structs, &sum_types);
         let mut callable_symbols = BTreeMap::new();
+        // `callable_symbols` 是 instance -> 诊断标签表；ABI 身份只由 `ItemInstanceId` 决定。
+        // 单态化实例的 `display_symbol` 已携带 `#N` 实例后缀，标签本身不再叠加编号，
+        // 保持与源码符号（singleton accessor、stable host symbol）逐字一致。
         for function in &functions {
             if let Some(instance) = function.instance {
-                let symbol = format!("{}#{}", function.display_symbol, instance.index());
-                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
+                super::model::register_callable_symbol_entry(&mut callable_symbols, instance, function.display_symbol.clone())
                     .expect("duplicate callable symbol during lowering");
             }
         }
         for contract in &external_calls {
             if let Some(instance) = contract.instance {
-                let base = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
-                let symbol = format!("{base}#{}", instance.index());
+                let symbol = crate::compiler::hir::symbols::stable_symbol_key(&contract.symbol);
                 super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
                     .expect("duplicate callable symbol during lowering");
             }
         }
         let accessor_instances = crate::compiler::mir::collect_singleton_accessor_contracts(module);
         for (instance, base) in accessor_instances {
-            let symbol = format!("{base}#{}", instance.index());
-            super::model::register_callable_symbol_entry(&mut callable_symbols, instance, symbol)
+            super::model::register_callable_symbol_entry(&mut callable_symbols, instance, base)
                 .expect("duplicate singleton accessor symbol during lowering");
         }
         let semantic_fragments = collect_semantic_fragments(module, &exports, &entries);
