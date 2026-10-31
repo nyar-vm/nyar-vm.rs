@@ -19,6 +19,7 @@ pub mod pipeline;
 pub mod platform_contract;
 pub mod publish;
 pub mod report_build;
+pub mod server_runtime;
 pub mod sourcemap;
 pub mod ssg;
 pub mod static_site;

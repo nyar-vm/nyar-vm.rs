@@ -13,6 +13,7 @@ mod config_model;
 mod config_probe;
 mod glue_contract;
 mod pipeline_discover;
+mod server_runtime;
 mod ssg;
 mod static_artifact_tree;
 mod static_site;
