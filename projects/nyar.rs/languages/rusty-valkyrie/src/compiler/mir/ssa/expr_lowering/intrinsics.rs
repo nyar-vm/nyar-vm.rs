@@ -2,13 +2,13 @@ use crate::compiler::{
     hir::is_nullable_type,
     types::{
         Identifier, NamePath,
-        hir::{BuiltinStructureOp, FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
+        hir::{FunctionType, HirCallableDomain, HirExpr, HirExprKind, HirLiteral, HirResolvedCall, ValkyrieType},
     },
 };
 
 use crate::compiler::mir::ssa::{
     MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin, callee_name_matches,
-    expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply},
+    expr_helpers::lower_resolved_callee,
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_type},
 };
@@ -126,15 +126,6 @@ impl MirBuilder {
         crate::compiler::mir::ssa::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
             .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect())
             .unwrap_or_default()
-    }
-
-    pub(crate) fn infer_array_element_type(&self, array: &MirOperand) -> Option<ValkyrieType> {
-        infer_builder_operand_type(array, &self.value_types).and_then(|ty| match ty {
-            ValkyrieType::Array(inner) => Some(*inner),
-            ValkyrieType::Apply(base, args) if named_type_name(base.as_ref()) == Some("Array") => args.first().cloned(),
-            ValkyrieType::FixedArray { element, .. } => Some(*element),
-            _ => None,
-        })
     }
 
     pub(crate) fn try_lower_option_is_some(&mut self, receiver: MirOperand, resolved: Option<&HirResolvedCall>) -> Option<MirOperand> {
@@ -336,103 +327,20 @@ impl MirBuilder {
         Some(MirOperand::Value(value))
     }
 
-    /// 数组长度 intrinsic：`[intrinsic("builtin.array.length")] length(array)` → `ArrayLength`。
-    pub(crate) fn try_lower_array_len_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != BuiltinStructureOp::ArrayLen {
-            return None;
-        }
-        if arguments.is_empty() {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayLength { array }, vec![value]);
-        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).unwrap_or(ValkyrieType::Unit);
-        self.value_types.insert(value, return_type);
-        Some(MirOperand::Value(value))
-    }
-
-    pub(crate) fn try_lower_array_get_on_array(
-        &mut self,
-        array: MirOperand,
-        ordinal: MirOperand,
-        resolved: Option<&HirResolvedCall>,
-        expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        let array_ty = infer_builder_operand_type(&array, &self.value_types)
-            .or_else(|| resolved.and_then(|call| call.parameter_types.first()).filter(|ty| is_array_shaped_valkyrie_type(ty)).cloned())?;
-        if !is_array_shaped_valkyrie_type(&array_ty) {
-            return None;
-        }
-        let element_type = self.infer_array_element_type(&array)?;
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayGet { array, index: ordinal }, vec![value]);
-        let return_type = resolved
-            .map(|call| call.return_type.clone())
-            .or_else(|| expected_type.cloned())
-            .filter(|ty| !self.is_option_type(ty))
-            .unwrap_or(element_type);
-        self.value_types.insert(value, return_type);
-        Some(MirOperand::Value(value))
-    }
-
-    /// 数组下标读取 intrinsic：`[intrinsic("builtin.array.get")] __array_get(self, ordinal)` → `ArrayGet`。
-    pub(crate) fn try_lower_array_get_intrinsic(
-        &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
-    ) -> Option<MirOperand> {
-        if resolved?.intrinsic? != BuiltinStructureOp::ArrayGet {
-            return None;
-        }
-        if arguments.len() < 2 {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let index = arguments[1].clone();
-        let value = self.next_value(MirValueOrigin::CallResult);
-        self.push_instruction(MirOperation::ArrayGet { array, index }, vec![value]);
-        let return_type = resolved.map(|call| call.return_type.clone()).or_else(|| expected_type.cloned()).unwrap_or(ValkyrieType::Unit);
-        self.value_types.insert(value, return_type);
-        Some(MirOperand::Value(value))
-    }
-
-    /// 数组下标写入 intrinsic：`[intrinsic("builtin.array.set")] __array_set(self, ordinal, value)` → `ArraySet`。
-    pub(crate) fn try_lower_array_set_intrinsic(&mut self, resolved: Option<&HirResolvedCall>, arguments: &[MirOperand]) -> Option<MirOperand> {
-        if resolved?.intrinsic? != BuiltinStructureOp::ArraySet {
-            return None;
-        }
-        if arguments.len() < 3 {
-            return None;
-        }
-        let array = arguments[0].clone();
-        let index = arguments[1].clone();
-        let value = arguments[2].clone();
-        self.push_instruction(MirOperation::ArraySet { array, index, value }, vec![]);
-        Some(MirOperand::Constant(MirConstant::Unit))
-    }
-
-    /// 数组结构操作 intrinsic 的唯一分流点。
+    /// 数组结构操作 intrinsic 的统一降级点。
     ///
-    /// 分流只依据 `HirResolvedCall.intrinsic`：内置候选（如 `suffix [ ]=`）没有声明实例，
-    /// 若等到 callee 投影之后再分流，内置候选会先被判为「无实例身份」而丢失语义。
+    /// 核心合同见文件头：intrinsic 专用 opcode（`ArrayLength`/`ArrayGet`/`ArraySet`）只允许
+    /// 由 adaptor 链接进来的后端专用绑定产生；源码 `[intrinsic(...)]` 自由函数与语言 builtin
+    /// intrinsic 候选一律走普通 Call 路径，由 planner adaptor / backend TargetExecutionPlan
+    /// 链路消费。当前没有 adaptor 链接进来的后端绑定，因此所有数组 intrinsic 调用直接
+    /// `return None` 让主 lowering 循环走 Call 分支。
     pub(crate) fn try_lower_array_intrinsics(
         &mut self,
-        resolved: Option<&HirResolvedCall>,
-        arguments: &[MirOperand],
-        expected_type: Option<&ValkyrieType>,
+        _resolved: Option<&HirResolvedCall>,
+        _arguments: &[MirOperand],
+        _expected_type: Option<&ValkyrieType>,
     ) -> Option<MirOperand> {
-        let result = self
-            .try_lower_array_len_intrinsic(resolved, arguments, expected_type)
-            .or_else(|| self.try_lower_array_get_intrinsic(resolved, arguments, expected_type))
-            .or_else(|| self.try_lower_array_set_intrinsic(resolved, arguments));
-        result
+        None
     }
 
     /// Positional `Range(a, b)` ??????????`StructNew`???????????`Call`??
